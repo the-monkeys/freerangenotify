@@ -1,0 +1,125 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below to include it)
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Configuration files with sensitive data
+config/config.local.yaml
+config/secrets.yaml
+*.secret.yaml
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.cover
+*.coverprofile
+
+# Dependency directories
+node_modules/
+
+# Build directories
+build/
+dist/
+tmp/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Local development files
+*.local
+.local/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Provider credentials and certificates
+*.p8
+*.p12
+*.pem
+*.key
+*.crt
+*.json
+credentials/
+
+# Application specific
+data/
+elasticsearch_data/
+redis_data/
+prometheus_data/
+grafana_data/
+
+# Backup files
+*.bak
+*.backup
+
+# Test artifacts
+testdata/output/
+integration-test-results/
+
+# Performance profiling files
+*.prof
+cpu.out
+mem.out
+
+# Air (hot reload) files
+tmp/
+main
+.air.toml

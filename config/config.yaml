@@ -1,0 +1,97 @@
+app:
+  name: "FreeRangeNotify"
+  version: "1.0.0"
+  environment: "development"
+  debug: true
+  log_level: "debug"
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+
+database:
+  urls:
+    - "http://localhost:9200"
+  username: ""
+  password: ""
+  max_retries: 3
+  timeout: 30
+  index_prefix: "freerange_dev"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+  max_retries: 3
+  min_idle_conn: 10
+
+queue:
+  type: "redis"  # redis or kafka
+  workers: 5
+  concurrency: 3
+  retry_attempts: 3
+  retry_delay: 5
+
+providers:
+  fcm:
+    server_key: "${FCM_SERVER_KEY:-}"
+    project_id: "${FCM_PROJECT_ID:-}"
+    timeout: 30
+    max_retries: 3
+  
+  apns:
+    key_id: "${APNS_KEY_ID:-}"
+    team_id: "${APNS_TEAM_ID:-}"
+    bundle_id: "${APNS_BUNDLE_ID:-}"
+    key_path: "${APNS_KEY_PATH:-}"
+    production: false
+  
+  sendgrid:
+    api_key: "${SENDGRID_API_KEY:-}"
+    from_email: "${SENDGRID_FROM_EMAIL:-noreply@freerangenotify.com}"
+    from_name: "${SENDGRID_FROM_NAME:-FreeRangeNotify}"
+    timeout: 30
+    max_retries: 3
+  
+  twilio:
+    account_sid: "${TWILIO_ACCOUNT_SID:-}"
+    auth_token: "${TWILIO_AUTH_TOKEN:-}"
+    from_number: "${TWILIO_FROM_NUMBER:-}"
+    timeout: 30
+    max_retries: 3
+
+monitoring:
+  enabled: true
+  port: 9090
+  path: "/metrics"
+  namespace: "freerange_dev"
+
+security:
+  jwt_secret: "${JWT_SECRET:-dev-secret-key-change-in-production}"
+  api_key_header: "X-API-Key"
+  rate_limit: 100  # requests per window
+  rate_limit_window: 3600  # seconds
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Origin"
+      - "Content-Type"
+      - "Accept"
+      - "Authorization"
+      - "X-API-Key"
+    exposed_headers: []
+    allow_credentials: true
+    max_age: 86400

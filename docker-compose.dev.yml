@@ -1,0 +1,32 @@
+version: '3.8'
+
+# Development override file
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  elasticsearch:
+    environment:
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"  # Lower memory for development
+    
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Use builder stage for development
+    volumes:
+      - .:/app
+      - /app/vendor
+    command: ["go", "run", "./cmd/server"]
+    environment:
+      - GO_ENV=development
+      - HOT_RELOAD=true
+    
+  notification-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    volumes:
+      - .:/app
+      - /app/vendor
+    command: ["go", "run", "./cmd/worker"]

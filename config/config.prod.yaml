@@ -1,0 +1,65 @@
+app:
+  environment: "production"
+  debug: false
+  log_level: "info"
+
+server:
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+
+database:
+  urls:
+    - "${ELASTICSEARCH_URL_1}"
+    - "${ELASTICSEARCH_URL_2}"
+    - "${ELASTICSEARCH_URL_3}"
+  username: "${ELASTICSEARCH_USERNAME}"
+  password: "${ELASTICSEARCH_PASSWORD}"
+  max_retries: 5
+  timeout: 60
+  index_prefix: "freerange_prod"
+
+redis:
+  host: "${REDIS_HOST}"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  db: 0
+  pool_size: 200
+  max_retries: 5
+  min_idle_conn: 20
+
+queue:
+  type: "kafka"  # Use Kafka for production
+  workers: 20
+  concurrency: 10
+  retry_attempts: 5
+  retry_delay: 10
+
+providers:
+  fcm:
+    timeout: 60
+    max_retries: 5
+  
+  apns:
+    production: true
+  
+  sendgrid:
+    timeout: 60
+    max_retries: 5
+  
+  twilio:
+    timeout: 60
+    max_retries: 5
+
+monitoring:
+  enabled: true
+  namespace: "freerange_prod"
+
+security:
+  jwt_secret: "${JWT_SECRET}"
+  rate_limit: 10000  # Higher limit for production
+  rate_limit_window: 3600
+  cors:
+    allowed_origins:
+      - "${FRONTEND_URL}"
+      - "${ADMIN_PANEL_URL}"
