@@ -287,6 +287,9 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 		EmailEnabled: req.EmailEnabled,
 		PushEnabled:  req.PushEnabled,
 		SMSEnabled:   req.SMSEnabled,
+		DND:          req.DND,
+		Categories:   req.Categories,
+		DailyLimit:   req.DailyLimit,
 	}
 
 	if req.QuietHours != nil {

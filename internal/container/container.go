@@ -7,6 +7,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
@@ -34,6 +35,7 @@ type Container struct {
 
 	// Validator
 	Validator *validator.Validator
+	Limiter   limiter.Limiter
 
 	// Services
 	UserService         usecases.UserService
@@ -46,6 +48,8 @@ type Container struct {
 	ApplicationHandler  *handlers.ApplicationHandler
 	NotificationHandler *handlers.NotificationHandler
 	TemplateHandler     *handlers.TemplateHandler
+	AdminHandler        *handlers.AdminHandler
+	HealthHandler       *handlers.HealthHandler
 }
 
 // NewContainer creates a new dependency injection container
@@ -81,6 +85,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize metrics
 	container.Metrics = metrics.NewNotificationMetrics()
 
+	// Initialize limiter
+	container.Limiter = limiter.NewRedisLimiter(redisClient, logger)
+
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
 
@@ -90,12 +97,14 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.NotificationService = usecases.NewNotificationService(
 		repos.Notification,
 		repos.User,
+		repos.Application,
 		container.Queue,
 		logger,
 		usecases.NotificationServiceConfig{
 			MaxRetries: 3,
 		},
 		container.Metrics,
+		container.Limiter,
 	)
 
 	// Initialize template service
@@ -121,6 +130,15 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.TemplateHandler = handlers.NewTemplateHandler(
 		container.TemplateService,
+		logger,
+	)
+	container.AdminHandler = handlers.NewAdminHandler(
+		container.Queue,
+		logger,
+	)
+	container.HealthHandler = handlers.NewHealthHandler(
+		container.DatabaseManager,
+		container.RedisClient,
 		logger,
 	)
 

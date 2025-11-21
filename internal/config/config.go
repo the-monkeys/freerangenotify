@@ -63,8 +63,9 @@ type QueueConfig struct {
 	Type          string `mapstructure:"type"` // redis or kafka
 	Workers       int    `mapstructure:"workers"`
 	Concurrency   int    `mapstructure:"concurrency"`
-	RetryAttempts int    `mapstructure:"retry_attempts"`
+	MaxRetries    int    `mapstructure:"max_retries"`
 	RetryDelay    int    `mapstructure:"retry_delay"`
+	MaxRetryDelay int    `mapstructure:"max_retry_delay"`
 }
 
 // ProvidersConfig contains external provider configurations
@@ -168,8 +169,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("queue.type", "redis")
 	viper.SetDefault("queue.workers", 10)
 	viper.SetDefault("queue.concurrency", 5)
-	viper.SetDefault("queue.retry_attempts", 3)
+	viper.SetDefault("queue.max_retries", 3)
 	viper.SetDefault("queue.retry_delay", 5)
+	viper.SetDefault("queue.max_retry_delay", 300) // 5 minutes
 
 	viper.SetDefault("monitoring.enabled", true)
 	viper.SetDefault("monitoring.port", 9090)

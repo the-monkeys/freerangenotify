@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"go.uber.org/zap"
@@ -17,10 +19,12 @@ import (
 type NotificationService struct {
 	notificationRepo notification.Repository
 	userRepo         user.Repository
+	appRepo          application.Repository
 	queue            queue.Queue
 	logger           *zap.Logger
 	maxRetries       int
 	metrics          *metrics.NotificationMetrics
+	limiter          limiter.Limiter
 }
 
 // NotificationServiceConfig holds configuration for the notification service
@@ -32,18 +36,22 @@ type NotificationServiceConfig struct {
 func NewNotificationService(
 	notificationRepo notification.Repository,
 	userRepo user.Repository,
+	appRepo application.Repository,
 	queue queue.Queue,
 	logger *zap.Logger,
 	config NotificationServiceConfig,
 	metrics *metrics.NotificationMetrics,
+	l limiter.Limiter,
 ) notification.Service {
 	return &NotificationService{
 		notificationRepo: notificationRepo,
 		userRepo:         userRepo,
+		appRepo:          appRepo,
 		queue:            queue,
 		logger:           logger,
 		maxRetries:       config.MaxRetries,
 		metrics:          metrics,
+		limiter:          l,
 	}
 }
 
@@ -61,14 +69,29 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
 
-	// Validate channel is enabled in user preferences
-	if !s.isChannelEnabled(u, req.Channel) {
-		return nil, fmt.Errorf("channel %s is not enabled for user %s", req.Channel, req.UserID)
+	// Check global DND
+	if u.Preferences.DND && req.Priority != notification.PriorityCritical {
+		return nil, notification.ErrDNDEnabled
+	}
+
+	// Validate channel is enabled in user preferences (honoring category overrides)
+	if !s.isChannelEnabled(ctx, u, req.Channel, req.Category) {
+		return nil, fmt.Errorf("channel %s is not enabled for user %s (category: %s)", req.Channel, req.UserID, req.Category)
 	}
 
 	// Check quiet hours
 	if s.isQuietHours(u) && req.Priority != notification.PriorityCritical {
 		return nil, fmt.Errorf("user is in quiet hours, only critical notifications allowed")
+	}
+
+	// Check daily limit
+	if u.Preferences.DailyLimit > 0 {
+		allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("user:%s", req.UserID), u.Preferences.DailyLimit)
+		if err != nil {
+			s.logger.Error("Failed to check daily limit", zap.Error(err))
+		} else if !allowed && req.Priority != notification.PriorityCritical {
+			return nil, notification.ErrRateLimitExceeded
+		}
 	}
 
 	// Create notification entity
@@ -84,11 +107,23 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 			Body:  req.Body,
 			Data:  req.Data,
 		},
+		Category:    req.Category,
 		TemplateID:  req.TemplateID,
 		ScheduledAt: req.ScheduledAt,
 		RetryCount:  0,
+		Recurrence:  req.Recurrence,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
+	}
+
+	// Calculate initial schedule for recurring notifications if not provided
+	if notif.Recurrence != nil && notif.ScheduledAt == nil {
+		next, err := notif.Recurrence.CalculateNextRun(time.Now())
+		if err == nil && !next.IsZero() {
+			notif.ScheduledAt = &next
+		} else if err != nil {
+			s.logger.Warn("Failed to calculate initial recurrence", zap.Error(err))
+		}
 	}
 
 	// Validate notification entity
@@ -102,11 +137,23 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		return nil, fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	// If scheduled for future, don't enqueue yet
+	// If scheduled for future, enqueue in scheduled queue
 	if notif.IsScheduled() {
 		s.logger.Info("Notification scheduled for future delivery",
 			zap.String("notification_id", notif.NotificationID),
 			zap.Time("scheduled_at", *notif.ScheduledAt))
+
+		queueItem := queue.NotificationQueueItem{
+			NotificationID: notif.NotificationID,
+			Priority:       notif.Priority,
+			EnqueuedAt:     time.Now(),
+		}
+
+		if err := s.queue.EnqueueScheduled(ctx, queueItem, *notif.ScheduledAt); err != nil {
+			s.logger.Error("Failed to enqueue scheduled notification", zap.Error(err))
+			// Status remains pending in DB, ES scheduler will eventually pick it up as fallback
+		}
+
 		return notif, nil
 	}
 
@@ -162,10 +209,17 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			continue
 		}
 
+		// Check global DND
+		if u.Preferences.DND && req.Priority != notification.PriorityCritical {
+			s.logger.Debug("User has DND enabled, skipping non-critical notification",
+				zap.String("user_id", userID))
+			continue
+		}
+
 		// Check if channel is enabled
-		if !s.isChannelEnabled(u, req.Channel) {
+		if !s.isChannelEnabled(ctx, u, req.Channel, req.Category) {
 			s.logger.Warn("Channel not enabled for user, skipping",
-				zap.String("user_id", userID), zap.String("channel", string(req.Channel)))
+				zap.String("user_id", userID), zap.String("channel", string(req.Channel)), zap.String("category", req.Category))
 			continue
 		}
 
@@ -174,6 +228,17 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			s.logger.Debug("User in quiet hours, skipping non-critical notification",
 				zap.String("user_id", userID))
 			continue
+		}
+
+		// Check daily limit
+		if u.Preferences.DailyLimit > 0 {
+			allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("user:%s", userID), u.Preferences.DailyLimit)
+			if err != nil {
+				s.logger.Error("Failed to check daily limit", zap.Error(err))
+			} else if !allowed && req.Priority != notification.PriorityCritical {
+				s.logger.Debug("User exceeded daily limit, skipping", zap.String("user_id", userID))
+				continue
+			}
 		}
 
 		// Create notification
@@ -189,6 +254,7 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 				Body:  req.Body,
 				Data:  req.Data,
 			},
+			Category:    req.Category,
 			TemplateID:  req.TemplateID,
 			ScheduledAt: req.ScheduledAt,
 			RetryCount:  0,
@@ -210,13 +276,19 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 
 		notifications = append(notifications, notif)
 
-		// Queue for immediate delivery if not scheduled
-		if !notif.IsScheduled() {
-			queueItems = append(queueItems, queue.NotificationQueueItem{
-				NotificationID: notif.NotificationID,
-				Priority:       notif.Priority,
-				EnqueuedAt:     time.Now(),
-			})
+		// Queue or schedule
+		queueItem := queue.NotificationQueueItem{
+			NotificationID: notif.NotificationID,
+			Priority:       notif.Priority,
+			EnqueuedAt:     time.Now(),
+		}
+
+		if notif.IsScheduled() {
+			if err := s.queue.EnqueueScheduled(ctx, queueItem, *notif.ScheduledAt); err != nil {
+				s.logger.Error("Failed to enqueue scheduled notification in bulk", zap.Error(err))
+			}
+		} else {
+			queueItems = append(queueItems, queueItem)
 		}
 	}
 
@@ -240,6 +312,29 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 	s.logger.Info("Bulk notifications sent",
 		zap.Int("total", len(req.UserIDs)),
 		zap.Int("sent", len(notifications)))
+
+	return notifications, nil
+}
+
+// SendBatch sends multiple distinct notifications
+func (s *NotificationService) SendBatch(ctx context.Context, requests []notification.SendRequest) ([]*notification.Notification, error) {
+	var notifications []*notification.Notification
+
+	// Process each request
+	for _, req := range requests {
+		// We call Send for each to reuse logic (validation, quota, etc.)
+		// In a production system, this should likely be optimized to bulk fetch users/check quotas
+		// but reuse the same careful logic.
+		n, err := s.Send(ctx, req)
+		if err != nil {
+			// Log error but continue with others
+			s.logger.Error("Failed to send notification in batch",
+				zap.String("user_id", req.UserID),
+				zap.Error(err))
+			continue
+		}
+		notifications = append(notifications, n)
+	}
 
 	return notifications, nil
 }
@@ -326,6 +421,40 @@ func (s *NotificationService) Cancel(ctx context.Context, notificationID, appID 
 	return s.notificationRepo.UpdateStatus(ctx, notificationID, notification.StatusCancelled)
 }
 
+// CancelBatch cancels multiple scheduled notifications
+func (s *NotificationService) CancelBatch(ctx context.Context, notificationIDs []string, appID string) error {
+	// 1. Verify ownership and status for each (or bulk).
+	// For simplicity and correctness regarding ownership, we fetch them differently or trust UUIDs?
+	// No, must check AppID.
+
+	// We iterate for now because ES GetMany + Filter is not exposed in Repo yet.
+	// Or we can assume UUIDs are hard to guess, but multi-tenant security requires AppID check.
+
+	var validIDs []string
+	for _, id := range notificationIDs {
+		notif, err := s.notificationRepo.GetByID(ctx, id)
+		if err != nil {
+			continue // Skip not found
+		}
+
+		if notif.AppID != appID {
+			continue // Skip not owned
+		}
+
+		if notif.Status.IsFinal() || notif.Status == notification.StatusSent {
+			continue // Cannot cancel
+		}
+
+		validIDs = append(validIDs, id)
+	}
+
+	if len(validIDs) == 0 {
+		return nil
+	}
+
+	return s.notificationRepo.BulkUpdateStatus(ctx, validIDs, notification.StatusCancelled)
+}
+
 // Retry retries a failed notification
 func (s *NotificationService) Retry(ctx context.Context, notificationID, appID string) error {
 	notif, err := s.notificationRepo.GetByID(ctx, notificationID)
@@ -375,18 +504,68 @@ func (s *NotificationService) Retry(ctx context.Context, notificationID, appID s
 	return nil
 }
 
-// isChannelEnabled checks if a channel is enabled for the user
-func (s *NotificationService) isChannelEnabled(u *user.User, channel notification.Channel) bool {
+// isChannelEnabled checks if a channel is enabled for the user, honoring overrides and defaults
+func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User, channel notification.Channel, category string) bool {
+	// 1. Check category-specific overrides
+	if category != "" && u.Preferences.Categories != nil {
+		if catPref, exists := u.Preferences.Categories[category]; exists {
+			// If category is disabled, notification is not allowed
+			if !catPref.Enabled {
+				return false
+			}
+			// If specific channels are enabled for this category, check if requested channel is in there
+			if len(catPref.EnabledChannels) > 0 {
+				for _, ec := range catPref.EnabledChannels {
+					if notification.Channel(ec) == channel {
+						return true
+					}
+				}
+				return false // Requested channel not in category's enabled channels
+			}
+		}
+	}
+
+	// 2. Check User Preferences (Explicit overrides)
+	var userPref *bool
 	switch channel {
 	case notification.ChannelEmail:
-		return u.Preferences.EmailEnabled
+		userPref = u.Preferences.EmailEnabled
 	case notification.ChannelPush:
-		return u.Preferences.PushEnabled
+		userPref = u.Preferences.PushEnabled
 	case notification.ChannelSMS:
-		return u.Preferences.SMSEnabled
-	default:
-		return true // Unknown channels default to enabled
+		userPref = u.Preferences.SMSEnabled
 	}
+
+	if userPref != nil {
+		return *userPref
+	}
+
+	// 3. Check App Defaults
+	// We need to fetch the application to get defaults.
+	// Optimize: Add caching layer for Application or pass App down from caller if available.
+	// For now, we fetch.
+	app, err := s.appRepo.GetByID(ctx, u.AppID)
+	if err == nil && app.Settings.DefaultPreferences != nil {
+		var appPref *bool
+		switch channel {
+		case notification.ChannelEmail:
+			appPref = app.Settings.DefaultPreferences.EmailEnabled
+		case notification.ChannelPush:
+			appPref = app.Settings.DefaultPreferences.PushEnabled
+		case notification.ChannelSMS:
+			appPref = app.Settings.DefaultPreferences.SMSEnabled
+		}
+
+		if appPref != nil {
+			return *appPref
+		}
+	} else if err != nil {
+		// Log but continue to system defaults
+		s.logger.Debug("Failed to fetch application for defaults", zap.Error(err))
+	}
+
+	// 4. System Defaults (Enabled by default)
+	return true
 }
 
 // isQuietHours checks if the user is in quiet hours

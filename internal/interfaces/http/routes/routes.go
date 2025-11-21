@@ -16,6 +16,9 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 	// Protected routes (require API key authentication)
 	setupProtectedRoutes(v1, c)
+
+	// Admin routes
+	setupAdminRoutes(v1, c)
 }
 
 // setupPublicRoutes configures public routes
@@ -31,6 +34,9 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
 	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
 	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
+
+	// Health check
+	v1.Get("/health", c.HealthHandler.Check)
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -60,9 +66,11 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	notifications := protected.Group("/notifications")
 	notifications.Post("/", c.NotificationHandler.Send)
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
+	notifications.Post("/batch", c.NotificationHandler.SendBatch)
 	notifications.Get("/", c.NotificationHandler.List)
 	notifications.Get("/:id", c.NotificationHandler.Get)
 	notifications.Put("/:id/status", c.NotificationHandler.UpdateStatus)
+	notifications.Delete("/batch", c.NotificationHandler.CancelBatch)
 	notifications.Delete("/:id", c.NotificationHandler.Cancel)
 	notifications.Post("/:id/retry", c.NotificationHandler.Retry)
 
@@ -76,4 +84,15 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	templates.Post("/:id/render", c.TemplateHandler.RenderTemplate)
 	templates.Post("/:app_id/:name/versions", c.TemplateHandler.CreateTemplateVersion)
 	templates.Get("/:app_id/:name/versions", c.TemplateHandler.GetTemplateVersions)
+}
+
+// setupAdminRoutes configures administrative routes
+func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
+	admin := v1.Group("/admin")
+
+	// Queue management
+	queues := admin.Group("/queues")
+	queues.Get("/stats", c.AdminHandler.GetQueueStats)
+	queues.Get("/dlq", c.AdminHandler.ListDLQ)
+	queues.Post("/dlq/replay", c.AdminHandler.ReplayDLQ)
 }

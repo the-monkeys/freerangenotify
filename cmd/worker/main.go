@@ -142,8 +142,9 @@ func main() {
 		ProcessorConfig{
 			WorkerCount:     workerCount,
 			PollInterval:    5 * time.Second,
-			MaxRetries:      3,
+			MaxRetries:      cfg.Queue.MaxRetries,
 			RetryDelay:      5 * time.Second,
+			MaxRetryDelay:   5 * time.Minute,
 			ShutdownTimeout: 30 * time.Second,
 		},
 		c.Metrics,

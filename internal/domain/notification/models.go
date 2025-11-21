@@ -100,6 +100,7 @@ type Notification struct {
 	Priority       Priority               `json:"priority" es:"priority"`
 	Status         Status                 `json:"status" es:"status"`
 	Content        Content                `json:"content" es:"content"`
+	Category       string                 `json:"category,omitempty" es:"category"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty" es:"metadata"`
 	ScheduledAt    *time.Time             `json:"scheduled_at,omitempty" es:"scheduled_at"`
 	SentAt         *time.Time             `json:"sent_at,omitempty" es:"sent_at"`
@@ -108,8 +109,17 @@ type Notification struct {
 	FailedAt       *time.Time             `json:"failed_at,omitempty" es:"failed_at"`
 	ErrorMessage   string                 `json:"error_message,omitempty" es:"error_message"`
 	RetryCount     int                    `json:"retry_count" es:"retry_count"`
+	Recurrence     *Recurrence            `json:"recurrence,omitempty" es:"recurrence"`
 	CreatedAt      time.Time              `json:"created_at" es:"created_at"`
 	UpdatedAt      time.Time              `json:"updated_at" es:"updated_at"`
+}
+
+// Recurrence defines rules for repeating notifications
+type Recurrence struct {
+	CronExpression string     `json:"cron_expression" es:"cron_expression"`
+	EndDate        *time.Time `json:"end_date,omitempty" es:"end_date"`
+	Count          int        `json:"count,omitempty" es:"count"` // Max occurrences
+	CurrentCount   int        `json:"current_count,omitempty" es:"current_count"`
 }
 
 // Content represents notification content
@@ -121,18 +131,20 @@ type Content struct {
 
 // NotificationFilter represents query filters for notifications
 type NotificationFilter struct {
-	AppID      string     `json:"app_id,omitempty"`
-	UserID     string     `json:"user_id,omitempty"`
-	Channel    Channel    `json:"channel,omitempty"`
-	Status     Status     `json:"status,omitempty"`
-	Priority   Priority   `json:"priority,omitempty"`
-	TemplateID string     `json:"template_id,omitempty"`
-	FromDate   *time.Time `json:"from_date,omitempty"`
-	ToDate     *time.Time `json:"to_date,omitempty"`
-	Page       int        `json:"page,omitempty"`
-	PageSize   int        `json:"page_size,omitempty"`
-	SortBy     string     `json:"sort_by,omitempty"`
-	SortOrder  string     `json:"sort_order,omitempty"` // "asc" or "desc"
+	AppID      string                 `json:"app_id,omitempty"`
+	UserID     string                 `json:"user_id,omitempty"`
+	Channel    Channel                `json:"channel,omitempty"`
+	Status     Status                 `json:"status,omitempty"`
+	Priority   Priority               `json:"priority,omitempty"`
+	TemplateID string                 `json:"template_id,omitempty"`
+	FromDate   *time.Time             `json:"from_date,omitempty"`
+	ToDate     *time.Time             `json:"to_date,omitempty"`
+	Category   string                 `json:"category,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	Page       int                    `json:"page,omitempty"`
+	PageSize   int                    `json:"page_size,omitempty"`
+	SortBy     string                 `json:"sort_by,omitempty"`
+	SortOrder  string                 `json:"sort_order,omitempty"` // "asc" or "desc"
 }
 
 // DefaultFilter returns a filter with default values
@@ -187,10 +199,12 @@ type Repository interface {
 type Service interface {
 	Send(ctx context.Context, req SendRequest) (*Notification, error)
 	SendBulk(ctx context.Context, req BulkSendRequest) ([]*Notification, error)
+	SendBatch(ctx context.Context, requests []SendRequest) ([]*Notification, error)
 	Get(ctx context.Context, notificationID, appID string) (*Notification, error)
 	List(ctx context.Context, filter NotificationFilter) ([]*Notification, error)
 	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string) error
 	Cancel(ctx context.Context, notificationID, appID string) error
+	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error
 }
 
@@ -240,7 +254,9 @@ type SendRequest struct {
 	Body        string                 `json:"body" validate:"required"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
+	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
 }
 
 // Validate validates the send request
@@ -276,7 +292,9 @@ type BulkSendRequest struct {
 	Body        string                 `json:"body" validate:"required"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
+	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
 }
 
 // Validate validates the bulk send request

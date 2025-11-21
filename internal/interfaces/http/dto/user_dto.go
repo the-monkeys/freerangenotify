@@ -29,10 +29,13 @@ type AddDeviceRequest struct {
 
 // UpdatePreferencesRequest represents a request to update preferences
 type UpdatePreferencesRequest struct {
-	EmailEnabled bool             `json:"email_enabled"`
-	PushEnabled  bool             `json:"push_enabled"`
-	SMSEnabled   bool             `json:"sms_enabled"`
-	QuietHours   *user.QuietHours `json:"quiet_hours,omitempty"`
+	EmailEnabled *bool                              `json:"email_enabled"`
+	PushEnabled  *bool                              `json:"push_enabled"`
+	SMSEnabled   *bool                              `json:"sms_enabled"`
+	QuietHours   *user.QuietHours                   `json:"quiet_hours,omitempty"`
+	DND          bool                               `json:"dnd"`
+	Categories   map[string]user.CategoryPreference `json:"categories,omitempty"`
+	DailyLimit   int                                `json:"daily_limit"`
 }
 
 // UserResponse represents a user response

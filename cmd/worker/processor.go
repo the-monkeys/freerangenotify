@@ -6,11 +6,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +22,7 @@ type ProcessorConfig struct {
 	PollInterval    time.Duration
 	MaxRetries      int
 	RetryDelay      time.Duration
+	MaxRetryDelay   time.Duration
 	ShutdownTimeout time.Duration
 }
 
@@ -214,6 +217,11 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 
 	logger.Info("Notification processed successfully",
 		zap.String("notification_id", notif.NotificationID))
+
+	// Handle Recurrence
+	if notif.Recurrence != nil {
+		p.handleRecurrence(ctx, notif)
+	}
 }
 
 // sendNotification sends the notification via the appropriate provider
@@ -268,8 +276,8 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 		return
 	}
 
-	// Schedule retry with exponential backoff
-	delay := p.config.RetryDelay * time.Duration(notif.RetryCount+1)
+	// Schedule retry with exponential backoff and jitter
+	delay := utils.CalculateBackoff(p.config.RetryDelay, notif.RetryCount, p.config.MaxRetryDelay)
 	redisQueue, ok := p.queue.(*queue.RedisQueue)
 	if ok {
 		if err := redisQueue.EnqueueRetry(ctx, *item, delay); err != nil {
@@ -284,15 +292,15 @@ func (p *NotificationProcessor) checkUserPreferences(usr *user.User, notif *noti
 	// Check if channel is enabled
 	switch notif.Channel {
 	case notification.ChannelEmail:
-		if !usr.Preferences.EmailEnabled {
+		if !utils.BoolValue(usr.Preferences.EmailEnabled) {
 			return false
 		}
 	case notification.ChannelPush:
-		if !usr.Preferences.PushEnabled {
+		if !utils.BoolValue(usr.Preferences.PushEnabled) {
 			return false
 		}
 	case notification.ChannelSMS:
-		if !usr.Preferences.SMSEnabled {
+		if !utils.BoolValue(usr.Preferences.SMSEnabled) {
 			return false
 		}
 	}
@@ -352,10 +360,31 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			p.logger.Info("Scheduler stopping")
 			return
 		case <-ticker.C:
-			// Get pending notifications ready to be sent
+			// 1. Try to get items from Redis scheduled queue (Optimized path)
+			scheduledItems, err := p.queue.GetScheduledItems(ctx, 100)
+			if err != nil {
+				p.logger.Error("Failed to get scheduled items from Redis", zap.Error(err))
+			} else if len(scheduledItems) > 0 {
+				p.logger.Info("Found ready scheduled notifications in Redis", zap.Int("count", len(scheduledItems)))
+				if err := p.queue.EnqueueBatch(ctx, scheduledItems); err != nil {
+					p.logger.Error("Failed to enqueue scheduled items from Redis", zap.Error(err))
+				}
+
+				// Update statuses to queued in ES
+				var ids []string
+				for _, item := range scheduledItems {
+					ids = append(ids, item.NotificationID)
+				}
+				if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
+					p.logger.Error("Failed to bulk update status for Redis items", zap.Error(err))
+				}
+			}
+
+			// 2. Fallback: Get pending notifications from ES ready to be sent
+			// This catches items that might have missed Redis or were created directly in ES
 			pending, err := p.notifRepo.GetPending(ctx)
 			if err != nil {
-				p.logger.Error("Failed to get pending notifications", zap.Error(err))
+				p.logger.Error("Failed to get pending notifications from ES", zap.Error(err))
 				continue
 			}
 
@@ -363,7 +392,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				continue
 			}
 
-			p.logger.Info("Found pending notifications", zap.Int("count", len(pending)))
+			p.logger.Info("Found pending notifications in ES (fallback/sync)", zap.Int("count", len(pending)))
 
 			// Enqueue them
 			var items []queue.NotificationQueueItem
@@ -376,7 +405,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			}
 
 			if err := p.queue.EnqueueBatch(ctx, items); err != nil {
-				p.logger.Error("Failed to enqueue pending notifications", zap.Error(err))
+				p.logger.Error("Failed to enqueue pending notifications from ES", zap.Error(err))
 				continue
 			}
 
@@ -386,7 +415,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				ids = append(ids, notif.NotificationID)
 			}
 			if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
-				p.logger.Error("Failed to bulk update status", zap.Error(err))
+				p.logger.Error("Failed to bulk update status from ES", zap.Error(err))
 			}
 		}
 	}
@@ -465,5 +494,70 @@ func (p *NotificationProcessor) metricsUpdater(ctx context.Context) {
 				p.metrics.SetQueueDepth(priority, float64(depth))
 			}
 		}
+	}
+}
+
+// handleRecurrence schedules the next instance of a recurring notification
+func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *notification.Notification) {
+	// Calculate next run time
+	lastRun := time.Now()
+	if notif.ScheduledAt != nil {
+		lastRun = *notif.ScheduledAt
+	}
+
+	nextRun, err := notif.Recurrence.CalculateNextRun(lastRun)
+	if err != nil {
+		p.logger.Error("Failed to calculate next run for recurring notification",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+		return
+	}
+
+	if nextRun.IsZero() {
+		return // No more runs
+	}
+
+	// Create new notification
+	newRecurrence := *notif.Recurrence
+	newRecurrence.CurrentCount++
+
+	newNotif := &notification.Notification{
+		NotificationID: uuid.New().String(),
+		AppID:          notif.AppID,
+		UserID:         notif.UserID,
+		Channel:        notif.Channel,
+		Priority:       notif.Priority,
+		Status:         notification.StatusPending,
+		Content:        notif.Content,
+		Category:       notif.Category,
+		TemplateID:     notif.TemplateID,
+		ScheduledAt:    &nextRun,
+		Recurrence:     &newRecurrence,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		RetryCount:     0,
+	}
+
+	// Save new notification
+	if err := p.notifRepo.Create(ctx, newNotif); err != nil {
+		p.logger.Error("Failed to create next recurring notification", zap.Error(err))
+		return
+	}
+
+	p.logger.Info("Scheduled next recurring notification",
+		zap.String("original_id", notif.NotificationID),
+		zap.String("new_id", newNotif.NotificationID),
+		zap.Time("next_run", nextRun))
+
+	// Enqueue in scheduled queue
+	queueItem := queue.NotificationQueueItem{
+		NotificationID: newNotif.NotificationID,
+		Priority:       newNotif.Priority,
+		EnqueuedAt:     time.Now(),
+	}
+
+	if err := p.queue.EnqueueScheduled(ctx, queueItem, nextRun); err != nil {
+		p.logger.Error("Failed to enqueue next recurring notification", zap.Error(err))
+		// Not a critical failure as scheduler will pick it up from DB eventually
 	}
 }

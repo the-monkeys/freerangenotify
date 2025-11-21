@@ -59,6 +59,20 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 			})
 		}
 
+		// Check for rate limit error
+		if err == notification.ErrRateLimitExceeded {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		// Check for DND error
+		if err == notification.ErrDNDEnabled {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
@@ -113,6 +127,55 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 	response := dto.BulkSendResponse{
 		Sent:  len(notifications),
 		Total: len(req.UserIDs),
+		Items: items,
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(response)
+}
+
+// SendBatch handles POST /v1/notifications/batch
+// @Summary Send batch notifications
+// @Description Send multiple distinct notifications
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Param request body dto.BatchSendNotificationRequest true "Batch send request"
+// @Success 202 {object} dto.BulkSendResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /v1/notifications/batch [post]
+func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.BatchSendNotificationRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	// Convert to domain request
+	batchReq := req.ToBatchSendRequest(appID)
+
+	// Send batch notifications
+	notifications, err := h.service.SendBatch(c.Context(), batchReq)
+	if err != nil {
+		h.logger.Error("Failed to send batch notifications", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Convert to response
+	var items []*dto.NotificationResponse
+	for _, n := range notifications {
+		items = append(items, dto.FromNotification(n))
+	}
+
+	response := dto.BulkSendResponse{
+		Sent:  len(notifications),
+		Total: len(req.Notifications),
 		Items: items,
 	}
 
@@ -283,6 +346,41 @@ func (h *NotificationHandler) Cancel(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"message": "notification cancelled successfully",
+	})
+}
+
+// CancelBatch handles DELETE /v1/notifications/batch
+// @Summary Cancel batch notifications
+// @Description Cancel multiple scheduled notifications
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Param request body dto.BatchCancelRequest true "Batch cancel request"
+// @Success 200 {object} fiber.Map
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /v1/notifications/batch [delete]
+func (h *NotificationHandler) CancelBatch(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.BatchCancelRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	err := h.service.CancelBatch(c.Context(), req.NotificationIDs, appID)
+	if err != nil {
+		h.logger.Error("Failed to cancel batch notifications", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"message": "notifications cancelled successfully",
 	})
 }
 

@@ -16,6 +16,8 @@ var (
 	ErrCannotRetry           = errors.New("notification cannot be retried")
 	ErrMaxRetriesExceeded    = errors.New("maximum retry attempts exceeded")
 	ErrInvalidScheduleTime   = errors.New("invalid schedule time")
+	ErrRateLimitExceeded     = errors.New("user exceeded daily notification limit")
+	ErrDNDEnabled            = errors.New("user has Do Not Disturb enabled")
 )
 
 // IsValidationError checks if an error is a validation error

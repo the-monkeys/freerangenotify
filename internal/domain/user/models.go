@@ -22,10 +22,19 @@ type User struct {
 
 // Preferences represents user notification preferences
 type Preferences struct {
-	EmailEnabled bool       `json:"email_enabled" es:"email_enabled"`
-	PushEnabled  bool       `json:"push_enabled" es:"push_enabled"`
-	SMSEnabled   bool       `json:"sms_enabled" es:"sms_enabled"`
-	QuietHours   QuietHours `json:"quiet_hours" es:"quiet_hours"`
+	EmailEnabled *bool                         `json:"email_enabled" es:"email_enabled"`
+	PushEnabled  *bool                         `json:"push_enabled" es:"push_enabled"`
+	SMSEnabled   *bool                         `json:"sms_enabled" es:"sms_enabled"`
+	QuietHours   QuietHours                    `json:"quiet_hours" es:"quiet_hours"`
+	DND          bool                          `json:"dnd" es:"dnd"`                 // Global Do Not Disturb
+	Categories   map[string]CategoryPreference `json:"categories" es:"categories"`   // Category-specific preferences
+	DailyLimit   int                           `json:"daily_limit" es:"daily_limit"` // Max notifications per day
+}
+
+// CategoryPreference represents preferences for a specific notification category
+type CategoryPreference struct {
+	Enabled         bool     `json:"enabled" es:"enabled"`
+	EnabledChannels []string `json:"enabled_channels" es:"enabled_channels"`
 }
 
 // QuietHours represents user's do-not-disturb hours

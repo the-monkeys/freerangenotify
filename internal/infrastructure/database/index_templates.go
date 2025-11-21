@@ -57,6 +57,20 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 						"enable_analytics": map[string]interface{}{
 							"type": "boolean",
 						},
+						"default_preferences": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"email_enabled": map[string]interface{}{
+									"type": "boolean",
+								},
+								"push_enabled": map[string]interface{}{
+									"type": "boolean",
+								},
+								"sms_enabled": map[string]interface{}{
+									"type": "boolean",
+								},
+							},
+						},
 					},
 				},
 				"created_at": map[string]interface{}{

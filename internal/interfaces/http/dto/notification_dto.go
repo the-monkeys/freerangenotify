@@ -15,12 +15,14 @@ type SendNotificationRequest struct {
 	Body        string                 `json:"body" validate:"required"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
+	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence  *RecurrenceRequest     `json:"recurrence,omitempty"`
 }
 
 // ToSendRequest converts DTO to domain SendRequest
 func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendRequest {
-	return notification.SendRequest{
+	req := notification.SendRequest{
 		AppID:       appID,
 		UserID:      r.UserID,
 		Channel:     notification.Channel(r.Channel),
@@ -29,8 +31,19 @@ func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendR
 		Body:        r.Body,
 		Data:        r.Data,
 		TemplateID:  r.TemplateID,
+		Category:    r.Category,
 		ScheduledAt: r.ScheduledAt,
 	}
+
+	if r.Recurrence != nil {
+		req.Recurrence = &notification.Recurrence{
+			CronExpression: r.Recurrence.CronExpression,
+			EndDate:        r.Recurrence.EndDate,
+			Count:          r.Recurrence.Count,
+		}
+	}
+
+	return req
 }
 
 // BulkSendNotificationRequest represents the API request to send notifications to multiple users
@@ -42,6 +55,7 @@ type BulkSendNotificationRequest struct {
 	Body        string                 `json:"body" validate:"required"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
+	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 }
 
@@ -56,6 +70,7 @@ func (r *BulkSendNotificationRequest) ToBulkSendRequest(appID string) notificati
 		Body:        r.Body,
 		Data:        r.Data,
 		TemplateID:  r.TemplateID,
+		Category:    r.Category,
 		ScheduledAt: r.ScheduledAt,
 	}
 }
@@ -127,4 +142,30 @@ type BulkSendResponse struct {
 	Sent  int                     `json:"sent"`
 	Total int                     `json:"total"`
 	Items []*NotificationResponse `json:"items"`
+}
+
+// RecurrenceRequest represents recurrence rules in API requests
+type RecurrenceRequest struct {
+	CronExpression string     `json:"cron_expression" validate:"required"`
+	EndDate        *time.Time `json:"end_date,omitempty"`
+	Count          int        `json:"count,omitempty"`
+}
+
+// BatchSendNotificationRequest represents a request to send multiple distinct notifications
+type BatchSendNotificationRequest struct {
+	Notifications []SendNotificationRequest `json:"notifications" validate:"required,min=1,dive"`
+}
+
+// ToBatchSendRequest converts DTO to domain SendRequest list
+func (r *BatchSendNotificationRequest) ToBatchSendRequest(appID string) []notification.SendRequest {
+	var requests []notification.SendRequest
+	for _, req := range r.Notifications {
+		requests = append(requests, req.ToSendRequest(appID))
+	}
+	return requests
+}
+
+// BatchCancelRequest represents a request to cancel multiple notifications
+type BatchCancelRequest struct {
+	NotificationIDs []string `json:"notification_ids" validate:"required,min=1"`
 }
