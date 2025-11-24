@@ -14,12 +14,35 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
+	"github.com/gofiber/swagger"
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/container"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
 	"go.uber.org/zap"
+
+	_ "github.com/the-monkeys/freerangenotify/docs" // Swagger docs
 )
+
+// @title FreeRangeNotify API
+// @version 1.0.0
+// @description High-performance notification service with multi-channel delivery support
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@freerangenotify.com
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /
+// @schemes http https
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and your API key
 
 func main() {
 	// Initialize logger
@@ -64,7 +87,7 @@ func main() {
 	})
 
 	// Add global middleware
-	app.Use(recover.New()) // Panic recovery
+	app.Use(recover.New())   // Panic recovery
 	app.Use(requestid.New()) // Request ID
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
@@ -126,6 +149,22 @@ func main() {
 
 	// Setup v1 routes
 	routes.SetupRoutes(app, c)
+
+	// Swagger documentation endpoint
+	app.Get("/swagger/*", swagger.New(swagger.Config{
+		URL:         "/openapi/swagger.yaml",
+		DeepLinking: true,
+	}))
+
+	// Serve OpenAPI spec
+	app.Static("/openapi", "./docs/openapi")
+
+	// Prometheus metrics endpoint
+	app.Get("/metrics", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
+			"status": "metrics endpoint - TODO: implement prometheus metrics",
+		})
+	})
 
 	// Create address
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

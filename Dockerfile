@@ -30,9 +30,10 @@ RUN addgroup -g 1001 app && adduser -u 1001 -G app -s /bin/sh -D app
 
 WORKDIR /home/app
 
-# Copy the binary and config from builder stage
+# Copy the binary, config, and docs from builder stage
 COPY --from=builder --chown=app:app /app/server .
 COPY --from=builder --chown=app:app /app/config ./config
+COPY --from=builder --chown=app:app /app/docs ./docs
 
 # Switch to app user
 USER app

@@ -123,6 +123,17 @@ generate:
 	@echo "Generating mocks and code..."
 	go generate ./...
 
+# Generate Swagger documentation
+swagger:
+	@echo "Generating Swagger documentation..."
+	swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+	@echo "Swagger docs generated at docs/"
+
+# Format Swagger spec
+swagger-fmt:
+	@echo "Formatting Swagger spec..."
+	swag fmt
+
 # Database migration (when implemented)
 migrate-up:
 	@echo "Running database migrations..."

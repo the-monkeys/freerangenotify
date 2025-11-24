@@ -1,0 +1,1159 @@
+openapi: 3.0.3
+info:
+  title: FreeRangeNotify API
+  description: |
+    **FreeRangeNotify** is a high-performance notification service built with Go and Fiber framework.
+    
+    ## Features
+    - Multi-channel notification delivery (Email, Push, SMS, In-App)
+    - User preference management
+    - Device registration and management
+    - Application-level API key authentication
+    - Template management
+    - Real-time analytics
+    - Webhook integration
+    
+    ## Authentication
+    Protected endpoints require Bearer token authentication using your application's API key.
+    
+    **Example:**
+    ```
+    Authorization: Bearer frn_YOUR_API_KEY_HERE
+    ```
+    
+    ## Rate Limiting
+    Rate limits are configurable per application in settings (default: 1000 requests/minute).
+    
+  version: 1.0.0
+  contact:
+    name: FreeRangeNotify Support
+    email: support@freerangenotify.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.freerangenotify.com
+    description: Production server
+
+tags:
+  - name: System
+    description: System health and status endpoints
+  - name: Applications
+    description: Application management and configuration
+  - name: Users
+    description: User management and profiles
+  - name: Devices
+    description: Device registration and management
+  - name: Preferences
+    description: User notification preferences
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: Returns the health status of the service and database connectivity
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: FreeRangeNotify
+                  version:
+                    type: string
+                    example: 1.0.0
+                  database:
+                    type: string
+                    example: ok
+                    enum: [ok, error]
+
+  /v1/apps:
+    post:
+      tags:
+        - Applications
+      summary: Create application
+      description: Create a new application and receive an API key for authentication
+      operationId: createApplication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+            examples:
+              basic:
+                summary: Basic application
+                value:
+                  app_name: My App
+              with_webhook:
+                summary: With webhook
+                value:
+                  app_name: My App
+                  webhook_url: https://example.com/webhook
+              with_settings:
+                summary: With custom settings
+                value:
+                  app_name: My App
+                  webhook_url: https://example.com/webhook
+                  settings:
+                    rate_limit: 2000
+                    retry_attempts: 5
+                    default_template: welcome
+                    enable_webhooks: true
+                    enable_analytics: true
+      responses:
+        '201':
+          description: Application created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags:
+        - Applications
+      summary: List applications
+      description: Retrieve a paginated list of all applications
+      operationId: listApplications
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: app_name
+          in: query
+          description: Filter by application name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Applications retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          applications:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/ApplicationMasked'
+                          total_count:
+                            type: integer
+                            example: 42
+                          page:
+                            type: integer
+                            example: 1
+                          page_size:
+                            type: integer
+                            example: 10
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/apps/{app_id}:
+    get:
+      tags:
+        - Applications
+      summary: Get application
+      description: Retrieve application details by ID (API key will be masked)
+      operationId: getApplication
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      responses:
+        '200':
+          description: Application retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ApplicationMasked'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Applications
+      summary: Update application
+      description: Update application details (name, webhook URL)
+      operationId: updateApplication
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApplicationRequest'
+      responses:
+        '200':
+          description: Application updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ApplicationMasked'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Applications
+      summary: Delete application
+      description: Permanently delete an application and all associated data
+      operationId: deleteApplication
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      responses:
+        '200':
+          description: Application deleted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Application deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/apps/{app_id}/regenerate-key:
+    post:
+      tags:
+        - Applications
+      summary: Regenerate API key
+      description: Generate a new API key for the application (invalidates the old key)
+      operationId: regenerateApiKey
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      responses:
+        '200':
+          description: API key regenerated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          api_key:
+                            type: string
+                            example: frn_NEW_API_KEY_HERE
+                          message:
+                            type: string
+                            example: API key regenerated successfully. Save it securely - it won't be shown again.
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/apps/{app_id}/settings:
+    get:
+      tags:
+        - Applications
+      summary: Get application settings
+      description: Retrieve current application settings
+      operationId: getApplicationSettings
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      responses:
+        '200':
+          description: Settings retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ApplicationSettings'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Applications
+      summary: Update application settings
+      description: Update application configuration settings
+      operationId: updateApplicationSettings
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationSettings'
+      responses:
+        '200':
+          description: Settings updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Settings updated successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users:
+    post:
+      tags:
+        - Users
+      summary: Create user
+      description: Create a new user within your application
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+            examples:
+              basic:
+                summary: Basic user
+                value:
+                  external_user_id: user-12345
+                  email: john.doe@example.com
+              with_phone:
+                summary: With phone number
+                value:
+                  external_user_id: user-12345
+                  email: john.doe@example.com
+                  phone_number: "+1234567890"
+              with_preferences:
+                summary: With preferences
+                value:
+                  external_user_id: user-12345
+                  email: john.doe@example.com
+                  phone_number: "+1234567890"
+                  preferences:
+                    channels:
+                      - email
+                      - push
+                    timezone: America/New_York
+                    language: en
+                    quiet_hours:
+                      enabled: true
+                      start: "22:00"
+                      end: "08:00"
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags:
+        - Users
+      summary: List users
+      description: Retrieve a paginated list of users in your application
+      operationId: listUsers
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: external_user_id
+          in: query
+          description: Filter by external user ID
+          schema:
+            type: string
+        - name: email
+          in: query
+          description: Filter by email
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          users:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/User'
+                          total_count:
+                            type: integer
+                          page:
+                            type: integer
+                          page_size:
+                            type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{user_id}:
+    get:
+      tags:
+        - Users
+      summary: Get user
+      description: Retrieve user details by ID
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Users
+      summary: Update user
+      description: Update user details (email, phone number)
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      description: Permanently delete a user and all associated data
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: User deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{user_id}/devices:
+    post:
+      tags:
+        - Devices
+      summary: Add device
+      description: Register a new device for push notifications
+      operationId: addDevice
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddDeviceRequest'
+            examples:
+              ios:
+                summary: iOS device
+                value:
+                  platform: ios
+                  token: device-token-abc123
+              android:
+                summary: Android device
+                value:
+                  platform: android
+                  token: device-token-xyz789
+              web:
+                summary: Web push
+                value:
+                  platform: web
+                  token: web-push-token
+      responses:
+        '201':
+          description: Device added successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Device added successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    get:
+      tags:
+        - Devices
+      summary: Get user devices
+      description: Retrieve all registered devices for a user
+      operationId: getUserDevices
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Devices retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{user_id}/devices/{device_id}:
+    delete:
+      tags:
+        - Devices
+      summary: Delete device
+      description: Remove a device from the user's registered devices
+      operationId: deleteDevice
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+        - $ref: '#/components/parameters/DeviceIdParam'
+      responses:
+        '200':
+          description: Device removed successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Device removed successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/users/{user_id}/preferences:
+    get:
+      tags:
+        - Preferences
+      summary: Get user preferences
+      description: Retrieve notification preferences for a user
+      operationId: getUserPreferences
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Preferences retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserPreferences'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Preferences
+      summary: Update user preferences
+      description: Update notification preferences for a user
+      operationId: updateUserPreferences
+      parameters:
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferencesRequest'
+      responses:
+        '200':
+          description: Preferences updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      message:
+                        type: string
+                        example: Preferences updated successfully
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: |
+        Use your application's API key as a Bearer token.
+        
+        **Example:**
+        ```
+        Authorization: Bearer frn_YOUR_API_KEY_HERE
+        ```
+
+  parameters:
+    AppIdParam:
+      name: app_id
+      in: path
+      required: true
+      description: Application UUID
+      schema:
+        type: string
+        format: uuid
+      example: e1fdf4b9-c024-41c3-8bef-02a368c6e452
+
+    UserIdParam:
+      name: user_id
+      in: path
+      required: true
+      description: User UUID
+      schema:
+        type: string
+        format: uuid
+      example: 4ae565b9-ac45-4aab-9fd3-c0a6f3e3af98
+
+    DeviceIdParam:
+      name: device_id
+      in: path
+      required: true
+      description: Device UUID
+      schema:
+        type: string
+        format: uuid
+
+    PageParam:
+      name: page
+      in: query
+      description: Page number (starts at 1)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+
+    PageSizeParam:
+      name: page_size
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+      example: 10
+
+  schemas:
+    SuccessResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Validation failed
+            details:
+              type: object
+              additionalProperties: true
+
+    CreateApplicationRequest:
+      type: object
+      required:
+        - app_name
+      properties:
+        app_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: My Awesome App
+        webhook_url:
+          type: string
+          format: uri
+          example: https://example.com/webhook
+        settings:
+          $ref: '#/components/schemas/ApplicationSettings'
+
+    UpdateApplicationRequest:
+      type: object
+      properties:
+        app_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        webhook_url:
+          type: string
+          format: uri
+
+    Application:
+      type: object
+      properties:
+        app_id:
+          type: string
+          format: uuid
+          example: e1fdf4b9-c024-41c3-8bef-02a368c6e452
+        app_name:
+          type: string
+          example: My Awesome App
+        api_key:
+          type: string
+          description: Full API key (only shown on creation)
+          example: frn_GxSftc5urm7bxVrYh-RHNEmNDvS4auxwOhwjqXwC-kM=
+        webhook_url:
+          type: string
+          example: https://example.com/webhook
+        settings:
+          $ref: '#/components/schemas/ApplicationSettings'
+        api_key_generated_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApplicationMasked:
+      type: object
+      properties:
+        app_id:
+          type: string
+          format: uuid
+        app_name:
+          type: string
+        api_key:
+          type: string
+          description: Masked API key (only last 8 characters visible)
+          example: "***qXwC-kM="
+        webhook_url:
+          type: string
+        settings:
+          $ref: '#/components/schemas/ApplicationSettings'
+        api_key_generated_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApplicationSettings:
+      type: object
+      properties:
+        rate_limit:
+          type: integer
+          minimum: 1
+          default: 1000
+          description: Maximum requests per minute
+          example: 1000
+        retry_attempts:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 3
+          description: Number of retry attempts for failed notifications
+          example: 3
+        default_template:
+          type: string
+          example: default
+        enable_webhooks:
+          type: boolean
+          default: true
+          example: true
+        enable_analytics:
+          type: boolean
+          default: true
+          example: true
+
+    CreateUserRequest:
+      type: object
+      required:
+        - external_user_id
+        - email
+      properties:
+        external_user_id:
+          type: string
+          description: Your application's user ID
+          example: user-12345
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        phone_number:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          example: "+1234567890"
+        preferences:
+          $ref: '#/components/schemas/UserPreferencesInput'
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        phone_number:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+
+    User:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          example: 4ae565b9-ac45-4aab-9fd3-c0a6f3e3af98
+        app_id:
+          type: string
+          format: uuid
+        external_user_id:
+          type: string
+          example: user-12345
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        phone_number:
+          type: string
+          example: "+1234567890"
+        preferences:
+          $ref: '#/components/schemas/UserPreferences'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserPreferencesInput:
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [email, push, sms, in_app]
+          example: ["email", "push"]
+        timezone:
+          type: string
+          example: America/New_York
+        language:
+          type: string
+          pattern: '^[a-z]{2}$'
+          example: en
+        quiet_hours:
+          $ref: '#/components/schemas/QuietHours'
+
+    UserPreferences:
+      type: object
+      properties:
+        email_enabled:
+          type: boolean
+        push_enabled:
+          type: boolean
+        sms_enabled:
+          type: boolean
+        quiet_hours:
+          $ref: '#/components/schemas/QuietHours'
+
+    UpdatePreferencesRequest:
+      type: object
+      properties:
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [email, push, sms, in_app]
+        timezone:
+          type: string
+        language:
+          type: string
+          pattern: '^[a-z]{2}$'
+        quiet_hours:
+          $ref: '#/components/schemas/QuietHours'
+
+    QuietHours:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        start:
+          type: string
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "22:00"
+        end:
+          type: string
+          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
+          example: "08:00"
+
+    AddDeviceRequest:
+      type: object
+      required:
+        - platform
+        - token
+      properties:
+        platform:
+          type: string
+          enum: [ios, android, web]
+          example: ios
+        token:
+          type: string
+          description: Device push notification token
+          example: device-token-abc123
+
+    Device:
+      type: object
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum: [ios, android, web]
+          example: ios
+        token:
+          type: string
+          example: device-token-abc123
+        active:
+          type: boolean
+          example: true
+        registered_at:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: VALIDATION_ERROR
+              message: Validation failed
+              details:
+                app_name: app_name is required
+                email: invalid email format
+
+    UnauthorizedError:
+      description: Unauthorized - Invalid or missing API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: INVALID_API_KEY
+              message: Invalid API key
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: INTERNAL_ERROR
+              message: An internal error occurred

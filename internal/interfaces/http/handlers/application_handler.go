@@ -237,6 +237,8 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		RateLimit:       req.RateLimit,
 		RetryAttempts:   req.RetryAttempts,
 		DefaultTemplate: req.DefaultTemplate,
+		EnableWebhooks:  req.EnableWebhooks,
+		EnableAnalytics: req.EnableAnalytics,
 	}
 
 	if err := h.service.UpdateSettings(c.Context(), appID, settings); err != nil {

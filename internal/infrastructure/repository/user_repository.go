@@ -253,7 +253,7 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 	if filter.AppID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
-				"app_id": filter.AppID,
+				"app_id.keyword": filter.AppID,
 			},
 		})
 	}

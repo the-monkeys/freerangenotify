@@ -22,8 +22,3 @@ scrape_configs:
       - targets: ['elasticsearch:9200']
     metrics_path: '/_prometheus/metrics'
     scrape_interval: 30s
-
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
-    scrape_interval: 30s
