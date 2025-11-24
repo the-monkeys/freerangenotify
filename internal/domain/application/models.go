@@ -1,0 +1,70 @@
+package application
+
+import (
+	"context"
+	"time"
+)
+
+// Application represents an application entity
+type Application struct {
+	AppID             string    `json:"app_id" es:"app_id"`
+	AppName           string    `json:"app_name" es:"app_name"`
+	APIKey            string    `json:"api_key" es:"api_key"`
+	APIKeyGeneratedAt time.Time `json:"api_key_generated_at" es:"api_key_generated_at"`
+	WebhookURL        string    `json:"webhook_url,omitempty" es:"webhook_url"`
+	Settings          Settings  `json:"settings" es:"settings"`
+	CreatedAt         time.Time `json:"created_at" es:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at" es:"updated_at"`
+}
+
+// Settings represents application-specific settings
+type Settings struct {
+	RateLimit       int    `json:"rate_limit" es:"rate_limit"`             // requests per hour
+	RetryAttempts   int    `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
+	DefaultTemplate string `json:"default_template" es:"default_template"` // default template ID
+	EnableWebhooks  bool   `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
+	EnableAnalytics bool   `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
+}
+
+// ApplicationFilter represents query filters for applications
+type ApplicationFilter struct {
+	AppName string `json:"app_name,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+	Offset  int    `json:"offset,omitempty"`
+}
+
+// Repository defines the interface for application data operations
+type Repository interface {
+	Create(ctx context.Context, app *Application) error
+	GetByID(ctx context.Context, id string) (*Application, error)
+	GetByAPIKey(ctx context.Context, apiKey string) (*Application, error)
+	Update(ctx context.Context, app *Application) error
+	List(ctx context.Context, filter ApplicationFilter) ([]*Application, error)
+	Delete(ctx context.Context, id string) error
+	RegenerateAPIKey(ctx context.Context, id string) (string, error)
+}
+
+// Service defines the business logic interface for applications
+type Service interface {
+	Create(ctx context.Context, req *CreateRequest) (*Application, error)
+	GetByID(ctx context.Context, id string) (*Application, error)
+	GetByAPIKey(ctx context.Context, apiKey string) (*Application, error)
+	Update(ctx context.Context, id string, req *UpdateRequest) (*Application, error)
+	Delete(ctx context.Context, id string) error
+	RegenerateAPIKey(ctx context.Context, id string) (string, error)
+	List(ctx context.Context, filter *ApplicationFilter) ([]*Application, error)
+}
+
+// CreateRequest represents a request to create an application
+type CreateRequest struct {
+	Name       string   `json:"name" validate:"required,min=1,max=100"`
+	WebhookURL string   `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	Settings   Settings `json:"settings"`
+}
+
+// UpdateRequest represents a request to update an application
+type UpdateRequest struct {
+	Name       *string   `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
+	WebhookURL *string   `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	Settings   *Settings `json:"settings,omitempty"`
+}

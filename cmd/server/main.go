@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -12,10 +13,19 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/container"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
+	"go.uber.org/zap"
 )
 
 func main() {
+	// Initialize logger
+	zapLogger, _ := zap.NewDevelopment()
+	defer zapLogger.Sync()
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -27,6 +37,21 @@ func main() {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	// Initialize dependency injection container
+	c, err := container.NewContainer(cfg, zapLogger)
+	if err != nil {
+		log.Fatalf("Failed to create container: %v", err)
+	}
+	defer c.Close()
+
+	// Initialize database system
+	ctx := context.Background()
+	if err := c.DatabaseManager.Initialize(ctx); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	zapLogger.Info("Database system initialized successfully")
+
 	// Create Fiber app with configuration
 	app := fiber.New(fiber.Config{
 		AppName:      cfg.App.Name,
@@ -35,11 +60,15 @@ func main() {
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.Server.IdleTimeout) * time.Second,
 		Prefork:      cfg.App.Environment == "production", // Enable prefork in production
+		ErrorHandler: middleware.ErrorHandler(zapLogger),  // Custom error handler
 	})
 
-	// Add middleware
+	// Add global middleware
 	app.Use(recover.New()) // Panic recovery
-	app.Use(logger.New())  // Request logging
+	app.Use(requestid.New()) // Request ID
+	app.Use(logger.New(logger.Config{
+		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
+	}))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "http://localhost:3000,http://localhost:8080",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-API-Key",
@@ -47,19 +76,38 @@ func main() {
 	}))
 
 	// Health check endpoint
-	app.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
+	app.Get("/health", func(ctx *fiber.Ctx) error {
+		// Check database health
+		dbStatus := "ok"
+		if err := c.DatabaseManager.Health(ctx.Context()); err != nil {
+			dbStatus = "unhealthy"
+			zapLogger.Error("Database health check failed", zap.Error(err))
+		}
+
+		return ctx.JSON(fiber.Map{
 			"status":      "ok",
 			"service":     cfg.App.Name,
 			"version":     cfg.App.Version,
 			"environment": cfg.App.Environment,
+			"database":    dbStatus,
 			"timestamp":   time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 
+	// Database stats endpoint
+	app.Get("/database/stats", func(ctx *fiber.Ctx) error {
+		stats, err := c.DatabaseManager.Stats(ctx.Context())
+		if err != nil {
+			return ctx.Status(500).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		return ctx.JSON(stats)
+	})
+
 	// Version endpoint
-	app.Get("/version", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
+	app.Get("/version", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
 			"name":        cfg.App.Name,
 			"version":     cfg.App.Version,
 			"environment": cfg.App.Environment,
@@ -69,12 +117,15 @@ func main() {
 
 	// Basic API routes
 	api := app.Group("/api/v1")
-	api.Get("/status", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
+	api.Get("/status", func(ctx *fiber.Ctx) error {
+		return ctx.JSON(fiber.Map{
 			"message": "FreeRangeNotify API is running",
 			"status":  "operational",
 		})
 	})
+
+	// Setup v1 routes
+	routes.SetupRoutes(app, c)
 
 	// Create address
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -93,6 +144,11 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
+
+	// Cleanup database connections
+	if err := c.DatabaseManager.Close(); err != nil {
+		zapLogger.Error("Error closing database connections", zap.Error(err))
+	}
 
 	// Gracefully shutdown the server with timeout
 	if err := app.ShutdownWithTimeout(30 * time.Second); err != nil {
