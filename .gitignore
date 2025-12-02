@@ -123,3 +123,5 @@ mem.out
 tmp/
 main
 .air.toml
+# Local planning documents
+PHASE2_IMPLEMENTATION_PLAN.md

@@ -55,4 +55,25 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Preferences management
 	users.Put("/:id/preferences", c.UserHandler.UpdatePreferences)
 	users.Get("/:id/preferences", c.UserHandler.GetPreferences)
+
+	// Notification routes
+	notifications := protected.Group("/notifications")
+	notifications.Post("/", c.NotificationHandler.Send)
+	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
+	notifications.Get("/", c.NotificationHandler.List)
+	notifications.Get("/:id", c.NotificationHandler.Get)
+	notifications.Put("/:id/status", c.NotificationHandler.UpdateStatus)
+	notifications.Delete("/:id", c.NotificationHandler.Cancel)
+	notifications.Post("/:id/retry", c.NotificationHandler.Retry)
+
+	// Template routes
+	templates := protected.Group("/templates")
+	templates.Post("/", c.TemplateHandler.CreateTemplate)
+	templates.Get("/", c.TemplateHandler.ListTemplates)
+	templates.Get("/:id", c.TemplateHandler.GetTemplate)
+	templates.Put("/:id", c.TemplateHandler.UpdateTemplate)
+	templates.Delete("/:id", c.TemplateHandler.DeleteTemplate)
+	templates.Post("/:id/render", c.TemplateHandler.RenderTemplate)
+	templates.Post("/:app_id/:name/versions", c.TemplateHandler.CreateTemplateVersion)
+	templates.Get("/:app_id/:name/versions", c.TemplateHandler.GetTemplateVersions)
 }

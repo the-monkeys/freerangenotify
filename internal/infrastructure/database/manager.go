@@ -8,6 +8,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"go.uber.org/zap"
@@ -26,7 +27,8 @@ type Repositories struct {
 	Application  application.Repository
 	User         user.Repository
 	Notification notification.Repository
-	// Template and Analytics repositories will be added later
+	Template     template.Repository
+	// Analytics repository will be added later
 }
 
 // NewDatabaseManager creates a new database manager
@@ -45,6 +47,7 @@ func NewDatabaseManager(cfg *config.Config, logger *zap.Logger) (*DatabaseManage
 		Application:  repository.NewApplicationRepository(client.GetClient(), logger),
 		User:         repository.NewUserRepository(client.GetClient(), logger),
 		Notification: repository.NewNotificationRepository(client.GetClient(), logger),
+		Template:     NewTemplateRepository(client, logger),
 	}
 
 	return &DatabaseManager{

@@ -49,6 +49,10 @@ tags:
     description: Device registration and management
   - name: Preferences
     description: User notification preferences
+  - name: Notifications
+    description: Send and manage notifications across multiple channels
+  - name: Templates
+    description: Manage notification templates with multi-language support
 
 security:
   - BearerAuth: []
@@ -734,6 +738,518 @@ paths:
           $ref: '#/components/responses/NotFoundError'
         '500':
           $ref: '#/components/responses/InternalError'
+
+  /v1/notifications:
+    post:
+      tags:
+        - Notifications
+      summary: Send a notification
+      description: Send a notification to a single user via specified channel
+      operationId: sendNotification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - channel
+                - title
+                - body
+              properties:
+                user_id:
+                  type: string
+                  example: user-123
+                channel:
+                  type: string
+                  enum: [push, email, sms, in_app]
+                  example: push
+                priority:
+                  type: string
+                  enum: [low, normal, high, critical]
+                  default: normal
+                  example: normal
+                title:
+                  type: string
+                  example: "Welcome!"
+                body:
+                  type: string
+                  example: "Thanks for joining us"
+                data:
+                  type: object
+                  additionalProperties: true
+                  example: {"action": "open_app"}
+                template_id:
+                  type: string
+                  example: welcome-template
+                scheduled_at:
+                  type: string
+                  format: date-time
+      responses:
+        '202':
+          description: Notification accepted for delivery
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notification_id:
+                    type: string
+                    example: notif-123
+                  status:
+                    type: string
+                    example: queued
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    get:
+      tags:
+        - Notifications
+      summary: List notifications
+      description: Get a list of notifications with optional filtering
+      operationId: listNotifications
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, queued, sent, delivered, failed, cancelled]
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [push, email, sms, in_app]
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/notifications/bulk:
+    post:
+      tags:
+        - Notifications
+      summary: Send bulk notifications
+      description: Send notifications to multiple users at once
+      operationId: sendBulkNotifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_ids
+                - channel
+                - title
+                - body
+              properties:
+                user_ids:
+                  type: array
+                  items:
+                    type: string
+                  example: ["user-1", "user-2", "user-3"]
+                channel:
+                  type: string
+                  enum: [push, email, sms, in_app]
+                priority:
+                  type: string
+                  enum: [low, normal, high, critical]
+                  default: normal
+                title:
+                  type: string
+                body:
+                  type: string
+                data:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '202':
+          description: Bulk notifications accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent:
+                    type: integer
+                  total:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Invalid request
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/notifications/{id}:
+    get:
+      tags:
+        - Notifications
+      summary: Get notification by ID
+      description: Retrieve a specific notification
+      operationId: getNotification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    
+    delete:
+      tags:
+        - Notifications
+      summary: Cancel notification
+      description: Cancel a pending or scheduled notification
+      operationId: cancelNotification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification cancelled
+        '400':
+          description: Cannot cancel notification
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /v1/notifications/{id}/status:
+    put:
+      tags:
+        - Notifications
+      summary: Update notification status
+      description: Update the status of a notification
+      operationId: updateNotificationStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [delivered, failed, read]
+      responses:
+        '200':
+          description: Status updated
+        '400':
+          description: Invalid status
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /v1/notifications/{id}/retry:
+    post:
+      tags:
+        - Notifications
+      summary: Retry failed notification
+      description: Retry sending a failed notification
+      operationId: retryNotification
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification queued for retry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Cannot retry notification
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /v1/templates:
+    post:
+      tags:
+        - Templates
+      summary: Create template
+      description: Create a new notification template
+      operationId: createTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - channel
+                - body
+              properties:
+                name:
+                  type: string
+                  example: welcome-email
+                channel:
+                  type: string
+                  enum: [push, email, sms, in_app]
+                subject:
+                  type: string
+                  example: "Welcome to {{.AppName}}"
+                body:
+                  type: string
+                  example: "Hello {{.UserName}}, welcome!"
+                variables:
+                  type: array
+                  items:
+                    type: string
+                  example: ["UserName", "AppName"]
+                language:
+                  type: string
+                  default: en
+                  example: en
+                status:
+                  type: string
+                  enum: [active, inactive]
+                  default: active
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  template_id:
+                    type: string
+        '400':
+          description: Invalid request
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    
+    get:
+      tags:
+        - Templates
+      summary: List templates
+      description: Get a list of templates with optional filtering
+      operationId: listTemplates
+      parameters:
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [push, email, sms, in_app]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+        - name: language
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: List of templates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/templates/{id}:
+    get:
+      tags:
+        - Templates
+      summary: Get template by ID
+      description: Retrieve a specific template
+      operationId: getTemplate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Template details
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    
+    put:
+      tags:
+        - Templates
+      summary: Update template
+      description: Update an existing template
+      operationId: updateTemplate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject:
+                  type: string
+                body:
+                  type: string
+                variables:
+                  type: array
+                  items:
+                    type: string
+                status:
+                  type: string
+                  enum: [active, inactive]
+      responses:
+        '200':
+          description: Template updated
+        '400':
+          description: Invalid request
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    
+    delete:
+      tags:
+        - Templates
+      summary: Delete template
+      description: Delete a template
+      operationId: deleteTemplate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Template deleted
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /v1/templates/{id}/render:
+    post:
+      tags:
+        - Templates
+      summary: Render template
+      description: Render a template with provided data
+      operationId: renderTemplate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - data
+              properties:
+                data:
+                  type: object
+                  additionalProperties: true
+                  example:
+                    UserName: "John Doe"
+                    AppName: "MyApp"
+      responses:
+        '200':
+          description: Rendered template
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject:
+                    type: string
+                  body:
+                    type: string
+        '400':
+          description: Invalid data or missing variables
+        '404':
+          $ref: '#/components/responses/NotFoundError'
 
 components:
   securitySchemes:

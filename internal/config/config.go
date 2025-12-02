@@ -77,10 +77,11 @@ type ProvidersConfig struct {
 
 // FCMConfig contains Firebase Cloud Messaging configuration
 type FCMConfig struct {
-	ServerKey  string `mapstructure:"server_key"`
-	ProjectID  string `mapstructure:"project_id"`
-	Timeout    int    `mapstructure:"timeout"`
-	MaxRetries int    `mapstructure:"max_retries"`
+	ServerKey       string `mapstructure:"server_key"`
+	ProjectID       string `mapstructure:"project_id"`
+	CredentialsPath string `mapstructure:"credentials_path"`
+	Timeout         int    `mapstructure:"timeout"`
+	MaxRetries      int    `mapstructure:"max_retries"`
 }
 
 // APNSConfig contains Apple Push Notification Service configuration

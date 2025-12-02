@@ -218,6 +218,9 @@ func (it *IndexTemplates) GetNotificationsTemplate() map[string]interface{} {
 				"read_at": map[string]interface{}{
 					"type": "date",
 				},
+				"failed_at": map[string]interface{}{
+					"type": "date",
+				},
 				"error_message": map[string]interface{}{
 					"type": "text",
 				},

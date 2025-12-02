@@ -13,7 +13,23 @@ const (
 	ChannelEmail   Channel = "email"
 	ChannelSMS     Channel = "sms"
 	ChannelWebhook Channel = "webhook"
+	ChannelInApp   Channel = "in_app"
 )
+
+// Valid checks if the channel is valid
+func (c Channel) Valid() bool {
+	switch c {
+	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the string representation of the channel
+func (c Channel) String() string {
+	return string(c)
+}
 
 // Priority represents notification priority levels
 type Priority string
@@ -24,6 +40,21 @@ const (
 	PriorityHigh     Priority = "high"
 	PriorityCritical Priority = "critical"
 )
+
+// Valid checks if the priority is valid
+func (p Priority) Valid() bool {
+	switch p {
+	case PriorityLow, PriorityNormal, PriorityHigh, PriorityCritical:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the string representation of the priority
+func (p Priority) String() string {
+	return string(p)
+}
 
 // Status represents notification processing status
 type Status string
@@ -38,6 +69,26 @@ const (
 	StatusFailed     Status = "failed"
 	StatusCancelled  Status = "cancelled"
 )
+
+// Valid checks if the status is valid
+func (s Status) Valid() bool {
+	switch s {
+	case StatusPending, StatusQueued, StatusProcessing, StatusSent, StatusDelivered, StatusRead, StatusFailed, StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// String returns the string representation of the status
+func (s Status) String() string {
+	return string(s)
+}
+
+// IsFinal returns true if this is a terminal status
+func (s Status) IsFinal() bool {
+	return s == StatusDelivered || s == StatusRead || s == StatusFailed || s == StatusCancelled
+}
 
 // Notification represents a notification entity
 type Notification struct {
@@ -54,6 +105,7 @@ type Notification struct {
 	SentAt         *time.Time             `json:"sent_at,omitempty" es:"sent_at"`
 	DeliveredAt    *time.Time             `json:"delivered_at,omitempty" es:"delivered_at"`
 	ReadAt         *time.Time             `json:"read_at,omitempty" es:"read_at"`
+	FailedAt       *time.Time             `json:"failed_at,omitempty" es:"failed_at"`
 	ErrorMessage   string                 `json:"error_message,omitempty" es:"error_message"`
 	RetryCount     int                    `json:"retry_count" es:"retry_count"`
 	CreatedAt      time.Time              `json:"created_at" es:"created_at"`
@@ -69,17 +121,51 @@ type Content struct {
 
 // NotificationFilter represents query filters for notifications
 type NotificationFilter struct {
-	AppID     string    `json:"app_id,omitempty"`
-	UserID    string    `json:"user_id,omitempty"`
-	Channel   string    `json:"channel,omitempty"`
-	Status    string    `json:"status,omitempty"`
-	Priority  string    `json:"priority,omitempty"`
-	DateFrom  time.Time `json:"date_from,omitempty"`
-	DateTo    time.Time `json:"date_to,omitempty"`
-	SortBy    string    `json:"sort_by,omitempty"`
-	SortOrder string    `json:"sort_order,omitempty"`
-	Limit     int       `json:"limit,omitempty"`
-	Offset    int       `json:"offset,omitempty"`
+	AppID      string     `json:"app_id,omitempty"`
+	UserID     string     `json:"user_id,omitempty"`
+	Channel    Channel    `json:"channel,omitempty"`
+	Status     Status     `json:"status,omitempty"`
+	Priority   Priority   `json:"priority,omitempty"`
+	TemplateID string     `json:"template_id,omitempty"`
+	FromDate   *time.Time `json:"from_date,omitempty"`
+	ToDate     *time.Time `json:"to_date,omitempty"`
+	Page       int        `json:"page,omitempty"`
+	PageSize   int        `json:"page_size,omitempty"`
+	SortBy     string     `json:"sort_by,omitempty"`
+	SortOrder  string     `json:"sort_order,omitempty"` // "asc" or "desc"
+}
+
+// DefaultFilter returns a filter with default values
+func DefaultFilter() NotificationFilter {
+	return NotificationFilter{
+		Page:      1,
+		PageSize:  50,
+		SortBy:    "created_at",
+		SortOrder: "desc",
+	}
+}
+
+// Validate validates the filter parameters
+func (f *NotificationFilter) Validate() error {
+	if f.Page < 1 {
+		f.Page = 1
+	}
+	if f.PageSize < 1 || f.PageSize > 100 {
+		f.PageSize = 50
+	}
+	if f.SortOrder != "asc" && f.SortOrder != "desc" {
+		f.SortOrder = "desc"
+	}
+	if f.Channel != "" && !f.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if f.Priority != "" && !f.Priority.Valid() {
+		return ErrInvalidPriority
+	}
+	if f.Status != "" && !f.Status.Valid() {
+		return ErrInvalidStatus
+	}
+	return nil
 }
 
 // Repository defines the interface for notification data operations
@@ -91,25 +177,127 @@ type Repository interface {
 	Delete(ctx context.Context, id string) error
 	Count(ctx context.Context, filter *NotificationFilter) (int64, error)
 	UpdateStatus(ctx context.Context, id string, status Status) error
+	BulkUpdateStatus(ctx context.Context, ids []string, status Status) error
+	GetPending(ctx context.Context) ([]*Notification, error)
+	GetRetryable(ctx context.Context, maxRetries int) ([]*Notification, error)
+	IncrementRetryCount(ctx context.Context, id string, errorMessage string) error
 }
 
 // Service defines the business logic interface for notifications
 type Service interface {
-	Send(ctx context.Context, req *SendRequest) (*Notification, error)
-	GetByID(ctx context.Context, id string) (*Notification, error)
-	List(ctx context.Context, filter *NotificationFilter) ([]*Notification, error)
-	Cancel(ctx context.Context, id string) error
-	Retry(ctx context.Context, id string) error
+	Send(ctx context.Context, req SendRequest) (*Notification, error)
+	SendBulk(ctx context.Context, req BulkSendRequest) ([]*Notification, error)
+	Get(ctx context.Context, notificationID, appID string) (*Notification, error)
+	List(ctx context.Context, filter NotificationFilter) ([]*Notification, error)
+	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string) error
+	Cancel(ctx context.Context, notificationID, appID string) error
+	Retry(ctx context.Context, notificationID, appID string) error
+}
+
+// Validate validates the notification entity
+func (n *Notification) Validate() error {
+	if n.NotificationID == "" {
+		return ErrInvalidNotificationID
+	}
+	if n.AppID == "" {
+		return ErrInvalidAppID
+	}
+	if n.UserID == "" {
+		return ErrInvalidUserID
+	}
+	if !n.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if !n.Priority.Valid() {
+		return ErrInvalidPriority
+	}
+	if !n.Status.Valid() {
+		return ErrInvalidStatus
+	}
+	if n.Content.Title == "" && n.Content.Body == "" {
+		return ErrEmptyContent
+	}
+	return nil
+}
+
+// CanRetry returns true if the notification can be retried
+func (n *Notification) CanRetry(maxRetries int) bool {
+	return n.Status == StatusFailed && n.RetryCount < maxRetries
+}
+
+// IsScheduled returns true if the notification is scheduled for future delivery
+func (n *Notification) IsScheduled() bool {
+	return n.ScheduledAt != nil && n.ScheduledAt.After(time.Now())
 }
 
 // SendRequest represents a request to send a notification
 type SendRequest struct {
 	AppID       string                 `json:"app_id" validate:"required"`
-	Users       []string               `json:"users" validate:"required,min=1"`
-	Channels    []Channel              `json:"channels" validate:"required,min=1"`
+	UserID      string                 `json:"user_id" validate:"required"`
+	Channel     Channel                `json:"channel" validate:"required"`
+	Priority    Priority               `json:"priority" validate:"required"`
+	Title       string                 `json:"title" validate:"required"`
+	Body        string                 `json:"body" validate:"required"`
+	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
-	Content     Content                `json:"content"`
-	Priority    Priority               `json:"priority"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// Validate validates the send request
+func (r *SendRequest) Validate() error {
+	if r.AppID == "" {
+		return ErrInvalidAppID
+	}
+	if r.UserID == "" {
+		return ErrInvalidUserID
+	}
+	if !r.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if !r.Priority.Valid() {
+		return ErrInvalidPriority
+	}
+	if r.Title == "" || r.Body == "" {
+		return ErrEmptyContent
+	}
+	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
+		return ErrInvalidScheduleTime
+	}
+	return nil
+}
+
+// BulkSendRequest represents a request to send notifications to multiple users
+type BulkSendRequest struct {
+	AppID       string                 `json:"app_id" validate:"required"`
+	UserIDs     []string               `json:"user_ids" validate:"required,min=1"`
+	Channel     Channel                `json:"channel" validate:"required"`
+	Priority    Priority               `json:"priority" validate:"required"`
+	Title       string                 `json:"title" validate:"required"`
+	Body        string                 `json:"body" validate:"required"`
+	Data        map[string]interface{} `json:"data,omitempty"`
+	TemplateID  string                 `json:"template_id,omitempty"`
+	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+}
+
+// Validate validates the bulk send request
+func (r *BulkSendRequest) Validate() error {
+	if r.AppID == "" {
+		return ErrInvalidAppID
+	}
+	if len(r.UserIDs) == 0 {
+		return ErrInvalidUserID
+	}
+	if !r.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if !r.Priority.Valid() {
+		return ErrInvalidPriority
+	}
+	if r.Title == "" || r.Body == "" {
+		return ErrEmptyContent
+	}
+	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
+		return ErrInvalidScheduleTime
+	}
+	return nil
 }

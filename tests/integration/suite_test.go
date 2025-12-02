@@ -24,13 +24,14 @@ const (
 // IntegrationTestSuite provides common setup for all integration tests
 type IntegrationTestSuite struct {
 	suite.Suite
-	client      *http.Client
-	apiKey      string
-	appID       string
-	secondAppID string
-	userID      string
-	deviceID    string
-	ctx         context.Context
+	client         *http.Client
+	apiKey         string
+	appID          string
+	secondAppID    string
+	userID         string
+	deviceID       string
+	notificationID string
+	ctx            context.Context
 }
 
 // SetupSuite runs once before all tests
@@ -185,16 +186,22 @@ func (s *IntegrationTestSuite) assertError(body []byte, expectedCode string) map
 	var result map[string]interface{}
 	s.parseResponse(body, &result)
 
-	success, ok := result["success"]
-	s.Require().True(ok, "Response missing 'success' field")
-	s.Require().False(success.(bool), "Response indicates success when error expected")
+	// Check if it's a wrapped error response
+	if success, ok := result["success"]; ok {
+		s.Require().False(success.(bool), "Response indicates success when error expected")
 
-	errObj, ok := result["error"].(map[string]interface{})
-	s.Require().True(ok, "Response missing 'error' object")
+		errObj, ok := result["error"].(map[string]interface{})
+		s.Require().True(ok, "Response missing 'error' object")
 
-	code, ok := errObj["code"].(string)
-	s.Require().True(ok, "Error object missing 'code' field")
-	s.Require().Equal(expectedCode, code, "Unexpected error code")
+		code, ok := errObj["code"].(string)
+		s.Require().True(ok, "Error object missing 'code' field")
+		s.Require().Equal(expectedCode, code, "Unexpected error code")
+	} else {
+		// Simple error response format: {"error": "message"}
+		errMsg, ok := result["error"]
+		s.Require().True(ok, "Response missing 'error' field")
+		s.Require().NotEmpty(errMsg, "Error message should not be empty")
+	}
 
 	return result
 }

@@ -57,14 +57,17 @@ func (r *NotificationRepository) UpdateStatus(ctx context.Context, notificationI
 		"updated_at": time.Now(),
 	}
 
+	now := time.Now()
 	// Set timestamp based on status
 	switch status {
 	case notification.StatusSent:
-		updateDoc["sent_at"] = time.Now()
+		updateDoc["sent_at"] = now
 	case notification.StatusDelivered:
-		updateDoc["delivered_at"] = time.Now()
+		updateDoc["delivered_at"] = now
 	case notification.StatusRead:
-		updateDoc["read_at"] = time.Now()
+		updateDoc["read_at"] = now
+	case notification.StatusFailed:
+		updateDoc["failed_at"] = now
 	}
 
 	return r.BaseRepository.Update(ctx, notificationID, updateDoc)
@@ -272,7 +275,7 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	if filter.AppID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
-				"app_id": filter.AppID,
+				"app_id.keyword": filter.AppID,
 			},
 		})
 	}
@@ -280,7 +283,7 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	if filter.UserID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
-				"user_id": filter.UserID,
+				"user_id.keyword": filter.UserID,
 			},
 		})
 	}
@@ -309,13 +312,13 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 		})
 	}
 
-	if !filter.DateFrom.IsZero() || !filter.DateTo.IsZero() {
+	if filter.FromDate != nil || filter.ToDate != nil {
 		dateRange := map[string]interface{}{}
-		if !filter.DateFrom.IsZero() {
-			dateRange["gte"] = filter.DateFrom
+		if filter.FromDate != nil {
+			dateRange["gte"] = filter.FromDate
 		}
-		if !filter.DateTo.IsZero() {
-			dateRange["lte"] = filter.DateTo
+		if filter.ToDate != nil {
+			dateRange["lte"] = filter.ToDate
 		}
 		filters = append(filters, map[string]interface{}{
 			"range": map[string]interface{}{
@@ -333,11 +336,12 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	}
 
 	// Add pagination
-	if filter.Offset > 0 {
-		query["from"] = filter.Offset
+	from := (filter.Page - 1) * filter.PageSize
+	if from > 0 {
+		query["from"] = from
 	}
-	if filter.Limit > 0 {
-		query["size"] = filter.Limit
+	if filter.PageSize > 0 {
+		query["size"] = filter.PageSize
 	}
 
 	// Add sorting

@@ -1,8 +1,14 @@
 package container
 
 import (
+	"fmt"
+
+	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -19,16 +25,27 @@ type Container struct {
 	// Database
 	DatabaseManager *database.DatabaseManager
 
+	// Queue
+	RedisClient *redis.Client
+	Queue       queue.Queue
+
+	// Metrics
+	Metrics *metrics.NotificationMetrics
+
 	// Validator
 	Validator *validator.Validator
 
 	// Services
-	UserService        usecases.UserService
-	ApplicationService usecases.ApplicationService
+	UserService         usecases.UserService
+	ApplicationService  usecases.ApplicationService
+	NotificationService notification.Service
+	TemplateService     *usecases.TemplateService
 
 	// Handlers
-	UserHandler        *handlers.UserHandler
-	ApplicationHandler *handlers.ApplicationHandler
+	UserHandler         *handlers.UserHandler
+	ApplicationHandler  *handlers.ApplicationHandler
+	NotificationHandler *handlers.NotificationHandler
+	TemplateHandler     *handlers.TemplateHandler
 }
 
 // NewContainer creates a new dependency injection container
@@ -46,12 +63,46 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}
 	container.DatabaseManager = dbManager
 
+	// Initialize Redis client
+	redisAddr := fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:         redisAddr,
+		Password:     cfg.Redis.Password,
+		DB:           cfg.Redis.DB,
+		PoolSize:     cfg.Redis.PoolSize,
+		MaxRetries:   cfg.Redis.MaxRetries,
+		MinIdleConns: cfg.Redis.MinIdleConn,
+	})
+	container.RedisClient = redisClient
+
+	// Initialize queue
+	container.Queue = queue.NewRedisQueue(redisClient, logger)
+
+	// Initialize metrics
+	container.Metrics = metrics.NewNotificationMetrics()
+
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
 
 	// Initialize services
 	container.ApplicationService = services.NewApplicationService(repos.Application, logger)
 	container.UserService = services.NewUserService(repos.User, logger)
+	container.NotificationService = usecases.NewNotificationService(
+		repos.Notification,
+		repos.User,
+		container.Queue,
+		logger,
+		usecases.NotificationServiceConfig{
+			MaxRetries: 3,
+		},
+		container.Metrics,
+	)
+
+	// Initialize template service
+	container.TemplateService = usecases.NewTemplateService(
+		repos.Template,
+		logger,
+	)
 
 	// Initialize handlers
 	container.ApplicationHandler = handlers.NewApplicationHandler(
@@ -64,12 +115,26 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.Validator,
 		logger,
 	)
+	container.NotificationHandler = handlers.NewNotificationHandler(
+		container.NotificationService,
+		logger,
+	)
+	container.TemplateHandler = handlers.NewTemplateHandler(
+		container.TemplateService,
+		logger,
+	)
 
 	return container, nil
 }
 
 // Close cleans up all resources
 func (c *Container) Close() error {
+	if c.Queue != nil {
+		c.Queue.Close()
+	}
+	if c.RedisClient != nil {
+		c.RedisClient.Close()
+	}
 	if c.DatabaseManager != nil {
 		return c.DatabaseManager.Close()
 	}
