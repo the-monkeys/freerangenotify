@@ -124,26 +124,13 @@ func (r *NotificationRepository) GetByApp(ctx context.Context, appID string, fil
 func (r *NotificationRepository) GetPending(ctx context.Context) ([]*notification.Notification, error) {
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"term": map[string]interface{}{
-							"status": notification.StatusPending,
-						},
-					},
-					{
-						"range": map[string]interface{}{
-							"scheduled_at": map[string]interface{}{
-								"lte": time.Now(),
-							},
-						},
-					},
-				},
+			"term": map[string]interface{}{
+				"status": notification.StatusPending,
 			},
 		},
 		"sort": []map[string]interface{}{
 			{
-				"scheduled_at": map[string]interface{}{
+				"created_at": map[string]interface{}{
 					"order": "asc",
 				},
 			},
@@ -275,7 +262,7 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	if filter.AppID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
-				"app_id.keyword": filter.AppID,
+				"app_id": filter.AppID,
 			},
 		})
 	}
@@ -283,7 +270,7 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	if filter.UserID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
-				"user_id.keyword": filter.UserID,
+				"user_id": filter.UserID,
 			},
 		})
 	}

@@ -49,7 +49,7 @@ func (r *ApplicationRepository) GetByAPIKey(ctx context.Context, apiKey string) 
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"term": map[string]interface{}{
-				"api_key.keyword": apiKey,
+				"api_key": apiKey,
 			},
 		},
 	}

@@ -14,6 +14,7 @@ type User struct {
 	Phone          string      `json:"phone,omitempty" es:"phone"`
 	Timezone       string      `json:"timezone,omitempty" es:"timezone"`
 	Language       string      `json:"language,omitempty" es:"language"`
+	WebhookURL     string      `json:"webhook_url,omitempty" es:"webhook_url"`
 	Preferences    Preferences `json:"preferences" es:"preferences"`
 	Devices        []Device    `json:"devices,omitempty" es:"devices"`
 	CreatedAt      time.Time   `json:"created_at" es:"created_at"`
@@ -100,6 +101,7 @@ type CreateRequest struct {
 	Phone          string      `json:"phone,omitempty"`
 	Timezone       string      `json:"timezone,omitempty"`
 	Language       string      `json:"language,omitempty"`
+	WebhookURL     string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
 	Preferences    Preferences `json:"preferences"`
 }
 
@@ -109,5 +111,6 @@ type UpdateRequest struct {
 	Phone       *string      `json:"phone,omitempty"`
 	Timezone    *string      `json:"timezone,omitempty"`
 	Language    *string      `json:"language,omitempty"`
+	WebhookURL  *string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
 	Preferences *Preferences `json:"preferences,omitempty"`
 }

@@ -737,6 +737,20 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 - [ ] Conduct load testing and optimization
 - [ ] Setup production monitoring and alerting
 
+### Phase 6: Extended Provider Support (Week 21+)
+
+#### SMTP Provider (Gmail Integration)
+- [x] Implement generic SMTP provider in `smtp_provider.go`
+- [x] Support SASL authentication (Plain, Login, CRAM-MD5)
+- [x] Configure specialized Gmail support (App Passwords)
+- [x] Add HTML and text body support with attachments
+
+#### Webhook Provider
+- [x] Implement generic Webhook provider in `webhook_provider.go`
+- [x] Secure POST requests with signature verification (HMAC)
+- [x] Configurable timeouts and retry policies
+- [x] Support custom headers and payload structures
+
 ## Detailed Implementation Steps
 
 ### Step 1: Project Structure Setup

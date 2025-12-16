@@ -72,6 +72,26 @@ services:
       retries: 3
     restart: unless-stopped
 
+  # Notification Worker
+  notification-worker:
+    build: .
+    container_name: freerange-notification-worker
+    command: [ "./worker" ]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - FREERANGE_APP_ENVIRONMENT=development
+      - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
+      - FREERANGE_REDIS_HOST=redis
+      - FREERANGE_REDIS_PORT=6379
+      - FREERANGE_PROVIDERS_WEBHOOK_SECRET=my-secret-key
+    networks:
+      - freerange-network
+    restart: unless-stopped
+
   # UI: React Vite (TypeScript)
   ui:
     build:

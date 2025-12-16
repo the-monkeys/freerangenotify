@@ -74,6 +74,8 @@ type ProvidersConfig struct {
 	APNS     APNSConfig     `mapstructure:"apns"`
 	SendGrid SendGridConfig `mapstructure:"sendgrid"`
 	Twilio   TwilioConfig   `mapstructure:"twilio"`
+	SMTP     SMTPConfig     `mapstructure:"smtp"`
+	Webhook  WebhookConfig  `mapstructure:"webhook"`
 }
 
 // FCMConfig contains Firebase Cloud Messaging configuration
@@ -110,6 +112,25 @@ type TwilioConfig struct {
 	FromNumber string `mapstructure:"from_number"`
 	Timeout    int    `mapstructure:"timeout"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// SMTPConfig contains SMTP configuration
+type SMTPConfig struct {
+	Host       string `mapstructure:"host"`
+	Port       int    `mapstructure:"port"`
+	Username   string `mapstructure:"username"`
+	Password   string `mapstructure:"password"`
+	FromEmail  string `mapstructure:"from_email"`
+	FromName   string `mapstructure:"from_name"`
+	Timeout    int    `mapstructure:"timeout"`
+	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// WebhookConfig contains Webhook configuration
+type WebhookConfig struct {
+	Timeout    int    `mapstructure:"timeout"`
+	MaxRetries int    `mapstructure:"max_retries"`
+	Secret     string `mapstructure:"secret"` // For signing payloads
 }
 
 // MonitoringConfig contains monitoring configuration

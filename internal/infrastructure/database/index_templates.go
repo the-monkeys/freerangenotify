@@ -33,8 +33,7 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 					},
 				},
 				"api_key": map[string]interface{}{
-					"type":  "keyword",
-					"index": false, // Don't index for security
+					"type": "keyword",
 				},
 				"webhook_url": map[string]interface{}{
 					"type": "keyword",
@@ -112,6 +111,9 @@ func (it *IndexTemplates) GetUsersTemplate() map[string]interface{} {
 					"type": "keyword",
 				},
 				"language": map[string]interface{}{
+					"type": "keyword",
+				},
+				"webhook_url": map[string]interface{}{
 					"type": "keyword",
 				},
 				"preferences": map[string]interface{}{
@@ -261,19 +263,17 @@ func (it *IndexTemplates) GetTemplatesTemplate() map[string]interface{} {
 		},
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
-				"template_id": map[string]interface{}{
+				"id": map[string]interface{}{
 					"type": "keyword",
 				},
 				"app_id": map[string]interface{}{
 					"type": "keyword",
 				},
 				"name": map[string]interface{}{
+					"type": "keyword",
+				},
+				"description": map[string]interface{}{
 					"type": "text",
-					"fields": map[string]interface{}{
-						"keyword": map[string]interface{}{
-							"type": "keyword",
-						},
-					},
 				},
 				"channel": map[string]interface{}{
 					"type": "keyword",
@@ -285,6 +285,25 @@ func (it *IndexTemplates) GetTemplatesTemplate() map[string]interface{} {
 					"type": "text",
 				},
 				"variables": map[string]interface{}{
+					"type": "keyword",
+				},
+				"metadata": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"version": map[string]interface{}{
+					"type": "integer",
+				},
+				"status": map[string]interface{}{
+					"type": "keyword",
+				},
+				"locale": map[string]interface{}{
+					"type": "keyword",
+				},
+				"created_by": map[string]interface{}{
+					"type": "keyword",
+				},
+				"updated_by": map[string]interface{}{
 					"type": "keyword",
 				},
 				"created_at": map[string]interface{}{
