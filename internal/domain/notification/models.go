@@ -228,7 +228,7 @@ func (n *Notification) Validate() error {
 	if !n.Status.Valid() {
 		return ErrInvalidStatus
 	}
-	if n.Content.Title == "" && n.Content.Body == "" {
+	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" {
 		return ErrEmptyContent
 	}
 	return nil
@@ -273,7 +273,7 @@ func (r *SendRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.Title == "" || r.Body == "" {
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
 		return ErrEmptyContent
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
@@ -311,7 +311,7 @@ func (r *BulkSendRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.Title == "" || r.Body == "" {
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
 		return ErrEmptyContent
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {

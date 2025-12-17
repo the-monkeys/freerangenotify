@@ -4,7 +4,7 @@
 
 CMD: curl.exe -s -X GET "http://localhost:8080/v1/health"
 
-{"components":{"elasticsearch":{"status":"healthy"},"redis":{"status":"healthy"}},"status":"healthy","timestamp":"2025-12-21T09:58:42.706915933Z"}
+{"components":{"elasticsearch":{"status":"healthy"},"redis":{"status":"healthy"}},"status":"healthy","timestamp":"2025-12-21T14:25:10.584953589Z"}
 
 --- Create App ---
 
@@ -12,31 +12,31 @@ Body: {"app_name": "FullTestApp", "webhook_url": "http://host.docker.internal:80
 
 CMD: curl.exe -s -X POST "http://localhost:8080/v1/apps" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"data":{"app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","app_name":"FullTestApp","api_key":"frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T09:58:42Z","created_at":"2025-12-21T09:58:42Z","updated_at":"2025-12-21T09:58:42Z"},"message":"Application created successfully. Save the API key securely - it won't be shown again in full.","success":true}
+{"data":{"app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","app_name":"FullTestApp","api_key":"frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T14:25:10Z","created_at":"2025-12-21T14:25:10Z","updated_at":"2025-12-21T14:25:10Z"},"message":"Application created successfully. Save the API key securely - it won't be shown again in full.","success":true}
 
 --- Get App ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-ad45b34428b0"
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps/fe56585d-f9a0-4e61-bb35-4ce2a8c33454"
 
-{"data":{"app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","app_name":"FullTestApp","api_key":"frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T09:58:42Z","created_at":"2025-12-21T09:58:42Z","updated_at":"2025-12-21T09:58:42Z"},"success":true}
+{"data":{"app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","app_name":"FullTestApp","api_key":"frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T14:25:10Z","created_at":"2025-12-21T14:25:10Z","updated_at":"2025-12-21T14:25:10Z"},"success":true}
 
 --- List Apps ---
 
 CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps?page=1&page_size=10"
 
-{"data":{"applications":[{"app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","app_name":"FullTestApp","api_key":"***pOPkZas=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T09:58:42Z","created_at":"2025-12-21T09:58:42Z","updated_at":"2025-12-21T09:58:42Z"},{"app_id":"77cea89a-3b0c-4667-beb4-2bacae3279a5","app_name":"ManualTestApp","api_key":"***5-xlplg=","webhook_url":"http://example.com/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T09:25:36Z","created_at":"2025-12-21T09:25:36Z","updated_at":"2025-12-21T09:25:36Z"}],"total_count":2,"page":1,"page_size":10},"success":true}
+{"data":{"applications":[{"app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","app_name":"FullTestApp","api_key":"***AOCHc-g=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T14:25:10Z","created_at":"2025-12-21T14:25:10Z","updated_at":"2025-12-21T14:25:10Z"},{"app_id":"0a3a33b0-5f43-42f7-9060-5c74901f88e6","app_name":"FullTestApp","api_key":"***1YJf9WE=","webhook_url":"https://example.com/webhook","settings":{"rate_limit":4000,"retry_attempts":7,"default_template":"","enable_webhooks":true,"enable_analytics":true,"default_preferences":{"email_enabled":false,"push_enabled":false,"sms_enabled":true}},"api_key_generated_at":"2025-12-21T12:38:41Z","created_at":"2025-12-21T12:38:41Z","updated_at":"2025-12-21T14:10:14Z"},{"app_id":"ce95044f-aff7-4986-8085-f2b30e4f1399","app_name":"DemoApp_01","api_key":"***m-vd8oU=","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T12:20:45Z","created_at":"2025-12-21T12:20:45Z","updated_at":"2025-12-21T12:20:45Z"}],"total_count":3,"page":1,"page_size":10},"success":true}
 
 --- Update App ---
 
 Body: {"app_name": "FullTestApp Updated"}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-ad45b34428b0" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/apps/fe56585d-f9a0-4e61-bb35-4ce2a8c33454" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"data":{"app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","app_name":"FullTestApp Updated","api_key":"frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T09:58:42Z","created_at":"2025-12-21T09:58:42Z","updated_at":"2025-12-21T09:58:43Z"},"success":true}
+{"data":{"app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","app_name":"FullTestApp Updated","api_key":"frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=","webhook_url":"http://host.docker.internal:8090/webhook","settings":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"api_key_generated_at":"2025-12-21T14:25:10Z","created_at":"2025-12-21T14:25:10Z","updated_at":"2025-12-21T14:25:11Z"},"success":true}
 
 --- Get Settings ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-ad45b34428b0/settings"
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps/fe56585d-f9a0-4e61-bb35-4ce2a8c33454/settings"
 
 {"data":{"rate_limit":1000,"retry_attempts":3,"default_template":"","enable_webhooks":false,"enable_analytics":false},"success":true}
 
@@ -44,7 +44,7 @@ CMD: curl.exe -s -X GET "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-a
 
 Body: {"rate_limit": 500, "retry_attempts": 5}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-ad45b34428b0/settings" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/apps/fe56585d-f9a0-4e61-bb35-4ce2a8c33454/settings" -H "Content-Type: application/json" -d "@req_body.txt"
 
 {"message":"Settings updated successfully","success":true}
 
@@ -52,47 +52,47 @@ CMD: curl.exe -s -X PUT "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-a
 
 Body: {"external_user_id": "u-test-01", "email": "testuser@example.com", "preferences": {"email_enabled": true}}
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/users" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/users" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"data":{"user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T09:58:43Z","updated_at":"2025-12-21T09:58:43Z"},"success":true}
+{"data":{"user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T14:25:12Z","updated_at":"2025-12-21T14:25:12Z"},"success":true}
 
 --- Get User ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"data":{"user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T09:58:43Z","updated_at":"2025-12-21T09:58:43Z"},"success":true}
+{"data":{"user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T14:25:12Z","updated_at":"2025-12-21T14:25:12Z"},"success":true}
 
 --- List Users ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/users?page=1&page_size=10" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/users?page=1&page_size=10" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"data":{"users":[{"user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T09:58:43Z","updated_at":"2025-12-21T09:58:43Z"}],"total_count":1,"page":1,"page_size":10},"success":true}
+{"data":{"users":[{"user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","external_user_id":"u-test-01","email":"testuser@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T14:25:12Z","updated_at":"2025-12-21T14:25:12Z"}],"total_count":1,"page":1,"page_size":10},"success":true}
 
 --- Update User ---
 
 Body: {"email": "updated@example.com"}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"data":{"user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","external_user_id":"u-test-01","email":"updated@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T09:58:43Z","updated_at":"2025-12-21T09:58:43Z"},"success":true}
+{"data":{"user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","external_user_id":"u-test-01","email":"updated@example.com","preferences":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"created_at":"2025-12-21T14:25:12Z","updated_at":"2025-12-21T14:25:12Z"},"success":true}
 
 --- Add Device ---
 
 Body: {"platform": "ios", "token": "device-token-123", "active": true}
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0/devices" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121/devices" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
 {"message":"Device added successfully","success":true}
 
 --- Get Devices ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0/devices" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121/devices" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"data":[{"device_id":"64bf82a9-d3d6-47e1-9e43-0cd2d7d98db2","platform":"ios","token":"device-token-123","active":true,"registered_at":"2025-12-21T09:58:44.013033323Z","last_seen":"0001-01-01T00:00:00Z"}],"success":true}
+{"data":[{"device_id":"df31539f-87d2-47ec-8c0d-bb4d4cdd4306","platform":"ios","token":"device-token-123","active":true,"registered_at":"2025-12-21T14:25:12.55370926Z","last_seen":"0001-01-01T00:00:00Z"}],"success":true}
 
 --- Get Preferences ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0/preferences" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121/preferences" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
 {"data":{"email_enabled":true,"push_enabled":null,"sms_enabled":null,"quiet_hours":{"start":"","end":""},"dnd":false,"categories":null,"daily_limit":0},"success":true}
 
@@ -100,111 +100,111 @@ CMD: curl.exe -s -X GET "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-
 
 Body: {"email_enabled": true, "push_enabled": true}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0/preferences" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121/preferences" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
 {"message":"Preferences updated successfully","success":true}
 
 --- Create Template ---
 
-Body: {"app_id": "904c8728-d78d-4fa4-b5ab-ad45b34428b0", "name": "welcome_template", "channel": "email", "subject": "Welcome!", "body": "Hello {{.name}}, welcome to our service.", "variables": ["name"]}
+Body: {"app_id": "fe56585d-f9a0-4e61-bb35-4ce2a8c33454", "name": "welcome_template", "channel": "email", "subject": "Welcome!", "body": "Hello {{.name}}, welcome to our service.", "variables": ["name"]}
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/templates" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/templates" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:58:44.471948981Z","updated_at":"2025-12-21T09:58:44.471949092Z"}
+{"id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T14:25:13.109748265Z","updated_at":"2025-12-21T14:25:13.109748385Z"}
 
 --- List Templates ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/templates?page=1&page_size=10" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/templates?page=1&page_size=10" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"templates":[{"id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:58:44.471948981Z","updated_at":"2025-12-21T09:58:44.471949092Z"},{"id":"4c2425f8-f956-4c04-9847-7f2a233a4edc","app_id":"5b87819c-da22-443b-82e9-455d53129a23","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"archived","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:57:49.596674614Z","updated_at":"2025-12-21T09:57:51.427472947Z"},{"id":"83c40fb8-c98b-4525-ae8d-2fe2927ebe80","app_id":"8906bddc-7277-41c0-8e39-49aa005a7d12","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"archived","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:57:00.884169371Z","updated_at":"2025-12-21T09:57:02.53109647Z"},{"id":"e6a625ab-8292-4620-ab02-3f54ac60f367","app_id":"5f41e51b-a272-4baa-ae27-2d86151ee0ab","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"archived","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:54:26.024163294Z","updated_at":"2025-12-21T09:54:27.612373672Z"},{"id":"27ee8599-0c88-4181-b9a2-794cd4e049ce","app_id":"feb426f8-bedf-44e9-9ae0-1927fa10dc60","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:53:45.084086677Z","updated_at":"2025-12-21T09:53:45.084086827Z"}],"total":5,"limit":50,"offset":0}
+{"templates":[{"id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T14:25:13.109748265Z","updated_at":"2025-12-21T14:25:13.109748385Z"},{"id":"9165cc27-43b1-4346-8bf4-cc462ecd4a4a","app_id":"dd909e3b-021d-46da-adff-66e746c50ae7","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"archived","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T14:21:16.530440193Z","updated_at":"2025-12-21T14:21:18.446927873Z"},{"id":"32304e33-49f8-4ef3-a1db-2021786ec329","app_id":"360805c7-c98e-49d5-a1ff-ec74893689d5","name":"adnc","description":"","channel":"webhook","subject":"","body":"Hello {{.name}}","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T13:00:13.222796898Z","updated_at":"2025-12-21T13:00:13.222797019Z"},{"id":"ad891c26-a701-4ae3-9e23-a99a12b15b4a","app_id":"0a3a33b0-5f43-42f7-9060-5c74901f88e6","name":"test_tmpl","description":"","channel":"email","subject":"Test","body":"Hi {{.name}}","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T12:48:13.013126667Z","updated_at":"2025-12-21T12:48:13.013126988Z"},{"id":"6d8c9b2c-44f1-4646-aed3-aa5e36ec6a24","app_id":"ce95044f-aff7-4986-8085-f2b30e4f1399","name":"welcome_tmpl","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to the app!","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T12:25:03.341343062Z","updated_at":"2025-12-21T12:25:03.341343373Z"}],"total":5,"limit":50,"offset":0}
 
 --- Get Template ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/templates/009aec3c-8238-4650-86fb-5c9dacc3afd3" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/templates/575985bf-ffa3-4ad0-ae5b-459091cfaea9" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:58:44.471948981Z","updated_at":"2025-12-21T09:58:44.471949092Z"}
+{"id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome to our service.","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T14:25:13.109748265Z","updated_at":"2025-12-21T14:25:13.109748385Z"}
 
 --- Update Template ---
 
 Body: {"body": "Hello {{.name}}, welcome back!"}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/templates/009aec3c-8238-4650-86fb-5c9dacc3afd3" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/templates/575985bf-ffa3-4ad0-ae5b-459091cfaea9" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T09:58:44.471948981Z","updated_at":"2025-12-21T09:58:44.772178994Z"}
+{"id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","name":"welcome_template","description":"","channel":"email","subject":"Welcome!","body":"Hello {{.name}}, welcome back!","variables":["name"],"metadata":null,"version":1,"status":"active","locale":"","created_by":"","updated_by":"","created_at":"2025-12-21T14:25:13.109748265Z","updated_at":"2025-12-21T14:25:13.532055143Z"}
 
 --- Render Template ---
 
 Body: {"data": {"name": "John Doe"}}
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/templates/009aec3c-8238-4650-86fb-5c9dacc3afd3/render" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/templates/575985bf-ffa3-4ad0-ae5b-459091cfaea9/render" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
 {"rendered_body":"Hello John Doe, welcome back!"}
 
 --- Send Notification ---
 
-Body: {"user_id": "70114b5d-e432-4ec5-a448-d62a009387f0", "template_id": "009aec3c-8238-4650-86fb-5c9dacc3afd3", "channel": "email", "priority": "high", "title": "Default Title", "body": "Default Body", "data": {"name": "John"}}
+Body: {"user_id": "6d43d79d-cd48-47e2-a1ad-93793484d121", "template_id": "575985bf-ffa3-4ad0-ae5b-459091cfaea9", "channel": "email", "priority": "high", "title": "Default Title", "body": "Default Body", "data": {"name": "John"}}
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/notifications" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/notifications" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"notification_id":"ec7137cc-b607-4284-b610-e9ee39c883e6","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","channel":"email","priority":"high","status":"pending","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","retry_count":0,"created_at":"2025-12-21T09:58:45.042302434Z","updated_at":"2025-12-21T09:58:45.042302534Z"}
+{"notification_id":"e6799c77-218a-4173-882a-f5fe867852ed","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","channel":"email","priority":"high","status":"queued","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","retry_count":0,"created_at":"2025-12-21T14:25:13.780398877Z","updated_at":"2025-12-21T14:25:13.780398957Z"}
 
 --- List Notifications ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/notifications?page=1&page_size=10" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/notifications?page=1&page_size=10" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"notifications":[{"notification_id":"ec7137cc-b607-4284-b610-e9ee39c883e6","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","channel":"email","priority":"high","status":"processing","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","retry_count":0,"created_at":"2025-12-21T09:58:45.042302434Z","updated_at":"2025-12-21T09:58:45.091539014Z"}],"total":1,"page":1,"page_size":10}
+{"notifications":[{"notification_id":"e6799c77-218a-4173-882a-f5fe867852ed","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","channel":"email","priority":"high","status":"processing","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","retry_count":0,"created_at":"2025-12-21T14:25:13.780398877Z","updated_at":"2025-12-21T14:25:13.837058558Z"}],"total":1,"page":1,"page_size":10}
 
 --- Get Notification ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/notifications/ec7137cc-b607-4284-b610-e9ee39c883e6" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/notifications/e6799c77-218a-4173-882a-f5fe867852ed" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"notification_id":"ec7137cc-b607-4284-b610-e9ee39c883e6","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","channel":"email","priority":"high","status":"sent","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","sent_at":"2025-12-21T09:58:45.294812038Z","retry_count":0,"created_at":"2025-12-21T09:58:45.042302434Z","updated_at":"2025-12-21T09:58:45.294811036Z"}
+{"notification_id":"e6799c77-218a-4173-882a-f5fe867852ed","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","channel":"email","priority":"high","status":"sent","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","sent_at":"2025-12-21T14:25:13.989042848Z","retry_count":0,"created_at":"2025-12-21T14:25:13.780398877Z","updated_at":"2025-12-21T14:25:13.989041575Z"}
 
 --- Update Notification Status ---
 
 Body: {"status": "read"}
 
-CMD: curl.exe -s -X PUT "http://localhost:8080/v1/notifications/ec7137cc-b607-4284-b610-e9ee39c883e6/status" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas=" -H "Content-Type: application/json" -d "@req_body.txt"
+CMD: curl.exe -s -X PUT "http://localhost:8080/v1/notifications/e6799c77-218a-4173-882a-f5fe867852ed/status" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g=" -H "Content-Type: application/json" -d "@req_body.txt"
 
-{"notification_id":"ec7137cc-b607-4284-b610-e9ee39c883e6","app_id":"904c8728-d78d-4fa4-b5ab-ad45b34428b0","user_id":"70114b5d-e432-4ec5-a448-d62a009387f0","channel":"email","priority":"high","status":"read","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"009aec3c-8238-4650-86fb-5c9dacc3afd3","sent_at":"2025-12-21T09:58:45.294812038Z","read_at":"2025-12-21T09:58:45.436536296Z","retry_count":0,"created_at":"2025-12-21T09:58:45.042302434Z","updated_at":"2025-12-21T09:58:45.436535906Z"}
+{"notification_id":"e6799c77-218a-4173-882a-f5fe867852ed","app_id":"fe56585d-f9a0-4e61-bb35-4ce2a8c33454","user_id":"6d43d79d-cd48-47e2-a1ad-93793484d121","channel":"email","priority":"high","status":"read","title":"Default Title","body":"Default Body","data":{"name":"John"},"template_id":"575985bf-ffa3-4ad0-ae5b-459091cfaea9","sent_at":"2025-12-21T14:25:13.989042848Z","read_at":"2025-12-21T14:25:14.112040718Z","retry_count":0,"created_at":"2025-12-21T14:25:13.780398877Z","updated_at":"2025-12-21T14:25:14.112040387Z"}
 
 --- Retry Notification ---
 
-CMD: curl.exe -s -X POST "http://localhost:8080/v1/notifications/ec7137cc-b607-4284-b610-e9ee39c883e6/retry" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X POST "http://localhost:8080/v1/notifications/e6799c77-218a-4173-882a-f5fe867852ed/retry" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
 {"error":"notification cannot be retried"}
 
 --- Cancel Notification ---
 
-CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/notifications/ec7137cc-b607-4284-b610-e9ee39c883e6" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/notifications/e6799c77-218a-4173-882a-f5fe867852ed" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
 {"error":"cannot cancel notification in final state read"}
 
 --- Queue Stats ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/admin/queues/stats" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/admin/queues/stats" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"stats":{"frn:queue:dlq":1,"frn:queue:high":0,"frn:queue:low":0,"frn:queue:normal":0,"frn:queue:retry":0}}
+{"stats":{"frn:queue:dlq":1,"frn:queue:high":0,"frn:queue:low":0,"frn:queue:normal":0,"frn:queue:retry":1}}
 
 --- DLQ List ---
 
-CMD: curl.exe -s -X GET "http://localhost:8080/v1/admin/queues/dlq" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X GET "http://localhost:8080/v1/admin/queues/dlq" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
-{"items":[{"notification_id":"9976a3d7-d43e-4ab8-8e61-6d8f77ba7a92","priority":"high","retry_count":0,"enqueued_at":"2025-12-21T09:58:37.182907705Z","reason":"max retries exceeded: user not found","timestamp":"2025-12-21T09:58:41.451966712Z"}]}
+{"items":[{"notification_id":"94e0914c-dd02-4204-8bc4-fedc1734d7d4","priority":"normal","retry_count":0,"enqueued_at":"2025-12-21T13:22:01.052663242Z","reason":"max retries exceeded: provider send failed: no webhook URL for user fd560c49-025e-4b6b-8e68-c419cab37156","timestamp":"2025-12-21T13:22:05.819596554Z"}]}
 
 --- Delete User ---
 
-CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/users/70114b5d-e432-4ec5-a448-d62a009387f0" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/users/6d43d79d-cd48-47e2-a1ad-93793484d121" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
 {"message":"User deleted successfully","success":true}
 
 --- Delete Template ---
 
-CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/templates/009aec3c-8238-4650-86fb-5c9dacc3afd3" -H "Authorization: Bearer frn_xCQy804zDGKZHXLsCfY0VIUV4Ibu0D3517jTpOPkZas="
+CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/templates/575985bf-ffa3-4ad0-ae5b-459091cfaea9" -H "Authorization: Bearer frn_K1NPWxZ1ZyI2zJsLrELZNnXDrh3Vnkdxg9CEAOCHc-g="
 
 
 --- Delete App ---
 
-CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/apps/904c8728-d78d-4fa4-b5ab-ad45b34428b0"
+CMD: curl.exe -s -X DELETE "http://localhost:8080/v1/apps/fe56585d-f9a0-4e61-bb35-4ce2a8c33454"
 
 {"message":"Application deleted successfully","success":true}

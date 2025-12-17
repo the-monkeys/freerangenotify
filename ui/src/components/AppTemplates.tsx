@@ -187,13 +187,34 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                             className="form-input"
                             style={{ minHeight: '150px', fontFamily: 'monospace' }}
                             value={formData.body}
-                            onChange={(e) => setFormData({ ...formData, body: e.target.value })}
+                            onChange={(e) => {
+                                // Simple regex to auto-detect variables like {{.var_name}}
+                                const newBody = e.target.value;
+                                const regex = /{{\s*\.?(\w+)\s*}}/g;
+                                const matches = new Set<string>();
+                                let match;
+                                while ((match = regex.exec(newBody)) !== null) {
+                                    if (match[1]) matches.add(match[1]);
+                                }
+                                // Combine custom added vars with auto-detected ones
+                                const currentVars = new Set(formData.variables || []);
+                                for (const m of matches) currentVars.add(m);
+
+                                setFormData({
+                                    ...formData,
+                                    body: newBody,
+                                    variables: Array.from(currentVars)
+                                });
+                            }}
                             required
                             placeholder="Hello {{.name}}, welcome!"
                         />
+                        <p style={{ fontSize: '0.75rem', color: '#a0aec0', marginTop: '0.25rem' }}>
+                            Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
+                        </p>
                     </div>
                     <div className="form-group">
-                        <label className="form-label">Variables (declared in body)</label>
+                        <label className="form-label">Variables (Must be declared to pass validation)</label>
                         <div className="flex gap-2">
                             <input
                                 type="text"
@@ -201,11 +222,17 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                                 value={varInput}
                                 onChange={(e) => setVarInput(e.target.value)}
                                 placeholder="name"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleAddVariable();
+                                    }
+                                }}
                             />
                             <button type="button" className="btn btn-secondary" onClick={handleAddVariable}>Add</button>
                         </div>
                         <div className="mt-2 flex gap-2 flex-wrap">
-                            {formData.variables && formData.variables.map(v => (
+                            {(formData.variables || []).map(v => (
                                 <span key={v} style={{ background: '#2d3748', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem' }}>
                                     {v}
                                     <button

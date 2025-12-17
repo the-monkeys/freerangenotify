@@ -54,20 +54,12 @@ const Header: React.FC = () => {
                             }}>Applications</Link>
                         </li>
                         <li>
-                            <Link to="/notifications" style={{
-                                color: isActive('/notifications') ? '#667eea' : '#a0aec0',
-                                fontWeight: isActive('/notifications') ? 600 : 400,
+                            <Link to="/dashboard" style={{
+                                color: isActive('/dashboard') ? '#667eea' : '#a0aec0',
+                                fontWeight: isActive('/dashboard') ? 600 : 400,
                                 textDecoration: 'none',
                                 transition: 'color 0.2s'
-                            }}>Notifications</Link>
-                        </li>
-                        <li>
-                            <Link to="/templates" style={{
-                                color: isActive('/templates') ? '#667eea' : '#a0aec0',
-                                fontWeight: isActive('/templates') ? 600 : 400,
-                                textDecoration: 'none',
-                                transition: 'color 0.2s'
-                            }}>Templates</Link>
+                            }}>System Status</Link>
                         </li>
                     </ul>
                 </nav>

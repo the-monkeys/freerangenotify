@@ -1,68 +1,113 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-// Unused imports removed
+import { adminAPI } from '../services/api';
 
 const Dashboard: React.FC = () => {
-  const [stats, setStats] = useState({
-    apps: 0,
-    users: 0,
-    notifications: 0,
-    templates: 0,
-  });
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [dlqItems, setDlqItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: Fetch actual stats from API
-    setStats({
-      apps: 5,
-      users: 24,
-      notifications: 128,
-      templates: 12,
-    });
+    const fetchStats = async () => {
+      try {
+        const [qStats, dlq] = await Promise.all([
+          adminAPI.getQueueStats(),
+          adminAPI.listDLQ()
+        ]);
+        setStats(qStats || {});
+        setDlqItems(dlq || []);
+      } catch (error) {
+        console.error('Failed to fetch system stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+    // Refresh every 5 seconds
+    const interval = setInterval(fetchStats, 5000);
+    return () => clearInterval(interval);
   }, []);
 
+  const getQueueColor = (count: number) => {
+    if (count === 0) return 'text-green-500';
+    if (count < 10) return 'text-yellow-500';
+    return 'text-red-500';
+  };
+
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold mb-8">FreeRangeNotify Dashboard</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {/* Applications Card */}
-        <Link to="/apps" className="bg-blue-500 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition">
-          <h3 className="text-xl font-semibold mb-2">Applications</h3>
-          <p className="text-4xl font-bold">{stats.apps}</p>
-          <p className="text-sm mt-2 opacity-90">Manage your apps</p>
-        </Link>
-
-        {/* Users Card */}
-        <Link to="/users" className="bg-green-500 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition">
-          <h3 className="text-xl font-semibold mb-2">Users</h3>
-          <p className="text-4xl font-bold">{stats.users}</p>
-          <p className="text-sm mt-2 opacity-90">Manage users</p>
-        </Link>
-
-        {/* Notifications Card */}
-        <Link to="/notifications" className="bg-purple-500 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition">
-          <h3 className="text-xl font-semibold mb-2">Notifications</h3>
-          <p className="text-4xl font-bold">{stats.notifications}</p>
-          <p className="text-sm mt-2 opacity-90">Send & manage</p>
-        </Link>
-
-        {/* Templates Card */}
-        <Link to="/templates" className="bg-orange-500 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition">
-          <h3 className="text-xl font-semibold mb-2">Templates</h3>
-          <p className="text-4xl font-bold">{stats.templates}</p>
-          <p className="text-sm mt-2 opacity-90">Create templates</p>
+    <div className="container">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-purple-600">
+          System Status
+        </h1>
+        <Link to="/" className="btn btn-primary">
+          Manage Applications &rarr;
         </Link>
       </div>
 
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-2xl font-bold mb-4">Getting Started</h2>
-        <ul className="space-y-3 text-gray-700">
-          <li>✓ Start by <Link to="/apps" className="text-blue-600 hover:underline">creating an application</Link></li>
-          <li>✓ Then <Link to="/users" className="text-blue-600 hover:underline">add users</Link> to your application</li>
-          <li>✓ Create <Link to="/templates" className="text-blue-600 hover:underline">notification templates</Link></li>
-          <li>✓ Finally, <Link to="/notifications" className="text-blue-600 hover:underline">send notifications</Link></li>
-        </ul>
-      </div>
+      {loading && Object.keys(stats).length === 0 ? (
+        <div className="center"><div className="spinner"></div></div>
+      ) : (
+        <>
+          {/* Queue Stats Cards */}
+          <h2 className="text-2xl font-bold mb-4">Message Queues</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            {Object.entries(stats).map(([queue, count]) => (
+              <div key={queue} className="card border border-gray-700 bg-gray-800">
+                <h3 className="text-gray-400 text-sm font-uppercase mb-2 tracking-wider">
+                  {queue.replace('frn:queue:', '').toUpperCase()}
+                </h3>
+                <div className="flex justify-between items-end">
+                  <span className={`text-3xl font-bold ${getQueueColor(count)}`}>
+                    {count}
+                  </span>
+                  <span className="text-xs text-gray-500">messages</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* DLQ Section */}
+          <div className="card bg-gray-900 border border-gray-800">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-red-400">Dead Letter Queue (DLQ)</h2>
+              <span className="px-3 py-1 bg-red-900 text-red-200 rounded-full text-xs font-mono">
+                {dlqItems.length} items
+              </span>
+            </div>
+
+            {dlqItems.length === 0 ? (
+              <p className="text-gray-500 italic">No failed messages in DLQ.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-gray-700">
+                      <th className="p-2 text-gray-400">Timestamp</th>
+                      <th className="p-2 text-gray-400">Reason</th>
+                      <th className="p-2 text-gray-400">Payload ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dlqItems.map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-800 hover:bg-gray-800">
+                        <td className="p-2 font-mono text-gray-300">
+                          {new Date(item.timestamp).toLocaleString()}
+                        </td>
+                        <td className="p-2 text-red-300">{item.reason}</td>
+                        <td className="p-2 font-mono text-gray-500">
+                          {item.notification_id || 'N/A'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

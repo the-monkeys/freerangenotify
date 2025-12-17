@@ -142,7 +142,15 @@ func (q *RedisQueue) GetQueueDepth(ctx context.Context) (map[string]int64, error
 	depths := make(map[string]int64)
 
 	for _, queue := range queues {
-		length, err := q.client.LLen(ctx, queue).Result()
+		var length int64
+		var err error
+
+		if queue == QueueRetry || queue == QueueScheduled {
+			length, err = q.client.ZCard(ctx, queue).Result()
+		} else {
+			length, err = q.client.LLen(ctx, queue).Result()
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to get queue depth for %s: %w", queue, err)
 		}

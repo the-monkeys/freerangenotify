@@ -293,4 +293,22 @@ export const templatesAPI = {
   },
 };
 
+// ============= Admin APIs =============
+interface QueueStats {
+  [key: string]: number;
+}
+
+export const adminAPI = {
+  getQueueStats: async () => {
+    // Admin routes are currently public in backend
+    const { data } = await api.get<{ stats: QueueStats }>('/admin/queues/stats');
+    return data.stats;
+  },
+  
+  listDLQ: async () => {
+    const { data } = await api.get<{ items: any[] }>('/admin/queues/dlq');
+    return data.items;
+  }
+};
+
 export default api;

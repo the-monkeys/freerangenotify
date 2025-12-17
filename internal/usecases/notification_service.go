@@ -126,6 +126,11 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		}
 	}
 
+	// If not scheduled, set initial status to Queued
+	if !notif.IsScheduled() {
+		notif.Status = notification.StatusQueued
+	}
+
 	// Validate notification entity
 	if err := notif.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid notification: %w", err)
@@ -169,11 +174,6 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		// Update status to failed
 		s.notificationRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
 		return nil, fmt.Errorf("failed to enqueue notification: %w", err)
-	}
-
-	// Update status to queued
-	if err := s.notificationRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusQueued); err != nil {
-		s.logger.Error("Failed to update notification status", zap.Error(err))
 	}
 
 	// Record metrics

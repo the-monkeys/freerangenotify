@@ -184,8 +184,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                             className="form-input"
                             value={formData.body}
                             onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                            required
-                            placeholder="Visible unless overridden by template"
+                            required={!formData.template_id}
+                            placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
                         />
                     </div>
 

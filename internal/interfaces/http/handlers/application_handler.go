@@ -256,6 +256,20 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	if req.EnableAnalytics != nil {
 		settings.EnableAnalytics = *req.EnableAnalytics
 	}
+	if req.DefaultPreferences != nil {
+		if settings.DefaultPreferences == nil {
+			settings.DefaultPreferences = &application.DefaultPreferences{}
+		}
+		if req.DefaultPreferences.EmailEnabled != nil {
+			settings.DefaultPreferences.EmailEnabled = req.DefaultPreferences.EmailEnabled
+		}
+		if req.DefaultPreferences.PushEnabled != nil {
+			settings.DefaultPreferences.PushEnabled = req.DefaultPreferences.PushEnabled
+		}
+		if req.DefaultPreferences.SMSEnabled != nil {
+			settings.DefaultPreferences.SMSEnabled = req.DefaultPreferences.SMSEnabled
+		}
+	}
 
 	if err := h.service.UpdateSettings(c.Context(), appID, settings); err != nil {
 		return err

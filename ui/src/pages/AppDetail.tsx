@@ -19,9 +19,6 @@ const AppDetail: React.FC = () => {
     const [webhookUrl, setWebhookUrl] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
 
-    // New setting form state
-    const [newSettingKey, setNewSettingKey] = useState('');
-    const [newSettingValue, setNewSettingValue] = useState('');
 
     useEffect(() => {
         if (id) fetchAppDetails();
@@ -58,34 +55,6 @@ const AppDetail: React.FC = () => {
         } catch (error) {
             console.error('Failed to update application:', error);
             alert('Failed to update application');
-        }
-    };
-
-    const handleAddSetting = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!id || !newSettingKey) return;
-        try {
-            const updatedSettings = { ...settings, [newSettingKey]: newSettingValue };
-            await applicationsAPI.updateSettings(id, updatedSettings);
-            setSettings(updatedSettings);
-            setNewSettingKey('');
-            setNewSettingValue('');
-        } catch (error) {
-            console.error('Failed to add setting:', error);
-            alert('Failed to add setting');
-        }
-    };
-
-    const handleRemoveSetting = async (key: string) => {
-        if (!id) return;
-        try {
-            const updatedSettings = { ...settings };
-            delete updatedSettings[key];
-            await applicationsAPI.updateSettings(id, updatedSettings);
-            setSettings(updatedSettings);
-        } catch (error) {
-            console.error('Failed to remove setting:', error);
-            alert('Failed to remove setting');
         }
     };
 
@@ -208,68 +177,131 @@ const AppDetail: React.FC = () => {
                 <div className="card">
                     <h3 className="mb-4">Configuration</h3>
                     <p style={{ color: '#718096', marginBottom: '1.5rem' }}>
-                        Manage key-value settings for this application.
+                        Manage configuration for this application.
                     </p>
 
-                    <div style={{ marginBottom: '2rem' }}>
-                        {Object.keys(settings).length === 0 ? (
-                            <p style={{ fontStyle: 'italic', color: '#a0aec0' }}>No settings configured yet.</p>
-                        ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '1px solid #2d3748', textAlign: 'left' }}>
-                                        <th style={{ padding: '0.75rem' }}>Key</th>
-                                        <th style={{ padding: '0.75rem' }}>Value</th>
-                                        <th style={{ padding: '0.75rem', width: '100px' }}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {Object.entries(settings).map(([key, value]) => (
-                                        <tr key={key} style={{ borderBottom: '1px solid #1a202c' }}>
-                                            <td style={{ padding: '0.75rem' }}>{key}</td>
-                                            <td style={{ padding: '0.75rem' }}>{String(value)}</td>
-                                            <td style={{ padding: '0.75rem' }}>
-                                                <button
-                                                    onClick={() => handleRemoveSetting(key)}
-                                                    className="btn btn-danger"
-                                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                                >
-                                                    Remove
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-
-                    <form onSubmit={handleAddSetting} style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}>
-                        <h4 className="mb-4">Add New Setting</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="form-group" style={{ marginBottom: 0 }}>
+                    <form
+                        onSubmit={async (e) => {
+                            e.preventDefault();
+                            try {
+                                await applicationsAPI.updateSettings(id!, settings);
+                                alert('Settings saved!');
+                            } catch (err: any) {
+                                alert('Error saving settings: ' + (err.response?.data?.message || err.message));
+                            }
+                        }}
+                        style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}
+                    >
+                        <h4 className="mb-4 text-blue-400">Core Settings</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            <div className="form-group">
+                                <label className="form-label">Rate Limit (requests/hour)</label>
                                 <input
-                                    type="text"
-                                    placeholder="Key"
-                                    value={newSettingKey}
-                                    onChange={(e) => setNewSettingKey(e.target.value)}
+                                    type="number"
                                     className="form-input"
-                                    required
+                                    value={settings.rate_limit || 0}
+                                    onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
+                                    placeholder="e.g. 1000"
                                 />
                             </div>
-                            <div className="form-group" style={{ marginBottom: 0 }}>
+
+                            <div className="form-group">
+                                <label className="form-label">Retry Attempts</label>
+                                <input
+                                    type="number"
+                                    className="form-input"
+                                    value={settings.retry_attempts || 0}
+                                    onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
+                                    placeholder="e.g. 3"
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label className="form-label">Default Template ID</label>
                                 <input
                                     type="text"
-                                    placeholder="Value"
-                                    value={newSettingValue}
-                                    onChange={(e) => setNewSettingValue(e.target.value)}
                                     className="form-input"
-                                    required
+                                    value={settings.default_template || ''}
+                                    onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
+                                    placeholder="Template UUID"
                                 />
+                            </div>
+
+                            <div className="form-group flex flex-col justify-end space-y-4">
+                                <label className="flex items-center space-x-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="form-checkbox h-5 w-5 text-blue-600"
+                                        checked={!!settings.enable_webhooks}
+                                        onChange={(e) => setSettings({ ...settings, enable_webhooks: e.target.checked })}
+                                    />
+                                    <span className="text-gray-300">Enable Webhooks</span>
+                                </label>
+                                <label className="flex items-center space-x-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="form-checkbox h-5 w-5 text-blue-600"
+                                        checked={!!settings.enable_analytics}
+                                        onChange={(e) => setSettings({ ...settings, enable_analytics: e.target.checked })}
+                                    />
+                                    <span className="text-gray-300">Enable Analytics</span>
+                                </label>
                             </div>
                         </div>
-                        <div className="mt-4 flex justify-end">
-                            <button type="submit" className="btn btn-primary">Add Setting</button>
+
+                        <h4 className="mb-4 text-blue-400">Default Notification Preferences</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    checked={settings.default_preferences?.email_enabled ?? true}
+                                    onChange={(e) => setSettings({
+                                        ...settings,
+                                        default_preferences: {
+                                            ...(settings.default_preferences || {}),
+                                            email_enabled: e.target.checked
+                                        }
+                                    })}
+                                />
+                                <span className="text-gray-300">Email Enabled</span>
+                            </label>
+
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    checked={settings.default_preferences?.push_enabled ?? true}
+                                    onChange={(e) => setSettings({
+                                        ...settings,
+                                        default_preferences: {
+                                            ...(settings.default_preferences || {}),
+                                            push_enabled: e.target.checked
+                                        }
+                                    })}
+                                />
+                                <span className="text-gray-300">Push Enabled</span>
+                            </label>
+
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    checked={settings.default_preferences?.sms_enabled ?? true}
+                                    onChange={(e) => setSettings({
+                                        ...settings,
+                                        default_preferences: {
+                                            ...(settings.default_preferences || {}),
+                                            sms_enabled: e.target.checked
+                                        }
+                                    })}
+                                />
+                                <span className="text-gray-300">SMS Enabled</span>
+                            </label>
+                        </div>
+
+                        <div className="mt-6 flex justify-end">
+                            <button type="submit" className="btn btn-primary">Save Configuration</button>
                         </div>
                     </form>
                 </div>
