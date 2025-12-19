@@ -1,16 +1,19 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 const Header: React.FC = () => {
     return (
         <header>
-            <h1>Application Header</h1>
-            <nav>
-                <ul>
-                    <li><a href="/">Home</a></li>
-                    <li><a href="/apps">Apps</a></li>
-                    <li><a href="/about">About</a></li>
-                </ul>
-            </nav>
+            <div className="container" style={{ padding: '0' }}>
+                <h1>🔔 FreeRangeNotify</h1>
+                <nav>
+                    <ul>
+                        <li><Link to="/">Applications</Link></li>
+                        <li><Link to="/notifications">Notifications</Link></li>
+                        <li><Link to="/templates">Templates</Link></li>
+                    </ul>
+                </nav>
+            </div>
         </header>
     );
 };

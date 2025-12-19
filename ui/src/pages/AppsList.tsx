@@ -60,70 +60,83 @@ const AppsList: React.FC = () => {
   };
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Applications</h1>
+    <div className="container">
+      <div className="flex justify-between items-center mb-4">
+        <h1 style={{ fontSize: '2rem' }}>Applications</h1>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+          className="btn btn-primary"
         >
-          {showForm ? 'Cancel' : 'New Application'}
+          {showForm ? 'Cancel' : '+ New Application'}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white p-6 rounded-lg shadow mb-8">
-          <div className="mb-4">
-            <label className="block text-sm font-semibold mb-2">Name</label>
+        <form onSubmit={handleCreate} className="card mb-4">
+          <div className="form-group">
+            <label className="form-label">Application Name</label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+              className="form-input"
+              placeholder="My Awesome App"
             />
           </div>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold mb-2">Description</label>
+          <div className="form-group">
+            <label className="form-label">Description</label>
             <textarea
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-              rows={4}
+              className="form-textarea"
+              placeholder="Describe your application..."
             />
           </div>
-          <button
-            type="submit"
-            className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
-          >
+          <button type="submit" className="btn btn-primary">
             Create Application
           </button>
         </form>
       )}
 
       {loading ? (
-        <div className="text-center text-gray-600">Loading...</div>
+        <div className="spinner"></div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {apps.map((app) => (
-            <div key={app.id} className="bg-white p-6 rounded-lg shadow-lg">
-              <h3 className="text-xl font-semibold mb-2">{app.name}</h3>
-              <p className="text-gray-600 mb-4">{app.description}</p>
-              <div className="mb-4 p-3 bg-gray-100 rounded">
-                <p className="text-xs font-mono text-gray-700 break-all">API Key: {app.apiKey}</p>
+            <div key={app.id} className="card">
+              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>{app.name}</h3>
+              <p style={{ color: '#718096', marginBottom: '1rem' }}>{app.description}</p>
+              <div style={{
+                padding: '0.75rem',
+                background: '#f7fafc',
+                borderRadius: '0.375rem',
+                marginBottom: '1rem'
+              }}>
+                <p style={{
+                  fontSize: '0.75rem',
+                  fontFamily: 'monospace',
+                  wordBreak: 'break-all',
+                  color: '#4a5568'
+                }}>
+                  <strong>API Key:</strong><br />
+                  {app.apiKey}
+                </p>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => handleRegenerateKey(app.id)}
-                  className="flex-1 bg-yellow-500 text-white px-3 py-2 rounded hover:bg-yellow-600 text-sm"
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
                 >
-                  Regenerate Key
+                  🔄 Regenerate
                 </button>
                 <button
                   onClick={() => handleDelete(app.id)}
-                  className="flex-1 bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 text-sm"
+                  className="btn btn-danger"
+                  style={{ flex: 1 }}
                 >
-                  Delete
+                  🗑️ Delete
                 </button>
               </div>
             </div>
@@ -132,8 +145,9 @@ const AppsList: React.FC = () => {
       )}
 
       {!loading && apps.length === 0 && (
-        <div className="text-center text-gray-600 mt-8">
-          <p>No applications found. Create one to get started!</p>
+        <div className="text-center" style={{ marginTop: '3rem', color: '#718096' }}>
+          <p style={{ fontSize: '1.125rem' }}>No applications found.</p>
+          <p>Create one to get started! 🚀</p>
         </div>
       )}
     </div>

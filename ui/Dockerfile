@@ -3,14 +3,14 @@ FROM node:18-alpine
 # Set the working directory
 WORKDIR /app
 
-# Copy package.json
-COPY package.json ./
+# Copy package files for dependency installation
+COPY package*.json ./
 
 # Install dependencies
 RUN npm install
 
-# Copy the rest of the application code
-COPY . .
+# Note: Source code will be mounted via volume in docker-compose
+# This allows hot reloading without rebuilding the image
 
 # Expose the port the Vite dev server runs on
 EXPOSE 5173

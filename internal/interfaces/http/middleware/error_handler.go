@@ -21,27 +21,27 @@ func ErrorHandler(logger *zap.Logger) fiber.ErrorHandler {
 
 		// Check if it's an AppError
 		if appErr, ok := err.(*errors.AppError); ok {
-			statusCode = appErr.StatusCode
+			statusCode = appErr.GetHTTPStatus()
 			response["error"] = fiber.Map{
 				"code":    appErr.Code,
 				"message": appErr.Message,
 			}
-			if appErr.Details != nil && len(appErr.Details) > 0 {
-				response["error"].(fiber.Map)["details"] = appErr.Details
+			if len(appErr.Metadata) > 0 {
+				response["error"].(fiber.Map)["details"] = appErr.Metadata
 			}
 
 			// Log error with context
 			if statusCode >= 500 {
 				logger.Error("Internal server error",
-					zap.String("code", string(appErr.Code)),
+					zap.String("code", appErr.Code),
 					zap.String("message", appErr.Message),
-					zap.Error(appErr.Err),
+					zap.Error(appErr.Underlying),
 					zap.String("path", c.Path()),
 					zap.String("method", c.Method()),
 				)
 			} else {
 				logger.Warn("Client error",
-					zap.String("code", string(appErr.Code)),
+					zap.String("code", appErr.Code),
 					zap.String("message", appErr.Message),
 					zap.String("path", c.Path()),
 					zap.String("method", c.Method()),
