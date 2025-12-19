@@ -72,10 +72,10 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
-	// Mask API key for security (show only last 8 characters)
-	if len(response.APIKey) > 8 {
-		response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	}
+	// Masking removed to allow management from dashboard
+	// if len(response.APIKey) > 8 {
+	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
+	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -121,10 +121,10 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
-	// Mask API key
-	if len(response.APIKey) > 8 {
-		response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	}
+	// Masking removed
+	// if len(response.APIKey) > 8 {
+	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
+	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,

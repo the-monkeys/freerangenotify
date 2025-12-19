@@ -1,0 +1,55 @@
+﻿--- Testing Scoped APIs ---
+
+[1] Creating User...
+User Created ID: ccd92350-4efa-4851-b60b-28220b160f02
+
+[2] Listing Users...
+Found 8 users
+
+[3] Creating Template...
+DEBUG Template Resp: {
+    "id":  "03d89d3e-c1ea-4dd4-8da7-8be0a22a0cad",
+    "app_id":  "99603bd3-d9f8-40ed-82bf-88e4646e081e",
+    "name":  "welcome_email_20251219161726",
+    "description":  "Initial welcome email",
+    "channel":  "email",
+    "subject":  "Welcome to our app!",
+    "body":  "Hello {{.name}}, welcome aboard!",
+    "variables":  [
+                      "name"
+                  ],
+    "metadata":  null,
+    "version":  1,
+    "status":  "active",
+    "locale":  "",
+    "created_by":  "",
+    "updated_by":  "",
+    "created_at":  "2025-12-19T10:47:26.321007411Z",
+    "updated_at":  "2025-12-19T10:47:26.321007531Z"
+}
+Template Created ID: 03d89d3e-c1ea-4dd4-8da7-8be0a22a0cad
+
+[4] Sending Notification...
+DEBUG Notification Resp: {
+    "notification_id":  "4ec65890-b411-4057-b21e-e6924926e398",
+    "app_id":  "99603bd3-d9f8-40ed-82bf-88e4646e081e",
+    "user_id":  "ccd92350-4efa-4851-b60b-28220b160f02",
+    "channel":  "email",
+    "priority":  "normal",
+    "status":  "pending",
+    "title":  "Welcome!",
+    "body":  "Placeholder body (template will override)",
+    "data":  {
+                 "name":  "John Doe"
+             },
+    "template_id":  "03d89d3e-c1ea-4dd4-8da7-8be0a22a0cad",
+    "retry_count":  0,
+    "created_at":  "2025-12-19T10:47:26.436994309Z",
+    "updated_at":  "2025-12-19T10:47:26.43699439Z"
+}
+Notification Sent ID: 4ec65890-b411-4057-b21e-e6924926e398
+
+[5] Listing Notifications...
+Found 6 notifications
+
+--- Verification Complete ---

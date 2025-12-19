@@ -1,149 +1,200 @@
-// This file exports TypeScript types and interfaces used throughout the application, ensuring type safety.
-
 // ============= Application Types =============
 export interface Application {
-    id: string;
-    name: string;
+    app_id: string;
+    app_name: string;
     description?: string;
-    apiKey: string;
+    api_key: string;
+    webhook_url?: string;
     settings?: ApplicationSettings;
-    createdAt?: string;
-    updatedAt?: string;
+    created_at?: string;
+    updated_at?: string;
+    // status is not in the DTO response shown, but was used in my AppDetail fake code. DTO has no status field.
 }
 
 export interface ApplicationSettings {
-    key: string;
-    value: string;
+    rate_limit?: number;
+    retry_attempts?: number;
+    default_template?: string;
+    enable_webhooks?: boolean;
+    enable_analytics?: boolean;
+    // Allow dynamic keys if backend supports it, but DTO seems specific. 
+    // Wait, DTO Settings is struct `application.Settings`. Let's check `internal/domain/application/types.go` if needed.
+    // However, `api.ts` treated it as Record<string, any>. I should keep it flexible OR match DTO.
+    // The previous test script used `rate_limit`.
+    [key: string]: any;
 }
 
 export interface CreateApplicationRequest {
-    name: string;
+    app_name: string;
     description?: string;
+    webhook_url?: string;
+    settings?: ApplicationSettings;
 }
 
 export interface UpdateApplicationRequest {
-    name?: string;
+    app_name?: string;
     description?: string;
+    webhook_url?: string;
+    settings?: ApplicationSettings;
 }
 
 // ============= User Types =============
 export interface User {
-    id: string;
-    name: string;
+    user_id: string;
+    app_id: string;
+    external_user_id: string;
     email: string;
-    appId: string;
-    devices?: Device[];
+    phone?: string;
+    timezone?: string;
+    language?: string;
     preferences?: UserPreferences;
-    createdAt?: string;
-    updatedAt?: string;
+    created_at?: string;
+    updated_at?: string;
 }
 
 export interface Device {
-    id: string;
-    type: 'ios' | 'android' | 'web';
+    device_id: string;
+    platform: 'ios' | 'android' | 'web';
     token: string;
-    enabled: boolean;
-    createdAt?: string;
+    last_seen_at?: string;
+    created_at?: string;
 }
 
 export interface UserPreferences {
-    notificationFrequency: 'realtime' | 'daily' | 'weekly';
-    channels: ('email' | 'sms' | 'push' | 'telegram' | 'slack')[];
-    timezone?: string;
+    email_enabled: boolean;
+    push_enabled: boolean;
+    sms_enabled: boolean;
+    quiet_hours?: any;
 }
 
 export interface CreateUserRequest {
-    name: string;
-    email: string;
+    external_user_id: string;
+    email?: string;
+    phone?: string;
+    timezone?: string;
+    language?: string;
+    preferences?: UserPreferences;
 }
 
 export interface UpdateUserRequest {
-    name?: string;
     email?: string;
+    phone?: string;
+    timezone?: string;
+    language?: string;
+    preferences?: UserPreferences;
 }
 
 // ============= Device Types =============
 export interface AddDeviceRequest {
-    type: 'ios' | 'android' | 'web';
+    platform: 'ios' | 'android' | 'web';
     token: string;
 }
 
 // ============= Notification Types =============
 export interface Notification {
-    id: string;
-    appId: string;
-    userId: string;
+    notification_id: string;
+    app_id: string;
+    user_id: string;
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    priority: 'low' | 'normal' | 'high' | 'critical';
+    status: string;
     title: string;
     body: string;
-    channels: string[];
-    status: 'pending' | 'sent' | 'failed' | 'delivered';
-    metadata?: Record<string, any>;
-    createdAt?: string;
-    sentAt?: string;
+    data?: Record<string, any>;
+    template_id?: string;
+    scheduled_at?: string;
+    sent_at?: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface NotificationRequest {
-    userId: string;
+    user_id: string;
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    priority: 'low' | 'normal' | 'high' | 'critical';
     title: string;
     body: string;
-    channels: string[];
-    metadata?: Record<string, any>;
+    data?: Record<string, any>;
+    template_id?: string;
 }
 
 export interface BulkNotificationRequest {
-    userIds: string[];
+    user_ids: string[];
+    channel: string;
+    priority: string;
     title: string;
     body: string;
-    channels: string[];
-    metadata?: Record<string, any>;
+    data?: Record<string, any>;
+    template_id?: string;
 }
 
 export interface UpdateNotificationStatusRequest {
-    status: 'sent' | 'failed' | 'delivered';
+    status: string;
+    error_message?: string;
 }
 
 // ============= Template Types =============
 export interface Template {
     id: string;
-    appId: string;
+    app_id: string;
     name: string;
-    content: string;
-    channels: string[];
+    description?: string;
+    channel: string;
+    subject?: string;
+    body: string;
     variables?: string[];
-    versions?: TemplateVersion[];
-    createdAt?: string;
-    updatedAt?: string;
+    metadata?: Record<string, any>;
+    version: number;
+    status: string;
+    locale?: string;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface TemplateVersion {
     id: string;
     version: number;
-    content: string;
-    createdAt?: string;
+    subject?: string;
+    body: string;
+    created_at: string;
 }
 
 export interface CreateTemplateRequest {
+    app_id: string;
     name: string;
-    content: string;
-    channels: string[];
+    description?: string;
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    subject?: string;
+    body: string;
+    variables?: string[];
+    metadata?: Record<string, any>;
+    locale?: string;
 }
 
 export interface UpdateTemplateRequest {
-    name?: string;
-    content?: string;
-    channels?: string[];
+    description?: string;
+    subject?: string;
+    body?: string;
+    variables?: string[];
+    metadata?: Record<string, any>;
+    status?: string;
+    locale?: string;
 }
 
 export interface RenderTemplateRequest {
-    variables: Record<string, any>;
+    data: Record<string, any>;
 }
 
 export interface RenderTemplateResponse {
-    renderedContent: string;
+    rendered_body: string;
 }
 
 export interface CreateTemplateVersionRequest {
-    content: string;
+    description?: string;
+    subject?: string;
+    body: string;
+    variables?: string[];
+    metadata?: Record<string, any>;
 }
 
 // ============= API Response Types =============

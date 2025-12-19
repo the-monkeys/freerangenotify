@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Application, User, Notification, Template } from '../types';
+// Unused imports removed
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState({
@@ -23,7 +23,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="p-8">
       <h1 className="text-4xl font-bold mb-8">FreeRangeNotify Dashboard</h1>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {/* Applications Card */}
         <Link to="/apps" className="bg-blue-500 text-white p-6 rounded-lg shadow-lg hover:shadow-xl transition">

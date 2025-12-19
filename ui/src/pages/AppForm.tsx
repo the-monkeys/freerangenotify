@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 const AppForm: React.FC<{ onSubmit: (data: any) => void; initialData?: any }> = ({ onSubmit, initialData }) => {
-    const [formData, setFormData] = useState(initialData || { name: '', description: '' });
+    const [formData, setFormData] = useState(initialData || { app_name: '', description: '' });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -14,29 +14,31 @@ const AppForm: React.FC<{ onSubmit: (data: any) => void; initialData?: any }> = 
     };
 
     return (
-        <form onSubmit={handleSubmit}>
-            <div>
-                <label htmlFor="name">Name</label>
+        <form onSubmit={handleSubmit} className="card">
+            <h3 className="mb-4">{initialData ? 'Edit Application' : 'Create Application'}</h3>
+            <div className="form-group">
+                <label className="form-label" htmlFor="app_name">Application Name</label>
                 <input
                     type="text"
-                    id="name"
-                    name="name"
-                    value={formData.name}
+                    id="app_name"
+                    name="app_name"
+                    className="form-input"
+                    value={formData.app_name}
                     onChange={handleChange}
                     required
                 />
             </div>
-            <div>
-                <label htmlFor="description">Description</label>
+            <div className="form-group">
+                <label className="form-label" htmlFor="description">Description</label>
                 <textarea
                     id="description"
                     name="description"
+                    className="form-input" // utilizing form-input class for consistency
                     value={formData.description}
                     onChange={handleChange}
-                    required
                 />
             </div>
-            <button type="submit">Submit</button>
+            <button type="submit" className="btn btn-primary">Submit</button>
         </form>
     );
 };
