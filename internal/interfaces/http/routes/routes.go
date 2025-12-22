@@ -41,12 +41,12 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 
 // setupProtectedRoutes configures routes that require API key authentication
 func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
-	// Protected group with API key authentication
-	protected := v1.Group("")
-	protected.Use(middleware.APIKeyAuth(c.ApplicationService, c.Logger))
+	// Create common middleware
+	auth := middleware.APIKeyAuth(c.ApplicationService, c.Logger)
 
 	// User management routes
-	users := protected.Group("/users")
+	users := v1.Group("/users")
+	users.Use(auth)
 	users.Post("/", c.UserHandler.Create)
 	users.Get("/:id", c.UserHandler.GetByID)
 	users.Put("/:id", c.UserHandler.Update)
@@ -63,11 +63,13 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users.Get("/:id/preferences", c.UserHandler.GetPreferences)
 
 	// Presence management
-	presence := protected.Group("/presence")
+	presence := v1.Group("/presence")
+	presence.Use(auth)
 	presence.Post("/check-in", c.PresenceHandler.CheckIn)
 
 	// Notification routes
-	notifications := protected.Group("/notifications")
+	notifications := v1.Group("/notifications")
+	notifications.Use(auth)
 	notifications.Post("/", c.NotificationHandler.Send)
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
 	notifications.Post("/batch", c.NotificationHandler.SendBatch)
@@ -79,7 +81,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	notifications.Post("/:id/retry", c.NotificationHandler.Retry)
 
 	// Template routes
-	templates := protected.Group("/templates")
+	templates := v1.Group("/templates")
+	templates.Use(auth)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)
 	templates.Get("/", c.TemplateHandler.ListTemplates)
 	templates.Get("/:id", c.TemplateHandler.GetTemplate)
