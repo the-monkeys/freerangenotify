@@ -1,35 +1,47 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"time"
 )
 
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8090"
+	port := flag.String("port", "8090", "Port to listen on")
+	userID := flag.String("userid", "", "Authorized User ID for this instance")
+	secret := flag.String("secret", "my-secret-key", "Webhook signing secret")
+	hubURL := flag.String("hub", "http://localhost:8080", "FreeRangeNotify Hub URL")
+	apiKey := flag.String("apikey", "", "API Key for Hub authentication")
+	flag.Parse()
+
+	if *userID == "" {
+		log.Println("Warning: No --userid provided. Receiver will accept notifications for any user (Security Disabled).")
 	}
 
-	secret := os.Getenv("WEBHOOK_SECRET")
-	if secret == "" {
-		secret = "my-secret-key" // Default matching our test config
+	// 1. Perform Check-in on startup
+	if *apiKey != "" {
+		dynamicURL := fmt.Sprintf("http://host.docker.internal:%s/webhook", *port)
+		log.Printf("Checking-in to Hub at %s for user %s...", *hubURL, *userID)
+		checkIn(*hubURL, *apiKey, *userID, dynamicURL)
+	} else {
+		log.Println("Warning: No --apikey provided. Skipping check-in. Hub won't know we are active.")
 	}
 
+	// 2. Setup Webhook Handler
 	http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Read Body
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			log.Printf("Error reading body: %v", err)
@@ -41,7 +53,7 @@ func main() {
 		// Verify Signature
 		signature := r.Header.Get("X-Webhook-Signature")
 		if signature != "" {
-			mac := hmac.New(sha256.New, []byte(secret))
+			mac := hmac.New(sha256.New, []byte(*secret))
 			mac.Write(body)
 			expectedSignature := hex.EncodeToString(mac.Sum(nil))
 
@@ -50,12 +62,8 @@ func main() {
 				http.Error(w, "Invalid Signature", http.StatusUnauthorized)
 				return
 			}
-			log.Printf("Signature verified successfully")
-		} else {
-			log.Printf("Warning: No signature header received")
 		}
 
-		// Parse Notification
 		var payload map[string]interface{}
 		if err := json.Unmarshal(body, &payload); err != nil {
 			log.Printf("Error parsing JSON: %v", err)
@@ -63,31 +71,49 @@ func main() {
 			return
 		}
 
-		// Security: Validate Targeting
-		// Simulate a list of users currently 'logged in' to this receiver system
-		currentActiveUsers := map[string]bool{
-			"ui-user-123": true, // Authorized UI User
-			"ui-user-456": true, // Another Authorized User
-		}
-
 		receivedUserID, _ := payload["user_id"].(string)
-		if !currentActiveUsers[receivedUserID] {
-			log.Printf("SECURITY WARNING: Received notification for non-active user: %s", receivedUserID)
-			log.Printf("  Blocking delivery to prevent data leakage.")
-			http.Error(w, "User Not Authenticated on this Receiver", http.StatusForbidden)
+
+		// Security: Validate targeting
+		if *userID != "" && receivedUserID != *userID {
+			log.Printf("SECURITY WARNING: Blocked notification for unauthorized user: %s (Authorized: %s)", receivedUserID, *userID)
+			http.Error(w, "Unauthorized user", http.StatusForbidden)
 			return
 		}
 
-		log.Printf("Received Webhook Notification for Active User: %s", receivedUserID)
-		log.Printf("  ID: %v", payload["id"])
-		log.Printf("  Title: %v", payload["content"].(map[string]interface{})["title"])
-		log.Printf("  Body: %v", payload["content"].(map[string]interface{})["body"])
+		log.Printf("SUCCESS: Received notification for user %s", receivedUserID)
+		log.Printf("  ID: %v | Title: %v", payload["id"], payload["content"].(map[string]interface{})["title"])
 
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Webhook received and delivered to user %s", receivedUserID)
+		fmt.Fprintf(w, "Delivered")
 	})
 
-	log.Printf("Receiver app listening on :%s", port)
-	log.Printf("Webhook URL: http://localhost:%s/webhook", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Printf("Receiver listening on :%s", *port)
+	log.Fatal(http.ListenAndServe(":"+*port, nil))
+}
+
+func checkIn(hubURL, apiKey, userID, dynamicURL string) {
+	payload := map[string]string{
+		"user_id":     userID,
+		"dynamic_url": dynamicURL,
+	}
+	data, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("POST", hubURL+"/v1/presence/check-in", bytes.NewBuffer(data))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("Check-in request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Check-in failed with status %d: %s", resp.StatusCode, string(body))
+	} else {
+		log.Printf("Check-in SUCCESSFUL for user %s", userID)
+	}
 }

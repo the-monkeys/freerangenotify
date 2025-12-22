@@ -14,20 +14,22 @@ import (
 
 // Manager manages multiple notification providers and routes notifications
 type Manager struct {
-	providers map[notification.Channel]Provider
-	breakers  map[notification.Channel]*CircuitBreaker
-	metrics   *metrics.NotificationMetrics
-	logger    *zap.Logger
-	mu        sync.RWMutex
+	providers    map[notification.Channel]Provider
+	breakers     map[notification.Channel]*CircuitBreaker
+	metrics      *metrics.NotificationMetrics
+	presenceRepo user.PresenceRepository
+	logger       *zap.Logger
+	mu           sync.RWMutex
 }
 
 // NewManager creates a new provider manager
-func NewManager(metrics *metrics.NotificationMetrics, logger *zap.Logger) *Manager {
+func NewManager(metrics *metrics.NotificationMetrics, presenceRepo user.PresenceRepository, logger *zap.Logger) *Manager {
 	return &Manager{
-		providers: make(map[notification.Channel]Provider),
-		breakers:  make(map[notification.Channel]*CircuitBreaker),
-		metrics:   metrics,
-		logger:    logger,
+		providers:    make(map[notification.Channel]Provider),
+		breakers:     make(map[notification.Channel]*CircuitBreaker),
+		metrics:      metrics,
+		presenceRepo: presenceRepo,
+		logger:       logger,
 	}
 }
 
@@ -66,6 +68,22 @@ func (m *Manager) GetProvider(channel notification.Channel) (Provider, error) {
 // Send routes a notification to the appropriate provider and sends it
 func (m *Manager) Send(ctx context.Context, notif *notification.Notification, usr *user.User) (*Result, error) {
 	startTime := time.Now()
+
+	// 1. Smart Delivery: Check for dynamic routing presence
+	if m.presenceRepo != nil {
+		available, dynamicURL, err := m.presenceRepo.IsAvailable(ctx, usr.UserID)
+		if err == nil && available && dynamicURL != "" {
+			m.logger.Info("Smart Delivery: Overriding static webhook with dynamic URL",
+				zap.String("user_id", usr.UserID),
+				zap.String("static_url", usr.WebhookURL),
+				zap.String("dynamic_url", dynamicURL))
+
+			// Create a copy of the user to avoid side effects on other goroutines/cache
+			userCopy := *usr
+			userCopy.WebhookURL = dynamicURL
+			usr = &userCopy
+		}
+	}
 
 	// Get provider for channel
 	provider, err := m.GetProvider(notif.Channel)

@@ -62,6 +62,27 @@ func (q *RedisQueue) Enqueue(ctx context.Context, item NotificationQueueItem) er
 	return nil
 }
 
+// EnqueuePriority adds a notification to the tail of the list (next to be RPOP'd)
+func (q *RedisQueue) EnqueuePriority(ctx context.Context, item NotificationQueueItem) error {
+	queueName := q.getQueueName(item.Priority)
+
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal queue item: %w", err)
+	}
+
+	// RPUSH adds to the tail of the list. Since we use BRPOP (from tail), this item will be next.
+	if err := q.client.RPush(ctx, queueName, data).Err(); err != nil {
+		return fmt.Errorf("failed to enqueue priority item: %w", err)
+	}
+
+	q.logger.Info("Priority item enqueued (Jump the line)",
+		zap.String("notification_id", item.NotificationID),
+		zap.String("queue", queueName))
+
+	return nil
+}
+
 // Dequeue removes and returns the next notification from the queues
 // Priority order: high -> normal -> low
 func (q *RedisQueue) Dequeue(ctx context.Context) (*NotificationQueueItem, error) {

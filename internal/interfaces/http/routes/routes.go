@@ -62,6 +62,10 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users.Put("/:id/preferences", c.UserHandler.UpdatePreferences)
 	users.Get("/:id/preferences", c.UserHandler.GetPreferences)
 
+	// Presence management
+	presence := protected.Group("/presence")
+	presence.Post("/check-in", c.PresenceHandler.CheckIn)
+
 	// Notification routes
 	notifications := protected.Group("/notifications")
 	notifications.Post("/", c.NotificationHandler.Send)

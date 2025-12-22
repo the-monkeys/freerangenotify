@@ -467,9 +467,20 @@ func (s *NotificationService) Retry(ctx context.Context, notificationID, appID s
 		return fmt.Errorf("notification not found")
 	}
 
+	// Fetch Application to check retry limit settings
+	app, err := s.appRepo.GetByID(ctx, notif.AppID)
+	retryLimit := s.maxRetries
+	if err == nil {
+		if app.Settings.RetryAttempts > 0 {
+			retryLimit = app.Settings.RetryAttempts
+		}
+	} else {
+		s.logger.Warn("Failed to fetch application config for retry limit, using default", zap.Error(err))
+	}
+
 	// Check if notification can be retried
-	if !notif.CanRetry(s.maxRetries) {
-		if notif.RetryCount >= s.maxRetries {
+	if !notif.CanRetry(retryLimit) {
+		if notif.RetryCount >= retryLimit {
 			return notification.ErrMaxRetriesExceeded
 		}
 		return notification.ErrCannotRetry
@@ -500,6 +511,48 @@ func (s *NotificationService) Retry(ctx context.Context, notificationID, appID s
 	s.logger.Info("Notification retried",
 		zap.String("notification_id", notificationID),
 		zap.Int("retry_count", notif.RetryCount+1))
+
+	return nil
+}
+
+// FlushQueued re-enqueues all queued notifications for a user for immediate processing
+func (s *NotificationService) FlushQueued(ctx context.Context, userID string) error {
+	filter := notification.NotificationFilter{
+		UserID:   userID,
+		Status:   notification.StatusQueued,
+		PageSize: 100, // Reasonable batch size
+	}
+
+	// Important: We need a way to find StatusQueued across all sources.
+	// NotificationRepository.List with these filters will look into Elasticsearch.
+	notifications, err := s.notificationRepo.List(ctx, &filter)
+	if err != nil {
+		return fmt.Errorf("failed to list queued notifications for flush: %w", err)
+	}
+
+	if len(notifications) == 0 {
+		return nil
+	}
+
+	s.logger.Info("Flushing queued notifications for user",
+		zap.String("user_id", userID),
+		zap.Int("count", len(notifications)))
+
+	for _, notif := range notifications {
+		queueItem := queue.NotificationQueueItem{
+			NotificationID: notif.NotificationID,
+			Priority:       notif.Priority,
+			RetryCount:     notif.RetryCount,
+			EnqueuedAt:     time.Now(),
+		}
+
+		// Use EnqueuePriority to jump to the front of the queue
+		if err := s.queue.EnqueuePriority(ctx, queueItem); err != nil {
+			s.logger.Error("Failed to re-enqueue notification for flush",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Error(err))
+		}
+	}
 
 	return nil
 }

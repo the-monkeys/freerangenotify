@@ -206,6 +206,7 @@ type Service interface {
 	Cancel(ctx context.Context, notificationID, appID string) error
 	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error
+	FlushQueued(ctx context.Context, userID string) error
 }
 
 // Validate validates the notification entity

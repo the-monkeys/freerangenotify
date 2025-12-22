@@ -27,6 +27,9 @@ type Queue interface {
 	// Enqueue adds a notification to the queue
 	Enqueue(ctx context.Context, item NotificationQueueItem) error
 
+	// EnqueuePriority adds a notification to the front of the queue (RPush for BRPop)
+	EnqueuePriority(ctx context.Context, item NotificationQueueItem) error
+
 	// Dequeue removes and returns the next notification from the queue
 	// Blocks until an item is available or context is canceled
 	Dequeue(ctx context.Context) (*NotificationQueueItem, error)

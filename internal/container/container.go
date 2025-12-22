@@ -6,10 +6,12 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -42,12 +44,15 @@ type Container struct {
 	ApplicationService  usecases.ApplicationService
 	NotificationService notification.Service
 	TemplateService     *usecases.TemplateService
+	PresenceService     usecases.PresenceService
+	PresenceRepository  user.PresenceRepository
 
 	// Handlers
 	UserHandler         *handlers.UserHandler
 	ApplicationHandler  *handlers.ApplicationHandler
 	NotificationHandler *handlers.NotificationHandler
 	TemplateHandler     *handlers.TemplateHandler
+	PresenceHandler     *handlers.PresenceHandler
 	AdminHandler        *handlers.AdminHandler
 	HealthHandler       *handlers.HealthHandler
 }
@@ -113,6 +118,16 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 
+	// Initialize presence repository
+	container.PresenceRepository = repository.NewRedisPresenceRepository(redisClient)
+
+	// Initialize presence service
+	container.PresenceService = services.NewPresenceService(
+		container.PresenceRepository,
+		container.NotificationService,
+		logger,
+	)
+
 	// Initialize handlers
 	container.ApplicationHandler = handlers.NewApplicationHandler(
 		container.ApplicationService,
@@ -130,6 +145,10 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.TemplateHandler = handlers.NewTemplateHandler(
 		container.TemplateService,
+		logger,
+	)
+	container.PresenceHandler = handlers.NewPresenceHandler(
+		container.PresenceService,
 		logger,
 	)
 	container.AdminHandler = handlers.NewAdminHandler(

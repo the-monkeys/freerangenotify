@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Create provider manager and register providers
-	providerManager := providers.NewManager(c.Metrics, logger)
+	providerManager := providers.NewManager(c.Metrics, c.PresenceRepository, logger)
 
 	// Initialize and register FCM provider
 	fcmProvider, err := providers.NewFCMProvider(providers.FCMConfig{
@@ -189,6 +189,7 @@ func main() {
 		c.Queue,
 		c.DatabaseManager.Repositories.Notification,
 		c.DatabaseManager.Repositories.User,
+		c.DatabaseManager.Repositories.Application,
 		providerManager,
 		logger,
 		ProcessorConfig{

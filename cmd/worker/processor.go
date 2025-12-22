@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -31,6 +32,7 @@ type NotificationProcessor struct {
 	queue           queue.Queue
 	notifRepo       notification.Repository
 	userRepo        user.Repository
+	appRepo         application.Repository
 	providerManager *providers.Manager
 	logger          *zap.Logger
 	config          ProcessorConfig
@@ -45,6 +47,7 @@ func NewNotificationProcessor(
 	q queue.Queue,
 	notifRepo notification.Repository,
 	userRepo user.Repository,
+	appRepo application.Repository,
 	providerManager *providers.Manager,
 	logger *zap.Logger,
 	config ProcessorConfig,
@@ -54,6 +57,7 @@ func NewNotificationProcessor(
 		queue:           q,
 		notifRepo:       notifRepo,
 		userRepo:        userRepo,
+		appRepo:         appRepo,
 		providerManager: providerManager,
 		logger:          logger,
 		config:          config,
@@ -259,7 +263,14 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 	}
 
 	// Check if can retry
-	if notif.RetryCount >= p.config.MaxRetries {
+	maxRetries := p.config.MaxRetries
+	// Attempt to fetch app-specific retry limit
+	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+	if err == nil && app.Settings.RetryAttempts > 0 {
+		maxRetries = app.Settings.RetryAttempts
+	}
+
+	if notif.RetryCount >= maxRetries {
 		// Move to dead letter queue
 		redisQueue, ok := p.queue.(*queue.RedisQueue)
 		if ok {
@@ -282,6 +293,12 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 	if ok {
 		if err := redisQueue.EnqueueRetry(ctx, *item, delay); err != nil {
 			p.logger.Error("Failed to enqueue retry", zap.Error(err))
+		} else {
+			// Update status to queued to reflect it's waiting for retry (and not stuck in processing)
+			// This allows visibility that it's active but pending attempt.
+			if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusQueued); err != nil {
+				p.logger.Error("Failed to update status to queued after scheduling retry", zap.Error(err))
+			}
 		}
 	}
 }
