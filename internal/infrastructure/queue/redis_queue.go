@@ -20,6 +20,7 @@ const (
 	// Special queues
 	QueueRetry      = "frn:queue:retry"
 	QueueDeadLetter = "frn:queue:dlq"
+	QueueScheduled  = "frn:queue:scheduled"
 
 	// Timeout for blocking operations
 	BlockTimeout = 5 * time.Second
@@ -57,6 +58,27 @@ func (q *RedisQueue) Enqueue(ctx context.Context, item NotificationQueueItem) er
 		zap.String("notification_id", item.NotificationID),
 		zap.String("queue", queueName),
 		zap.String("priority", string(item.Priority)))
+
+	return nil
+}
+
+// EnqueuePriority adds a notification to the tail of the list (next to be RPOP'd)
+func (q *RedisQueue) EnqueuePriority(ctx context.Context, item NotificationQueueItem) error {
+	queueName := q.getQueueName(item.Priority)
+
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal queue item: %w", err)
+	}
+
+	// RPUSH adds to the tail of the list. Since we use BRPOP (from tail), this item will be next.
+	if err := q.client.RPush(ctx, queueName, data).Err(); err != nil {
+		return fmt.Errorf("failed to enqueue priority item: %w", err)
+	}
+
+	q.logger.Info("Priority item enqueued (Jump the line)",
+		zap.String("notification_id", item.NotificationID),
+		zap.String("queue", queueName))
 
 	return nil
 }
@@ -141,7 +163,15 @@ func (q *RedisQueue) GetQueueDepth(ctx context.Context) (map[string]int64, error
 	depths := make(map[string]int64)
 
 	for _, queue := range queues {
-		length, err := q.client.LLen(ctx, queue).Result()
+		var length int64
+		var err error
+
+		if queue == QueueRetry || queue == QueueScheduled {
+			length, err = q.client.ZCard(ctx, queue).Result()
+		} else {
+			length, err = q.client.LLen(ctx, queue).Result()
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to get queue depth for %s: %w", queue, err)
 		}
@@ -240,14 +270,74 @@ func (q *RedisQueue) GetRetryableItems(ctx context.Context, limit int64) ([]Noti
 	return items, nil
 }
 
+// ListDLQ returns items from the dead letter queue
+func (q *RedisQueue) ListDLQ(ctx context.Context, limit int) ([]DLQItem, error) {
+	// LRANGE gets elements from list (-limit to -1 gets the most recent ones if added with LPUSH)
+	// Actually LPUSH adds to head, so 0 to limit-1 gets the most recent
+	results, err := q.client.LRange(ctx, QueueDeadLetter, 0, int64(limit-1)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list DLQ items: %w", err)
+	}
+
+	var items []DLQItem
+	for _, data := range results {
+		var item DLQItem
+		if err := json.Unmarshal([]byte(data), &item); err != nil {
+			q.logger.Error("Failed to unmarshal DLQ item", zap.Error(err))
+			continue
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+// ReplayDLQ moves items from DLQ back to their original priority queues
+func (q *RedisQueue) ReplayDLQ(ctx context.Context, limit int) (int, error) {
+	replayedCount := 0
+
+	for i := 0; i < limit; i++ {
+		// RPOP gets the oldest item from DLQ
+		data, err := q.client.RPop(ctx, QueueDeadLetter).Result()
+		if err != nil {
+			if err == redis.Nil {
+				break // Queue empty
+			}
+			return replayedCount, fmt.Errorf("failed to pop from DLQ: %w", err)
+		}
+
+		var dlqItem DLQItem
+		if err := json.Unmarshal([]byte(data), &dlqItem); err != nil {
+			q.logger.Error("Failed to unmarshal DLQ item for replay", zap.Error(err))
+			continue
+		}
+
+		// Prepare for re-enqueueing (reset retry count?)
+		// Usually we keep the count but it's now back in the main flow
+		dlqItem.NotificationQueueItem.EnqueuedAt = time.Now()
+
+		// Enqueue back to appropriate priority queue
+		if err := q.Enqueue(ctx, dlqItem.NotificationQueueItem); err != nil {
+			q.logger.Error("Failed to re-enqueue item from DLQ",
+				zap.String("notification_id", dlqItem.NotificationID),
+				zap.Error(err))
+			// Optionally put it back in DLQ? For now just log
+			continue
+		}
+
+		replayedCount++
+	}
+
+	if replayedCount > 0 {
+		q.logger.Info("Replayed items from DLQ", zap.Int("count", replayedCount))
+	}
+
+	return replayedCount, nil
+}
+
 // EnqueueDeadLetter adds a notification to the dead letter queue
 func (q *RedisQueue) EnqueueDeadLetter(ctx context.Context, item NotificationQueueItem, reason string) error {
-	// Add metadata
-	dlqItem := struct {
-		NotificationQueueItem
-		Reason    string    `json:"reason"`
-		Timestamp time.Time `json:"timestamp"`
-	}{
+	dlqItem := DLQItem{
 		NotificationQueueItem: item,
 		Reason:                reason,
 		Timestamp:             time.Now(),
@@ -272,6 +362,64 @@ func (q *RedisQueue) EnqueueDeadLetter(ctx context.Context, item NotificationQue
 // Close closes the Redis client connection
 func (q *RedisQueue) Close() error {
 	return q.client.Close()
+}
+
+// EnqueueScheduled adds a notification to the scheduled queue (delayed)
+func (q *RedisQueue) EnqueueScheduled(ctx context.Context, item NotificationQueueItem, scheduledAt time.Time) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scheduled item: %w", err)
+	}
+
+	// Use sorted set for scheduled items (score = scheduled timestamp)
+	score := float64(scheduledAt.Unix())
+	if err := q.client.ZAdd(ctx, QueueScheduled, &redis.Z{
+		Score:  score,
+		Member: data,
+	}).Err(); err != nil {
+		return fmt.Errorf("failed to enqueue scheduled item: %w", err)
+	}
+
+	q.logger.Info("Item scheduled in Redis",
+		zap.String("notification_id", item.NotificationID),
+		zap.Time("scheduled_at", scheduledAt))
+
+	return nil
+}
+
+// GetScheduledItems returns items from scheduled queue that are ready to be processed
+func (q *RedisQueue) GetScheduledItems(ctx context.Context, limit int64) ([]NotificationQueueItem, error) {
+	now := float64(time.Now().Unix())
+
+	// Get items with score <= now (ready to process)
+	results, err := q.client.ZRangeByScore(ctx, QueueScheduled, &redis.ZRangeBy{
+		Min:   "0",
+		Max:   fmt.Sprintf("%f", now),
+		Count: limit,
+	}).Result()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduled items: %w", err)
+	}
+
+	var items []NotificationQueueItem
+	for _, data := range results {
+		var item NotificationQueueItem
+		if err := json.Unmarshal([]byte(data), &item); err != nil {
+			q.logger.Error("Failed to unmarshal scheduled item", zap.Error(err))
+			continue
+		}
+		items = append(items, item)
+	}
+
+	// Remove processed items from scheduled queue
+	if len(results) > 0 {
+		if err := q.client.ZRem(ctx, QueueScheduled, results).Err(); err != nil {
+			q.logger.Error("Failed to remove scheduled items", zap.Error(err))
+		}
+	}
+
+	return items, nil
 }
 
 // getQueueName returns the queue name for a given priority

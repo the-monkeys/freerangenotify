@@ -10,14 +10,15 @@ WORKDIR /app
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Download dependencies
+# Download dependencies with parallel downloads
 RUN go mod download
 
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
+# Build the application with optimizations
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-w -s' -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-w -s' -o worker ./cmd/worker
 
 # Final stage
 FROM alpine:latest
@@ -32,6 +33,7 @@ WORKDIR /home/app
 
 # Copy the binary, config, and docs from builder stage
 COPY --from=builder --chown=app:app /app/server .
+COPY --from=builder --chown=app:app /app/worker .
 COPY --from=builder --chown=app:app /app/config ./config
 COPY --from=builder --chown=app:app /app/docs ./docs
 

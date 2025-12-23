@@ -6,9 +6,12 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -34,18 +37,24 @@ type Container struct {
 
 	// Validator
 	Validator *validator.Validator
+	Limiter   limiter.Limiter
 
 	// Services
 	UserService         usecases.UserService
 	ApplicationService  usecases.ApplicationService
 	NotificationService notification.Service
 	TemplateService     *usecases.TemplateService
+	PresenceService     usecases.PresenceService
+	PresenceRepository  user.PresenceRepository
 
 	// Handlers
 	UserHandler         *handlers.UserHandler
 	ApplicationHandler  *handlers.ApplicationHandler
 	NotificationHandler *handlers.NotificationHandler
 	TemplateHandler     *handlers.TemplateHandler
+	PresenceHandler     *handlers.PresenceHandler
+	AdminHandler        *handlers.AdminHandler
+	HealthHandler       *handlers.HealthHandler
 }
 
 // NewContainer creates a new dependency injection container
@@ -81,6 +90,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize metrics
 	container.Metrics = metrics.NewNotificationMetrics()
 
+	// Initialize limiter
+	container.Limiter = limiter.NewRedisLimiter(redisClient, logger)
+
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
 
@@ -90,17 +102,29 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.NotificationService = usecases.NewNotificationService(
 		repos.Notification,
 		repos.User,
+		repos.Application,
 		container.Queue,
 		logger,
 		usecases.NotificationServiceConfig{
 			MaxRetries: 3,
 		},
 		container.Metrics,
+		container.Limiter,
 	)
 
 	// Initialize template service
 	container.TemplateService = usecases.NewTemplateService(
 		repos.Template,
+		logger,
+	)
+
+	// Initialize presence repository
+	container.PresenceRepository = repository.NewRedisPresenceRepository(redisClient)
+
+	// Initialize presence service
+	container.PresenceService = services.NewPresenceService(
+		container.PresenceRepository,
+		container.NotificationService,
 		logger,
 	)
 
@@ -121,6 +145,19 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.TemplateHandler = handlers.NewTemplateHandler(
 		container.TemplateService,
+		logger,
+	)
+	container.PresenceHandler = handlers.NewPresenceHandler(
+		container.PresenceService,
+		logger,
+	)
+	container.AdminHandler = handlers.NewAdminHandler(
+		container.Queue,
+		logger,
+	)
+	container.HealthHandler = handlers.NewHealthHandler(
+		container.DatabaseManager,
+		container.RedisClient,
 		logger,
 	)
 

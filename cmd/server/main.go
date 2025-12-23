@@ -93,9 +93,11 @@ func main() {
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:3000,http://localhost:8080",
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-API-Key",
-		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowOrigins:  "*",
+		AllowHeaders:  "Origin, Content-Type, Accept, Authorization, X-API-Key",
+		AllowMethods:  "GET,POST,PUT,DELETE,OPTIONS,PATCH",
+		ExposeHeaders: "Content-Length",
+		MaxAge:        86400,
 	}))
 
 	// Health check endpoint

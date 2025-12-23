@@ -19,11 +19,19 @@ type Application struct {
 
 // Settings represents application-specific settings
 type Settings struct {
-	RateLimit       int    `json:"rate_limit" es:"rate_limit"`             // requests per hour
-	RetryAttempts   int    `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
-	DefaultTemplate string `json:"default_template" es:"default_template"` // default template ID
-	EnableWebhooks  bool   `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
-	EnableAnalytics bool   `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
+	RateLimit          int                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
+	RetryAttempts      int                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
+	DefaultTemplate    string              `json:"default_template" es:"default_template"` // default template ID
+	EnableWebhooks     bool                `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
+	EnableAnalytics    bool                `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
+	DefaultPreferences *DefaultPreferences `json:"default_preferences,omitempty" es:"default_preferences"`
+}
+
+// DefaultPreferences represents default notification preferences for the app
+type DefaultPreferences struct {
+	EmailEnabled *bool `json:"email_enabled" es:"email_enabled"`
+	PushEnabled  *bool `json:"push_enabled" es:"push_enabled"`
+	SMSEnabled   *bool `json:"sms_enabled" es:"sms_enabled"`
 }
 
 // ApplicationFilter represents query filters for applications

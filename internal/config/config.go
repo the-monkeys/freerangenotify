@@ -63,8 +63,9 @@ type QueueConfig struct {
 	Type          string `mapstructure:"type"` // redis or kafka
 	Workers       int    `mapstructure:"workers"`
 	Concurrency   int    `mapstructure:"concurrency"`
-	RetryAttempts int    `mapstructure:"retry_attempts"`
+	MaxRetries    int    `mapstructure:"max_retries"`
 	RetryDelay    int    `mapstructure:"retry_delay"`
+	MaxRetryDelay int    `mapstructure:"max_retry_delay"`
 }
 
 // ProvidersConfig contains external provider configurations
@@ -73,6 +74,8 @@ type ProvidersConfig struct {
 	APNS     APNSConfig     `mapstructure:"apns"`
 	SendGrid SendGridConfig `mapstructure:"sendgrid"`
 	Twilio   TwilioConfig   `mapstructure:"twilio"`
+	SMTP     SMTPConfig     `mapstructure:"smtp"`
+	Webhook  WebhookConfig  `mapstructure:"webhook"`
 }
 
 // FCMConfig contains Firebase Cloud Messaging configuration
@@ -109,6 +112,25 @@ type TwilioConfig struct {
 	FromNumber string `mapstructure:"from_number"`
 	Timeout    int    `mapstructure:"timeout"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// SMTPConfig contains SMTP configuration
+type SMTPConfig struct {
+	Host       string `mapstructure:"host"`
+	Port       int    `mapstructure:"port"`
+	Username   string `mapstructure:"username"`
+	Password   string `mapstructure:"password"`
+	FromEmail  string `mapstructure:"from_email"`
+	FromName   string `mapstructure:"from_name"`
+	Timeout    int    `mapstructure:"timeout"`
+	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// WebhookConfig contains Webhook configuration
+type WebhookConfig struct {
+	Timeout    int    `mapstructure:"timeout"`
+	MaxRetries int    `mapstructure:"max_retries"`
+	Secret     string `mapstructure:"secret"` // For signing payloads
 }
 
 // MonitoringConfig contains monitoring configuration
@@ -168,8 +190,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("queue.type", "redis")
 	viper.SetDefault("queue.workers", 10)
 	viper.SetDefault("queue.concurrency", 5)
-	viper.SetDefault("queue.retry_attempts", 3)
+	viper.SetDefault("queue.max_retries", 3)
 	viper.SetDefault("queue.retry_delay", 5)
+	viper.SetDefault("queue.max_retry_delay", 300) // 5 minutes
 
 	viper.SetDefault("monitoring.enabled", true)
 	viper.SetDefault("monitoring.port", 9090)

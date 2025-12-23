@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -178,22 +179,13 @@ func (im *IndexManager) GetIndexInfo(ctx context.Context, indexName string) (map
 	}, nil
 }
 
-// templateToJSON converts a template map to JSON string
 func (im *IndexManager) templateToJSON(template map[string]interface{}) string {
-	// This is a simplified JSON conversion
-	// In production, you'd want to use proper JSON marshaling
-
-	// For now, we'll construct basic JSON manually
-	// This should be replaced with proper JSON marshaling
-	return `{
-		"settings": {
-			"number_of_shards": 1,
-			"number_of_replicas": 0
-		},
-		"mappings": {
-			"properties": {}
-		}
-	}`
+	data, err := json.Marshal(template)
+	if err != nil {
+		im.logger.Error("Failed to marshal template to JSON", zap.Error(err))
+		return "{}"
+	}
+	return string(data)
 }
 
 // ListIndices returns all indices in the cluster

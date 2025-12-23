@@ -72,10 +72,10 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
-	// Mask API key for security (show only last 8 characters)
-	if len(response.APIKey) > 8 {
-		response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	}
+	// Masking removed to allow management from dashboard
+	// if len(response.APIKey) > 8 {
+	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
+	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -121,10 +121,10 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
-	// Mask API key
-	if len(response.APIKey) > 8 {
-		response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	}
+	// Masking removed
+	// if len(response.APIKey) > 8 {
+	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
+	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -233,12 +233,42 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
 	}
 
-	settings := application.Settings{
-		RateLimit:       req.RateLimit,
-		RetryAttempts:   req.RetryAttempts,
-		DefaultTemplate: req.DefaultTemplate,
-		EnableWebhooks:  req.EnableWebhooks,
-		EnableAnalytics: req.EnableAnalytics,
+	// Get existing settings first to support partial updates
+	currentSettings, err := h.service.GetSettings(c.Context(), appID)
+	if err != nil {
+		return err
+	}
+
+	settings := *currentSettings
+
+	if req.RateLimit != nil {
+		settings.RateLimit = *req.RateLimit
+	}
+	if req.RetryAttempts != nil {
+		settings.RetryAttempts = *req.RetryAttempts
+	}
+	if req.DefaultTemplate != nil {
+		settings.DefaultTemplate = *req.DefaultTemplate
+	}
+	if req.EnableWebhooks != nil {
+		settings.EnableWebhooks = *req.EnableWebhooks
+	}
+	if req.EnableAnalytics != nil {
+		settings.EnableAnalytics = *req.EnableAnalytics
+	}
+	if req.DefaultPreferences != nil {
+		if settings.DefaultPreferences == nil {
+			settings.DefaultPreferences = &application.DefaultPreferences{}
+		}
+		if req.DefaultPreferences.EmailEnabled != nil {
+			settings.DefaultPreferences.EmailEnabled = req.DefaultPreferences.EmailEnabled
+		}
+		if req.DefaultPreferences.PushEnabled != nil {
+			settings.DefaultPreferences.PushEnabled = req.DefaultPreferences.PushEnabled
+		}
+		if req.DefaultPreferences.SMSEnabled != nil {
+			settings.DefaultPreferences.SMSEnabled = req.DefaultPreferences.SMSEnabled
+		}
 	}
 
 	if err := h.service.UpdateSettings(c.Context(), appID, settings); err != nil {

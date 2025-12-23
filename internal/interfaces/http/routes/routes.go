@@ -16,6 +16,9 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 	// Protected routes (require API key authentication)
 	setupProtectedRoutes(v1, c)
+
+	// Admin routes
+	setupAdminRoutes(v1, c)
 }
 
 // setupPublicRoutes configures public routes
@@ -31,16 +34,19 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
 	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
 	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
+
+	// Health check
+	v1.Get("/health", c.HealthHandler.Check)
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
 func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
-	// Protected group with API key authentication
-	protected := v1.Group("")
-	protected.Use(middleware.APIKeyAuth(c.ApplicationService, c.Logger))
+	// Create common middleware
+	auth := middleware.APIKeyAuth(c.ApplicationService, c.Logger)
 
 	// User management routes
-	users := protected.Group("/users")
+	users := v1.Group("/users")
+	users.Use(auth)
 	users.Post("/", c.UserHandler.Create)
 	users.Get("/:id", c.UserHandler.GetByID)
 	users.Put("/:id", c.UserHandler.Update)
@@ -56,18 +62,27 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users.Put("/:id/preferences", c.UserHandler.UpdatePreferences)
 	users.Get("/:id/preferences", c.UserHandler.GetPreferences)
 
+	// Presence management
+	presence := v1.Group("/presence")
+	presence.Use(auth)
+	presence.Post("/check-in", c.PresenceHandler.CheckIn)
+
 	// Notification routes
-	notifications := protected.Group("/notifications")
+	notifications := v1.Group("/notifications")
+	notifications.Use(auth)
 	notifications.Post("/", c.NotificationHandler.Send)
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
+	notifications.Post("/batch", c.NotificationHandler.SendBatch)
 	notifications.Get("/", c.NotificationHandler.List)
 	notifications.Get("/:id", c.NotificationHandler.Get)
 	notifications.Put("/:id/status", c.NotificationHandler.UpdateStatus)
+	notifications.Delete("/batch", c.NotificationHandler.CancelBatch)
 	notifications.Delete("/:id", c.NotificationHandler.Cancel)
 	notifications.Post("/:id/retry", c.NotificationHandler.Retry)
 
 	// Template routes
-	templates := protected.Group("/templates")
+	templates := v1.Group("/templates")
+	templates.Use(auth)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)
 	templates.Get("/", c.TemplateHandler.ListTemplates)
 	templates.Get("/:id", c.TemplateHandler.GetTemplate)
@@ -76,4 +91,15 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	templates.Post("/:id/render", c.TemplateHandler.RenderTemplate)
 	templates.Post("/:app_id/:name/versions", c.TemplateHandler.CreateTemplateVersion)
 	templates.Get("/:app_id/:name/versions", c.TemplateHandler.GetTemplateVersions)
+}
+
+// setupAdminRoutes configures administrative routes
+func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
+	admin := v1.Group("/admin")
+
+	// Queue management
+	queues := admin.Group("/queues")
+	queues.Get("/stats", c.AdminHandler.GetQueueStats)
+	queues.Get("/dlq", c.AdminHandler.ListDLQ)
+	queues.Post("/dlq/replay", c.AdminHandler.ReplayDLQ)
 }

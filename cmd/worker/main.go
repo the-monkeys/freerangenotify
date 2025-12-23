@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Create provider manager and register providers
-	providerManager := providers.NewManager(c.Metrics, logger)
+	providerManager := providers.NewManager(c.Metrics, c.PresenceRepository, logger)
 
 	// Initialize and register FCM provider
 	fcmProvider, err := providers.NewFCMProvider(providers.FCMConfig{
@@ -83,21 +83,56 @@ func main() {
 		providerManager.RegisterProvider(apnsProvider)
 	}
 
-	// Initialize and register SendGrid provider
-	sendgridProvider, err := providers.NewSendGridProvider(providers.SendGridConfig{
-		Config: providers.Config{
-			Timeout:    15 * time.Second,
-			MaxRetries: 3,
-			RetryDelay: 1 * time.Second,
-		},
-		APIKey:    cfg.Providers.SendGrid.APIKey,
-		FromEmail: cfg.Providers.SendGrid.FromEmail,
-		FromName:  cfg.Providers.SendGrid.FromName,
-	}, logger)
-	if err != nil {
-		logger.Warn("Failed to initialize SendGrid provider", zap.Error(err))
-	} else {
-		providerManager.RegisterProvider(sendgridProvider)
+	// Initialize Email Provider (SMTP or SendGrid)
+	var emailProviderRegistered bool
+
+	// 1. Try SMTP
+	if cfg.Providers.SMTP.Host != "" {
+		smtpProvider, err := providers.NewSMTPProvider(providers.SMTPConfig{
+			Config: providers.Config{
+				Timeout:    30 * time.Second,
+				MaxRetries: 3,
+				RetryDelay: 1 * time.Second,
+			},
+			Host:      cfg.Providers.SMTP.Host,
+			Port:      cfg.Providers.SMTP.Port,
+			Username:  cfg.Providers.SMTP.Username,
+			Password:  cfg.Providers.SMTP.Password,
+			FromEmail: cfg.Providers.SMTP.FromEmail,
+			FromName:  cfg.Providers.SMTP.FromName,
+		}, logger)
+
+		if err != nil {
+			logger.Warn("Failed to initialize SMTP provider", zap.Error(err))
+		} else {
+			if err := providerManager.RegisterProvider(smtpProvider); err != nil {
+				logger.Warn("Failed to register SMTP provider", zap.Error(err))
+			} else {
+				emailProviderRegistered = true
+				logger.Info("Registered SMTP provider for email channel")
+			}
+		}
+	}
+
+	// 2. Fallback to SendGrid if SMTP not registered
+	if !emailProviderRegistered {
+		sendgridProvider, err := providers.NewSendGridProvider(providers.SendGridConfig{
+			Config: providers.Config{
+				Timeout:    15 * time.Second,
+				MaxRetries: 3,
+				RetryDelay: 1 * time.Second,
+			},
+			APIKey:    cfg.Providers.SendGrid.APIKey,
+			FromEmail: cfg.Providers.SendGrid.FromEmail,
+			FromName:  cfg.Providers.SendGrid.FromName,
+		}, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize SendGrid provider", zap.Error(err))
+		} else {
+			if err := providerManager.RegisterProvider(sendgridProvider); err != nil {
+				logger.Warn("Failed to register SendGrid provider", zap.Error(err))
+			}
+		}
 	}
 
 	// Initialize and register Twilio provider
@@ -115,6 +150,23 @@ func main() {
 		logger.Warn("Failed to initialize Twilio provider", zap.Error(err))
 	} else {
 		providerManager.RegisterProvider(twilioProvider)
+	}
+
+	// Initialize and register Webhook provider
+	webhookProvider, err := providers.NewWebhookProvider(providers.WebhookConfig{
+		Config: providers.Config{
+			Timeout:    time.Duration(cfg.Providers.Webhook.Timeout) * time.Second,
+			MaxRetries: cfg.Providers.Webhook.MaxRetries,
+			RetryDelay: 2 * time.Second,
+		},
+		Secret: cfg.Providers.Webhook.Secret,
+	}, logger)
+	if err != nil {
+		logger.Warn("Failed to initialize Webhook provider", zap.Error(err))
+	} else {
+		if err := providerManager.RegisterProvider(webhookProvider); err != nil {
+			logger.Warn("Failed to register Webhook provider", zap.Error(err))
+		}
 	}
 
 	logger.Info("Provider manager initialized",
@@ -137,13 +189,15 @@ func main() {
 		c.Queue,
 		c.DatabaseManager.Repositories.Notification,
 		c.DatabaseManager.Repositories.User,
+		c.DatabaseManager.Repositories.Application,
 		providerManager,
 		logger,
 		ProcessorConfig{
 			WorkerCount:     workerCount,
 			PollInterval:    5 * time.Second,
-			MaxRetries:      3,
+			MaxRetries:      cfg.Queue.MaxRetries,
 			RetryDelay:      5 * time.Second,
+			MaxRetryDelay:   5 * time.Minute,
 			ShutdownTimeout: 30 * time.Second,
 		},
 		c.Metrics,

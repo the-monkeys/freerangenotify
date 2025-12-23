@@ -9,6 +9,7 @@ type CreateUserRequest struct {
 	Phone          string            `json:"phone" validate:"omitempty"`
 	Timezone       string            `json:"timezone" validate:"omitempty"`
 	Language       string            `json:"language" validate:"omitempty"`
+	WebhookURL     string            `json:"webhook_url" validate:"omitempty,url"`
 	Preferences    *user.Preferences `json:"preferences,omitempty"`
 }
 
@@ -18,6 +19,7 @@ type UpdateUserRequest struct {
 	Phone       string            `json:"phone" validate:"omitempty"`
 	Timezone    string            `json:"timezone" validate:"omitempty"`
 	Language    string            `json:"language" validate:"omitempty"`
+	WebhookURL  string            `json:"webhook_url" validate:"omitempty,url"`
 	Preferences *user.Preferences `json:"preferences,omitempty"`
 }
 
@@ -29,10 +31,13 @@ type AddDeviceRequest struct {
 
 // UpdatePreferencesRequest represents a request to update preferences
 type UpdatePreferencesRequest struct {
-	EmailEnabled bool             `json:"email_enabled"`
-	PushEnabled  bool             `json:"push_enabled"`
-	SMSEnabled   bool             `json:"sms_enabled"`
-	QuietHours   *user.QuietHours `json:"quiet_hours,omitempty"`
+	EmailEnabled *bool                              `json:"email_enabled"`
+	PushEnabled  *bool                              `json:"push_enabled"`
+	SMSEnabled   *bool                              `json:"sms_enabled"`
+	QuietHours   *user.QuietHours                   `json:"quiet_hours,omitempty"`
+	DND          bool                               `json:"dnd"`
+	Categories   map[string]user.CategoryPreference `json:"categories,omitempty"`
+	DailyLimit   int                                `json:"daily_limit"`
 }
 
 // UserResponse represents a user response
@@ -44,6 +49,7 @@ type UserResponse struct {
 	Phone          string           `json:"phone,omitempty"`
 	Timezone       string           `json:"timezone,omitempty"`
 	Language       string           `json:"language,omitempty"`
+	WebhookURL     string           `json:"webhook_url,omitempty"`
 	Preferences    user.Preferences `json:"preferences"`
 	Devices        []user.Device    `json:"devices,omitempty"`
 	CreatedAt      string           `json:"created_at"`
@@ -76,6 +82,7 @@ func ToUserResponse(u *user.User) UserResponse {
 		Phone:          u.Phone,
 		Timezone:       u.Timezone,
 		Language:       u.Language,
+		WebhookURL:     u.WebhookURL,
 		Preferences:    u.Preferences,
 		Devices:        u.Devices,
 		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),

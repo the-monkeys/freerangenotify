@@ -24,6 +24,8 @@ func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger) fibe
 			apiKey = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
+		logger.Info("Validating API Key", zap.String("received_key", apiKey))
+
 		if apiKey == "" {
 			return errors.Unauthorized("Missing API key")
 		}

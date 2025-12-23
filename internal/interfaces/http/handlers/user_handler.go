@@ -52,6 +52,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		Phone:          req.Phone,
 		Timezone:       req.Timezone,
 		Language:       req.Language,
+		WebhookURL:     req.WebhookURL,
 	}
 
 	if req.Preferences != nil {
@@ -120,6 +121,9 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	}
 	if req.Language != "" {
 		u.Language = req.Language
+	}
+	if req.WebhookURL != "" {
+		u.WebhookURL = req.WebhookURL
 	}
 	if req.Preferences != nil {
 		u.Preferences = *req.Preferences
@@ -287,6 +291,9 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 		EmailEnabled: req.EmailEnabled,
 		PushEnabled:  req.PushEnabled,
 		SMSEnabled:   req.SMSEnabled,
+		DND:          req.DND,
+		Categories:   req.Categories,
+		DailyLimit:   req.DailyLimit,
 	}
 
 	if req.QuietHours != nil {

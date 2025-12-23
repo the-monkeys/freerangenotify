@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
+	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -49,10 +50,10 @@ func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
 	u.UpdatedAt = now
 
 	// Set default preferences if not provided
-	if u.Preferences.EmailEnabled == false && u.Preferences.PushEnabled == false && u.Preferences.SMSEnabled == false {
-		u.Preferences.EmailEnabled = true
-		u.Preferences.PushEnabled = true
-		u.Preferences.SMSEnabled = true
+	if u.Preferences.EmailEnabled == nil && u.Preferences.PushEnabled == nil && u.Preferences.SMSEnabled == nil {
+		u.Preferences.EmailEnabled = utils.BoolPtr(true)
+		u.Preferences.PushEnabled = utils.BoolPtr(true)
+		u.Preferences.SMSEnabled = utils.BoolPtr(true)
 	}
 
 	if err := s.repo.Create(ctx, u); err != nil {
@@ -294,10 +295,10 @@ func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) er
 		u.UpdatedAt = now
 
 		// Set default preferences if not provided
-		if u.Preferences.EmailEnabled == false && u.Preferences.PushEnabled == false && u.Preferences.SMSEnabled == false {
-			u.Preferences.EmailEnabled = true
-			u.Preferences.PushEnabled = true
-			u.Preferences.SMSEnabled = true
+		if u.Preferences.EmailEnabled == nil && u.Preferences.PushEnabled == nil && u.Preferences.SMSEnabled == nil {
+			u.Preferences.EmailEnabled = utils.BoolPtr(true)
+			u.Preferences.PushEnabled = utils.BoolPtr(true)
+			u.Preferences.SMSEnabled = utils.BoolPtr(true)
 		}
 	}
 

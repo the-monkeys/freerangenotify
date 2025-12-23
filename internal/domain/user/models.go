@@ -14,6 +14,7 @@ type User struct {
 	Phone          string      `json:"phone,omitempty" es:"phone"`
 	Timezone       string      `json:"timezone,omitempty" es:"timezone"`
 	Language       string      `json:"language,omitempty" es:"language"`
+	WebhookURL     string      `json:"webhook_url,omitempty" es:"webhook_url"`
 	Preferences    Preferences `json:"preferences" es:"preferences"`
 	Devices        []Device    `json:"devices,omitempty" es:"devices"`
 	CreatedAt      time.Time   `json:"created_at" es:"created_at"`
@@ -22,10 +23,19 @@ type User struct {
 
 // Preferences represents user notification preferences
 type Preferences struct {
-	EmailEnabled bool       `json:"email_enabled" es:"email_enabled"`
-	PushEnabled  bool       `json:"push_enabled" es:"push_enabled"`
-	SMSEnabled   bool       `json:"sms_enabled" es:"sms_enabled"`
-	QuietHours   QuietHours `json:"quiet_hours" es:"quiet_hours"`
+	EmailEnabled *bool                         `json:"email_enabled" es:"email_enabled"`
+	PushEnabled  *bool                         `json:"push_enabled" es:"push_enabled"`
+	SMSEnabled   *bool                         `json:"sms_enabled" es:"sms_enabled"`
+	QuietHours   QuietHours                    `json:"quiet_hours" es:"quiet_hours"`
+	DND          bool                          `json:"dnd" es:"dnd"`                 // Global Do Not Disturb
+	Categories   map[string]CategoryPreference `json:"categories" es:"categories"`   // Category-specific preferences
+	DailyLimit   int                           `json:"daily_limit" es:"daily_limit"` // Max notifications per day
+}
+
+// CategoryPreference represents preferences for a specific notification category
+type CategoryPreference struct {
+	Enabled         bool     `json:"enabled" es:"enabled"`
+	EnabledChannels []string `json:"enabled_channels" es:"enabled_channels"`
 }
 
 // QuietHours represents user's do-not-disturb hours
@@ -91,6 +101,7 @@ type CreateRequest struct {
 	Phone          string      `json:"phone,omitempty"`
 	Timezone       string      `json:"timezone,omitempty"`
 	Language       string      `json:"language,omitempty"`
+	WebhookURL     string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
 	Preferences    Preferences `json:"preferences"`
 }
 
@@ -100,5 +111,6 @@ type UpdateRequest struct {
 	Phone       *string      `json:"phone,omitempty"`
 	Timezone    *string      `json:"timezone,omitempty"`
 	Language    *string      `json:"language,omitempty"`
+	WebhookURL  *string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
 	Preferences *Preferences `json:"preferences,omitempty"`
 }
