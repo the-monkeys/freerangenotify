@@ -251,10 +251,10 @@ type SendRequest struct {
 	UserID      string                 `json:"user_id" validate:"required"`
 	Channel     Channel                `json:"channel" validate:"required"`
 	Priority    Priority               `json:"priority" validate:"required"`
-	Title       string                 `json:"title" validate:"required"`
-	Body        string                 `json:"body" validate:"required"`
+	Title       string                 `json:"title,omitempty"`
+	Body        string                 `json:"body,omitempty"`
 	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id,omitempty"`
+	TemplateID  string                 `json:"template_id" validate:"required"`
 	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
@@ -274,8 +274,8 @@ func (r *SendRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
-		return ErrEmptyContent
+	if r.TemplateID == "" {
+		return ErrTemplateRequired
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime

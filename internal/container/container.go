@@ -103,6 +103,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		repos.Notification,
 		repos.User,
 		repos.Application,
+		repos.Template,
 		container.Queue,
 		logger,
 		usecases.NotificationServiceConfig{

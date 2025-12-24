@@ -190,6 +190,7 @@ func main() {
 		c.DatabaseManager.Repositories.Notification,
 		c.DatabaseManager.Repositories.User,
 		c.DatabaseManager.Repositories.Application,
+		c.DatabaseManager.Repositories.Template,
 		providerManager,
 		logger,
 		ProcessorConfig{

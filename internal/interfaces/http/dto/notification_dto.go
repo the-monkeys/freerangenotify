@@ -11,10 +11,10 @@ type SendNotificationRequest struct {
 	UserID      string                 `json:"user_id" validate:"required"`
 	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app"`
 	Priority    string                 `json:"priority" validate:"required,oneof=low normal high critical"`
-	Title       string                 `json:"title" validate:"required"`
-	Body        string                 `json:"body" validate:"required"`
+	Title       string                 `json:"title,omitempty"`
+	Body        string                 `json:"body,omitempty"`
 	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id,omitempty"`
+	TemplateID  string                 `json:"template_id" validate:"required"`
 	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence  *RecurrenceRequest     `json:"recurrence,omitempty"`

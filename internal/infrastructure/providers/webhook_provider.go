@@ -37,15 +37,25 @@ type HTTPClient interface {
 
 // WebhookPayload represents the data sent to the webhook endpoint
 type WebhookPayload struct {
-	ID        string                 `json:"id"`
-	AppID     string                 `json:"app_id"`
-	UserID    string                 `json:"user_id"`
-	Channel   string                 `json:"channel"`
-	Priority  string                 `json:"priority"`
-	Status    string                 `json:"status"`
-	Content   notification.Content   `json:"content"`
-	Metadata  map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt time.Time              `json:"created_at"`
+	ID         string                 `json:"id"`
+	AppID      string                 `json:"app_id"`
+	UserID     string                 `json:"user_id"`
+	Channel    string                 `json:"channel"`
+	Priority   string                 `json:"priority"`
+	Status     string                 `json:"status"`
+	TemplateID string                 `json:"template_id"`
+	Template   *TemplateInfo          `json:"template,omitempty"`
+	Content    notification.Content   `json:"content"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt  time.Time              `json:"created_at"`
+}
+
+// TemplateInfo contains template details for the receiver
+type TemplateInfo struct {
+	Name      string   `json:"name"`
+	Subject   string   `json:"subject"`
+	Body      string   `json:"body"`
+	Variables []string `json:"variables"`
 }
 
 // NewWebhookProvider creates a new Webhook provider
@@ -86,25 +96,67 @@ func (p *WebhookProvider) Send(ctx context.Context, notif *notification.Notifica
 	p.logger.Info("Sending Webhook",
 		zap.String("notification_id", notif.NotificationID),
 		zap.String("user_id", usr.UserID),
+		zap.String("template_id", notif.TemplateID),
 		zap.String("url", targetURL))
 
 	// Prepare Payload
 	webhookPayload := WebhookPayload{
-		ID:        notif.NotificationID,
-		AppID:     notif.AppID,
-		UserID:    usr.UserID,
-		Channel:   string(notif.Channel),
-		Priority:  string(notif.Priority),
-		Status:    string(notif.Status),
-		Content:   notif.Content,
-		Metadata:  notif.Metadata,
-		CreatedAt: notif.CreatedAt,
+		ID:         notif.NotificationID,
+		AppID:      notif.AppID,
+		UserID:     usr.UserID,
+		Channel:    string(notif.Channel),
+		Priority:   string(notif.Priority),
+		Status:     string(notif.Status),
+		TemplateID: notif.TemplateID,
+		Content:    notif.Content,
+		Metadata:   notif.Metadata,
+		CreatedAt:  notif.CreatedAt,
+	}
+
+	if notif.Metadata != nil {
+		if tmplData, ok := notif.Metadata["template"].(map[string]interface{}); ok {
+			webhookPayload.Template = &TemplateInfo{
+				Name:    getString(tmplData, "name"),
+				Subject: getString(tmplData, "subject"),
+				Body:    getString(tmplData, "body"),
+			}
+			if vars, ok := tmplData["variables"].([]string); ok {
+				webhookPayload.Template.Variables = vars
+			} else if varsInterface, ok := tmplData["variables"].([]interface{}); ok {
+				webhookPayload.Template.Variables = make([]string, len(varsInterface))
+				for i, v := range varsInterface {
+					webhookPayload.Template.Variables[i], _ = v.(string)
+				}
+			}
+		}
+	}
+
+	// If template was not provided in metadata (common path after we removed redundant template metadata),
+	// synthesize it from the rendered content so the receiver UI has context.
+	if webhookPayload.Template == nil {
+		var variableKeys []string
+		for k := range notif.Content.Data {
+			variableKeys = append(variableKeys, k)
+		}
+
+		webhookPayload.Template = &TemplateInfo{
+			Name:      "", // unknown without repository lookup
+			Subject:   notif.Content.Title,
+			Body:      notif.Content.Body,
+			Variables: variableKeys,
+		}
 	}
 
 	payload, err := json.Marshal(webhookPayload)
 	if err != nil {
 		return NewErrorResult(fmt.Errorf("failed to marshal notification: %w", err), ErrorTypeInvalid), nil
 	}
+
+	// Debug: Log the full payload being sent
+	p.logger.Debug("Webhook payload",
+		zap.String("notification_id", notif.NotificationID),
+		zap.String("url", targetURL),
+		zap.String("payload", string(payload)))
 
 	// Create Request
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewBuffer(payload))
@@ -185,4 +237,12 @@ func (p *WebhookProvider) IsHealthy(ctx context.Context) bool {
 func (p *WebhookProvider) Close() error {
 	p.client.CloseIdleConnections()
 	return nil
+}
+
+// getString safely extracts a string from a map
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }

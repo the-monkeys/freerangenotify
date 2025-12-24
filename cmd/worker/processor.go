@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
@@ -33,6 +34,7 @@ type NotificationProcessor struct {
 	notifRepo       notification.Repository
 	userRepo        user.Repository
 	appRepo         application.Repository
+	templateRepo    template.Repository
 	providerManager *providers.Manager
 	logger          *zap.Logger
 	config          ProcessorConfig
@@ -48,6 +50,7 @@ func NewNotificationProcessor(
 	notifRepo notification.Repository,
 	userRepo user.Repository,
 	appRepo application.Repository,
+	templateRepo template.Repository,
 	providerManager *providers.Manager,
 	logger *zap.Logger,
 	config ProcessorConfig,
@@ -58,6 +61,7 @@ func NewNotificationProcessor(
 		notifRepo:       notifRepo,
 		userRepo:        userRepo,
 		appRepo:         appRepo,
+		templateRepo:    templateRepo,
 		providerManager: providerManager,
 		logger:          logger,
 		config:          config,
@@ -192,6 +196,25 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		logger.Info("Notification blocked by user preferences")
 		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusCancelled)
 		return
+	}
+
+	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
+	if notif.TemplateID != "" {
+		tmpl, err := p.templateRepo.GetByID(ctx, notif.TemplateID)
+		if err != nil {
+			logger.Warn("Failed to fetch template, continuing without template details",
+				zap.String("template_id", notif.TemplateID),
+				zap.Error(err))
+		} else {
+			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
+			notif.Content.Title = tmpl.Subject
+			notif.Content.Body = tmpl.Body
+			logger.Debug("Template applied to notification content",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("template_id", notif.TemplateID),
+				zap.String("template_name", tmpl.Name),
+				zap.Any("notification_content_data", notif.Content.Data))
+		}
 	}
 
 	// TODO: Route to appropriate provider based on channel
@@ -469,6 +492,17 @@ func (p *NotificationProcessor) retryProcessor(ctx context.Context) {
 			}
 
 			if len(items) == 0 {
+				// Also try to replay a few DLQ items if nothing retryable is ready
+				replayed, replayErr := redisQueue.ReplayDLQ(ctx, 50)
+				if replayErr != nil {
+					p.logger.Error("Failed to replay DLQ items", zap.Error(replayErr))
+					continue
+				}
+
+				if replayed > 0 {
+					p.logger.Info("Replayed DLQ items", zap.Int("count", replayed))
+				}
+
 				continue
 			}
 
