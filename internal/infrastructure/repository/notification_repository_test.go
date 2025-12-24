@@ -1,4 +1,4 @@
-package repository
+package repository_test
 
 import (
 	"context"
@@ -9,9 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
+	"go.uber.org/zap"
 )
 
-func setupTestNotificationRepo(t *testing.T) (*NotificationRepository, func()) {
+func setupTestNotificationRepo(t *testing.T) (*repository.NotificationRepository, func()) {
 	client, cleanup := database.SetupTestElasticsearch(t)
 
 	// Create notification index
@@ -22,8 +24,9 @@ func setupTestNotificationRepo(t *testing.T) (*NotificationRepository, func()) {
 	time.Sleep(2 * time.Second)
 
 	// Create test repository with test index name
-	testRepo := &NotificationRepository{
-		BaseRepository: NewBaseRepository(client, "frn_test_notifications", nil),
+	logger, _ := zap.NewDevelopment()
+	testRepo := &repository.NotificationRepository{
+		BaseRepository: repository.NewBaseRepository(client, "frn_test_notifications", logger),
 	}
 
 	return testRepo, cleanup
@@ -38,12 +41,14 @@ func createTestNotification(appID, userID string) *notification.Notification {
 		Channel:        notification.ChannelPush,
 		Priority:       notification.PriorityNormal,
 		Status:         notification.StatusPending,
-		Title:          "Test Notification",
-		Body:           "This is a test notification",
-		Data:           map[string]interface{}{"key": "value"},
-		RetryCount:     0,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		Content: notification.Content{
+			Title: "Test Notification",
+			Body:  "This is a test notification",
+			Data:  map[string]interface{}{"key": "value"},
+		},
+		RetryCount: 0,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 }
 
@@ -106,8 +111,8 @@ func TestNotificationRepository_Update(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update notification
-	notif.Title = "Updated Title"
-	notif.Body = "Updated Body"
+	notif.Content.Title = "Updated Title"
+	notif.Content.Body = "Updated Body"
 
 	err = repo.Update(ctx, notif)
 	assert.NoError(t, err)
@@ -243,7 +248,7 @@ func TestNotificationRepository_List(t *testing.T) {
 	filter.AppID = "app-1"
 	filter.PageSize = 10
 
-	notifications, err := repo.List(ctx, filter)
+	notifications, err := repo.List(ctx, &filter)
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, len(notifications), 5)
 }
@@ -278,7 +283,7 @@ func TestNotificationRepository_List_WithFilters(t *testing.T) {
 	filter.Status = notification.StatusPending
 	filter.PageSize = 10
 
-	notifications, err := repo.List(ctx, filter)
+	notifications, err := repo.List(ctx, &filter)
 	assert.NoError(t, err)
 	assert.Greater(t, len(notifications), 0)
 
@@ -311,13 +316,13 @@ func TestNotificationRepository_List_Pagination(t *testing.T) {
 	filter.Page = 1
 	filter.PageSize = 5
 
-	page1, err := repo.List(ctx, filter)
+	page1, err := repo.List(ctx, &filter)
 	assert.NoError(t, err)
 	assert.Len(t, page1, 5)
 
 	// Get second page
 	filter.Page = 2
-	page2, err := repo.List(ctx, filter)
+	page2, err := repo.List(ctx, &filter)
 	assert.NoError(t, err)
 	assert.Len(t, page2, 5)
 
@@ -345,7 +350,7 @@ func TestNotificationRepository_Count(t *testing.T) {
 	filter := notification.DefaultFilter()
 	filter.AppID = "app-1"
 
-	count, err := repo.Count(ctx, filter)
+	count, err := repo.Count(ctx, &filter)
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, count, int64(7))
 }
