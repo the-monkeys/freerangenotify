@@ -143,7 +143,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
             </div>
 
             {showAddForm && (
-                <form onSubmit={handleCreateTemplate} className="mb-8" style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}>
+                <form onSubmit={handleCreateTemplate} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="form-group">
                             <label className="form-label">Template Name</label>
@@ -168,6 +168,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                                 <option value="sms">SMS</option>
                                 <option value="webhook">Webhook</option>
                                 <option value="in_app">In-App</option>
+                                <option value="sse">SSE (Server-Sent Events)</option>
                             </select>
                         </div>
                     </div>
@@ -209,7 +210,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                             required
                             placeholder="Hello {{.name}}, welcome!"
                         />
-                        <p style={{ fontSize: '0.75rem', color: '#a0aec0', marginTop: '0.25rem' }}>
+                        <p style={{ fontSize: '0.75rem', color: '#605e5c', marginTop: '0.25rem' }}>
                             Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
                         </p>
                     </div>
@@ -233,12 +234,12 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                         </div>
                         <div className="mt-2 flex gap-2 flex-wrap">
                             {(formData.variables || []).map(v => (
-                                <span key={v} style={{ background: '#2d3748', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem' }}>
+                                <span key={v} style={{ background: 'var(--azure-bg)', border: '1px solid var(--azure-border)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem' }}>
                                     {v}
                                     <button
                                         type="button"
                                         onClick={() => setFormData({ ...formData, variables: formData.variables?.filter(x => x !== v) || [] })}
-                                        style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#f56565', cursor: 'pointer' }}
+                                        style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#a4262c', cursor: 'pointer', fontWeight: 600 }}
                                     >
                                         &times;
                                     </button>
@@ -257,25 +258,25 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
             ) : (
                 <div className="grid grid-cols-1 gap-6">
                     {templates.map((tmpl) => (
-                        <div key={tmpl.id} className="card" style={{ background: '#1a202c', border: '1px solid #2d3748' }}>
+                        <div key={tmpl.id} className="card" style={{ background: 'var(--azure-white)', border: '1px solid var(--azure-border)' }}>
                             <div className="flex justify-between items-start mb-4">
                                 <div>
-                                    <h4 style={{ margin: 0, color: '#667eea', fontSize: '1.25rem' }}>{tmpl.name}</h4>
-                                    <p style={{ fontSize: '0.875rem', color: '#a0aec0', margin: '0.25rem 0' }}>{tmpl.description || 'No description'}</p>
+                                    <h4 style={{ margin: 0, color: 'var(--azure-blue)', fontSize: '1.1rem', fontWeight: 600, border: 'none' }}>{tmpl.name}</h4>
+                                    <p style={{ fontSize: '0.85rem', color: '#605e5c', margin: '0.25rem 0' }}>{tmpl.description || 'No description'}</p>
                                 </div>
-                                <span style={{ fontSize: '0.75rem', background: '#2d3748', padding: '0.25rem 0.75rem', borderRadius: '1rem', textTransform: 'uppercase' }}>
+                                <span style={{ fontSize: '0.75rem', background: 'var(--azure-bg)', color: 'var(--azure-blue)', border: '1px solid var(--azure-blue)', padding: '0.15rem 0.6rem', borderRadius: '2px', textTransform: 'uppercase', fontWeight: 600 }}>
                                     {tmpl.channel}
                                 </span>
                             </div>
 
-                            <div className="mb-4" style={{ background: '#2d374820', padding: '1rem', borderRadius: '0.5rem', border: '1px dashed #2d3748' }}>
-                                <div style={{ fontSize: '0.75rem', color: '#718096', marginBottom: '0.5rem' }}>TEMPLATE BODY</div>
-                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.875rem' }}>{tmpl.body}</pre>
+                            <div className="mb-4" style={{ background: '#f8f8f8', padding: '1rem', borderRadius: '2px', border: '1px dashed var(--azure-border)' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>TEMPLATE BODY</div>
+                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.85rem', color: '#323130' }}>{tmpl.body}</pre>
                             </div>
 
                             <div className="flex justify-between items-center mb-4">
-                                <div style={{ fontSize: '0.75rem' }}>
-                                    <strong>Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
+                                <div style={{ fontSize: '0.8rem', color: '#605e5c' }}>
+                                    <strong style={{ color: '#323130' }}>Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
                                 </div>
                                 <div className="flex gap-2">
                                     <button
@@ -296,10 +297,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                             </div>
 
                             {activePreviews[tmpl.id] && (
-                                <div style={{ marginTop: '1rem', borderTop: '1px solid #2d3748', paddingTop: '1rem' }}>
+                                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--azure-border)', paddingTop: '1rem' }}>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
-                                            <div style={{ fontSize: '0.75rem', color: '#718096', marginBottom: '0.5rem' }}>PREVIEW DATA (JSON)</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>PREVIEW DATA (JSON)</div>
                                             <textarea
                                                 className="form-input"
                                                 style={{ height: '100px', fontFamily: 'monospace', fontSize: '0.75rem' }}
@@ -320,17 +321,18 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                                             </button>
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '0.75rem', color: '#718096', marginBottom: '0.5rem' }}>RENDERED OUTPUT</div>
+                                            <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>RENDERED OUTPUT</div>
                                             <div style={{
-                                                background: '#000',
+                                                background: '#f3f2f1',
                                                 height: '100px',
-                                                padding: '0.5rem',
-                                                borderRadius: '0.25rem',
+                                                padding: '0.75rem',
+                                                borderRadius: '2px',
+                                                border: '1px solid var(--azure-border)',
                                                 overflowY: 'auto',
-                                                fontSize: '0.875rem',
-                                                color: '#4ade80'
+                                                fontSize: '0.85rem',
+                                                color: '#323130'
                                             }}>
-                                                {activePreviews[tmpl.id].rendered || <span style={{ color: '#4a5568' }}>Click Render to see output...</span>}
+                                                {activePreviews[tmpl.id].rendered || <span style={{ color: '#a19f9d', fontStyle: 'italic' }}>Click Render to see output...</span>}
                                             </div>
                                         </div>
                                     </div>

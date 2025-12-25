@@ -43,10 +43,10 @@ const AppsList: React.FC = () => {
 
   return (
     <div className="container">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 style={{ fontSize: '2rem', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Applications</h1>
-          <p style={{ color: '#718096', marginTop: '0.5rem' }}>Manage your notification apps and keys</p>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Applications</h1>
+          <p style={{ color: '#605e5c', marginTop: '0.25rem', fontSize: '0.9rem' }}>Manage your notification applications and API keys</p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
@@ -57,7 +57,7 @@ const AppsList: React.FC = () => {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="card mb-4" style={{ borderLeft: '4px solid #667eea' }}>
+        <form onSubmit={handleCreate} className="card mb-6" style={{ borderTop: '2px solid var(--azure-blue)' }}>
           <h3 className="mb-4">Create New Application</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="form-group">
@@ -98,18 +98,20 @@ const AppsList: React.FC = () => {
             <div
               key={app.app_id}
               className="card"
-              style={{ cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+              style={{ cursor: 'pointer' }}
               onClick={() => navigate(`/apps/${app.app_id}`)}
             >
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: 'linear-gradient(90deg, #667eea, #764ba2)' }}></div>
-              <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', marginTop: '0.5rem' }}>{app.app_name}</h3>
-              <p style={{ color: '#718096', marginBottom: '1.5rem', minHeight: '3rem' }}>
+              <div className="flex justify-between items-start mb-2">
+                <h4 style={{ fontSize: '1rem', color: 'var(--azure-blue)' }}>{app.app_name}</h4>
+                <div style={{ fontSize: '0.7rem', color: '#a19f9d' }}>ACTIVE</div>
+              </div>
+              <p style={{ color: '#605e5c', fontSize: '0.85rem', marginBottom: '1.5rem', minHeight: '2.5rem' }}>
                 {app.description || 'No description provided.'}
               </p>
 
-              <div className="flex justify-between items-center" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-                <span style={{ fontSize: '0.875rem', color: '#a0aec0' }}>ID: {app.app_id.substring(0, 8)}...</span>
-                <span style={{ color: '#667eea', fontWeight: 500, fontSize: '0.875rem' }}>View Details &rarr;</span>
+              <div className="flex justify-between items-center" style={{ borderTop: '1px solid var(--azure-border)', paddingTop: '0.75rem' }}>
+                <span style={{ fontSize: '0.75rem', color: '#a19f9d' }}>ID: {app.app_id.substring(0, 8)}...</span>
+                <span style={{ color: 'var(--azure-blue)', fontWeight: 600, fontSize: '0.75rem' }}>Details &rarr;</span>
               </div>
             </div>
           ))}
@@ -117,10 +119,10 @@ const AppsList: React.FC = () => {
       )}
 
       {!loading && apps.length === 0 && (
-        <div className="text-center" style={{ marginTop: '5rem', color: '#718096' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚀</div>
-          <h2 style={{ marginBottom: '0.5rem' }}>No applications yet</h2>
-          <p>Create your first application to get started.</p>
+        <div className="text-center" style={{ marginTop: '5rem', color: '#605e5c' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
+          <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No applications yet</h2>
+          <p style={{ fontSize: '0.9rem' }}>Create your first application to get started.</p>
         </div>
       )}
     </div>

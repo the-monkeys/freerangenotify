@@ -18,6 +18,7 @@ const AppDetail: React.FC = () => {
     const [description, setDescription] = useState('');
     const [webhookUrl, setWebhookUrl] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
+    const [showApiKey, setShowApiKey] = useState(false);
 
 
     useEffect(() => {
@@ -85,30 +86,35 @@ const AppDetail: React.FC = () => {
     return (
         <div className="container">
             <div className="mb-6">
-                <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', color: '#667eea', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                <button
+                    onClick={() => navigate('/')}
+                    className="btn btn-secondary"
+                    style={{ minWidth: 'auto', padding: '0.2rem 0.5rem', marginBottom: '1rem', border: 'none' }}
+                >
                     &larr; Back to Applications
                 </button>
-                <h1 style={{ fontSize: '2rem', marginTop: '1rem', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
                     {app.app_name}
                 </h1>
-                <p style={{ color: '#718096' }}>ID: {app.app_id}</p>
+                <p style={{ color: '#605e5c', fontSize: '0.9rem', marginTop: '0.25rem' }}>ID: {app.app_id}</p>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #2d3748', marginBottom: '2rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+            {/* Tabs - Azure Flat Style */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--azure-border)', marginBottom: '2rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                 {(['overview', 'users', 'templates', 'notifications', 'settings', 'integration'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
                         style={{
-                            padding: '1rem 1.5rem',
-                            borderBottom: activeTab === tab ? '3px solid #667eea' : '3px solid transparent',
-                            color: activeTab === tab ? '#667eea' : '#718096',
-                            fontWeight: 600,
+                            padding: '0.75rem 1.25rem',
+                            borderBottom: activeTab === tab ? '2px solid var(--azure-blue)' : '2px solid transparent',
+                            color: activeTab === tab ? 'var(--azure-blue)' : '#605e5c',
+                            fontWeight: activeTab === tab ? 600 : 400,
                             background: 'none',
                             textTransform: 'capitalize',
                             cursor: 'pointer',
-                            flexShrink: 0
+                            flexShrink: 0,
+                            fontSize: '0.9rem'
                         }}
                     >
                         {tab}
@@ -190,9 +196,9 @@ const AppDetail: React.FC = () => {
                                 alert('Error saving settings: ' + (err.response?.data?.message || err.message));
                             }
                         }}
-                        style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}
+                        style={{ background: 'var(--azure-white)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}
                     >
-                        <h4 className="mb-4 text-blue-400">Core Settings</h4>
+                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Core Settings</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                             <div className="form-group">
                                 <label className="form-label">Rate Limit (requests/hour)</label>
@@ -227,34 +233,34 @@ const AppDetail: React.FC = () => {
                                 />
                             </div>
 
-                            <div className="form-group flex flex-col justify-end space-y-4">
-                                <label className="flex items-center space-x-3 cursor-pointer">
+                            <div className="form-group flex flex-col justify-end space-y-6">
+                                <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
                                     <input
                                         type="checkbox"
-                                        className="form-checkbox h-5 w-5 text-blue-600"
+                                        style={{ accentColor: 'var(--azure-blue)', height: '1.2rem', width: '1.2rem' }}
                                         checked={!!settings.enable_webhooks}
                                         onChange={(e) => setSettings({ ...settings, enable_webhooks: e.target.checked })}
                                     />
-                                    <span className="text-gray-300">Enable Webhooks</span>
+                                    <span style={{ fontWeight: 500 }}>Enable Webhooks</span>
                                 </label>
-                                <label className="flex items-center space-x-3 cursor-pointer">
+                                <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
                                     <input
                                         type="checkbox"
-                                        className="form-checkbox h-5 w-5 text-blue-600"
+                                        style={{ accentColor: 'var(--azure-blue)', height: '1.2rem', width: '1.2rem' }}
                                         checked={!!settings.enable_analytics}
                                         onChange={(e) => setSettings({ ...settings, enable_analytics: e.target.checked })}
                                     />
-                                    <span className="text-gray-300">Enable Analytics</span>
+                                    <span style={{ fontWeight: 500 }}>Enable Analytics</span>
                                 </label>
                             </div>
                         </div>
 
-                        <h4 className="mb-4 text-blue-400">Default Notification Preferences</h4>
+                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Default Notification Preferences</h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <label className="flex items-center space-x-3 cursor-pointer">
+                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
                                 <input
                                     type="checkbox"
-                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
                                     checked={settings.default_preferences?.email_enabled ?? true}
                                     onChange={(e) => setSettings({
                                         ...settings,
@@ -264,13 +270,13 @@ const AppDetail: React.FC = () => {
                                         }
                                     })}
                                 />
-                                <span className="text-gray-300">Email Enabled</span>
+                                <span>Email Enabled</span>
                             </label>
 
-                            <label className="flex items-center space-x-3 cursor-pointer">
+                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
                                 <input
                                     type="checkbox"
-                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
                                     checked={settings.default_preferences?.push_enabled ?? true}
                                     onChange={(e) => setSettings({
                                         ...settings,
@@ -280,13 +286,13 @@ const AppDetail: React.FC = () => {
                                         }
                                     })}
                                 />
-                                <span className="text-gray-300">Push Enabled</span>
+                                <span>Push Enabled</span>
                             </label>
 
-                            <label className="flex items-center space-x-3 cursor-pointer">
+                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
                                 <input
                                     type="checkbox"
-                                    className="form-checkbox h-5 w-5 text-green-600"
+                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
                                     checked={settings.default_preferences?.sms_enabled ?? true}
                                     onChange={(e) => setSettings({
                                         ...settings,
@@ -296,11 +302,11 @@ const AppDetail: React.FC = () => {
                                         }
                                     })}
                                 />
-                                <span className="text-gray-300">SMS Enabled</span>
+                                <span>SMS Enabled</span>
                             </label>
                         </div>
 
-                        <div className="mt-6 flex justify-end">
+                        <div className="mt-12 flex justify-end">
                             <button type="submit" className="btn btn-primary">Save Configuration</button>
                         </div>
                     </form>
@@ -315,13 +321,38 @@ const AppDetail: React.FC = () => {
                         <div className="form-group mb-6">
                             <label className="form-label">API Key</label>
                             <div className="flex gap-4">
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={app.api_key}
-                                    readOnly
-                                    style={{ background: '#2d3748', border: '1px solid #4a5568', color: '#a0aec0' }}
-                                />
+                                <div style={{ position: 'relative', flex: 1 }}>
+                                    <input
+                                        type={showApiKey ? "text" : "password"}
+                                        className="form-input"
+                                        value={app.api_key}
+                                        readOnly
+                                        style={{
+                                            background: 'var(--azure-bg)',
+                                            border: '1px solid var(--azure-border)',
+                                            color: '#605e5c',
+                                            paddingRight: '3rem'
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowApiKey(!showApiKey)}
+                                        style={{
+                                            position: 'absolute',
+                                            right: '0.75rem',
+                                            top: '50%',
+                                            transform: 'translateY(-50%)',
+                                            background: 'none',
+                                            border: 'none',
+                                            color: 'var(--azure-blue)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            fontWeight: 600
+                                        }}
+                                    >
+                                        {showApiKey ? 'Hide' : 'Show'}
+                                    </button>
+                                </div>
                                 <button
                                     type="button"
                                     className="btn btn-secondary"
@@ -330,15 +361,15 @@ const AppDetail: React.FC = () => {
                                     Regenerate
                                 </button>
                             </div>
-                            <p style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.5rem' }}>
-                                This key is masked for security. Regenerate to get a new full key.
+                            <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.5rem' }}>
+                                This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
                             </p>
                         </div>
                     </div>
 
                     <div className="card" style={{ border: '1px solid #f56565' }}>
-                        <h3 className="mb-4" style={{ color: '#f56565' }}>Danger Zone</h3>
-                        <p style={{ marginBottom: '1rem', color: '#718096' }}>
+                        <h3 className="mb-4" style={{ color: '#a4262c', borderColor: '#edebe9' }}>Danger Zone</h3>
+                        <p style={{ marginBottom: '1rem', color: '#605e5c', fontSize: '0.9rem' }}>
                             Deleting this application will remove all associated data. This action is irreversible.
                         </p>
                         <button onClick={handleDeleteApp} className="btn btn-danger">

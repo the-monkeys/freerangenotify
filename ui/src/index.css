@@ -1,4 +1,15 @@
-/* Global styles for FreeRangeNotify */
+/* Global styles for FreeRangeNotify - Azure Theme */
+:root {
+    --azure-blue: #0078d4;
+    --azure-dark-blue: #005a9e;
+    --azure-bg: #f3f3f3;
+    --azure-white: #ffffff;
+    --azure-text: #323130;
+    --azure-gray-text: #605e5c;
+    --azure-border: #edebe9;
+    --azure-hover: #f3f2f1;
+    --azure-font: 'Segoe UI', 'West European', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif;
+}
 
 * {
     margin: 0;
@@ -8,11 +19,11 @@
 
 body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    font-family: var(--azure-font);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background: #f5f7fa;
-    color: #2d3748;
+    background: var(--azure-bg);
+    color: var(--azure-text);
 }
 
 #root {
@@ -27,17 +38,18 @@ h5,
 h6 {
     margin: 0;
     font-weight: 600;
-    color: #1a202c;
+    color: var(--azure-text);
 }
 
 a {
     text-decoration: none;
-    color: #3182ce;
-    transition: color 0.2s;
+    color: var(--azure-blue);
+    transition: color 0.1s ease-in-out;
 }
 
 a:hover {
-    color: #2c5282;
+    color: var(--azure-dark-blue);
+    text-decoration: underline;
 }
 
 ul {
@@ -50,7 +62,7 @@ button {
     font-family: inherit;
     border: none;
     outline: none;
-    transition: all 0.2s;
+    transition: all 0.1s ease-in-out;
 }
 
 button:disabled {
@@ -58,134 +70,151 @@ button:disabled {
     cursor: not-allowed;
 }
 
-/* Header Styles */
+/* Header Styles - Azure Portal Top Bar */
 header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #001f3f;
+    /* Azure Top Nav Blue */
+    background: var(--azure-blue);
     color: white;
-    padding: 1.5rem 2rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 0.75rem 2rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 header h1 {
     color: white;
-    font-size: 1.75rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
 }
 
 header nav ul {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
 }
 
 header nav a {
-    color: rgba(255, 255, 255, 0.9);
-    font-weight: 500;
-    padding: 0.5rem 1rem;
-    border-radius: 0.375rem;
-    transition: background 0.2s;
+    color: white;
+    font-weight: 400;
+    font-size: 0.9rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 2px;
 }
 
 header nav a:hover {
     background: rgba(255, 255, 255, 0.1);
-    color: white;
+    text-decoration: none;
 }
 
 /* Container */
 .container {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: 2rem;
+    padding: 1.5rem 2rem;
 }
 
-/* Card Styles */
+/* Card Styles - Azure Fluent Card */
 .card {
-    background: white;
-    border-radius: 0.5rem;
+    background: var(--azure-white);
+    border-radius: 2px;
     padding: 1.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 0.1rem 0.3rem rgba(0, 0, 0, 0.1);
+    border: 1px solid var(--azure-border);
     transition: box-shadow 0.2s;
 }
 
 .card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.15);
 }
 
-/* Button Styles */
+/* Button Styles - Fluent UI Buttons */
 .btn {
-    padding: 0.75rem 1.5rem;
-    border-radius: 0.375rem;
-    font-weight: 500;
-    font-size: 0.875rem;
-    transition: all 0.2s;
+    padding: 0.5rem 1rem;
+    border-radius: 2px;
+    font-weight: 400;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 80px;
+    border: 1px solid transparent;
 }
 
 .btn-primary {
-    background: #667eea;
+    background: var(--azure-blue);
     color: white;
 }
 
 .btn-primary:hover {
-    background: #5a67d8;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    background: var(--azure-dark-blue);
 }
 
 .btn-danger {
-    background: #f56565;
+    background: #a4262c;
+    /* Azure Red */
     color: white;
 }
 
 .btn-danger:hover {
-    background: #e53e3e;
+    background: #750b1c;
 }
 
 .btn-secondary {
-    background: #e2e8f0;
-    color: #4a5568;
+    background: white;
+    border: 1px solid #8a8886;
+    color: var(--azure-text);
 }
 
 .btn-secondary:hover {
-    background: #cbd5e0;
+    background: var(--azure-hover);
+    border-color: #605e5c;
 }
 
-/* Form Styles */
+/* Form Styles - Fluent UI Forms */
 .form-group {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
 }
 
 .form-label {
     display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-    color: #4a5568;
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--azure-text);
 }
 
 .form-input,
-.form-textarea {
+.form-textarea,
+.form-select {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.375rem;
-    font-size: 0.875rem;
-    transition: border-color 0.2s;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #8a8886;
+    border-radius: 2px;
+    font-size: 0.9rem;
+    color: var(--azure-text);
+    background: var(--azure-white);
+    transition: border-color 0.1s;
 }
 
 .form-input:focus,
-.form-textarea:focus {
+.form-textarea:focus,
+.form-select:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--azure-blue);
+    border-width: 1.5px;
 }
 
 .form-textarea {
-    min-height: 100px;
+    min-height: 80px;
     resize: vertical;
 }
 
 /* Grid Layout */
 .grid {
     display: grid;
-    gap: 1.5rem;
+    gap: 1.25rem;
 }
 
 .grid-cols-1 {
@@ -204,14 +233,14 @@ header nav a:hover {
     }
 }
 
-/* Loading Spinner */
+/* Loading Spinner - Azure Blue Ring */
 .spinner {
-    border: 3px solid #f3f4f6;
-    border-top: 3px solid #667eea;
+    border: 2px solid rgba(0, 120, 212, 0.1);
+    border-top: 2px solid var(--azure-blue);
     border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
+    width: 32px;
+    height: 32px;
+    animation: spin 0.8s linear infinite;
     margin: 2rem auto;
 }
 
@@ -238,16 +267,32 @@ header nav a:hover {
     margin-bottom: 1rem;
 }
 
+.mb-6 {
+    margin-bottom: 1.5rem;
+}
+
 .flex {
     display: flex;
+}
+
+.flex-wrap {
+    flex-wrap: wrap;
 }
 
 .justify-between {
     justify-content: space-between;
 }
 
+.justify-end {
+    justify-content: space-end;
+}
+
 .items-center {
     align-items: center;
+}
+
+.items-start {
+    align-items: flex-start;
 }
 
 .gap-2 {
@@ -263,4 +308,193 @@ header nav a:hover {
     justify-content: center;
     align-items: center;
     min-height: 50vh;
+}
+
+/* Specific Section Headers */
+h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--azure-border);
+    padding-bottom: 0.5rem;
+    color: var(--azure-blue);
+}
+
+/* Footer */
+.footer {
+    background: #f2f2f2;
+    border-top: 1px solid var(--azure-border);
+    padding: 2rem 0;
+    color: #605e5c;
+    font-size: 0.85rem;
+    margin-top: auto;
+}
+
+.footer-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: center;
+    text-align: center;
+}
+
+.footer-bottom p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: #a19f9d;
+}
+
+/* Landing Page */
+.landing-page {
+    background: white;
+}
+
+.hero {
+    background: linear-gradient(135deg, #0078d4 0%, #005a9e 100%);
+    color: white;
+    padding: 6rem 0;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.02em;
+    border: none;
+    color: white;
+}
+
+.hero-subtext {
+    font-size: 1.25rem;
+    max-width: 800px;
+    margin: 0 auto 2.5rem;
+    opacity: 0.9;
+    line-height: 1.6;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.btn-lg {
+    padding: 0.8rem 2rem;
+    font-size: 1rem;
+    border-radius: 4px;
+}
+
+.showcase {
+    padding: 5rem 0;
+    background: #f8f8f8;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 2rem;
+    color: #323130;
+    margin-bottom: 1rem;
+    border: none;
+}
+
+.section-subtitle {
+    text-align: center;
+    color: #605e5c;
+    margin-bottom: 3.5rem;
+    font-size: 1.1rem;
+}
+
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+}
+
+.product-card {
+    background: white;
+    padding: 2rem;
+    border-radius: 2px;
+    border: 1px solid var(--azure-border);
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.product-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.product-accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+}
+
+.product-card h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    border: none;
+    padding: 0;
+}
+
+.product-card p {
+    color: #605e5c;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+}
+
+.product-link {
+    color: var(--azure-blue);
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.product-link:hover {
+    text-decoration: underline;
+}
+
+.features {
+    padding: 5rem 0;
+}
+
+.feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 3rem;
+}
+
+.feature-item {
+    text-align: center;
+}
+
+.feature-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.feature-item h3 {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    border: none;
+    padding: 0;
+}
+
+.feature-item p {
+    color: #605e5c;
+    line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+    .hero h1 {
+        font-size: 2.5rem;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        align-items: center;
+    }
 }

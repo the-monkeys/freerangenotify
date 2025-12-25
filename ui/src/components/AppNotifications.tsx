@@ -108,7 +108,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
             </div>
 
             {showSendForm && (
-                <form onSubmit={handleSendNotification} className="mb-8" style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}>
+                <form onSubmit={handleSendNotification} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="form-group">
                             <label className="form-label">Recipient (User)</label>
@@ -149,6 +149,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                                 <option value="sms">SMS</option>
                                 <option value="webhook">Webhook</option>
                                 <option value="in_app">In-App</option>
+                                <option value="sse">SSE (Server-Sent Events)</option>
                             </select>
                         </div>
                         <div className="form-group">
@@ -207,40 +208,42 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
             )}
 
             {!notifications || notifications.length === 0 ? (
-                <p style={{ color: '#718096', textAlign: 'center', padding: '2rem' }}>No notification history found.</p>
+                <p style={{ color: '#605e5c', textAlign: 'center', padding: '2rem', fontSize: '0.9rem' }}>No notification history found.</p>
             ) : (
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid #2d3748', textAlign: 'left' }}>
-                                <th style={{ padding: '1rem' }}>ID</th>
-                                <th style={{ padding: '1rem' }}>User</th>
-                                <th style={{ padding: '1rem' }}>Title</th>
-                                <th style={{ padding: '1rem' }}>Status</th>
-                                <th style={{ padding: '1rem' }}>Sent At</th>
+                            <tr style={{ borderBottom: '1px solid var(--azure-border)', textAlign: 'left' }}>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>ID</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>User</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Title</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Status</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Sent At</th>
                             </tr>
                         </thead>
                         <tbody>
                             {notifications.map((n) => (
-                                <tr key={n.notification_id} style={{ borderBottom: '1px solid #1a202c' }}>
-                                    <td style={{ padding: '1rem', fontSize: '0.75rem', color: '#718096' }}>{n.notification_id?.substring(0, 8)}...</td>
-                                    <td style={{ padding: '1rem' }}>
+                                <tr key={n.notification_id} style={{ borderBottom: '1px solid var(--azure-border)' }}>
+                                    <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#a19f9d', fontFamily: 'monospace' }}>{n.notification_id?.substring(0, 8)}...</td>
+                                    <td style={{ padding: '0.75rem', color: '#323130' }}>
                                         {users?.find(u => u.user_id === n.user_id)?.external_user_id || n.user_id || 'Unknown'}
                                     </td>
-                                    <td style={{ padding: '1rem' }}>{n.title}</td>
-                                    <td style={{ padding: '1rem' }}>
+                                    <td style={{ padding: '0.75rem', color: '#323130' }}>{n.title}</td>
+                                    <td style={{ padding: '0.75rem' }}>
                                         <span style={{
-                                            padding: '0.125rem 0.5rem',
-                                            borderRadius: '1rem',
-                                            fontSize: '0.75rem',
-                                            background: `${getStatusColor(n.status)}20`,
+                                            padding: '0.15rem 0.6rem',
+                                            borderRadius: '2px',
+                                            fontSize: '0.7rem',
+                                            fontWeight: 600,
+                                            background: `${getStatusColor(n.status)}15`,
                                             color: getStatusColor(n.status),
-                                            border: `1px solid ${getStatusColor(n.status)}`
+                                            border: `1px solid ${getStatusColor(n.status)}`,
+                                            textTransform: 'uppercase'
                                         }}>
                                             {n.status}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '1rem', fontSize: '0.875rem' }}>
+                                    <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: '#605e5c' }}>
                                         {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}
                                     </td>
                                 </tr>
