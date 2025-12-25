@@ -14,12 +14,13 @@ const (
 	ChannelSMS     Channel = "sms"
 	ChannelWebhook Channel = "webhook"
 	ChannelInApp   Channel = "in_app"
+	ChannelSSE     Channel = "sse"
 )
 
 // Valid checks if the channel is valid
 func (c Channel) Valid() bool {
 	switch c {
-	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp:
+	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp, ChannelSSE:
 		return true
 	default:
 		return false
@@ -207,6 +208,9 @@ type Service interface {
 	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error
 	FlushQueued(ctx context.Context, userID string) error
+	GetUnreadCount(ctx context.Context, userID, appID string) (int64, error)
+	ListUnread(ctx context.Context, userID, appID string) ([]*Notification, error)
+	MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error
 }
 
 // Validate validates the notification entity

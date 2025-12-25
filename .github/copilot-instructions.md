@@ -42,6 +42,8 @@ graph TD
     end
 
     Worker -->|9. Update Status| ES
+    ES -->|10. Broadcast SSE| SSE[(SSE Broadcaster)]
+    SSE -->|11. Real-time Push| Browser[(Browser Clients)]
 ```
 
 ### Data Flow Breakdown
@@ -51,7 +53,8 @@ graph TD
 4.  **Processing**: Workers pull notifications from Redis. They fetch the full template and user preferences from Elasticsearch.
 5.  **Smart Routing**: If a user has a dynamic presence (logged in via a receiver), the worker overrides the static webhook URL with the dynamic one.
 6.  **Delivery**: The worker executes delivery using the specified provider (e.g., Apple Push Notification service).
-7.  **Finalization**: The final status (`sent`, `failed`, or `dead_letter`) is updated in Elasticsearch and the delivery latency is recorded in Prometheus.
+7.  **Real-time Broadcast**: For SSE channel, messages are published to Redis pub/sub for immediate browser delivery.
+8.  **Finalization**: The final status (`sent`, `failed`, or `dead_letter`) is updated in Elasticsearch and the delivery latency is recorded in Prometheus.
 
 ---
 
@@ -64,7 +67,7 @@ graph TD
 | **Worker** | The "Brain". Handles content rendering, preference checking, and provider execution. | Go |
 | **Elasticsearch** | Primary database for templates, logs, users, and apps. optimized for search. | Elasticsearch 8.x |
 | **Presence Registry** | Stores real-time user availability for "Smart Delivery". | Redis |
-| **UI Dashboard** | Management interface for monitoring and configuration. | React / Vite |
+| **SSE Broadcaster** | Manages real-time Server-Sent Events connections and broadcasts notifications to browsers. | Go / Redis pub/sub |
 
 ---
 
@@ -75,6 +78,7 @@ graph TD
 -   **SendGrid Provider**: Cloud Email-as-a-Service integration.
 -   **Twilio Provider**: SMS and Programmable Messaging.
 -   **Webhook Provider**: HTTP callback delivery with HMAC signing for security.
+-   **SSE Provider**: Server-Sent Events for real-time browser notifications via Redis pub/sub.
 
 ---
 
@@ -87,16 +91,21 @@ FreeRangeNotify/
 │   ├── receiver/     # Client-side test receiver (Check-in/Webhook)
 │   └── migrate/      # Database initialization/migration scripts
 ├── internal/
+│   ├── config/       # Configuration management
+│   ├── container/    # Dependency injection container
 │   ├── domain/       # Core business logic models & interfaces
 │   ├── usecases/     # Orchestration/Service layer logic
 │   ├── infrastructure/
-│   │   ├── repository/ # Elasticsearch implementations
-│   │   ├── queue/      # Redis queue implementations
-│   │   ├── providers/  # APNS, FCM, SMTP, Webhook implementations
-│   │   └── database/   # Elasticsearch client & management
+│   │   ├── database/ # Elasticsearch client & management
+│   │   ├── limiter/  # Rate limiting implementations
+│   │   ├── metrics/  # Prometheus metrics
+│   │   ├── providers/ # APNS, FCM, SMTP, Webhook, SSE implementations
+│   │   ├── queue/    # Redis queue implementations
+│   │   └── repository/ # Elasticsearch repository implementations
 │   └── interfaces/   # HTTP handlers & middleware (Fiber)
 ├── pkg/              # Shared utilities (logging, validation, error types)
 ├── ui/               # Management Dashboard (React/Vite)
+├── tests/            # Integration tests
 └── docker-compose.yml # Orchestration for the entire stack
 ```
 
@@ -120,6 +129,14 @@ docker-compose up -d
 docker-compose exec notification-service /app/migrate
 ```
 
+### Testing Workflows
+- **Unit Tests**: `make test-unit` or `go test -v -short ./...`
+- **Integration Tests**: `make test-integration` - starts Docker services, runs tests, then stops services
+- **Full Test Suite**: `make test` - runs both unit and integration
+- **Coverage**: `make test-coverage` - generates coverage reports
+- **API Testing**: Use `test-full-api.ps1` script or manual curl commands from `TESTING_GUIDE.md`
+- **Smart Delivery Testing**: Follow `SMART_DELIVERY_GUIDE.md` for end-to-end presence and instant flush testing
+
 ### Debugging Steps
 Monitoring the interaction between services is critical:
 ```powershell
@@ -140,6 +157,8 @@ curl http://localhost:8080/v1/admin/queues/stats
 -   **Presence Registry**: Redis-stored map of `UserID -> CurrentDynamicURL`.
 -   **Instant Flush**: On `POST /v1/presence/check-in`, the system moves all `StatusQueued` notifications for that user to the **head** of the Redis list (`LPUSH`).
 -   **Dynamic Routing**: The Worker checks Redis presence *before* static profile settings. If a user is active, it delivers to the dynamic URL.
+-   **Real-time SSE**: For browser clients, use `channel: "sse"` to deliver notifications instantly via Server-Sent Events. Clients connect to `/sse?user_id={id}` and receive push notifications without refresh.
+-   **Testing**: Use test receivers (cmd/receiver) on different ports to simulate user presence. Send notifications while offline, then check-in to trigger instant delivery.
 
 ## Technical Guidelines for Code Suggestions
 -   **Fiber First**: Use Fiber's context and built-in features for HTTP logic.
@@ -147,3 +166,7 @@ curl http://localhost:8080/v1/admin/queues/stats
 -   **Error Handling**: Use the project's custom `pkg/errors` for consistent API responses.
 -   **Async by Default**: Keep the API path fast; move heavy logic (rendering, provider calls) to the Worker.
 -   **Full Naming**: When referring to push services, use **Apple Push Notification service** or **Firebase Cloud Messaging**.
+-   **Routes Organization**: Group routes by access level (public/protected/admin) in `internal/interfaces/http/routes/routes.go`.
+-   **Dependency Injection**: Wire services through `container.Container` for testability and decoupling.
+-   **Validation**: Use struct tags with go-playground/validator for input validation.
+-   **Repository Pattern**: Access data through repository interfaces in `infrastructure/repository`.

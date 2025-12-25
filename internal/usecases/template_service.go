@@ -26,7 +26,7 @@ func NewTemplateService(repo templateDomain.Repository, logger *zap.Logger) *Tem
 // Create creates a new template with validation
 func (s *TemplateService) Create(ctx context.Context, req *templateDomain.CreateRequest) (*templateDomain.Template, error) {
 	// Validate channel
-	validChannels := map[string]bool{"push": true, "email": true, "sms": true, "webhook": true, "in_app": true}
+	validChannels := map[string]bool{"push": true, "email": true, "sms": true, "webhook": true, "in_app": true, "sse": true}
 	if !validChannels[req.Channel] {
 		return nil, fmt.Errorf("invalid channel: %s", req.Channel)
 	}

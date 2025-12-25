@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
@@ -37,12 +39,29 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	// Get app ID from context (set by API key middleware)
 	appID := c.Locals("app_id").(string)
 
+	// Debug: Log the raw request body
+	body := c.Body()
+	fmt.Printf("DEBUG: Raw request body: %s, app_id: %s\n", string(body), appID)
+	h.logger.Debug("Raw request body", zap.String("body", string(body)), zap.String("app_id", appID))
+
 	var req dto.SendNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
+		fmt.Printf("DEBUG: BodyParser error: %v\n", err)
+		h.logger.Error("Failed to parse notification request body",
+			zap.Error(err),
+			zap.String("body", string(body)),
+			zap.String("app_id", appID))
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "invalid request body",
 		})
 	}
+
+	h.logger.Debug("Successfully parsed notification request",
+		zap.String("user_id", req.UserID),
+		zap.String("template_id", req.TemplateID),
+		zap.String("channel", req.Channel),
+		zap.String("priority", req.Priority),
+		zap.Any("data", req.Data))
 
 	// Convert to domain request
 	sendReq := req.ToSendRequest(appID)
@@ -411,4 +430,64 @@ func (h *NotificationHandler) Retry(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"message": "notification queued for retry",
 	})
+}
+
+// GetUnreadCount handles GET /v1/notifications/unread/count
+func (h *NotificationHandler) GetUnreadCount(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	userID := c.Query("user_id")
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	count, err := h.service.GetUnreadCount(c.Context(), userID, appID)
+	if err != nil {
+		h.logger.Error("Failed to get unread count", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"count": count})
+}
+
+// ListUnread handles GET /v1/notifications/unread
+func (h *NotificationHandler) ListUnread(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	userID := c.Query("user_id")
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	notifications, err := h.service.ListUnread(c.Context(), userID, appID)
+	if err != nil {
+		h.logger.Error("Failed to list unread notifications", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"data": notifications})
+}
+
+// MarkRead handles POST /v1/notifications/read
+func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req struct {
+		UserID          string   `json:"user_id"`
+		NotificationIDs []string `json:"notification_ids"`
+	}
+
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if req.UserID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	err := h.service.MarkRead(c.Context(), req.NotificationIDs, appID, req.UserID)
+	if err != nil {
+		h.logger.Error("Failed to mark notifications as read", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "notifications marked as read"})
 }

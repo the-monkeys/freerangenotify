@@ -261,10 +261,24 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 	}
 
 	// Send via provider manager
+	// Send via provider manager
+	p.logger.Info("Routing notification to provider",
+		zap.String("notification_id", notif.NotificationID),
+		zap.String("channel", string(notif.Channel)),
+		zap.String("user_id", notif.UserID))
+
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
+		p.logger.Error("Provider manager send failed",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
 		return fmt.Errorf("provider send failed: %w", err)
 	}
+
+	p.logger.Info("Provider manager send result",
+		zap.String("notification_id", notif.NotificationID),
+		zap.Bool("success", result.Success),
+		zap.String("provider_message_id", result.ProviderMessageID))
 
 	if !result.Success {
 		return fmt.Errorf("provider delivery failed: %s", result.ErrorType)

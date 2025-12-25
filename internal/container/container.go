@@ -12,6 +12,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -55,6 +56,10 @@ type Container struct {
 	PresenceHandler     *handlers.PresenceHandler
 	AdminHandler        *handlers.AdminHandler
 	HealthHandler       *handlers.HealthHandler
+	SSEHandler          *handlers.SSEHandler
+
+	// SSE
+	SSEBroadcaster *sse.Broadcaster
 }
 
 // NewContainer creates a new dependency injection container
@@ -92,6 +97,10 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Initialize limiter
 	container.Limiter = limiter.NewRedisLimiter(redisClient, logger)
+
+	// Initialize SSE broadcaster
+	container.SSEBroadcaster = sse.NewBroadcaster(logger)
+	container.SSEBroadcaster.SetRedis(redisClient)
 
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
@@ -161,6 +170,10 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.RedisClient,
 		logger,
 	)
+	container.SSEHandler = handlers.NewSSEHandler(
+		container.SSEBroadcaster,
+		logger,
+	)
 
 	return container, nil
 }
@@ -172,6 +185,9 @@ func (c *Container) Close() error {
 	}
 	if c.RedisClient != nil {
 		c.RedisClient.Close()
+	}
+	if c.SSEBroadcaster != nil {
+		c.SSEBroadcaster.Close()
 	}
 	if c.DatabaseManager != nil {
 		return c.DatabaseManager.Close()
