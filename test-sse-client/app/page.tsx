@@ -7,6 +7,7 @@ interface Notification {
   content: {
     title: string;
     body: string;
+    data?: Record<string, any>;
   };
   created_at: string;
   status: string;
@@ -26,7 +27,7 @@ export default function Home() {
 
   // In a real app, this would be from config or environment
   const HUB_URL = 'http://localhost:8080';
-  const API_KEY = 'frn_IUt4aGXrokZoa0pUMZGIg_bqMhpHsNgHV5cKs61exYI=';
+  const API_KEY = 'frn_p9fni87LVXBtIU2mYzLzXGTp2ZEUdBozgaqhoWYBQiU=';
 
   useEffect(() => {
     setHasMounted(true);
@@ -202,8 +203,8 @@ export default function Home() {
               type="submit"
               disabled={isConnecting}
               className={`w-full font-bold py-3 rounded-lg shadow-lg transition-all flex items-center justify-center gap-2 ${isConnecting
-                  ? 'bg-blue-600/50 text-white/50 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-blue-500/20'
+                ? 'bg-blue-600/50 text-white/50 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-blue-500/20'
                 }`}
             >
               {isConnecting ? (
@@ -262,6 +263,15 @@ export default function Home() {
                       <div key={msg.notification_id} className="p-4 border-b border-slate-800 hover:bg-slate-800/30 transition-colors">
                         <p className="font-semibold text-sm text-blue-400">{msg.content.title || 'Notification'}</p>
                         <p className="text-xs text-slate-300 mt-1">{msg.content.body}</p>
+                        {msg.content.data && Object.keys(msg.content.data).length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {Object.entries(msg.content.data).map(([key, value]) => (
+                              <span key={key} className="text-[9px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400 border border-slate-700">
+                                {key}: {String(value)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <p className="text-[10px] text-slate-500 mt-2">
                           {new Date(msg.created_at || Date.now()).toLocaleTimeString()}
                         </p>
@@ -331,10 +341,23 @@ export default function Home() {
                     <span className="text-slate-500">Title:</span>
                     <span className="text-slate-200 font-bold">{msg.content.title}</span>
                   </div>
-                  <div className="grid grid-cols-[100px_1fr] gap-2">
+                  <div className="grid grid-cols-[100px_1fr] gap-2 mb-2">
                     <span className="text-slate-500">Body:</span>
                     <span className="text-slate-300">{msg.content.body}</span>
                   </div>
+                  {msg.content.data && Object.keys(msg.content.data).length > 0 && (
+                    <div className="grid grid-cols-[100px_1fr] gap-2 border-t border-slate-800 pt-2 mt-2">
+                      <span className="text-slate-500">Data Payload:</span>
+                      <div className="flex flex-col gap-1">
+                        {Object.entries(msg.content.data).map(([key, value]) => (
+                          <div key={key} className="flex gap-2 text-[10px]">
+                            <span className="text-blue-400 font-bold">{key}:</span>
+                            <span className="text-slate-400">{String(value)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
