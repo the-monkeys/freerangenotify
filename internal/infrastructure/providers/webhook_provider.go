@@ -78,73 +78,34 @@ func NewWebhookProvider(config WebhookConfig, logger *zap.Logger) (Provider, err
 func (p *WebhookProvider) Send(ctx context.Context, notif *notification.Notification, usr *user.User) (*Result, error) {
 	startTime := time.Now()
 
-	targetURL := usr.WebhookURL
-	if targetURL == "" {
-		// Fallback to metadata if provided (e.g. for one-off webhooks)
-		if url, ok := notif.Metadata["webhook_url"].(string); ok {
-			targetURL = url
-		}
+	var targetURL, userID string
+	if usr != nil {
+		targetURL = usr.WebhookURL
+		userID = usr.UserID
+	}
+
+	// Always check metadata for override or fallback (or primary source if anonymous)
+	if url, ok := notif.Metadata["webhook_url"].(string); ok && url != "" {
+		targetURL = url
 	}
 
 	if targetURL == "" {
 		return NewErrorResult(
-			fmt.Errorf("no webhook URL for user %s", usr.UserID),
+			fmt.Errorf("no webhook URL found for notification %s", notif.NotificationID),
 			ErrorTypeInvalid,
 		), nil
 	}
 
 	p.logger.Info("Sending Webhook",
 		zap.String("notification_id", notif.NotificationID),
-		zap.String("user_id", usr.UserID),
+		zap.String("user_id", userID), // Might be empty
 		zap.String("template_id", notif.TemplateID),
 		zap.String("url", targetURL))
 
 	// Prepare Payload
-	webhookPayload := WebhookPayload{
-		ID:         notif.NotificationID,
-		AppID:      notif.AppID,
-		UserID:     usr.UserID,
-		Channel:    string(notif.Channel),
-		Priority:   string(notif.Priority),
-		Status:     string(notif.Status),
-		TemplateID: notif.TemplateID,
-		Content:    notif.Content,
-		Metadata:   notif.Metadata,
-		CreatedAt:  notif.CreatedAt,
-	}
-
-	if notif.Metadata != nil {
-		if tmplData, ok := notif.Metadata["template"].(map[string]interface{}); ok {
-			webhookPayload.Template = &TemplateInfo{
-				Name:    getString(tmplData, "name"),
-				Subject: getString(tmplData, "subject"),
-				Body:    getString(tmplData, "body"),
-			}
-			if vars, ok := tmplData["variables"].([]string); ok {
-				webhookPayload.Template.Variables = vars
-			} else if varsInterface, ok := tmplData["variables"].([]interface{}); ok {
-				webhookPayload.Template.Variables = make([]string, len(varsInterface))
-				for i, v := range varsInterface {
-					webhookPayload.Template.Variables[i], _ = v.(string)
-				}
-			}
-		}
-	}
-
-	// If template was not provided in metadata (common path after we removed redundant template metadata),
-	// synthesize it from the rendered content so the receiver UI has context.
-	if webhookPayload.Template == nil {
-		var variableKeys []string
-		for k := range notif.Content.Data {
-			variableKeys = append(variableKeys, k)
-		}
-
-		webhookPayload.Template = &TemplateInfo{
-			Name:      "", // unknown without repository lookup
-			Subject:   notif.Content.Title,
-			Body:      notif.Content.Body,
-			Variables: variableKeys,
-		}
+	// Restricted payload as per requirements (only content)
+	webhookPayload := map[string]interface{}{
+		"content": notif.Content,
 	}
 
 	payload, err := json.Marshal(webhookPayload)

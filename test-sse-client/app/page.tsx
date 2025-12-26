@@ -27,7 +27,7 @@ export default function Home() {
 
   // In a real app, this would be from config or environment
   const HUB_URL = 'http://localhost:8080';
-  const API_KEY = 'frn_p9fni87LVXBtIU2mYzLzXGTp2ZEUdBozgaqhoWYBQiU=';
+  const API_KEY = 'frn_e5fArB5u75Xm9T0L3_4drlgs4DZiWJrus86csAsSNnc=';
 
   useEffect(() => {
     setHasMounted(true);

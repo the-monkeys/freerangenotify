@@ -183,18 +183,29 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		logger.Error("Failed to update status to processing", zap.Error(err))
 	}
 
-	// Get user details
-	usr, err := p.userRepo.GetByID(ctx, notif.UserID)
-	if err != nil {
-		logger.Error("Failed to get user", zap.Error(err))
-		p.handleFailure(ctx, notif, item, "user not found")
-		return
-	}
+	// Get user details (only if UserID is present)
+	var usr *user.User
+	if notif.UserID != "" {
+		usr, err = p.userRepo.GetByID(ctx, notif.UserID)
+		if err != nil {
+			logger.Error("Failed to get user", zap.Error(err))
+			p.handleFailure(ctx, notif, item, "user not found")
+			return
+		}
 
-	// Check user preferences
-	if !p.checkUserPreferences(usr, notif) {
-		logger.Info("Notification blocked by user preferences")
-		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusCancelled)
+		// Check user preferences
+		if !p.checkUserPreferences(usr, notif) {
+			logger.Info("Notification blocked by user preferences")
+			p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusCancelled)
+			return
+		}
+	} else if notif.Channel == notification.ChannelWebhook {
+		// Anonymous webhook, continue without user
+		logger.Debug("Processing anonymous webhook without user record")
+	} else {
+		// No user ID and not a webhook? Should have been caught by validation, but fail safe here.
+		logger.Error("Missing user ID for non-webhook channel")
+		p.handleFailure(ctx, notif, item, "missing user id")
 		return
 	}
 

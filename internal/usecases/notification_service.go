@@ -92,35 +92,52 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("title", title),
 		zap.String("body", body))
 
-	// Check if user exists
-	u, err := s.userRepo.GetByID(ctx, req.UserID)
-	if err != nil {
-		s.logger.Error("Failed to get user", zap.String("user_id", req.UserID), zap.Error(err))
-		return nil, fmt.Errorf("user not found: %w", err)
-	}
+	// Check if user exists (only if UserID is present)
+	var u *user.User
 
-	// Check global DND
-	if u.Preferences.DND && req.Priority != notification.PriorityCritical {
-		return nil, notification.ErrDNDEnabled
-	}
+	// Handle anonymous webhook case
+	if req.UserID == "" && req.Channel == notification.ChannelWebhook {
+		// Log that we are processing an anonymous webhook
+		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID))
 
-	// Validate channel is enabled in user preferences (honoring category overrides)
-	if !s.isChannelEnabled(ctx, u, req.Channel, req.Category) {
-		return nil, fmt.Errorf("channel %s is not enabled for user %s (category: %s)", req.Channel, req.UserID, req.Category)
-	}
+		// Create a dummy user object or handle nil user in checks?
+		// Better to just skip checks that require user.
 
-	// Check quiet hours
-	if s.isQuietHours(u) && req.Priority != notification.PriorityCritical {
-		return nil, fmt.Errorf("user is in quiet hours, only critical notifications allowed")
-	}
+		// Skip global DND check
+		// Skip channel enabled check
+		// Skip quiet hours check
+		// Skip daily limit check
 
-	// Check daily limit
-	if u.Preferences.DailyLimit > 0 {
-		allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("user:%s", req.UserID), u.Preferences.DailyLimit)
+	} else {
+		u, err = s.userRepo.GetByID(ctx, req.UserID)
 		if err != nil {
-			s.logger.Error("Failed to check daily limit", zap.Error(err))
-		} else if !allowed && req.Priority != notification.PriorityCritical {
-			return nil, notification.ErrRateLimitExceeded
+			s.logger.Error("Failed to get user", zap.String("user_id", req.UserID), zap.Error(err))
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+
+		// Check global DND
+		if u.Preferences.DND && req.Priority != notification.PriorityCritical {
+			return nil, notification.ErrDNDEnabled
+		}
+
+		// Validate channel is enabled in user preferences (honoring category overrides)
+		if !s.isChannelEnabled(ctx, u, req.Channel, req.Category) {
+			return nil, fmt.Errorf("channel %s is not enabled for user %s (category: %s)", req.Channel, req.UserID, req.Category)
+		}
+
+		// Check quiet hours
+		if s.isQuietHours(u) && req.Priority != notification.PriorityCritical {
+			return nil, fmt.Errorf("user is in quiet hours, only critical notifications allowed")
+		}
+
+		// Check daily limit
+		if u.Preferences.DailyLimit > 0 {
+			allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("user:%s", req.UserID), u.Preferences.DailyLimit)
+			if err != nil {
+				s.logger.Error("Failed to check daily limit", zap.Error(err))
+			} else if !allowed && req.Priority != notification.PriorityCritical {
+				return nil, notification.ErrRateLimitExceeded
+			}
 		}
 	}
 
@@ -144,6 +161,20 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		Recurrence:  req.Recurrence,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
+	}
+
+	// Move webhook_url from Data to Metadata if present
+	if url, ok := req.Data["webhook_url"].(string); ok {
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["webhook_url"] = url
+		// We can keep it in Data too if we want it in the payload content,
+		// but typically transport details stay in Metadata.
+		// Remove from Content.Data to keep payload clean?
+		// Let's remove it to avoid leaking it into the body payload if not desired,
+		// but models says Content.Data is what goes to the user.
+		delete(notif.Content.Data, "webhook_url")
 	}
 
 	// Calculate initial schedule for recurring notifications if not provided

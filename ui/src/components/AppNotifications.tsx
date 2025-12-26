@@ -20,6 +20,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
         title: '',
         body: '',
         template_id: '',
+        webhook_url: '',
         data: {}
     });
 
@@ -111,14 +112,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                 <form onSubmit={handleSendNotification} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="form-group">
-                            <label className="form-label">Recipient (User)</label>
+                            <label className="form-label">
+                                Recipient (User)
+                                {formData.channel === 'webhook' && <span style={{ fontWeight: 'normal', color: '#666', fontSize: '0.8em' }}> (Optional)</span>}
+                            </label>
                             <select
                                 className="form-input"
                                 value={formData.user_id}
                                 onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                                required
+                                required={formData.channel !== 'webhook'}
                             >
-                                <option value="">Select a user...</option>
+                                <option value="">{formData.channel === 'webhook' ? 'No user (Anonymous)' : 'Select a user...'}</option>
                                 {(users || []).map(u => (
                                     <option key={u.user_id} value={u.user_id}>{u.external_user_id} ({u.email || 'no email'})</option>
                                 ))}
@@ -152,6 +156,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                                 <option value="sse">SSE (Server-Sent Events)</option>
                             </select>
                         </div>
+
+                        {/* Webhook URL Field - Only shown for webhook channel */}
+                        {formData.channel === 'webhook' && (
+                            <div className="form-group md:col-span-2">
+                                <label className="form-label">Webhook URL</label>
+                                <input
+                                    type="url"
+                                    className="form-input"
+                                    value={formData.webhook_url || ''}
+                                    onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
+                                    placeholder="https://discord.com/api/webhooks/..."
+                                    required={!formData.user_id} // Required if no user selected
+                                />
+                                <p style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: '#666' }}>
+                                    Override or provide destination URL. Required if no user is selected.
+                                </p>
+                            </div>
+                        )}
                         <div className="form-group">
                             <label className="form-label">Priority</label>
                             <select
@@ -226,7 +248,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                                 <tr key={n.notification_id} style={{ borderBottom: '1px solid var(--azure-border)' }}>
                                     <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#a19f9d', fontFamily: 'monospace' }}>{n.notification_id?.substring(0, 8)}...</td>
                                     <td style={{ padding: '0.75rem', color: '#323130' }}>
-                                        {users?.find(u => u.user_id === n.user_id)?.external_user_id || n.user_id || 'Unknown'}
+                                        {n.user_id ?
+                                            (users?.find(u => u.user_id === n.user_id)?.external_user_id || n.user_id) :
+                                            <span style={{ color: '#666', fontStyle: 'italic' }}>Anonymous (Webhook)</span>
+                                        }
                                     </td>
                                     <td style={{ padding: '0.75rem', color: '#323130' }}>{n.title}</td>
                                     <td style={{ padding: '0.75rem' }}>

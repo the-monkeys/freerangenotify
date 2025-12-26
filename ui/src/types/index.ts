@@ -116,6 +116,7 @@ export interface NotificationRequest {
     body: string;
     data?: Record<string, any>;
     template_id?: string;
+    webhook_url?: string;
 }
 
 export interface BulkNotificationRequest {

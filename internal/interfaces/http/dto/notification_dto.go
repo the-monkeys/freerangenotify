@@ -8,7 +8,7 @@ import (
 
 // SendNotificationRequest represents the API request to send a notification
 type SendNotificationRequest struct {
-	UserID      string                 `json:"user_id" validate:"required"`
+	UserID      string                 `json:"user_id"` // Removed validate:"required"
 	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
 	Priority    string                 `json:"priority" validate:"required,oneof=low normal high critical"`
 	Title       string                 `json:"title,omitempty"`
@@ -18,6 +18,7 @@ type SendNotificationRequest struct {
 	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence  *RecurrenceRequest     `json:"recurrence,omitempty"`
+	WebhookURL  string                 `json:"webhook_url,omitempty"` // New field
 }
 
 // ToSendRequest converts DTO to domain SendRequest
@@ -33,6 +34,26 @@ func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendR
 		TemplateID:  r.TemplateID,
 		Category:    r.Category,
 		ScheduledAt: r.ScheduledAt,
+	}
+
+	if r.WebhookURL != "" {
+		if req.Data == nil {
+			req.Data = make(map[string]interface{})
+		}
+		// Also store in metadata if possible, but SendRequest doesn't have Metadata field exposed directly in this struct?
+		// Wait, SendRequest in models.go doesn't have Metadata, but Notification does.
+		// Usually data passed here ends up in Content.Data.
+		// However, we need this down in the provider.
+		// Let's pass it via Data for now or check if we should add Metadata to SendRequest.
+		// The plan said "Map WebhookURL to Notification.Metadata", but SendRequest needs to carry it.
+		// Let's use Data for now as a transport, or I might need to update SendRequest in models.go to have Metadata.
+		// Checking models.go (viewed in step 39): SendRequest has Data map[string]interface{}.
+		// Notification has Metadata.
+		// I will put it in 'Data' with a special key, and the Service can move it to Metadata or the Provider can read it from Content.Data.
+		// Actually, the plan said "Map WebhookURL to Notification.Metadata["webhook_url"] in ToSendRequest".
+		// But ToSendRequest returns notification.SendRequest, and notification.SendRequest ONLY has Data, not Metadata.
+		// So I will put it in `Data["webhook_url"]`.
+		req.Data["webhook_url"] = r.WebhookURL
 	}
 
 	if r.Recurrence != nil {

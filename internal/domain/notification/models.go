@@ -222,7 +222,18 @@ func (n *Notification) Validate() error {
 		return ErrInvalidAppID
 	}
 	if n.UserID == "" {
-		return ErrInvalidUserID
+		if n.Channel != ChannelWebhook {
+			return ErrInvalidUserID
+		}
+		// For webhook, check if we have the URL in metadata
+		if n.Metadata == nil {
+			// Check content data as fallback?
+			// Models says Metadata["webhook_url"] is populated in Service.
+			return ErrInvalidUserID
+		}
+		if _, ok := n.Metadata["webhook_url"]; !ok {
+			return ErrInvalidUserID
+		}
 	}
 	if !n.Channel.Valid() {
 		return ErrInvalidChannel
@@ -252,7 +263,7 @@ func (n *Notification) IsScheduled() bool {
 // SendRequest represents a request to send a notification
 type SendRequest struct {
 	AppID       string                 `json:"app_id" validate:"required"`
-	UserID      string                 `json:"user_id" validate:"required"`
+	UserID      string                 `json:"user_id"` // Removed validate:"required"
 	Channel     Channel                `json:"channel" validate:"required"`
 	Priority    Priority               `json:"priority" validate:"required"`
 	Title       string                 `json:"title,omitempty"`
@@ -269,9 +280,28 @@ func (r *SendRequest) Validate() error {
 	if r.AppID == "" {
 		return ErrInvalidAppID
 	}
+	// Conditional UserID validation
 	if r.UserID == "" {
-		return ErrInvalidUserID
+		// DEBUG PRINT
+		// fmt.Printf("DEBUG VALIDATE: UserID='%s', Channel='%s', Data=%v\n", r.UserID, r.Channel, r.Data)
+		// We need to import "fmt" if we use it, causing import error if not present.
+		// models.go imports "context" and "time".
+		// Better to not break build.
+		// Use logger? Models doesn't have logger.
+		// Let's rely on logic inspection again.
+
+		if r.Channel != ChannelWebhook {
+			return ErrInvalidUserID
+		}
+		// For webhook, if UserID is empty, we must have a webhook_url in Data
+		if r.Data == nil {
+			return ErrInvalidUserID // Re-using this error or should create new one? UserID is missing and no fallback.
+		}
+		if _, ok := r.Data["webhook_url"]; !ok {
+			return ErrInvalidUserID // Needs UserID or Webhook URL
+		}
 	}
+
 	if !r.Channel.Valid() {
 		return ErrInvalidChannel
 	}
