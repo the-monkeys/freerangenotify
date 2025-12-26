@@ -35,7 +35,6 @@ WORKDIR /home/app
 COPY --from=builder --chown=app:app /app/server .
 COPY --from=builder --chown=app:app /app/worker .
 COPY --from=builder --chown=app:app /app/config ./config
-COPY --from=builder --chown=app:app /app/docs ./docs
 
 # Switch to app user
 USER app

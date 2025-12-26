@@ -1,9 +1,0 @@
-{
-  "user_id": "e6559277-297b-4eb9-b6ab-881755971893",
-  "channel": "sse",
-  "priority": "normal",
-  "template_id": "6184b3c9-593a-4292-8a3e-e0695fbba06c",
-  "data": {
-    "name": "Postman Pro"
-  }
-}

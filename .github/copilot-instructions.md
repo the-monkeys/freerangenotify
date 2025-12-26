@@ -149,6 +149,10 @@ docker-compose logs -f notification-worker
 
 # Check internal queue depth (Admin API)
 curl http://localhost:8080/v1/admin/queues/stats
+
+# Enable Debug Logging in Worker
+# Set DEBUG=true or FREERANGE_LOG_LEVEL=debug in docker-compose.yml or .env
+docker-compose logs -f notification-worker
 ```
 
 ---
@@ -157,8 +161,8 @@ curl http://localhost:8080/v1/admin/queues/stats
 -   **Presence Registry**: Redis-stored map of `UserID -> CurrentDynamicURL`.
 -   **Instant Flush**: On `POST /v1/presence/check-in`, the system moves all `StatusQueued` notifications for that user to the **head** of the Redis list (`LPUSH`).
 -   **Dynamic Routing**: The Worker checks Redis presence *before* static profile settings. If a user is active, it delivers to the dynamic URL.
--   **Real-time SSE**: For browser clients, use `channel: "sse"` to deliver notifications instantly via Server-Sent Events. Clients connect to `/sse?user_id={id}` and receive push notifications without refresh.
--   **Testing**: Use test receivers (cmd/receiver) on different ports to simulate user presence. Send notifications while offline, then check-in to trigger instant delivery.
+-   **Real-time SSE**: For browser clients, use `channel: "sse"` to deliver notifications instantly via Server-Sent Events. Clients connect to `/v1/sse?user_id={internal_uuid}` (NOT external_id) and receive push notifications without refresh.
+-   **Testing**: Use test receivers (cmd/receiver) on different ports to simulate user presence. When sending notifications, ensure the `user_id` in the payload is the **internal UUID** returned during user creation.
 
 ## Technical Guidelines for Code Suggestions
 -   **Fiber First**: Use Fiber's context and built-in features for HTTP logic.

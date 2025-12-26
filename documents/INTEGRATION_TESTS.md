@@ -1,5 +1,34 @@
 # Integration Test Suite Documentation
 
+## Quick Start (Manual Testing) ✅
+
+### 1. Setup Services
+Ensure Docker services are running:
+```powershell
+docker-compose up -d elasticsearch redis
+```
+
+### 2. Manual Test Commands
+Use these curl commands for quick validation:
+
+**Create Application**
+```powershell
+curl.exe -X POST http://localhost:8080/v1/apps `
+  -H "Content-Type: application/json" `
+  -d '{\"app_name\":\"Test App 1\",\"webhook_url\":\"https://example.com/webhook\",\"enable_webhooks\":true,\"enable_analytics\":true}'
+```
+
+**Create User (replace {api_key})**
+```powershell
+curl.exe -X POST http://localhost:8080/v1/users `
+  -H "Content-Type: application/json" `
+  -H "Authorization: Bearer {api_key}" `
+  -H "Authorization: Bearer {api_key}" `
+  -d '{\"external_user_id\":\"user001\",\"email\":\"user001@example.com\",\"phone\":\"+1234567890\",\"timezone\":\"America/New_York\",\"language\":\"en\"}'
+```
+
+---
+
 ## Overview
 Comprehensive HTTP API integration tests for FreeRangeNotify notification service.
 
