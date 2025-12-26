@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"go.uber.org/zap"
@@ -16,17 +18,19 @@ import (
 
 // SSEHandler handles Server-Sent Events
 type SSEHandler struct {
-	broadcaster *sse.Broadcaster
-	appService  usecases.ApplicationService
-	logger      *zap.Logger
+	broadcaster  *sse.Broadcaster
+	appService   usecases.ApplicationService
+	notifService notification.Service
+	logger       *zap.Logger
 }
 
 // NewSSEHandler creates a new SSE handler
-func NewSSEHandler(broadcaster *sse.Broadcaster, appService usecases.ApplicationService, logger *zap.Logger) *SSEHandler {
+func NewSSEHandler(broadcaster *sse.Broadcaster, appService usecases.ApplicationService, notifService notification.Service, logger *zap.Logger) *SSEHandler {
 	return &SSEHandler{
-		broadcaster: broadcaster,
-		appService:  appService,
-		logger:      logger,
+		broadcaster:  broadcaster,
+		appService:   appService,
+		notifService: notifService,
+		logger:       logger,
 	}
 }
 
@@ -36,7 +40,6 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 	appID := c.Query("app_id")
 	userID := c.Query("user_id")
 
-	// If token and app_id are provided, we attempt validation
 	// Validate App ID if provided
 	if appID != "" {
 		_, err := h.appService.GetByID(c.Context(), appID)
@@ -72,6 +75,18 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 	}
 
 	h.logger.Info("SSE connection authenticated", zap.String("user_id", userID), zap.String("app_id", appID))
+
+	// Re-enqueue any queued notifications for immediate delivery
+	if h.notifService != nil {
+		go func() {
+			// Use background context as c.Context() might be cancelled or short-lived
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := h.notifService.FlushQueued(ctx, userID); err != nil {
+				h.logger.Error("Failed to flush queued notifications", zap.Error(err))
+			}
+		}()
+	}
 
 	// Handle the SSE connection
 	return h.broadcaster.HandleSSE(c, userID)
