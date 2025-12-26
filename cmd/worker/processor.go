@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sync"
+	stdtemplate "text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -218,13 +220,28 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				zap.Error(err))
 		} else {
 			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
-			notif.Content.Title = tmpl.Subject
-			notif.Content.Body = tmpl.Body
-			logger.Debug("Template applied to notification content",
+			// Render template content
+			title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
+			if err != nil {
+				logger.Warn("Failed to render template title", zap.Error(err))
+				title = tmpl.Subject // Fallback to raw
+			}
+
+			body, err := p.renderTemplate(tmpl.Body, notif.Content.Data)
+			if err != nil {
+				logger.Warn("Failed to render template body", zap.Error(err))
+				body = tmpl.Body // Fallback to raw
+			}
+
+			notif.Content.Title = title
+			notif.Content.Body = body
+
+			logger.Debug("Template applied and rendered",
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("template_id", notif.TemplateID),
 				zap.String("template_name", tmpl.Name),
-				zap.Any("notification_content_data", notif.Content.Data))
+				zap.String("rendered_title", title),
+				zap.String("rendered_body", body))
 		}
 	}
 
@@ -636,4 +653,32 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 		p.logger.Error("Failed to enqueue next recurring notification", zap.Error(err))
 		// Not a critical failure as scheduler will pick it up from DB eventually
 	}
+}
+
+// renderTemplate renders a template string with data
+func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]interface{}) (string, error) {
+	if tmplStr == "" {
+		return "", nil
+	}
+
+	p.logger.Debug("Rendering template",
+		zap.String("template_string", tmplStr),
+		zap.Any("rendering_data", data))
+
+	tmpl, err := stdtemplate.New("notification").Parse(tmplStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		p.logger.Error("Template execution failed", zap.Error(err))
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	result := buf.String()
+	p.logger.Debug("Template rendered successfully",
+		zap.String("result", result))
+
+	return result, nil
 }
