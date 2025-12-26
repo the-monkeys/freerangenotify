@@ -172,6 +172,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
+		container.ApplicationService,
 		logger,
 	)
 

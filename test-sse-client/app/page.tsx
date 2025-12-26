@@ -23,6 +23,8 @@ export default function Home() {
   const [status, setStatus] = useState('Disconnected');
   const [showDropdown, setShowDropdown] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
+  const [appId, setAppId] = useState('');
+  const [token, setToken] = useState('');
 
   // In a real app, this would be from config or environment
   const HUB_URL = 'http://localhost:8080';
@@ -31,9 +33,13 @@ export default function Home() {
   useEffect(() => {
     setHasMounted(true);
     const savedUser = localStorage.getItem('frn_userId');
+    const savedApp = localStorage.getItem('frn_appId');
+    const savedToken = localStorage.getItem('frn_token');
     const savedLoggedIn = localStorage.getItem('frn_isLoggedIn');
     if (savedUser && savedLoggedIn === 'true') {
       setUserId(savedUser);
+      setAppId(savedApp || '');
+      setToken(savedToken || '');
       setIsLoggedIn(true);
     }
   }, []);
@@ -42,8 +48,8 @@ export default function Home() {
     if (e) e.preventDefault();
     setLoginError('');
 
-    if (!userId.trim()) {
-      setLoginError('Please enter User ID');
+    if (!userId.trim() && !token.trim()) {
+      setLoginError('Please enter User ID or Token');
       return;
     }
 
@@ -54,6 +60,8 @@ export default function Home() {
 
     setIsLoggedIn(true);
     localStorage.setItem('frn_userId', userId);
+    localStorage.setItem('frn_appId', appId);
+    localStorage.setItem('frn_token', token);
     localStorage.setItem('frn_isLoggedIn', 'true');
     setIsConnecting(false);
   };
@@ -61,9 +69,13 @@ export default function Home() {
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUserId('');
+    setAppId('');
+    setToken('');
     setMessages([]);
     setUnreadCount(0);
     localStorage.removeItem('frn_userId');
+    localStorage.removeItem('frn_appId');
+    localStorage.removeItem('frn_token');
     localStorage.removeItem('frn_isLoggedIn');
   };
 
@@ -121,7 +133,15 @@ export default function Home() {
     if (!isLoggedIn || !userId || !hasMounted) return;
 
     fetchUnread(userId);
-    const eventSource = new EventSource(`${HUB_URL}/v1/sse?user_id=${userId}`);
+
+    let url = `${HUB_URL}/v1/sse?`;
+    if (token && appId) {
+      url += `token=${encodeURIComponent(token)}&app_id=${encodeURIComponent(appId)}`;
+    } else {
+      url += `user_id=${encodeURIComponent(userId)}`;
+    }
+
+    const eventSource = new EventSource(url);
 
     eventSource.onopen = () => setStatus('Connected');
     eventSource.onmessage = (event) => {
@@ -167,14 +187,38 @@ export default function Home() {
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase">User ID</label>
+              <label className="text-xs font-bold text-slate-400 uppercase">Method 1: Direct ID (Dev)</label>
               <input
                 type="text"
-                placeholder="e.g. e76dc625-fff2-4941-b855-b2edf659e381"
+                placeholder="User ID (Internal UUID)"
                 className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 value={userId}
                 onChange={e => setUserId(e.target.value)}
-                required
+                disabled={isConnecting}
+              />
+            </div>
+
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-800"></span></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-slate-900 px-2 text-slate-500 font-bold">OR</span></div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="text-xs font-bold text-slate-400 uppercase">Method 2: Zero-Trust Token</label>
+              <input
+                type="text"
+                placeholder="Application ID"
+                className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                value={appId}
+                onChange={e => setAppId(e.target.value)}
+                disabled={isConnecting}
+              />
+              <input
+                type="text"
+                placeholder="Auth Token (for Validation API)"
+                className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                value={token}
+                onChange={e => setToken(e.target.value)}
                 disabled={isConnecting}
               />
             </div>

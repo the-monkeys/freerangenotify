@@ -17,11 +17,17 @@ export interface ApplicationSettings {
     default_template?: string;
     enable_webhooks?: boolean;
     enable_analytics?: boolean;
-    // Allow dynamic keys if backend supports it, but DTO seems specific. 
-    // Wait, DTO Settings is struct `application.Settings`. Let's check `internal/domain/application/types.go` if needed.
-    // However, `api.ts` treated it as Record<string, any>. I should keep it flexible OR match DTO.
-    // The previous test script used `rate_limit`.
+    validation_url?: string;
+    validation_config?: ValidationConfig;
+    // Allow dynamic keys if backend supports it
     [key: string]: any;
+}
+
+export interface ValidationConfig {
+    method: string;
+    token_placement: string;
+    token_key: string;
+    static_headers?: Record<string, string>;
 }
 
 export interface CreateApplicationRequest {
@@ -68,6 +74,7 @@ export interface UserPreferences {
 }
 
 export interface CreateUserRequest {
+    user_id?: string;
     external_user_id: string;
     email?: string;
     phone?: string;
