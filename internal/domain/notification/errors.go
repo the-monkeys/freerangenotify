@@ -18,6 +18,8 @@ var (
 	ErrInvalidScheduleTime   = errors.New("invalid schedule time")
 	ErrRateLimitExceeded     = errors.New("user exceeded daily notification limit")
 	ErrDNDEnabled            = errors.New("user has Do Not Disturb enabled")
+	ErrTemplateRequired      = errors.New("template_id is required")
+	ErrTemplateNotFound      = errors.New("template not found")
 )
 
 // IsValidationError checks if an error is a validation error
@@ -29,5 +31,7 @@ func IsValidationError(err error) bool {
 		errors.Is(err, ErrEmptyContent) ||
 		errors.Is(err, ErrInvalidScheduleTime) ||
 		errors.Is(err, ErrInvalidNotificationID) ||
-		errors.Is(err, ErrInvalidStatus)
+		errors.Is(err, ErrInvalidStatus) ||
+		errors.Is(err, ErrTemplateRequired) ||
+		errors.Is(err, ErrTemplateNotFound)
 }

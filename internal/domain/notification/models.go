@@ -14,12 +14,13 @@ const (
 	ChannelSMS     Channel = "sms"
 	ChannelWebhook Channel = "webhook"
 	ChannelInApp   Channel = "in_app"
+	ChannelSSE     Channel = "sse"
 )
 
 // Valid checks if the channel is valid
 func (c Channel) Valid() bool {
 	switch c {
-	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp:
+	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp, ChannelSSE:
 		return true
 	default:
 		return false
@@ -207,6 +208,9 @@ type Service interface {
 	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error
 	FlushQueued(ctx context.Context, userID string) error
+	GetUnreadCount(ctx context.Context, userID, appID string) (int64, error)
+	ListUnread(ctx context.Context, userID, appID string) ([]*Notification, error)
+	MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error
 }
 
 // Validate validates the notification entity
@@ -251,10 +255,10 @@ type SendRequest struct {
 	UserID      string                 `json:"user_id" validate:"required"`
 	Channel     Channel                `json:"channel" validate:"required"`
 	Priority    Priority               `json:"priority" validate:"required"`
-	Title       string                 `json:"title" validate:"required"`
-	Body        string                 `json:"body" validate:"required"`
+	Title       string                 `json:"title,omitempty"`
+	Body        string                 `json:"body,omitempty"`
 	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id,omitempty"`
+	TemplateID  string                 `json:"template_id" validate:"required"`
 	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
@@ -274,8 +278,8 @@ func (r *SendRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
-		return ErrEmptyContent
+	if r.TemplateID == "" {
+		return ErrTemplateRequired
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime

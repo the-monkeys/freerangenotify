@@ -242,7 +242,7 @@ func (r *NotificationRepository) BulkUpdateStatus(ctx context.Context, notificat
 		documents[id] = updateDoc
 	}
 
-	return r.BaseRepository.BulkCreate(ctx, documents)
+	return r.BaseRepository.BulkUpdate(ctx, documents)
 }
 
 // buildNotificationQuery builds Elasticsearch query from filter

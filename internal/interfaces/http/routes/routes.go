@@ -37,6 +37,9 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Health check
 	v1.Get("/health", c.HealthHandler.Check)
+
+	// SSE endpoint
+	v1.Get("/sse", c.SSEHandler.Connect)
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -74,6 +77,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
 	notifications.Post("/batch", c.NotificationHandler.SendBatch)
 	notifications.Get("/", c.NotificationHandler.List)
+	notifications.Get("/unread/count", c.NotificationHandler.GetUnreadCount)
+	notifications.Get("/unread", c.NotificationHandler.ListUnread)
+	notifications.Post("/read", c.NotificationHandler.MarkRead)
 	notifications.Get("/:id", c.NotificationHandler.Get)
 	notifications.Put("/:id/status", c.NotificationHandler.UpdateStatus)
 	notifications.Delete("/batch", c.NotificationHandler.CancelBatch)

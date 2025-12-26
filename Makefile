@@ -24,6 +24,10 @@ help:
 build:
 	@echo "Building application..."
 	go build -o bin/server ./cmd/server
+	go build -o bin/worker ./cmd/worker
+	go build -o bin/receiver ./cmd/receiver
+	go build -o bin/sse_receiver ./cmd/sse_receiver
+	go build -o bin/migrate ./cmd/migrate
 
 # Run the application locally
 run:

@@ -95,7 +95,7 @@ export interface Notification {
     notification_id: string;
     app_id: string;
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     priority: 'low' | 'normal' | 'high' | 'critical';
     status: string;
     title: string;
@@ -110,7 +110,7 @@ export interface Notification {
 
 export interface NotificationRequest {
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     priority: 'low' | 'normal' | 'high' | 'critical';
     title: string;
     body: string;
@@ -163,7 +163,7 @@ export interface CreateTemplateRequest {
     app_id: string;
     name: string;
     description?: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     subject?: string;
     body: string;
     variables?: string[];

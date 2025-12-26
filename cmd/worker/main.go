@@ -169,6 +169,22 @@ func main() {
 		}
 	}
 
+	// Initialize and register SSE provider
+	sseProvider, err := providers.NewSSEProvider(providers.SSEConfig{
+		Config: providers.Config{
+			Timeout:    5 * time.Second,
+			MaxRetries: 3,
+			RetryDelay: 1 * time.Second,
+		},
+	}, c.RedisClient, logger)
+	if err != nil {
+		logger.Warn("Failed to initialize SSE provider", zap.Error(err))
+	} else {
+		if err := providerManager.RegisterProvider(sseProvider); err != nil {
+			logger.Warn("Failed to register SSE provider", zap.Error(err))
+		}
+	}
+
 	logger.Info("Provider manager initialized",
 		zap.Strings("channels", func() []string {
 			channels := providerManager.GetSupportedChannels()
@@ -190,6 +206,7 @@ func main() {
 		c.DatabaseManager.Repositories.Notification,
 		c.DatabaseManager.Repositories.User,
 		c.DatabaseManager.Repositories.Application,
+		c.DatabaseManager.Repositories.Template,
 		providerManager,
 		logger,
 		ProcessorConfig{

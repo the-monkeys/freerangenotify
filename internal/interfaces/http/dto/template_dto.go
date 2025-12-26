@@ -11,7 +11,7 @@ type CreateTemplateRequest struct {
 	AppID       string                 `json:"app_id" validate:"required"`
 	Name        string                 `json:"name" validate:"required,min=3,max=100"`
 	Description string                 `json:"description"`
-	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app"`
+	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
 	Subject     string                 `json:"subject"`
 	Body        string                 `json:"body" validate:"required"`
 	Variables   []string               `json:"variables"`
@@ -55,7 +55,7 @@ type TemplateResponse struct {
 // ListTemplatesRequest represents query parameters for listing templates
 type ListTemplatesRequest struct {
 	AppID    string `query:"app_id"`
-	Channel  string `query:"channel" validate:"omitempty,oneof=push email sms webhook in_app"`
+	Channel  string `query:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
 	Name     string `query:"name"`
 	Status   string `query:"status" validate:"omitempty,oneof=active inactive archived"`
 	Locale   string `query:"locale"`

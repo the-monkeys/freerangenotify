@@ -67,7 +67,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ appId, apiKey }) => {
     return (
         <div className="card">
             <div className="flex justify-between items-center mb-6">
-                <h3 style={{ margin: 0 }}>Application Users</h3>
+                <h3 style={{ margin: 0, border: 'none' }}>Application Users</h3>
                 <button
                     className="btn btn-primary"
                     onClick={() => setShowAddForm(!showAddForm)}
@@ -77,7 +77,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ appId, apiKey }) => {
             </div>
 
             {showAddForm && (
-                <form onSubmit={handleCreateUser} className="mb-8" style={{ background: '#1a202c', padding: '1.5rem', borderRadius: '0.5rem' }}>
+                <form onSubmit={handleCreateUser} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="form-group">
                             <label className="form-label">External User ID</label>
@@ -128,28 +128,28 @@ const AppUsers: React.FC<AppUsersProps> = ({ appId, apiKey }) => {
             )}
 
             {users.length === 0 ? (
-                <p style={{ color: '#718096', textAlign: 'center', padding: '2rem' }}>No users found for this application.</p>
+                <p style={{ color: '#605e5c', textAlign: 'center', padding: '2rem', fontSize: '0.9rem' }}>No users found for this application.</p>
             ) : (
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid #2d3748', textAlign: 'left' }}>
-                                <th style={{ padding: '1rem' }}>External ID</th>
-                                <th style={{ padding: '1rem' }}>Email</th>
-                                <th style={{ padding: '1rem' }}>Language</th>
-                                <th style={{ padding: '1rem' }}>Actions</th>
+                            <tr style={{ borderBottom: '1px solid var(--azure-border)', textAlign: 'left' }}>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>External ID</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Email</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Language</th>
+                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {users.map((user) => (
-                                <tr key={user.user_id} style={{ borderBottom: '1px solid #1a202c' }}>
-                                    <td style={{ padding: '1rem' }}>{user.external_user_id}</td>
-                                    <td style={{ padding: '1rem' }}>{user.email || '-'}</td>
-                                    <td style={{ padding: '1rem' }}>{user.language || 'en'}</td>
-                                    <td style={{ padding: '1rem' }}>
+                                <tr key={user.user_id} style={{ borderBottom: '1px solid var(--azure-border)' }}>
+                                    <td style={{ padding: '0.75rem', color: '#323130' }}>{user.external_user_id}</td>
+                                    <td style={{ padding: '0.75rem', color: '#323130' }}>{user.email || '-'}</td>
+                                    <td style={{ padding: '0.75rem', color: '#323130' }}>{user.language || 'en'}</td>
+                                    <td style={{ padding: '0.75rem' }}>
                                         <button
                                             onClick={() => handleDeleteUser(user.user_id)}
-                                            style={{ color: '#f56565', background: 'none', border: 'none', cursor: 'pointer' }}
+                                            style={{ color: '#a4262c', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
                                         >
                                             Delete
                                         </button>

@@ -66,7 +66,7 @@ services:
     networks:
       - freerange-network
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health" ]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/v1/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -91,6 +91,28 @@ services:
     networks:
       - freerange-network
     restart: unless-stopped
+
+  # # Go Webhook Receiver (for testing webhooks and presence)
+  # go-receiver:
+  #   build: .
+  #   container_name: freerange-go-receiver
+  #   command: [ "./receiver" ]
+  #   ports:
+  #     - "8090:8090"
+  #   environment:
+  #     - PORT=8090
+  #     - USER_ID=test-user-123
+  #     - API_KEY=frn_test_key
+  #     - HUB_URL=http://notification-service:8080
+  #   depends_on:
+  #     - notification-service
+  #   networks:
+  #     - freerange-network
+  #   restart: unless-stopped
+
+  # SSE Receiver for testing
+
+
 
   # UI: React Vite (TypeScript)
   ui:

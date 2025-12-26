@@ -162,6 +162,36 @@ func (r *BaseRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByQuery deletes multiple documents matching a query
+func (r *BaseRepository) DeleteByQuery(ctx context.Context, query map[string]interface{}) error {
+	data, err := json.Marshal(query)
+	if err != nil {
+		return fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	refresh := true
+	req := esapi.DeleteByQueryRequest{
+		Index:   []string{r.indexName},
+		Body:    strings.NewReader(string(data)),
+		Refresh: &refresh,
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to execute delete by query: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+
+	r.logger.Debug("Delete by query completed",
+		zap.String("index", r.indexName))
+
+	return nil
+}
+
 // Search performs a search query
 func (r *BaseRepository) Search(ctx context.Context, query map[string]interface{}) (*QueryResult, error) {
 	data, err := json.Marshal(query)
@@ -225,6 +255,53 @@ func (r *BaseRepository) Search(ctx context.Context, query map[string]interface{
 		Total: total,
 		Hits:  documents,
 	}, nil
+}
+
+// BulkUpdate updates multiple documents in a single request (partial update)
+func (r *BaseRepository) BulkUpdate(ctx context.Context, documents map[string]interface{}) error {
+	var body strings.Builder
+
+	for id, document := range documents {
+		// Add update action
+		action := map[string]interface{}{
+			"update": map[string]interface{}{
+				"_index": r.indexName,
+				"_id":    id,
+			},
+		}
+		actionData, _ := json.Marshal(action)
+		body.Write(actionData)
+		body.WriteString("\n")
+
+		// Add document wrapper for update
+		updateDoc := map[string]interface{}{
+			"doc": document,
+		}
+		docData, _ := json.Marshal(updateDoc)
+		body.Write(docData)
+		body.WriteString("\n")
+	}
+
+	req := esapi.BulkRequest{
+		Body:    strings.NewReader(body.String()),
+		Refresh: "true",
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to execute bulk update request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+
+	r.logger.Debug("Bulk update completed",
+		zap.String("index", r.indexName),
+		zap.Int("count", len(documents)))
+
+	return nil
 }
 
 // BulkCreate creates multiple documents in a single request

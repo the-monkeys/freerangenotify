@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
@@ -33,6 +34,7 @@ type NotificationProcessor struct {
 	notifRepo       notification.Repository
 	userRepo        user.Repository
 	appRepo         application.Repository
+	templateRepo    template.Repository
 	providerManager *providers.Manager
 	logger          *zap.Logger
 	config          ProcessorConfig
@@ -48,6 +50,7 @@ func NewNotificationProcessor(
 	notifRepo notification.Repository,
 	userRepo user.Repository,
 	appRepo application.Repository,
+	templateRepo template.Repository,
 	providerManager *providers.Manager,
 	logger *zap.Logger,
 	config ProcessorConfig,
@@ -58,6 +61,7 @@ func NewNotificationProcessor(
 		notifRepo:       notifRepo,
 		userRepo:        userRepo,
 		appRepo:         appRepo,
+		templateRepo:    templateRepo,
 		providerManager: providerManager,
 		logger:          logger,
 		config:          config,
@@ -194,6 +198,25 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
+	if notif.TemplateID != "" {
+		tmpl, err := p.templateRepo.GetByID(ctx, notif.TemplateID)
+		if err != nil {
+			logger.Warn("Failed to fetch template, continuing without template details",
+				zap.String("template_id", notif.TemplateID),
+				zap.Error(err))
+		} else {
+			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
+			notif.Content.Title = tmpl.Subject
+			notif.Content.Body = tmpl.Body
+			logger.Debug("Template applied to notification content",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("template_id", notif.TemplateID),
+				zap.String("template_name", tmpl.Name),
+				zap.Any("notification_content_data", notif.Content.Data))
+		}
+	}
+
 	// TODO: Route to appropriate provider based on channel
 	// For now, simulate sending
 	err = p.sendNotification(ctx, notif, usr)
@@ -238,10 +261,24 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 	}
 
 	// Send via provider manager
+	// Send via provider manager
+	p.logger.Info("Routing notification to provider",
+		zap.String("notification_id", notif.NotificationID),
+		zap.String("channel", string(notif.Channel)),
+		zap.String("user_id", notif.UserID))
+
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
+		p.logger.Error("Provider manager send failed",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
 		return fmt.Errorf("provider send failed: %w", err)
 	}
+
+	p.logger.Info("Provider manager send result",
+		zap.String("notification_id", notif.NotificationID),
+		zap.Bool("success", result.Success),
+		zap.String("provider_message_id", result.ProviderMessageID))
 
 	if !result.Success {
 		return fmt.Errorf("provider delivery failed: %s", result.ErrorType)
@@ -469,6 +506,17 @@ func (p *NotificationProcessor) retryProcessor(ctx context.Context) {
 			}
 
 			if len(items) == 0 {
+				// Also try to replay a few DLQ items if nothing retryable is ready
+				replayed, replayErr := redisQueue.ReplayDLQ(ctx, 50)
+				if replayErr != nil {
+					p.logger.Error("Failed to replay DLQ items", zap.Error(replayErr))
+					continue
+				}
+
+				if replayed > 0 {
+					p.logger.Info("Replayed DLQ items", zap.Int("count", replayed))
+				}
+
 				continue
 			}
 
