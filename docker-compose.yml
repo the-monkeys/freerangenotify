@@ -88,6 +88,7 @@ services:
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
       - FREERANGE_PROVIDERS_WEBHOOK_SECRET=my-secret-key
+      - DEBUG=true
     networks:
       - freerange-network
     restart: unless-stopped

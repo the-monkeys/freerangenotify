@@ -19,15 +19,15 @@ func main() {
 	hubURL := getenv("HUB_URL", "http://localhost:8080")
 
 	if apiKey != "" && userID != "" {
-		dynamicURL := fmt.Sprintf("http://host.docker.internal:%s/webhook", port)
+		dynamicURL := fmt.Sprintf("http://host.docker.internal:%s/webhook/0256d6f2a5524a83ba9a37025c40aa0b34f10258b43543a4994cb2d994392b0c3a871672fbb3496db5fffcbd00e3b7df", port)
 		if err := checkIn(hubURL, apiKey, userID, dynamicURL); err != nil {
 			log.Printf("check-in failed: %v", err)
 		}
 	} else {
-		log.Println("check-in skipped (set USER_ID and API_KEY to enable)")
+		log.Println("check-in skipped (running in anonymous/passive mode)")
 	}
 
-	http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/webhook/0256d6f2a5524a83ba9a37025c40aa0b34f10258b43543a4994cb2d994392b0c3a871672fbb3496db5fffcbd00e3b7df", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

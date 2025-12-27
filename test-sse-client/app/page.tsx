@@ -16,7 +16,6 @@ interface Notification {
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState('');
-  const [token, setToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   const [messages, setMessages] = useState<Notification[]>([]);
@@ -27,7 +26,7 @@ export default function Home() {
 
   // In a real app, this would be from config or environment
   const HUB_URL = 'http://localhost:8080';
-  const API_KEY = 'frn_p9fni87LVXBtIU2mYzLzXGTp2ZEUdBozgaqhoWYBQiU=';
+  const API_KEY = 'frn_-c-CAvw8s1uAauV0EWyvWrtoXE4l4AawvA5b4rhPUwI=';
 
   useEffect(() => {
     setHasMounted(true);
@@ -43,31 +42,25 @@ export default function Home() {
     if (e) e.preventDefault();
     setLoginError('');
 
-    if (!userId.trim() || !token.trim()) {
-      setLoginError('Please enter both User ID and Token');
+    if (!userId.trim()) {
+      setLoginError('Please enter User ID');
       return;
     }
 
     setIsConnecting(true);
 
-    // Simulate a small delay for the dummy verification service
-    await new Promise(resolve => setTimeout(resolve, 800));
+    // Simulate connection delay
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Dummy verification logic
-    if (token === 'dummy-token-123') {
-      setIsLoggedIn(true);
-      localStorage.setItem('frn_userId', userId);
-      localStorage.setItem('frn_isLoggedIn', 'true');
-    } else {
-      setLoginError('Invalid dummy token. Hint: try "dummy-token-123"');
-    }
+    setIsLoggedIn(true);
+    localStorage.setItem('frn_userId', userId);
+    localStorage.setItem('frn_isLoggedIn', 'true');
     setIsConnecting(false);
   };
 
   const handleLogout = () => {
     setIsLoggedIn(false);
     setUserId('');
-    setToken('');
     setMessages([]);
     setUnreadCount(0);
     localStorage.removeItem('frn_userId');
@@ -134,14 +127,19 @@ export default function Home() {
     eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
+        // Backend sends { type: "...", notification: { ... } }
+        // We need to unwrap the notification object if it exists
+        const data = payload.notification || payload;
+
         const normalized: Notification = {
-          notification_id: payload.notification_id || payload.id || Math.random().toString(36),
+          notification_id: data.notification_id || data.id || Math.random().toString(36),
           content: {
-            title: payload.content?.title || payload.data?.title || payload.title || 'New Notification',
-            body: payload.content?.body || payload.data?.body || payload.body || payload.message || 'You have a new message'
+            title: data.content?.title || data.title || 'New Notification',
+            body: data.content?.body || data.body || 'You have a new message',
+            data: data.content?.data || data.data || {}
           },
-          created_at: payload.created_at || new Date().toISOString(),
-          status: payload.status || 'sent'
+          created_at: data.created_at || new Date().toISOString(),
+          status: data.status || 'sent'
         };
         setMessages(prev => [normalized, ...prev]);
         setUnreadCount(prev => prev + 1);
@@ -176,18 +174,6 @@ export default function Home() {
                 className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                 value={userId}
                 onChange={e => setUserId(e.target.value)}
-                required
-                disabled={isConnecting}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase">Dummy Token</label>
-              <input
-                type="password"
-                placeholder="Hint: dummy-token-123"
-                className="w-full bg-slate-950 border border-slate-700 p-3 rounded-lg text-sm text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                value={token}
-                onChange={e => setToken(e.target.value)}
                 required
                 disabled={isConnecting}
               />
@@ -313,7 +299,7 @@ export default function Home() {
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Auth Type</label>
               <div className="bg-slate-950 p-3 rounded-lg text-sm font-mono text-blue-300 border border-slate-800">
-                Dummy Token
+                Direct Connect
               </div>
             </div>
           </div>

@@ -23,7 +23,12 @@ func main() {
 	}
 
 	// Initialize logger
-	logger, err := zap.NewProduction()
+	var logger *zap.Logger
+	if cfg.App.Debug || os.Getenv("DEBUG") == "true" {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
 	if err != nil {
 		fmt.Printf("Failed to create logger: %v\n", err)
 		os.Exit(1)

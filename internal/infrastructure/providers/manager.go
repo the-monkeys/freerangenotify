@@ -69,8 +69,8 @@ func (m *Manager) GetProvider(channel notification.Channel) (Provider, error) {
 func (m *Manager) Send(ctx context.Context, notif *notification.Notification, usr *user.User) (*Result, error) {
 	startTime := time.Now()
 
-	// 1. Smart Delivery: Check for dynamic routing presence
-	if m.presenceRepo != nil {
+	// 1. Smart Delivery: Check for dynamic routing presence (only if we have a user)
+	if m.presenceRepo != nil && usr != nil {
 		available, dynamicURL, err := m.presenceRepo.IsAvailable(ctx, usr.UserID)
 		if err == nil && available && dynamicURL != "" {
 			m.logger.Info("Smart Delivery: Overriding static webhook with dynamic URL",
