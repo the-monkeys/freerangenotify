@@ -96,7 +96,7 @@ temp/
 *.pem
 *.key
 *.crt
-*.json
+
 credentials/
 
 # Application specific
