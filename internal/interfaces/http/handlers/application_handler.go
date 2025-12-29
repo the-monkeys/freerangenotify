@@ -256,6 +256,12 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	if req.EnableAnalytics != nil {
 		settings.EnableAnalytics = *req.EnableAnalytics
 	}
+	if req.ValidationURL != nil {
+		settings.ValidationURL = *req.ValidationURL
+	}
+	if req.ValidationConfig != nil {
+		settings.ValidationConfig = req.ValidationConfig
+	}
 	if req.DefaultPreferences != nil {
 		if settings.DefaultPreferences == nil {
 			settings.DefaultPreferences = &application.DefaultPreferences{}

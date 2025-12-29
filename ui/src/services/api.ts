@@ -20,7 +20,7 @@ import type {
   TemplateVersion,
 } from '../types';
 
-const API_BASE_URL = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:8080';
+const API_BASE_URL = (import.meta as any).env.VITE_API_BASE_URL || '';
 const api = axios.create({
   baseURL: `${API_BASE_URL}/v1`,
   headers: {
@@ -304,7 +304,7 @@ export const adminAPI = {
     const { data } = await api.get<{ stats: QueueStats }>('/admin/queues/stats');
     return data.stats;
   },
-  
+
   listDLQ: async () => {
     const { data } = await api.get<{ items: any[] }>('/admin/queues/dlq');
     return data.items;

@@ -43,8 +43,10 @@ func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
 		return errors.Conflict("User with this external_user_id already exists")
 	}
 
-	// Generate UUID for internal user ID
-	u.UserID = uuid.New().String()
+	// Generate UUID if not provided
+	if u.UserID == "" {
+		u.UserID = uuid.New().String()
+	}
 	now := time.Now()
 	u.CreatedAt = now
 	u.UpdatedAt = now
@@ -290,7 +292,9 @@ func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) er
 		if u.AppID == "" || u.ExternalUserID == "" {
 			return errors.BadRequest("app_id and external_user_id are required for all users")
 		}
-		u.UserID = uuid.New().String()
+		if u.UserID == "" {
+			u.UserID = uuid.New().String()
+		}
 		u.CreatedAt = now
 		u.UpdatedAt = now
 

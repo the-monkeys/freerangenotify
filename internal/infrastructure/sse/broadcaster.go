@@ -30,6 +30,7 @@ type Client struct {
 
 // Broadcaster manages SSE connections and broadcasts messages
 type Broadcaster struct {
+	repo     notification.Repository
 	clients  map[string][]*Client
 	mu       sync.RWMutex
 	logger   *zap.Logger
@@ -39,8 +40,9 @@ type Broadcaster struct {
 }
 
 // NewBroadcaster creates a new SSE broadcaster
-func NewBroadcaster(logger *zap.Logger) *Broadcaster {
+func NewBroadcaster(repo notification.Repository, logger *zap.Logger) *Broadcaster {
 	return &Broadcaster{
+		repo:     repo,
 		clients:  make(map[string][]*Client),
 		logger:   logger,
 		stopChan: make(chan struct{}),
@@ -218,7 +220,12 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		// Add client
 		client := b.AddClient(userID)
+
+		// Add cleanup/recovery
 		defer func() {
+			if r := recover(); r != nil {
+				b.logger.Error("Panic in SSE handler", zap.Any("panic", r))
+			}
 			b.RemoveClient(userID, client)
 			b.logger.Info("SSE client connection closed", zap.String("user_id", userID))
 		}()
@@ -246,17 +253,23 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 					return
 				}
 
+				b.logger.Debug("Attempting to write SSE message", zap.String("user_id", userID))
+
 				// Send message to client
 				if _, err := fmt.Fprintf(w, "data: %s\n\n", message); err != nil {
 					b.logger.Error("Failed to write SSE message", zap.Error(err))
+					b.handleDeliveryFailure(c.Context(), message)
 					return
 				}
 
 				// Flush after each message
 				if err := w.Flush(); err != nil {
 					b.logger.Error("Failed to flush SSE message", zap.Error(err))
+					b.handleDeliveryFailure(c.Context(), message)
 					return
 				}
+
+				b.logger.Debug("SSE message written and flushed successfully", zap.String("user_id", userID))
 
 			case <-ctxDone:
 				// Client disconnected
@@ -267,6 +280,29 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 	})
 
 	return nil
+}
+
+// handleDeliveryFailure attempts to reset notification status to Queued
+func (b *Broadcaster) handleDeliveryFailure(ctx context.Context, message string) {
+	var sseMsg SSEMessage
+	if err := json.Unmarshal([]byte(message), &sseMsg); err != nil {
+		b.logger.Warn("Failed to parse failed message for recovery", zap.Error(err))
+		return
+	}
+
+	if sseMsg.Notification != nil && sseMsg.Notification.NotificationID != "" {
+		b.logger.Info("Resetting failed notification status to queued",
+			zap.String("notification_id", sseMsg.Notification.NotificationID))
+
+		// Use a background context as the request context might be cancelled
+		// However, we should be careful with long timeouts.
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := b.repo.UpdateStatus(bgCtx, sseMsg.Notification.NotificationID, notification.StatusQueued); err != nil {
+			b.logger.Error("Failed to reset notification status", zap.Error(err))
+		}
+	}
 }
 
 // Close stops the broadcaster

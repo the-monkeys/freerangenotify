@@ -4,6 +4,7 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/user"
 
 // CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
+	UserID         string            `json:"user_id" validate:"omitempty"`
 	ExternalUserID string            `json:"external_user_id" validate:"required"`
 	Email          string            `json:"email" validate:"omitempty,email"`
 	Phone          string            `json:"phone" validate:"omitempty"`

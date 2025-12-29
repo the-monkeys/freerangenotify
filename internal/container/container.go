@@ -98,12 +98,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize limiter
 	container.Limiter = limiter.NewRedisLimiter(redisClient, logger)
 
-	// Initialize SSE broadcaster
-	container.SSEBroadcaster = sse.NewBroadcaster(logger)
-	container.SSEBroadcaster.SetRedis(redisClient)
-
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
+
+	// Initialize SSE broadcaster
+	container.SSEBroadcaster = sse.NewBroadcaster(repos.Notification, logger)
+	container.SSEBroadcaster.SetRedis(redisClient)
 
 	// Initialize services
 	container.ApplicationService = services.NewApplicationService(repos.Application, logger)
@@ -172,6 +172,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
+		container.ApplicationService,
+		container.NotificationService,
 		logger,
 	)
 

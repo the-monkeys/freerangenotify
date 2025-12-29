@@ -24,7 +24,17 @@ type Settings struct {
 	DefaultTemplate    string              `json:"default_template" es:"default_template"` // default template ID
 	EnableWebhooks     bool                `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
 	EnableAnalytics    bool                `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
+	ValidationURL      string              `json:"validation_url,omitempty" es:"validation_url"`
+	ValidationConfig   *ValidationConfig   `json:"validation_config,omitempty" es:"validation_config"`
 	DefaultPreferences *DefaultPreferences `json:"default_preferences,omitempty" es:"default_preferences"`
+}
+
+// ValidationConfig represents configuration for external token validation
+type ValidationConfig struct {
+	Method         string            `json:"method" es:"method"`                   // GET, POST
+	TokenPlacement string            `json:"token_placement" es:"token_placement"` // header, cookie, query, body_json, body_form
+	TokenKey       string            `json:"token_key" es:"token_key"`             // e.g. "Authorization", "access_token"
+	StaticHeaders  map[string]string `json:"static_headers,omitempty" es:"static_headers"`
 }
 
 // DefaultPreferences represents default notification preferences for the app

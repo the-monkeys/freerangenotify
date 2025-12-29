@@ -46,6 +46,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	}
 
 	u := &user.User{
+		UserID:         req.UserID,
 		AppID:          appID,
 		ExternalUserID: req.ExternalUserID,
 		Email:          req.Email,

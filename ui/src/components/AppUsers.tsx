@@ -3,11 +3,10 @@ import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
 
 interface AppUsersProps {
-    appId: string;
     apiKey: string;
 }
 
-const AppUsers: React.FC<AppUsersProps> = ({ appId, apiKey }) => {
+const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -89,6 +88,19 @@ const AppUsers: React.FC<AppUsersProps> = ({ appId, apiKey }) => {
                                 required
                                 placeholder="e.g. user_123"
                             />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">Custom User ID (Internal)</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={formData.user_id || ''}
+                                onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
+                                placeholder="e.g. EMP_001 (Optional)"
+                            />
+                            <p style={{ fontSize: '0.75rem', color: '#605e5c', marginTop: '0.2rem' }}>
+                                Leave empty to auto-generate a UUID.
+                            </p>
                         </div>
                         <div className="form-group">
                             <label className="form-label">Email</label>

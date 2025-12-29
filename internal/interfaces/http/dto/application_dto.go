@@ -18,12 +18,14 @@ type UpdateApplicationRequest struct {
 
 // UpdateSettingsRequest represents a request to update application settings
 type UpdateSettingsRequest struct {
-	RateLimit          *int                   `json:"rate_limit" validate:"omitempty,min=1"`
-	RetryAttempts      *int                   `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
-	DefaultTemplate    *string                `json:"default_template" validate:"omitempty"`
-	EnableWebhooks     *bool                  `json:"enable_webhooks"`
-	EnableAnalytics    *bool                  `json:"enable_analytics"`
-	DefaultPreferences *DefaultPreferencesDTO `json:"default_preferences"`
+	RateLimit          *int                          `json:"rate_limit" validate:"omitempty,min=1"`
+	RetryAttempts      *int                          `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
+	DefaultTemplate    *string                       `json:"default_template" validate:"omitempty"`
+	EnableWebhooks     *bool                         `json:"enable_webhooks"`
+	EnableAnalytics    *bool                         `json:"enable_analytics"`
+	ValidationURL      *string                       `json:"validation_url"`
+	ValidationConfig   *application.ValidationConfig `json:"validation_config"`
+	DefaultPreferences *DefaultPreferencesDTO        `json:"default_preferences"`
 }
 
 type DefaultPreferencesDTO struct {

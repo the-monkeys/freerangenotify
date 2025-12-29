@@ -18,6 +18,7 @@ const AppDetail: React.FC = () => {
     const [description, setDescription] = useState('');
     const [webhookUrl, setWebhookUrl] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
+    const [staticHeadersText, setStaticHeadersText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
 
 
@@ -35,6 +36,11 @@ const AppDetail: React.FC = () => {
             setDescription(appData.description || '');
             setWebhookUrl(appData.webhook_url || '');
             setSettings(appData.settings || {});
+
+            // Initialize static headers text
+            const text = Object.entries(appData.settings?.validation_config?.static_headers || {})
+                .map(([k, v]) => `${k}: ${v}`).join('\n');
+            setStaticHeadersText(text);
         } catch (error) {
             console.error('Failed to fetch app details:', error);
         } finally {
@@ -96,7 +102,12 @@ const AppDetail: React.FC = () => {
                 <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
                     {app.app_name}
                 </h1>
-                <p style={{ color: '#605e5c', fontSize: '0.9rem', marginTop: '0.25rem' }}>ID: {app.app_id}</p>
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: '0.5rem', color: '#605e5c', fontSize: '0.9rem' }}>
+                    <span style={{ marginRight: '0.5rem' }}>ID:</span>
+                    <code style={{ background: '#f3f2f1', padding: '2px 6px', borderRadius: '3px', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {app.app_id}
+                    </code>
+                </div>
             </div>
 
             {/* Tabs - Azure Flat Style */}
@@ -165,7 +176,7 @@ const AppDetail: React.FC = () => {
 
             {/* Users Tab */}
             {activeTab === 'users' && app && (
-                <AppUsers appId={app.app_id} apiKey={app.api_key} />
+                <AppUsers apiKey={app.api_key} />
             )}
 
             {/* Templates Tab */}
@@ -253,6 +264,123 @@ const AppDetail: React.FC = () => {
                                     <span style={{ fontWeight: 500 }}>Enable Analytics</span>
                                 </label>
                             </div>
+                        </div>
+
+                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Authentication & Security</h4>
+                        <div className="grid grid-cols-1 gap-6 mb-8">
+                            <div className="form-group">
+                                <label className="form-label">Validation URL (Zero-Trust API)</label>
+                                <input
+                                    type="url"
+                                    className="form-input"
+                                    value={settings.validation_url || ''}
+                                    onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
+                                    placeholder="https://your-bank.com/api/verify-token"
+                                />
+                                <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.4rem' }}>
+                                    If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
+                                </p>
+                            </div>
+
+                            {settings.validation_url && (
+                                <div className="p-4 border border-blue-100 rounded bg-blue-50 mt-4">
+                                    <h5 className="font-semibold text-sm mb-3 text-blue-800">Validation Request Configuration</h5>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div className="form-group">
+                                            <label className="form-label text-xs">Method</label>
+                                            <select
+                                                className="form-input text-sm"
+                                                value={settings.validation_config?.method || 'POST'}
+                                                onChange={(e) => setSettings({
+                                                    ...settings,
+                                                    validation_config: {
+                                                        ...settings.validation_config,
+                                                        method: e.target.value,
+                                                        token_placement: settings.validation_config?.token_placement || 'body_json',
+                                                        token_key: settings.validation_config?.token_key || 'token',
+                                                    }
+                                                })}
+                                            >
+                                                <option value="POST">POST</option>
+                                                <option value="GET">GET</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group">
+                                            <label className="form-label text-xs">Token Placement</label>
+                                            <select
+                                                className="form-input text-sm"
+                                                value={settings.validation_config?.token_placement || 'body_json'}
+                                                onChange={(e) => setSettings({
+                                                    ...settings,
+                                                    validation_config: {
+                                                        ...settings.validation_config,
+                                                        method: settings.validation_config?.method || 'POST',
+                                                        token_placement: e.target.value,
+                                                        token_key: settings.validation_config?.token_key || 'token',
+                                                    }
+                                                })}
+                                            >
+                                                <option value="body_json">Body (JSON)</option>
+                                                <option value="body_form">Body (Form URL Encoded)</option>
+                                                <option value="header">Header</option>
+                                                <option value="query">Query Parameter</option>
+                                                <option value="cookie">Cookie</option>
+                                            </select>
+                                        </div>
+                                        <div className="form-group col-span-2">
+                                            <label className="form-label text-xs">Token Key Name</label>
+                                            <input
+                                                type="text"
+                                                className="form-input text-sm"
+                                                value={settings.validation_config?.token_key || 'token'}
+                                                onChange={(e) => setSettings({
+                                                    ...settings,
+                                                    validation_config: {
+                                                        ...settings.validation_config!,
+                                                        token_key: e.target.value
+                                                    }
+                                                })}
+                                                placeholder="e.g. Authorization, access_token, mat"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">The name of the header, cookie, or field that contains the token.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label className="form-label text-xs mb-2 block">Static Headers (e.g., Client-ID, User-Agent)</label>
+                                        <textarea
+                                            className="form-input text-sm font-mono"
+                                            rows={3}
+                                            placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
+                                            value={staticHeadersText}
+                                            onChange={(e) => {
+                                                const newText = e.target.value;
+                                                setStaticHeadersText(newText);
+
+                                                const lines = newText.split('\n');
+                                                const headers: Record<string, string> = {};
+                                                lines.forEach(line => {
+                                                    const parts = line.split(':');
+                                                    if (parts.length >= 2) {
+                                                        const key = parts[0].trim();
+                                                        const val = parts.slice(1).join(':').trim();
+                                                        if (key) headers[key] = val;
+                                                    }
+                                                });
+                                                setSettings({
+                                                    ...settings,
+                                                    validation_config: {
+                                                        ...settings.validation_config!,
+                                                        static_headers: headers
+                                                    }
+                                                });
+                                            }}
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">One header per line. Format: Header-Name: Value</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Default Notification Preferences</h4>
