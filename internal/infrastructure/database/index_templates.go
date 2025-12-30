@@ -98,9 +98,7 @@ func (it *IndexTemplates) GetUsersTemplate() map[string]interface{} {
 				"app_id": map[string]interface{}{
 					"type": "keyword",
 				},
-				"external_user_id": map[string]interface{}{
-					"type": "keyword",
-				},
+
 				"email": map[string]interface{}{
 					"type": "keyword",
 				},

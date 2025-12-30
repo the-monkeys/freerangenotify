@@ -425,7 +425,6 @@ func (p *NotificationProcessor) isQuietHours(usr *user.User) bool {
 	return currentTime >= start || currentTime < end
 }
 
-// scheduler periodically checks for scheduled notifications that are ready to be sent
 func (p *NotificationProcessor) scheduler(ctx context.Context) {
 	defer p.wg.Done()
 
@@ -442,7 +441,6 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			p.logger.Info("Scheduler stopping")
 			return
 		case <-ticker.C:
-			// 1. Try to get items from Redis scheduled queue (Optimized path)
 			scheduledItems, err := p.queue.GetScheduledItems(ctx, 100)
 			if err != nil {
 				p.logger.Error("Failed to get scheduled items from Redis", zap.Error(err))
@@ -462,8 +460,6 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				}
 			}
 
-			// 2. Fallback: Get pending notifications from ES ready to be sent
-			// This catches items that might have missed Redis or were created directly in ES
 			pending, err := p.notifRepo.GetPending(ctx)
 			if err != nil {
 				p.logger.Error("Failed to get pending notifications from ES", zap.Error(err))
@@ -476,7 +472,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 
 			p.logger.Info("Found pending notifications in ES (fallback/sync)", zap.Int("count", len(pending)))
 
-			// Enqueue them
+			// Enqueue
 			var items []queue.NotificationQueueItem
 			for _, notif := range pending {
 				items = append(items, queue.NotificationQueueItem{
@@ -491,7 +487,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				continue
 			}
 
-			// Update statuses to queued
+			// Update statuses
 			var ids []string
 			for _, notif := range pending {
 				ids = append(ids, notif.NotificationID)

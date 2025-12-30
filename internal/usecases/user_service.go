@@ -11,7 +11,7 @@ type UserService interface {
 	// User CRUD operations
 	Create(ctx context.Context, user *user.User) error
 	GetByID(ctx context.Context, userID string) (*user.User, error)
-	GetByExternalID(ctx context.Context, appID, externalUserID string) (*user.User, error)
+
 	GetByEmail(ctx context.Context, appID, email string) (*user.User, error)
 	Update(ctx context.Context, user *user.User) error
 	Delete(ctx context.Context, userID string) error
