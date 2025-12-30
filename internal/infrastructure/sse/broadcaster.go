@@ -216,6 +216,17 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 	c.Set("Access-Control-Allow-Origin", "*")
 	c.Set("Access-Control-Allow-Headers", "Cache-Control")
 
+	// Disable write deadline for SSE stream to prevent timeout
+	if c.Context().Conn() != nil {
+		if err := c.Context().Conn().SetWriteDeadline(time.Time{}); err != nil {
+			b.logger.Warn("Failed to set write deadline", zap.Error(err))
+		} else {
+			b.logger.Debug("Write deadline disabled for SSE connection")
+		}
+	} else {
+		b.logger.Warn("Could not access underlying connection to disable write deadline")
+	}
+
 	ctxDone := c.Context().Done()
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		// Add client
@@ -227,21 +238,29 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 				b.logger.Error("Panic in SSE handler", zap.Any("panic", r))
 			}
 			b.RemoveClient(userID, client)
-			b.logger.Info("SSE client connection closed", zap.String("user_id", userID))
+			b.logger.Info("SSE client connection closed",
+				zap.String("user_id", userID),
+				zap.Error(c.Context().Err())) // Log the context error to see why it closed
 		}()
 
-		b.logger.Info("SSE client connected", zap.String("user_id", userID))
+		b.logger.Info("SSE client connected and loop starting", zap.String("user_id", userID))
 
 		// Send initial connection message
+		b.logger.Debug("Sending initial SSE handshake", zap.String("user_id", userID))
 		if _, err := fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n"); err != nil {
-			b.logger.Error("Failed to send initial SSE message", zap.Error(err))
+			b.logger.Error("Failed to send initial SSE message",
+				zap.String("user_id", userID),
+				zap.Error(err))
 			return
 		}
 
 		if err := w.Flush(); err != nil {
-			b.logger.Error("Failed to flush initial SSE message", zap.Error(err))
+			b.logger.Error("Failed to flush initial SSE message",
+				zap.String("user_id", userID),
+				zap.Error(err))
 			return
 		}
+		b.logger.Debug("Initial SSE handshake sent", zap.String("user_id", userID))
 
 		// Listen for messages
 		for {
@@ -249,22 +268,28 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 			case message, ok := <-client.Chan:
 				if !ok {
 					// Channel closed
-					b.logger.Info("SSE client channel closed", zap.String("user_id", userID))
+					b.logger.Info("SSE client channel closed explicitly", zap.String("user_id", userID))
 					return
 				}
 
-				b.logger.Debug("Attempting to write SSE message", zap.String("user_id", userID))
+				b.logger.Debug("Attempting to write SSE message",
+					zap.String("user_id", userID),
+					zap.String("payload_preview", message[:min(len(message), 50)]))
 
 				// Send message to client
 				if _, err := fmt.Fprintf(w, "data: %s\n\n", message); err != nil {
-					b.logger.Error("Failed to write SSE message", zap.Error(err))
+					b.logger.Error("Failed to write SSE message",
+						zap.String("user_id", userID),
+						zap.Error(err))
 					b.handleDeliveryFailure(c.Context(), message)
 					return
 				}
 
 				// Flush after each message
 				if err := w.Flush(); err != nil {
-					b.logger.Error("Failed to flush SSE message", zap.Error(err))
+					b.logger.Error("Failed to flush SSE message",
+						zap.String("user_id", userID),
+						zap.Error(err))
 					b.handleDeliveryFailure(c.Context(), message)
 					return
 				}
@@ -273,13 +298,22 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 
 			case <-ctxDone:
 				// Client disconnected
-				b.logger.Info("SSE client context done", zap.String("user_id", userID))
+				b.logger.Info("SSE client context done (disconnected)",
+					zap.String("user_id", userID),
+					zap.Error(c.Context().Err()))
 				return
 			}
 		}
 	})
 
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // handleDeliveryFailure attempts to reset notification status to Queued

@@ -8,8 +8,8 @@ app:
 server:
   host: "0.0.0.0"
   port: 8080
-  read_timeout: 30
-  write_timeout: 30
+  read_timeout: 60
+  write_timeout: 0  # 0 means no timeout (required for SSE)
   idle_timeout: 120
 
 database:
