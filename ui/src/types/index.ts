@@ -48,7 +48,6 @@ export interface UpdateApplicationRequest {
 export interface User {
     user_id: string;
     app_id: string;
-    external_user_id: string;
     email: string;
     phone?: string;
     timezone?: string;
@@ -67,15 +66,17 @@ export interface Device {
 }
 
 export interface UserPreferences {
-    email_enabled: boolean;
-    push_enabled: boolean;
-    sms_enabled: boolean;
+    email_enabled?: boolean;
+    push_enabled?: boolean;
+    sms_enabled?: boolean;
     quiet_hours?: any;
+    dnd?: boolean;
+    daily_limit?: number;
+    categories?: Record<string, any>;
 }
 
 export interface CreateUserRequest {
     user_id?: string;
-    external_user_id: string;
     email?: string;
     phone?: string;
     timezone?: string;

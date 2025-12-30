@@ -39,9 +39,8 @@ func (s *UserTestSuite) TestCreateUser() {
 	apiKey := s.setupApplicationForUserTests()
 
 	payload := map[string]interface{}{
-		"external_user_id": "test-user-123",
-		"email":            "test@example.com",
-		"phone_number":     "+1234567890",
+		"email":        "test@example.com",
+		"phone_number": "+1234567890",
 		"preferences": map[string]interface{}{
 			"channels": []string{"email", "push"},
 			"timezone": "America/New_York",
@@ -66,7 +65,7 @@ func (s *UserTestSuite) TestCreateUser() {
 	data := result["data"].(map[string]interface{})
 
 	s.NotEmpty(data["user_id"])
-	s.Equal("test-user-123", data["external_user_id"])
+
 	s.Equal("test@example.com", data["email"])
 	if data["phone_number"] != nil {
 		s.Equal("+1234567890", data["phone_number"])
@@ -79,8 +78,7 @@ func (s *UserTestSuite) TestCreateUser() {
 // TestCreateUserWithoutAPIKey tests creating user without authentication
 func (s *UserTestSuite) TestCreateUserWithoutAPIKey() {
 	payload := map[string]interface{}{
-		"external_user_id": "test-user-123",
-		"email":            "test@example.com",
+		"email": "test@example.com",
 	}
 
 	resp, body := s.makeRequest(http.MethodPost, "/v1/users", payload, nil)
@@ -95,8 +93,7 @@ func (s *UserTestSuite) TestCreateUserWithoutAPIKey() {
 } // TestCreateUserWithInvalidAPIKey tests creating user with invalid API key
 func (s *UserTestSuite) TestCreateUserWithInvalidAPIKey() {
 	payload := map[string]interface{}{
-		"external_user_id": "test-user-123",
-		"email":            "test@example.com",
+		"email": "test@example.com",
 	}
 
 	headers := map[string]string{
@@ -118,18 +115,11 @@ func (s *UserTestSuite) TestCreateUserValidation() {
 		payload       map[string]interface{}
 		expectedError string
 	}{
-		{
-			name: "Missing external_user_id",
-			payload: map[string]interface{}{
-				"email": "test@example.com",
-			},
-			expectedError: "VALIDATION_ERROR",
-		},
+
 		{
 			name: "Invalid email",
 			payload: map[string]interface{}{
-				"external_user_id": "test-123",
-				"email":            "not-an-email",
+				"email": "not-an-email",
 			},
 			expectedError: "VALIDATION_ERROR",
 		},
@@ -166,7 +156,7 @@ func (s *UserTestSuite) TestGetUser() {
 	data := result["data"].(map[string]interface{})
 
 	s.Equal(s.userID, data["user_id"])
-	s.Equal("test-user-123", data["external_user_id"])
+
 	s.Equal("test@example.com", data["email"])
 }
 
@@ -200,8 +190,7 @@ func (s *UserTestSuite) TestListUsers() {
 	// Create multiple users
 	for i := 1; i <= 3; i++ {
 		payload := map[string]interface{}{
-			"external_user_id": "test-user-" + string(rune('0'+i)),
-			"email":            "user" + string(rune('0'+i)) + "@example.com",
+			"email": "user" + string(rune('0'+i)) + "@example.com",
 		}
 		resp, body := s.makeRequest(http.MethodPost, "/v1/users", payload, headers)
 		s.Equal(http.StatusCreated, resp.StatusCode)
@@ -458,9 +447,8 @@ func (s *UserTestSuite) TestUserLifecycle() {
 
 	// 1. Create user
 	createPayload := map[string]interface{}{
-		"external_user_id": "lifecycle-user",
-		"email":            "lifecycle@example.com",
-		"phone_number":     "+1111111111",
+		"email":        "lifecycle@example.com",
+		"phone_number": "+1111111111",
 	}
 
 	resp, body := s.makeRequest(http.MethodPost, "/v1/users", createPayload, headers)

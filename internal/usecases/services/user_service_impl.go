@@ -27,20 +27,19 @@ func NewUserService(repo user.Repository, logger *zap.Logger) *UserServiceImpl {
 
 // Create creates a new user
 func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
-	s.logger.Info("Creating user", zap.String("external_user_id", u.ExternalUserID), zap.String("app_id", u.AppID))
+	s.logger.Info("Creating user", zap.String("app_id", u.AppID))
 
 	// Validate required fields
 	if u.AppID == "" {
 		return errors.BadRequest("app_id is required")
 	}
-	if u.ExternalUserID == "" {
-		return errors.BadRequest("external_user_id is required")
-	}
 
 	// Check if user already exists
-	existing, err := s.repo.GetByExternalID(ctx, u.AppID, u.ExternalUserID)
-	if err == nil && existing != nil {
-		return errors.Conflict("User with this external_user_id already exists")
+	if u.Email != "" {
+		existing, err := s.repo.GetByEmail(ctx, u.AppID, u.Email)
+		if err == nil && existing != nil {
+			return errors.Conflict("User with this email already exists")
+		}
 	}
 
 	// Generate UUID if not provided
@@ -80,24 +79,6 @@ func (s *UserServiceImpl) GetByID(ctx context.Context, userID string) (*user.Use
 	}
 	if u == nil {
 		return nil, errors.NotFound("User", userID)
-	}
-
-	return u, nil
-}
-
-// GetByExternalID retrieves a user by external user ID
-func (s *UserServiceImpl) GetByExternalID(ctx context.Context, appID, externalUserID string) (*user.User, error) {
-	if appID == "" || externalUserID == "" {
-		return nil, errors.BadRequest("app_id and external_user_id are required")
-	}
-
-	u, err := s.repo.GetByExternalID(ctx, appID, externalUserID)
-	if err != nil {
-		s.logger.Error("Failed to get user by external ID", zap.Error(err))
-		return nil, errors.DatabaseError("get user by external ID", err)
-	}
-	if u == nil {
-		return nil, errors.NotFound("User", externalUserID)
 	}
 
 	return u, nil
@@ -289,8 +270,8 @@ func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) er
 	// Validate and set IDs for all users
 	now := time.Now()
 	for _, u := range users {
-		if u.AppID == "" || u.ExternalUserID == "" {
-			return errors.BadRequest("app_id and external_user_id are required for all users")
+		if u.AppID == "" {
+			return errors.BadRequest("app_id is required for all users")
 		}
 		if u.UserID == "" {
 			u.UserID = uuid.New().String()

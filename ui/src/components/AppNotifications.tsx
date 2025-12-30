@@ -124,7 +124,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                             >
                                 <option value="">{formData.channel === 'webhook' ? 'No user (Anonymous)' : 'Select a user...'}</option>
                                 {(users || []).map(u => (
-                                    <option key={u.user_id} value={u.user_id}>{u.external_user_id} ({u.email || 'no email'})</option>
+                                    <option key={u.user_id} value={u.user_id}>{u.email || u.user_id}</option>
                                 ))}
                             </select>
                         </div>
@@ -249,7 +249,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                                     <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#a19f9d', fontFamily: 'monospace' }}>{n.notification_id?.substring(0, 8)}...</td>
                                     <td style={{ padding: '0.75rem', color: '#323130' }}>
                                         {n.user_id ?
-                                            (users?.find(u => u.user_id === n.user_id)?.external_user_id || n.user_id) :
+                                            (users?.find(u => u.user_id === n.user_id)?.email || n.user_id) :
                                             <span style={{ color: '#666', fontStyle: 'italic' }}>Anonymous (Webhook)</span>
                                         }
                                     </td>

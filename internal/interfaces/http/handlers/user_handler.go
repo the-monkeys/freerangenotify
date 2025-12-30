@@ -46,14 +46,13 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	}
 
 	u := &user.User{
-		UserID:         req.UserID,
-		AppID:          appID,
-		ExternalUserID: req.ExternalUserID,
-		Email:          req.Email,
-		Phone:          req.Phone,
-		Timezone:       req.Timezone,
-		Language:       req.Language,
-		WebhookURL:     req.WebhookURL,
+		UserID:     req.UserID,
+		AppID:      appID,
+		Email:      req.Email,
+		Phone:      req.Phone,
+		Timezone:   req.Timezone,
+		Language:   req.Language,
+		WebhookURL: req.WebhookURL,
 	}
 
 	if req.Preferences != nil {

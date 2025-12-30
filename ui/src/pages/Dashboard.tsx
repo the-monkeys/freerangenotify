@@ -29,11 +29,7 @@ const Dashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const getQueueColor = (count: number) => {
-    if (count === 0) return 'text-green-500';
-    if (count < 10) return 'text-yellow-500';
-    return 'text-red-500';
-  };
+
 
   return (
     <div className="container">
