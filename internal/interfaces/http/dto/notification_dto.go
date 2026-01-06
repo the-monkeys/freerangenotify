@@ -102,27 +102,33 @@ type UpdateStatusRequest struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 }
 
+// NotificationContentResponse represents the content part of a notification
+type NotificationContentResponse struct {
+	Title        string                 `json:"title"`
+	Body         string                 `json:"body"`
+	Data         map[string]interface{} `json:"data,omitempty"`
+	Notification string                 `json:"notification,omitempty"`
+}
+
 // NotificationResponse represents the API response for a notification
 type NotificationResponse struct {
-	NotificationID string                 `json:"notification_id"`
-	AppID          string                 `json:"app_id"`
-	UserID         string                 `json:"user_id"`
-	Channel        string                 `json:"channel"`
-	Priority       string                 `json:"priority"`
-	Status         string                 `json:"status"`
-	Title          string                 `json:"title"`
-	Body           string                 `json:"body"`
-	Data           map[string]interface{} `json:"data,omitempty"`
-	TemplateID     string                 `json:"template_id,omitempty"`
-	ScheduledAt    *time.Time             `json:"scheduled_at,omitempty"`
-	SentAt         *time.Time             `json:"sent_at,omitempty"`
-	DeliveredAt    *time.Time             `json:"delivered_at,omitempty"`
-	ReadAt         *time.Time             `json:"read_at,omitempty"`
-	FailedAt       *time.Time             `json:"failed_at,omitempty"`
-	ErrorMessage   string                 `json:"error_message,omitempty"`
-	RetryCount     int                    `json:"retry_count"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	NotificationID string                       `json:"notification_id"`
+	AppID          string                       `json:"app_id"`
+	UserID         string                       `json:"user_id"`
+	Channel        string                       `json:"channel"`
+	Priority       string                       `json:"priority"`
+	Status         string                       `json:"status"`
+	Content        *NotificationContentResponse `json:"content"`
+	TemplateID     string                       `json:"template_id,omitempty"`
+	ScheduledAt    *time.Time                   `json:"scheduled_at,omitempty"`
+	SentAt         *time.Time                   `json:"sent_at,omitempty"`
+	DeliveredAt    *time.Time                   `json:"delivered_at,omitempty"`
+	ReadAt         *time.Time                   `json:"read_at,omitempty"`
+	FailedAt       *time.Time                   `json:"failed_at,omitempty"`
+	ErrorMessage   string                       `json:"error_message,omitempty"`
+	RetryCount     int                          `json:"retry_count"`
+	CreatedAt      time.Time                    `json:"created_at"`
+	UpdatedAt      time.Time                    `json:"updated_at"`
 }
 
 // FromNotification converts domain Notification to response DTO
@@ -134,19 +140,21 @@ func FromNotification(n *notification.Notification) *NotificationResponse {
 		Channel:        string(n.Channel),
 		Priority:       string(n.Priority),
 		Status:         string(n.Status),
-		Title:          n.Content.Title,
-		Body:           n.Content.Body,
-		Data:           n.Content.Data,
-		TemplateID:     n.TemplateID,
-		ScheduledAt:    n.ScheduledAt,
-		SentAt:         n.SentAt,
-		DeliveredAt:    n.DeliveredAt,
-		ReadAt:         n.ReadAt,
-		FailedAt:       n.FailedAt,
-		ErrorMessage:   n.ErrorMessage,
-		RetryCount:     n.RetryCount,
-		CreatedAt:      n.CreatedAt,
-		UpdatedAt:      n.UpdatedAt,
+		Content: &NotificationContentResponse{
+			Title: n.Content.Title,
+			Body:  n.Content.Body,
+			Data:  n.Content.Data,
+		},
+		TemplateID:   n.TemplateID,
+		ScheduledAt:  n.ScheduledAt,
+		SentAt:       n.SentAt,
+		DeliveredAt:  n.DeliveredAt,
+		ReadAt:       n.ReadAt,
+		FailedAt:     n.FailedAt,
+		ErrorMessage: n.ErrorMessage,
+		RetryCount:   n.RetryCount,
+		CreatedAt:    n.CreatedAt,
+		UpdatedAt:    n.UpdatedAt,
 	}
 }
 
