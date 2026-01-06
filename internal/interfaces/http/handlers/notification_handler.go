@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
+	"text/template"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
@@ -462,8 +464,46 @@ func (h *NotificationHandler) ListUnread(c *fiber.Ctx) error {
 		h.logger.Error("Failed to list unread notifications", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+	// Convert to DTO and render content for each notification
+	var responses []*dto.NotificationResponse
+	for _, n := range notifications {
+		resp := dto.FromNotification(n)
 
-	return c.JSON(fiber.Map{"data": notifications})
+		// Render the body template with data if available
+		if n.Content.Body != "" && n.Content.Data != nil {
+			rendered, err := renderTemplate(n.Content.Body, n.Content.Data)
+			if err != nil {
+				h.logger.Warn("Failed to render notification content",
+					zap.String("notification_id", n.NotificationID),
+					zap.Error(err))
+				// Use the raw body if rendering fails
+				resp.Content.Notification = n.Content.Body
+			} else {
+				resp.Content.Notification = rendered
+			}
+		} else {
+			resp.Content.Notification = n.Content.Body
+		}
+
+		responses = append(responses, resp)
+	}
+
+	return c.JSON(fiber.Map{"data": responses})
+}
+
+// renderTemplate renders a Go template string with the provided data
+func renderTemplate(templateStr string, data map[string]any) (string, error) {
+	tmpl, err := template.New("notification").Parse(templateStr)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 // MarkRead handles POST /v1/notifications/read
