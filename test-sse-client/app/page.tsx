@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 interface Notification {
   notification_id: string;
   content: {
     title: string;
     body: string;
-    data?: Record<string, any>;
+    data?: Record<string, null | string | number | boolean>;
   };
   created_at: string;
   status: string;
@@ -164,13 +164,13 @@ export default function Home() {
         setMessages(prev => [normalized, ...prev]);
         setUnreadCount(prev => prev + 1);
       } catch (e) {
-        console.warn('Received non-JSON SSE message:', event.data);
+        console.warn('Received non-JSON SSE message:', event.data, e);
       }
     };
     eventSource.onerror = () => setStatus('Disconnected (Retrying...)');
 
     return () => eventSource.close();
-  }, [isLoggedIn, userId, hasMounted]);
+  }, [isLoggedIn, userId, hasMounted, appId, token]);
 
   if (!hasMounted) return null;
 
@@ -354,7 +354,7 @@ export default function Home() {
             <span className="w-2 h-2 rounded-full bg-slate-500"></span>
             Real-time Activity
           </h2>
-          <div className="w-full border border-slate-800 p-6 rounded-2xl h-[400px] overflow-auto bg-slate-950 text-slate-400 font-mono text-xs shadow-inner">
+          <div className="w-full border border-slate-800 p-6 rounded-2xl h-100 overflow-auto bg-slate-950 text-slate-400 font-mono text-xs shadow-inner">
             {messages.length === 0 && <div className="text-slate-600 italic">Connected & listening for events...</div>}
             {messages.map((msg, i) => (
               <div key={i} className="mb-4 pb-4 border-b border-slate-900 last:border-0 group">
