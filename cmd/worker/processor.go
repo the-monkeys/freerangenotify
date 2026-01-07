@@ -241,6 +241,14 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				notif.Content.Body = tmpl.Body
 			}
 
+			// Always populate RenderedNotification for client convenience (e.g. debugging or alternative display)
+			// This field is transient and won't be saved to DB/ES due to es:"-" tag
+			notif.RenderedNotification = &notification.Content{
+				Title: title,
+				Body:  body,
+				Data:  notif.Content.Data,
+			}
+
 			logger.Debug("Template applied",
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("template_id", notif.TemplateID),
