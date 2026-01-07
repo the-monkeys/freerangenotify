@@ -93,26 +93,27 @@ func (s Status) IsFinal() bool {
 
 // Notification represents a notification entity
 type Notification struct {
-	NotificationID string                 `json:"notification_id" es:"notification_id"`
-	AppID          string                 `json:"app_id" es:"app_id"`
-	UserID         string                 `json:"user_id" es:"user_id"`
-	TemplateID     string                 `json:"template_id,omitempty" es:"template_id"`
-	Channel        Channel                `json:"channel" es:"channel"`
-	Priority       Priority               `json:"priority" es:"priority"`
-	Status         Status                 `json:"status" es:"status"`
-	Content        Content                `json:"content" es:"content"`
-	Category       string                 `json:"category,omitempty" es:"category"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty" es:"metadata"`
-	ScheduledAt    *time.Time             `json:"scheduled_at,omitempty" es:"scheduled_at"`
-	SentAt         *time.Time             `json:"sent_at,omitempty" es:"sent_at"`
-	DeliveredAt    *time.Time             `json:"delivered_at,omitempty" es:"delivered_at"`
-	ReadAt         *time.Time             `json:"read_at,omitempty" es:"read_at"`
-	FailedAt       *time.Time             `json:"failed_at,omitempty" es:"failed_at"`
-	ErrorMessage   string                 `json:"error_message,omitempty" es:"error_message"`
-	RetryCount     int                    `json:"retry_count" es:"retry_count"`
-	Recurrence     *Recurrence            `json:"recurrence,omitempty" es:"recurrence"`
-	CreatedAt      time.Time              `json:"created_at" es:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at" es:"updated_at"`
+	NotificationID       string                 `json:"notification_id" es:"notification_id"`
+	AppID                string                 `json:"app_id" es:"app_id"`
+	UserID               string                 `json:"user_id" es:"user_id"`
+	TemplateID           string                 `json:"template_id,omitempty" es:"template_id"`
+	Channel              Channel                `json:"channel" es:"channel"`
+	Priority             Priority               `json:"priority" es:"priority"`
+	Status               Status                 `json:"status" es:"status"`
+	Content              Content                `json:"content" es:"content"`
+	Category             string                 `json:"category,omitempty" es:"category"`
+	Metadata             map[string]interface{} `json:"metadata,omitempty" es:"metadata"`
+	ScheduledAt          *time.Time             `json:"scheduled_at,omitempty" es:"scheduled_at"`
+	SentAt               *time.Time             `json:"sent_at,omitempty" es:"sent_at"`
+	DeliveredAt          *time.Time             `json:"delivered_at,omitempty" es:"delivered_at"`
+	ReadAt               *time.Time             `json:"read_at,omitempty" es:"read_at"`
+	FailedAt             *time.Time             `json:"failed_at,omitempty" es:"failed_at"`
+	ErrorMessage         string                 `json:"error_message,omitempty" es:"error_message"`
+	RetryCount           int                    `json:"retry_count" es:"retry_count"`
+	Recurrence           *Recurrence            `json:"recurrence,omitempty" es:"recurrence"`
+	CreatedAt            time.Time              `json:"created_at" es:"created_at"`
+	UpdatedAt            time.Time              `json:"updated_at" es:"updated_at"`
+	RenderedNotification *Content               `json:"rendered_notification,omitempty" es:"-"`
 }
 
 // Recurrence defines rules for repeating notifications
