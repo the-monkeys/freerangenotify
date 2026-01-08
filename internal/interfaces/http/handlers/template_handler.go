@@ -43,16 +43,17 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	}
 
 	createReq := &template.CreateRequest{
-		AppID:       req.AppID,
-		Name:        req.Name,
-		Description: req.Description,
-		Channel:     req.Channel,
-		Subject:     req.Subject,
-		Body:        req.Body,
-		Variables:   req.Variables,
-		Metadata:    req.Metadata,
-		Locale:      req.Locale,
-		CreatedBy:   req.CreatedBy,
+		AppID:         req.AppID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Channel:       req.Channel,
+		WebhookTarget: req.WebhookTarget,
+		Subject:       req.Subject,
+		Body:          req.Body,
+		Variables:     req.Variables,
+		Metadata:      req.Metadata,
+		Locale:        req.Locale,
+		CreatedBy:     req.CreatedBy,
 	}
 
 	tmpl, err := h.service.Create(c.Context(), createReq)
@@ -186,6 +187,9 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 
 	if req.Description != "" {
 		updateReq.Description = &req.Description
+	}
+	if req.WebhookTarget != "" {
+		updateReq.WebhookTarget = &req.WebhookTarget
 	}
 	if req.Subject != "" {
 		updateReq.Subject = &req.Subject
@@ -381,21 +385,22 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 // Helper function to convert template to response
 func toTemplateResponse(tmpl *template.Template) *dto.TemplateResponse {
 	return &dto.TemplateResponse{
-		ID:          tmpl.ID,
-		AppID:       tmpl.AppID,
-		Name:        tmpl.Name,
-		Description: tmpl.Description,
-		Channel:     tmpl.Channel,
-		Subject:     tmpl.Subject,
-		Body:        tmpl.Body,
-		Variables:   tmpl.Variables,
-		Metadata:    tmpl.Metadata,
-		Version:     tmpl.Version,
-		Status:      tmpl.Status,
-		Locale:      tmpl.Locale,
-		CreatedBy:   tmpl.CreatedBy,
-		UpdatedBy:   tmpl.UpdatedBy,
-		CreatedAt:   tmpl.CreatedAt,
-		UpdatedAt:   tmpl.UpdatedAt,
+		ID:            tmpl.ID,
+		AppID:         tmpl.AppID,
+		Name:          tmpl.Name,
+		Description:   tmpl.Description,
+		Channel:       tmpl.Channel,
+		WebhookTarget: tmpl.WebhookTarget,
+		Subject:       tmpl.Subject,
+		Body:          tmpl.Body,
+		Variables:     tmpl.Variables,
+		Metadata:      tmpl.Metadata,
+		Version:       tmpl.Version,
+		Status:        tmpl.Status,
+		Locale:        tmpl.Locale,
+		CreatedBy:     tmpl.CreatedBy,
+		UpdatedBy:     tmpl.UpdatedBy,
+		CreatedAt:     tmpl.CreatedAt,
+		UpdatedAt:     tmpl.UpdatedAt,
 	}
 }

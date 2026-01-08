@@ -164,17 +164,15 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	// Move webhook_url from Data to Metadata if present
-	if url, ok := req.Data["webhook_url"].(string); ok {
-		if notif.Metadata == nil {
-			notif.Metadata = make(map[string]interface{})
+	if req.Data != nil {
+		if url, ok := req.Data["webhook_url"].(string); ok {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["webhook_url"] = url
+			// Remove from Content.Data to keep payload clean
+			delete(notif.Content.Data, "webhook_url")
 		}
-		notif.Metadata["webhook_url"] = url
-		// We can keep it in Data too if we want it in the payload content,
-		// but typically transport details stay in Metadata.
-		// Remove from Content.Data to keep payload clean?
-		// Let's remove it to avoid leaking it into the body payload if not desired,
-		// but models says Content.Data is what goes to the user.
-		delete(notif.Content.Data, "webhook_url")
 	}
 
 	// Calculate initial schedule for recurring notifications if not provided

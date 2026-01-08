@@ -38,6 +38,10 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 				"webhook_url": map[string]interface{}{
 					"type": "keyword",
 				},
+				"webhooks": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
 				"settings": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -67,6 +71,27 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 								},
 								"sms_enabled": map[string]interface{}{
 									"type": "boolean",
+								},
+							},
+						},
+						"validation_url": map[string]interface{}{
+							"type": "keyword",
+						},
+						"validation_config": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"method": map[string]interface{}{
+									"type": "keyword",
+								},
+								"token_placement": map[string]interface{}{
+									"type": "keyword",
+								},
+								"token_key": map[string]interface{}{
+									"type": "keyword",
+								},
+								"static_headers": map[string]interface{}{
+									"type":    "object",
+									"enabled": false,
 								},
 							},
 						},
@@ -274,6 +299,9 @@ func (it *IndexTemplates) GetTemplatesTemplate() map[string]interface{} {
 					"type": "text",
 				},
 				"channel": map[string]interface{}{
+					"type": "keyword",
+				},
+				"webhook_target": map[string]interface{}{
 					"type": "keyword",
 				},
 				"subject": map[string]interface{}{

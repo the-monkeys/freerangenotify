@@ -58,6 +58,7 @@ services:
         condition: service_healthy
     environment:
       - FREERANGE_APP_ENVIRONMENT=development
+      - DEBUG=true
       - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
@@ -125,7 +126,7 @@ services:
       - "3000:5173" # Map host port 3000 to container Vite port 5173
     environment:
       - CHOKIDAR_USEPOLLING=true # Enable file watching in Docker
-      - VITE_API_BASE_URL=http://localhost:8080
+      - VITE_API_BASE_URL=http://notification-service:8080
     volumes:
       - ./ui:/app # Mount source code for hot reloading
       - /app/node_modules # Prevent overwriting node_modules

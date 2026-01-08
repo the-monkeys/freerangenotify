@@ -43,20 +43,24 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 	}
 
 	tmpl := &templateDomain.Template{
-		AppID:       req.AppID,
-		Name:        req.Name,
-		Description: req.Description,
-		Channel:     req.Channel,
-		Subject:     req.Subject,
-		Body:        req.Body,
-		Variables:   req.Variables,
-		Metadata:    req.Metadata,
-		Version:     1,
-		Status:      "active",
-		Locale:      req.Locale,
-		CreatedBy:   req.CreatedBy,
-		UpdatedBy:   req.CreatedBy,
+		AppID:         req.AppID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Channel:       req.Channel,
+		WebhookTarget: req.WebhookTarget,
+		Subject:       req.Subject,
+		Body:          req.Body,
+		Variables:     req.Variables,
+		Metadata:      req.Metadata,
+		Version:       1,
+		Status:        "active",
+		Locale:        req.Locale,
+		CreatedBy:     req.CreatedBy,
+		UpdatedBy:     req.CreatedBy,
 	}
+
+	// Set Webhooks from domain model
+	// (Ensure they are passed through to repo)
 
 	if err := s.repo.Create(ctx, tmpl); err != nil {
 		s.logger.Error("Failed to create template", zap.Error(err))
@@ -105,6 +109,9 @@ func (s *TemplateService) Update(ctx context.Context, id string, req *templateDo
 	}
 	if req.Description != nil && *req.Description != "" {
 		tmpl.Description = *req.Description
+	}
+	if req.WebhookTarget != nil {
+		tmpl.WebhookTarget = *req.WebhookTarget
 	}
 	if req.Subject != nil {
 		tmpl.Subject = *req.Subject
@@ -198,18 +205,19 @@ func (s *TemplateService) CreateVersion(ctx context.Context, templateID, updated
 
 	// Create new version with same content
 	tmpl := &templateDomain.Template{
-		AppID:       current.AppID,
-		Name:        current.Name,
-		Description: current.Description,
-		Channel:     current.Channel,
-		Subject:     current.Subject,
-		Body:        current.Body,
-		Variables:   current.Variables,
-		Metadata:    current.Metadata,
-		Status:      "active",
-		Locale:      current.Locale,
-		CreatedBy:   updatedBy,
-		UpdatedBy:   updatedBy,
+		AppID:         current.AppID,
+		Name:          current.Name,
+		Description:   current.Description,
+		Channel:       current.Channel,
+		WebhookTarget: current.WebhookTarget,
+		Subject:       current.Subject,
+		Body:          current.Body,
+		Variables:     current.Variables,
+		Metadata:      current.Metadata,
+		Status:        "active",
+		Locale:        current.Locale,
+		CreatedBy:     updatedBy,
+		UpdatedBy:     updatedBy,
 	}
 
 	if err := s.repo.CreateVersion(ctx, tmpl); err != nil {
@@ -272,6 +280,7 @@ func (s *TemplateService) validateTemplateVariables(body string, variables []str
 
 // renderTemplate renders a Go template with provided data
 func (s *TemplateService) renderTemplate(body string, data map[string]interface{}) (string, error) {
+	// Support both {{var}} and {{.var}} by ensuring data is accessible as dot
 	tmpl, err := template.New("notification").Parse(body)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)

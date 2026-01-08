@@ -20,9 +20,9 @@ import type {
   TemplateVersion,
 } from '../types';
 
-const API_BASE_URL = (import.meta as any).env.VITE_API_BASE_URL || '';
+// Always use relative URLs - Vite proxy handles routing to backend
 const api = axios.create({
-  baseURL: `${API_BASE_URL}/v1`,
+  baseURL: '/v1',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -85,7 +85,7 @@ export const applicationsAPI = {
 // Helper to get auth headers
 const getAuthHeaders = (apiKey?: string) => {
   if (!apiKey) return {};
-  return { 'Authorization': apiKey };
+  return { 'Authorization': `Bearer ${apiKey}` };
 };
 
 // ============= User APIs =============
