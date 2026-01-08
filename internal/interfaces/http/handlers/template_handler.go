@@ -27,6 +27,8 @@ func NewTemplateHandler(service *usecases.TemplateService, logger *zap.Logger) *
 
 // CreateTemplate creates a new notification template
 func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
 	var req dto.CreateTemplateRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -43,7 +45,7 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	}
 
 	createReq := &template.CreateRequest{
-		AppID:         req.AppID,
+		AppID:         appID, // Enforce AppID from context
 		Name:          req.Name,
 		Description:   req.Description,
 		Channel:       req.Channel,
@@ -70,6 +72,7 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 
 // GetTemplate retrieves a template by ID
 func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 	if id == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -78,7 +81,7 @@ func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	tmpl, err := h.service.GetByID(c.Context(), id)
+	tmpl, err := h.service.GetByID(c.Context(), id, appID)
 	if err != nil {
 		h.logger.Error("Failed to get template", zap.String("id", id), zap.Error(err))
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
@@ -108,7 +111,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 	}
 
 	filter := template.Filter{
-		AppID:   req.AppID,
+		AppID:   c.Locals("app_id").(string), // Enforce AppID from context
 		Name:    req.Name,
 		Channel: req.Channel,
 		Status:  req.Status,
@@ -158,6 +161,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 // UpdateTemplate updates an existing template
 func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 	if id == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -207,7 +211,7 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 		updateReq.Status = &req.Status
 	}
 
-	tmpl, err := h.service.Update(c.Context(), id, updateReq)
+	tmpl, err := h.service.Update(c.Context(), id, appID, updateReq)
 	if err != nil {
 		h.logger.Error("Failed to update template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -227,6 +231,7 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 
 // DeleteTemplate deletes a template (soft delete)
 func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 	if id == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -235,7 +240,7 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.Delete(c.Context(), id); err != nil {
+	if err := h.service.Delete(c.Context(), id, appID); err != nil {
 		h.logger.Error("Failed to delete template", zap.String("id", id), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   "Failed to delete template",
@@ -248,6 +253,7 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 
 // RenderTemplate renders a template with provided data
 func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 	if id == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -271,7 +277,7 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	rendered, err := h.service.Render(c.Context(), id, req.Data)
+	rendered, err := h.service.Render(c.Context(), id, appID, req.Data)
 	if err != nil {
 		h.logger.Error("Failed to render template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -293,13 +299,13 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 
 // CreateTemplateVersion creates a new version of a template
 func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
-	appID := c.Params("app_id")
+	appID := c.Locals("app_id").(string) // Ignore params app_id, force context one
 	name := c.Params("name")
 
-	if appID == "" || name == "" {
+	if name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "App ID and template name are required",
-			"message": "Please provide valid app ID and template name",
+			"error":   "Template name is required",
+			"message": "Please provide valid template name",
 		})
 	}
 
@@ -332,7 +338,7 @@ func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 		})
 	}
 
-	tmpl, err := h.service.CreateVersion(c.Context(), original.ID, req.CreatedBy)
+	tmpl, err := h.service.CreateVersion(c.Context(), original.ID, appID, req.CreatedBy)
 	if err != nil {
 		h.logger.Error("Failed to create template version",
 			zap.String("app_id", appID),
@@ -349,13 +355,13 @@ func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 
 // GetTemplateVersions retrieves all versions of a template
 func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
-	appID := c.Params("app_id")
+	appID := c.Locals("app_id").(string)
 	name := c.Params("name")
 
-	if appID == "" || name == "" {
+	if name == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "App ID and template name are required",
-			"message": "Please provide valid app ID and template name",
+			"error":   "Template name is required",
+			"message": "Please provide valid template name",
 		})
 	}
 

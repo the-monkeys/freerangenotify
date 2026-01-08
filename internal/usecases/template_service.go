@@ -75,11 +75,15 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 	return tmpl, nil
 }
 
-// GetByID retrieves a template by ID
-func (s *TemplateService) GetByID(ctx context.Context, id string) (*templateDomain.Template, error) {
+// GetByID retrieves a template by ID and verifies app ownership
+func (s *TemplateService) GetByID(ctx context.Context, id, appID string) (*templateDomain.Template, error) {
 	tmpl, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get template: %w", err)
+	}
+
+	if tmpl.AppID != appID {
+		return nil, fmt.Errorf("template not found")
 	}
 
 	return tmpl, nil
@@ -96,11 +100,16 @@ func (s *TemplateService) GetByName(ctx context.Context, appID, name, locale str
 }
 
 // Update updates an existing template
-func (s *TemplateService) Update(ctx context.Context, id string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
+func (s *TemplateService) Update(ctx context.Context, id, appID string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
 	// Get existing template
 	tmpl, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("template not found: %w", err)
+	}
+
+	// Verify ownership
+	if tmpl.AppID != appID {
+		return nil, fmt.Errorf("template not found")
 	}
 
 	// Update fields if provided
@@ -150,7 +159,16 @@ func (s *TemplateService) Update(ctx context.Context, id string, req *templateDo
 }
 
 // Delete deletes a template (soft delete)
-func (s *TemplateService) Delete(ctx context.Context, id string) error {
+func (s *TemplateService) Delete(ctx context.Context, id, appID string) error {
+	// Verify ownership before delete
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("template not found: %w", err)
+	}
+	if tmpl.AppID != appID {
+		return fmt.Errorf("template not found")
+	}
+
 	if err := s.repo.Delete(ctx, id); err != nil {
 		s.logger.Error("Failed to delete template", zap.String("id", id), zap.Error(err))
 		return fmt.Errorf("failed to delete template: %w", err)
@@ -171,11 +189,16 @@ func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter
 }
 
 // Render renders a template with provided data
-func (s *TemplateService) Render(ctx context.Context, templateID string, data map[string]interface{}) (string, error) {
+func (s *TemplateService) Render(ctx context.Context, templateID, appID string, data map[string]interface{}) (string, error) {
 	// Get template
 	tmpl, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
 		return "", fmt.Errorf("template not found: %w", err)
+	}
+
+	// Verify ownership
+	if tmpl.AppID != appID {
+		return "", fmt.Errorf("template not found")
 	}
 
 	// Check if template is active
@@ -196,11 +219,16 @@ func (s *TemplateService) Render(ctx context.Context, templateID string, data ma
 }
 
 // CreateVersion creates a new version of a template
-func (s *TemplateService) CreateVersion(ctx context.Context, templateID, updatedBy string) (*templateDomain.Template, error) {
+func (s *TemplateService) CreateVersion(ctx context.Context, templateID, appID, updatedBy string) (*templateDomain.Template, error) {
 	// Get the current template
 	current, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
 		return nil, fmt.Errorf("template not found: %w", err)
+	}
+
+	// Verify ownership
+	if current.AppID != appID {
+		return nil, fmt.Errorf("template not found")
 	}
 
 	// Create new version with same content

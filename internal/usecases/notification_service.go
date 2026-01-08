@@ -424,7 +424,7 @@ func (s *NotificationService) List(ctx context.Context, filter notification.Noti
 }
 
 // UpdateStatus updates the status of a notification
-func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID string, status notification.Status, errorMessage string) error {
+func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID string, status notification.Status, errorMessage string, appID string) error {
 	// Validate status
 	if !status.Valid() {
 		return notification.ErrInvalidStatus
@@ -434,6 +434,11 @@ func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID s
 	notif, err := s.notificationRepo.GetByID(ctx, notificationID)
 	if err != nil {
 		return err
+	}
+
+	// Verify ownership
+	if notif.AppID != appID {
+		return fmt.Errorf("notification not found")
 	}
 
 	// Validate status transition

@@ -54,13 +54,13 @@ type Repository interface {
 // Service defines the business logic interface for templates
 type Service interface {
 	Create(ctx context.Context, req *CreateRequest) (*Template, error)
-	GetByID(ctx context.Context, id string) (*Template, error)
+	GetByID(ctx context.Context, id, appID string) (*Template, error)
 	GetByName(ctx context.Context, appID, name, locale string) (*Template, error)
-	Update(ctx context.Context, id string, req *UpdateRequest) (*Template, error)
-	Delete(ctx context.Context, id string) error
+	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*Template, error)
+	Delete(ctx context.Context, id, appID string) error
 	List(ctx context.Context, filter Filter) ([]*Template, error)
-	Render(ctx context.Context, templateID string, variables map[string]interface{}) (string, error)
-	CreateVersion(ctx context.Context, templateID, updatedBy string) (*Template, error)
+	Render(ctx context.Context, templateID, appID string, variables map[string]interface{}) (string, error)
+	CreateVersion(ctx context.Context, templateID, appID, updatedBy string) (*Template, error)
 	GetVersions(ctx context.Context, appID, name, locale string) ([]*Template, error)
 }
 

@@ -204,7 +204,7 @@ type Service interface {
 	SendBatch(ctx context.Context, requests []SendRequest) ([]*Notification, error)
 	Get(ctx context.Context, notificationID, appID string) (*Notification, error)
 	List(ctx context.Context, filter NotificationFilter) ([]*Notification, error)
-	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string) error
+	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string, appID string) error
 	Cancel(ctx context.Context, notificationID, appID string) error
 	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error

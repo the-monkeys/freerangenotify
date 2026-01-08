@@ -56,14 +56,12 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      - FREERANGE_APP_ENVIRONMENT=development
-      - DEBUG=true
       - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
-      - FREERANGE_SERVER_PORT=8080
-      - FREERANGE_SERVER_HOST=0.0.0.0
     networks:
       - freerange-network
     healthcheck:
@@ -83,13 +81,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      - FREERANGE_APP_ENVIRONMENT=development
       - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
-      - FREERANGE_PROVIDERS_WEBHOOK_SECRET=my-secret-key
-      - DEBUG=true
     networks:
       - freerange-network
     restart: unless-stopped
@@ -126,7 +123,7 @@ services:
       - "3000:5173" # Map host port 3000 to container Vite port 5173
     environment:
       - CHOKIDAR_USEPOLLING=true # Enable file watching in Docker
-      - VITE_API_BASE_URL=http://notification-service:8080
+      - VITE_API_BASE_URL=http://notification-service:8080 # Internal URL for Vite proxy
     volumes:
       - ./ui:/app # Mount source code for hot reloading
       - /app/node_modules # Prevent overwriting node_modules
