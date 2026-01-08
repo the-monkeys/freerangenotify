@@ -220,41 +220,91 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				zap.Error(err))
 		} else {
 			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
-			// Render template content
-			title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
-			if err != nil {
-				logger.Warn("Failed to render template title", zap.Error(err))
-				title = tmpl.Subject // Fallback to raw
+			if tmpl != nil {
+				// Render template content
+				title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
+				if err != nil {
+					logger.Warn("Failed to render template title", zap.Error(err))
+					title = tmpl.Subject // Fallback to raw
+				}
+
+				body, err := p.renderTemplate(tmpl.Body, notif.Content.Data)
+				if err != nil {
+					logger.Warn("Failed to render template body", zap.Error(err))
+					body = tmpl.Body // Fallback to raw
+				}
+
+				notif.Content.Title = title
+				notif.Content.Body = body
+
+				if notif.Channel == notification.ChannelSSE {
+					notif.Content.Title = tmpl.Subject
+					notif.Content.Body = tmpl.Body
+				}
+
+				// Always populate RenderedNotification for client convenience (e.g. debugging or alternative display)
+				// This field is transient and won't be saved to DB/ES due to es:"-" tag
+				notif.RenderedNotification = &notification.Content{
+					Title: title,
+					Body:  body,
+					Data:  notif.Content.Data,
+				}
+
+				logger.Debug("Template applied",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("template_id", notif.TemplateID),
+					zap.String("template_name", tmpl.Name),
+					zap.String("title", notif.Content.Title),
+					zap.String("body", notif.Content.Body))
+			} else {
+				logger.Warn("Template is NIL in processor, skipping template enrichment",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("template_id", notif.TemplateID))
 			}
 
-			body, err := p.renderTemplate(tmpl.Body, notif.Content.Data)
-			if err != nil {
-				logger.Warn("Failed to render template body", zap.Error(err))
-				body = tmpl.Body // Fallback to raw
+			// Webhook Routing Logic: Resolve target from Application config if Template specifies it
+			// Resolve webhook target URL if applicable
+			target := ""
+			if tmpl != nil && tmpl.WebhookTarget != "" {
+				target = tmpl.WebhookTarget
 			}
 
-			notif.Content.Title = title
-			notif.Content.Body = body
-
-			if notif.Channel == notification.ChannelSSE {
-				notif.Content.Title = tmpl.Subject
-				notif.Content.Body = tmpl.Body
+			// Allow override or manual target from data
+			if notif.Content.Data != nil {
+				if val, ok := notif.Content.Data["webhook_target"].(string); ok && val != "" {
+					target = val
+				}
 			}
 
-			// Always populate RenderedNotification for client convenience (e.g. debugging or alternative display)
-			// This field is transient and won't be saved to DB/ES due to es:"-" tag
-			notif.RenderedNotification = &notification.Content{
-				Title: title,
-				Body:  body,
-				Data:  notif.Content.Data,
+			if notif.Channel == notification.ChannelWebhook && target != "" {
+				app, err := p.appRepo.GetByID(ctx, notif.AppID)
+				if err != nil {
+					logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
+				} else if app != nil && app.Webhooks != nil {
+					if url, ok := app.Webhooks[target]; ok {
+						if notif.Metadata == nil {
+							notif.Metadata = make(map[string]interface{})
+						}
+						// Only set if not already present (allow override)
+						if _, exists := notif.Metadata["webhook_url"]; !exists {
+							notif.Metadata["webhook_url"] = url
+							logger.Info("Resolved webhook target from application config",
+								zap.String("notification_id", notif.NotificationID),
+								zap.String("target_name", target),
+								zap.String("url", url))
+						}
+					} else {
+						logger.Error("Webhook target NOT FOUND in application webhooks map",
+							zap.String("notification_id", notif.NotificationID),
+							zap.String("target_name", target),
+							zap.Any("available_webhooks", app.Webhooks))
+					}
+				} else {
+					logger.Error("Application has NO webhooks configured",
+						zap.String("notification_id", notif.NotificationID),
+						zap.String("app_id", notif.AppID))
+				}
 			}
-
-			logger.Debug("Template applied",
-				zap.String("notification_id", notif.NotificationID),
-				zap.String("template_id", notif.TemplateID),
-				zap.String("template_name", tmpl.Name),
-				zap.String("title", notif.Content.Title),
-				zap.String("body", notif.Content.Body))
 		}
 	}
 

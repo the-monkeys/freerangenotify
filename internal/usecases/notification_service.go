@@ -164,17 +164,15 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	// Move webhook_url from Data to Metadata if present
-	if url, ok := req.Data["webhook_url"].(string); ok {
-		if notif.Metadata == nil {
-			notif.Metadata = make(map[string]interface{})
+	if req.Data != nil {
+		if url, ok := req.Data["webhook_url"].(string); ok {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["webhook_url"] = url
+			// Remove from Content.Data to keep payload clean
+			delete(notif.Content.Data, "webhook_url")
 		}
-		notif.Metadata["webhook_url"] = url
-		// We can keep it in Data too if we want it in the payload content,
-		// but typically transport details stay in Metadata.
-		// Remove from Content.Data to keep payload clean?
-		// Let's remove it to avoid leaking it into the body payload if not desired,
-		// but models says Content.Data is what goes to the user.
-		delete(notif.Content.Data, "webhook_url")
 	}
 
 	// Calculate initial schedule for recurring notifications if not provided
@@ -426,7 +424,7 @@ func (s *NotificationService) List(ctx context.Context, filter notification.Noti
 }
 
 // UpdateStatus updates the status of a notification
-func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID string, status notification.Status, errorMessage string) error {
+func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID string, status notification.Status, errorMessage string, appID string) error {
 	// Validate status
 	if !status.Valid() {
 		return notification.ErrInvalidStatus
@@ -436,6 +434,11 @@ func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID s
 	notif, err := s.notificationRepo.GetByID(ctx, notificationID)
 	if err != nil {
 		return err
+	}
+
+	// Verify ownership
+	if notif.AppID != appID {
+		return fmt.Errorf("notification not found")
 	}
 
 	// Validate status transition

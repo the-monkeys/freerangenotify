@@ -5,9 +5,10 @@ import type { Template, CreateTemplateRequest } from '../types';
 interface AppTemplatesProps {
     appId: string;
     apiKey: string;
+    webhooks?: Record<string, string>;
 }
 
-const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
+const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) => {
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -15,6 +16,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
         app_id: appId,
         name: '',
         channel: 'email',
+        webhook_target: '',
         subject: '',
         body: '',
         description: '',
@@ -53,6 +55,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                 app_id: appId,
                 name: '',
                 channel: 'email',
+                webhook_target: '',
                 subject: '',
                 body: '',
                 description: '',
@@ -172,6 +175,24 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                             </select>
                         </div>
                     </div>
+                    {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                        <div className="form-group">
+                            <label className="form-label">Webhook Target</label>
+                            <select
+                                className="form-input"
+                                value={formData.webhook_target || ''}
+                                onChange={(e) => setFormData({ ...formData, webhook_target: e.target.value })}
+                            >
+                                <option value="">Default (Application Webhook URL)</option>
+                                {Object.keys(webhooks).map(name => (
+                                    <option key={name} value={name}>{name}</option>
+                                ))}
+                            </select>
+                            <p style={{ fontSize: '0.75rem', color: '#605e5c', marginTop: '0.25rem' }}>
+                                Select a specific named webhook endpoint for this template.
+                            </p>
+                        </div>
+                    )}
                     <div className="form-group">
                         <label className="form-label">Subject (for Email)</label>
                         <input
@@ -268,6 +289,12 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey }) => {
                                     {tmpl.channel}
                                 </span>
                             </div>
+
+                            {tmpl.channel === 'webhook' && (
+                                <div className="mb-2" style={{ fontSize: '0.8rem', color: 'var(--azure-blue)', fontWeight: 600 }}>
+                                    Target: <span style={{ color: '#323130' }}>{tmpl.webhook_target || 'Default'}</span>
+                                </div>
+                            )}
 
                             <div className="mb-4" style={{ background: '#f8f8f8', padding: '1rem', borderRadius: '2px', border: '1px dashed var(--azure-border)' }}>
                                 <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>TEMPLATE BODY</div>

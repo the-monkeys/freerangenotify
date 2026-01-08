@@ -204,7 +204,7 @@ type Service interface {
 	SendBatch(ctx context.Context, requests []SendRequest) ([]*Notification, error)
 	Get(ctx context.Context, notificationID, appID string) (*Notification, error)
 	List(ctx context.Context, filter NotificationFilter) ([]*Notification, error)
-	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string) error
+	UpdateStatus(ctx context.Context, notificationID string, status Status, errorMessage string, appID string) error
 	Cancel(ctx context.Context, notificationID, appID string) error
 	CancelBatch(ctx context.Context, notificationIDs []string, appID string) error
 	Retry(ctx context.Context, notificationID, appID string) error
@@ -227,12 +227,15 @@ func (n *Notification) Validate() error {
 			return ErrInvalidUserID
 		}
 		// For webhook, check if we have the URL in metadata
-		if n.Metadata == nil {
-			// Check content data as fallback?
-			// Models says Metadata["webhook_url"] is populated in Service.
-			return ErrInvalidUserID
+		hasURL := false
+		if n.Metadata != nil {
+			if _, ok := n.Metadata["webhook_url"]; ok {
+				hasURL = true
+			}
 		}
-		if _, ok := n.Metadata["webhook_url"]; !ok {
+
+		// If no explicit URL, we must have a TemplateID which can resolve via WebhookTarget
+		if !hasURL && n.TemplateID == "" {
 			return ErrInvalidUserID
 		}
 	}
@@ -294,12 +297,20 @@ func (r *SendRequest) Validate() error {
 		if r.Channel != ChannelWebhook {
 			return ErrInvalidUserID
 		}
-		// For webhook, if UserID is empty, we must have a webhook_url in Data
-		if r.Data == nil {
-			return ErrInvalidUserID // Re-using this error or should create new one? UserID is missing and no fallback.
+		// For webhook, if UserID is empty, we must have a webhook_url OR webhook_target in Data OR a TemplateID
+		hasURL := false
+		hasTarget := false
+		if r.Data != nil {
+			if _, ok := r.Data["webhook_url"]; ok {
+				hasURL = true
+			}
+			if _, ok := r.Data["webhook_target"]; ok {
+				hasTarget = true
+			}
 		}
-		if _, ok := r.Data["webhook_url"]; !ok {
-			return ErrInvalidUserID // Needs UserID or Webhook URL
+
+		if !hasURL && !hasTarget && r.TemplateID == "" {
+			return ErrInvalidUserID // Needs UserID or Webhook URL or Webhook Target or Template to resolve it
 		}
 	}
 

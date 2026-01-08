@@ -8,48 +8,51 @@ import (
 
 // CreateTemplateRequest represents a request to create a new template
 type CreateTemplateRequest struct {
-	AppID       string                 `json:"app_id" validate:"required"`
-	Name        string                 `json:"name" validate:"required,min=3,max=100"`
-	Description string                 `json:"description"`
-	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
-	Subject     string                 `json:"subject"`
-	Body        string                 `json:"body" validate:"required"`
-	Variables   []string               `json:"variables"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	Locale      string                 `json:"locale" validate:"omitempty,min=2,max=10"`
-	CreatedBy   string                 `json:"created_by"`
+	AppID         string                 `json:"app_id" validate:"required"`
+	Name          string                 `json:"name" validate:"required,min=3,max=100"`
+	Description   string                 `json:"description"`
+	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	Subject       string                 `json:"subject"`
+	Body          string                 `json:"body" validate:"required"`
+	Variables     []string               `json:"variables"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	Locale        string                 `json:"locale" validate:"omitempty,min=2,max=10"`
+	CreatedBy     string                 `json:"created_by"`
 } // @name CreateTemplateRequest
 
 // UpdateTemplateRequest represents a request to update an existing template
 type UpdateTemplateRequest struct {
-	Description string                 `json:"description"`
-	Subject     string                 `json:"subject"`
-	Body        string                 `json:"body"`
-	Variables   []string               `json:"variables"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	Status      string                 `json:"status" validate:"omitempty,oneof=active inactive archived"`
-	Locale      string                 `json:"locale" validate:"omitempty,min=2,max=10"`
-	UpdatedBy   string                 `json:"updated_by"`
+	Description   string                 `json:"description"`
+	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	Subject       string                 `json:"subject"`
+	Body          string                 `json:"body"`
+	Variables     []string               `json:"variables"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	Status        string                 `json:"status" validate:"omitempty,oneof=active inactive archived"`
+	Locale        string                 `json:"locale" validate:"omitempty,min=2,max=10"`
+	UpdatedBy     string                 `json:"updated_by"`
 } // @name UpdateTemplateRequest
 
 // TemplateResponse represents a template in API responses
 type TemplateResponse struct {
-	ID          string                 `json:"id"`
-	AppID       string                 `json:"app_id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Channel     string                 `json:"channel"`
-	Subject     string                 `json:"subject"`
-	Body        string                 `json:"body"`
-	Variables   []string               `json:"variables"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	Version     int                    `json:"version"`
-	Status      string                 `json:"status"`
-	Locale      string                 `json:"locale"`
-	CreatedBy   string                 `json:"created_by"`
-	UpdatedBy   string                 `json:"updated_by"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID            string                 `json:"id"`
+	AppID         string                 `json:"app_id"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description"`
+	Channel       string                 `json:"channel"`
+	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	Subject       string                 `json:"subject"`
+	Body          string                 `json:"body"`
+	Variables     []string               `json:"variables"`
+	Metadata      map[string]interface{} `json:"metadata"`
+	Version       int                    `json:"version"`
+	Status        string                 `json:"status"`
+	Locale        string                 `json:"locale"`
+	CreatedBy     string                 `json:"created_by"`
+	UpdatedBy     string                 `json:"updated_by"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 } // @name TemplateResponse
 
 // ListTemplatesRequest represents query parameters for listing templates

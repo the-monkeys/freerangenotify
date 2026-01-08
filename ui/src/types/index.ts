@@ -5,6 +5,7 @@ export interface Application {
     description?: string;
     api_key: string;
     webhook_url?: string;
+    webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
     created_at?: string;
     updated_at?: string;
@@ -34,6 +35,7 @@ export interface CreateApplicationRequest {
     app_name: string;
     description?: string;
     webhook_url?: string;
+    webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
 }
 
@@ -41,6 +43,7 @@ export interface UpdateApplicationRequest {
     app_name?: string;
     description?: string;
     webhook_url?: string;
+    webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
 }
 
@@ -125,6 +128,7 @@ export interface NotificationRequest {
     data?: Record<string, any>;
     template_id?: string;
     webhook_url?: string;
+    webhook_target?: string;
 }
 
 export interface BulkNotificationRequest {
@@ -149,6 +153,7 @@ export interface Template {
     name: string;
     description?: string;
     channel: string;
+    webhook_target?: string;
     subject?: string;
     body: string;
     variables?: string[];
@@ -173,6 +178,7 @@ export interface CreateTemplateRequest {
     name: string;
     description?: string;
     channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    webhook_target?: string;
     subject?: string;
     body: string;
     variables?: string[];
@@ -182,6 +188,7 @@ export interface CreateTemplateRequest {
 
 export interface UpdateTemplateRequest {
     description?: string;
+    webhook_target?: string;
     subject?: string;
     body?: string;
     variables?: string[];

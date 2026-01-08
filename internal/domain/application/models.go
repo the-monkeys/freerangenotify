@@ -7,14 +7,15 @@ import (
 
 // Application represents an application entity
 type Application struct {
-	AppID             string    `json:"app_id" es:"app_id"`
-	AppName           string    `json:"app_name" es:"app_name"`
-	APIKey            string    `json:"api_key" es:"api_key"`
-	APIKeyGeneratedAt time.Time `json:"api_key_generated_at" es:"api_key_generated_at"`
-	WebhookURL        string    `json:"webhook_url,omitempty" es:"webhook_url"`
-	Settings          Settings  `json:"settings" es:"settings"`
-	CreatedAt         time.Time `json:"created_at" es:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at" es:"updated_at"`
+	AppID             string            `json:"app_id" es:"app_id"`
+	AppName           string            `json:"app_name" es:"app_name"`
+	APIKey            string            `json:"api_key" es:"api_key"`
+	APIKeyGeneratedAt time.Time         `json:"api_key_generated_at" es:"api_key_generated_at"`
+	WebhookURL        string            `json:"webhook_url,omitempty" es:"webhook_url"`
+	Webhooks          map[string]string `json:"webhooks,omitempty" es:"webhooks"`
+	Settings          Settings          `json:"settings" es:"settings"`
+	CreatedAt         time.Time         `json:"created_at" es:"created_at"`
+	UpdatedAt         time.Time         `json:"updated_at" es:"updated_at"`
 }
 
 // Settings represents application-specific settings
@@ -75,14 +76,16 @@ type Service interface {
 
 // CreateRequest represents a request to create an application
 type CreateRequest struct {
-	Name       string   `json:"name" validate:"required,min=1,max=100"`
-	WebhookURL string   `json:"webhook_url,omitempty" validate:"omitempty,url"`
-	Settings   Settings `json:"settings"`
+	Name       string            `json:"name" validate:"required,min=1,max=100"`
+	WebhookURL string            `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	Webhooks   map[string]string `json:"webhooks,omitempty"`
+	Settings   Settings          `json:"settings"`
 }
 
 // UpdateRequest represents a request to update an application
 type UpdateRequest struct {
-	Name       *string   `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
-	WebhookURL *string   `json:"webhook_url,omitempty" validate:"omitempty,url"`
-	Settings   *Settings `json:"settings,omitempty"`
+	Name       *string            `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
+	WebhookURL *string            `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	Webhooks   *map[string]string `json:"webhooks,omitempty"`
+	Settings   *Settings          `json:"settings,omitempty"`
 }

@@ -42,6 +42,7 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 	app := &application.Application{
 		AppName:    req.AppName,
 		WebhookURL: req.WebhookURL,
+		Webhooks:   req.Webhooks,
 	}
 
 	if req.Settings != nil {
@@ -111,6 +112,9 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	}
 	if req.WebhookURL != "" {
 		app.WebhookURL = req.WebhookURL
+	}
+	if req.Webhooks != nil {
+		app.Webhooks = req.Webhooks
 	}
 	if req.Settings != nil {
 		app.Settings = *req.Settings
