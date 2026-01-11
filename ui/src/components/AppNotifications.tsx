@@ -5,9 +5,10 @@ import type { Notification, NotificationRequest, User, Template } from '../types
 interface AppNotificationsProps {
     appId: string;
     apiKey: string;
+    webhooks?: Record<string, string>;
 }
 
-const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
+const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks }) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [templates, setTemplates] = useState<Template[]>([]);
@@ -24,6 +25,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
         data: {}
     });
 
+    const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
     const [dataInput, setDataInput] = useState('');
 
     useEffect(() => {
@@ -64,7 +66,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                 }
             }
 
-            await notificationsAPI.send(apiKey, { ...formData, data: customData });
+            if (formData.channel === 'webhook' && selectedTargets.length > 0) {
+                // Multi-target sending: send separate requests for each target
+                const sendPromises = selectedTargets.map(target =>
+                    notificationsAPI.send(apiKey, {
+                        ...formData,
+                        webhook_target: target,
+                        data: customData
+                    })
+                );
+                await Promise.all(sendPromises);
+            } else {
+                // Single send (default behavior)
+                await notificationsAPI.send(apiKey, { ...formData, data: customData });
+            }
+
             setShowSendForm(false);
             setFormData({
                 user_id: '',
@@ -75,8 +91,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                 template_id: '',
                 data: {}
             });
+            setSelectedTargets([]);
             setDataInput('');
             fetchData();
+            alert('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
             alert('Failed to send notification');
@@ -157,20 +175,49 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey }) => {
                             </select>
                         </div>
 
-                        {/* Webhook URL Field - Only shown for webhook channel */}
+                        {/* Webhook Targets Selection - Multi-select */}
+                        {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                            <div className="form-group md:col-span-2">
+                                <label className="form-label">Webhook Targets (Select one or more)</label>
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-gray-200 rounded bg-white">
+                                    {Object.keys(webhooks).map(name => (
+                                        <label key={name} className="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded">
+                                            <input
+                                                type="checkbox"
+                                                className="form-checkbox"
+                                                checked={selectedTargets.includes(name)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedTargets([...selectedTargets, name]);
+                                                    } else {
+                                                        setSelectedTargets(selectedTargets.filter(t => t !== name));
+                                                    }
+                                                }}
+                                            />
+                                            <span style={{ fontSize: '0.85rem' }}>{name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <p style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#666' }}>
+                                    If multiple targets are selected, a separate notification will be sent to each.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Webhook URL Override Field */}
                         {formData.channel === 'webhook' && (
                             <div className="form-group md:col-span-2">
-                                <label className="form-label">Webhook URL</label>
+                                <label className="form-label">Webhook URL Override (Optional)</label>
                                 <input
                                     type="url"
                                     className="form-input"
                                     value={formData.webhook_url || ''}
                                     onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
                                     placeholder="https://discord.com/api/webhooks/..."
-                                    required={!formData.user_id} // Required if no user selected
+                                    required={!formData.user_id && selectedTargets.length === 0}
                                 />
                                 <p style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: '#666' }}>
-                                    Override or provide destination URL. Required if no user is selected.
+                                    Use this to send to an ad-hoc URL not in the saved list.
                                 </p>
                             </div>
                         )}

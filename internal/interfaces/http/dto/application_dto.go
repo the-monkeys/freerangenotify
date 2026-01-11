@@ -6,6 +6,7 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/application"
 type CreateApplicationRequest struct {
 	AppName    string                `json:"app_name" validate:"required,min=3,max=100"`
 	WebhookURL string                `json:"webhook_url" validate:"omitempty,url"`
+	Webhooks   map[string]string     `json:"webhooks,omitempty"`
 	Settings   *application.Settings `json:"settings,omitempty"`
 }
 
@@ -13,6 +14,7 @@ type CreateApplicationRequest struct {
 type UpdateApplicationRequest struct {
 	AppName    string                `json:"app_name" validate:"omitempty,min=3,max=100"`
 	WebhookURL string                `json:"webhook_url" validate:"omitempty,url"`
+	Webhooks   map[string]string     `json:"webhooks,omitempty"`
 	Settings   *application.Settings `json:"settings,omitempty"`
 }
 
@@ -40,6 +42,7 @@ type ApplicationResponse struct {
 	AppName           string               `json:"app_name"`
 	APIKey            string               `json:"api_key"`
 	WebhookURL        string               `json:"webhook_url,omitempty"`
+	Webhooks          map[string]string    `json:"webhooks,omitempty"`
 	Settings          application.Settings `json:"settings"`
 	APIKeyGeneratedAt string               `json:"api_key_generated_at"`
 	CreatedAt         string               `json:"created_at"`
@@ -67,6 +70,7 @@ func ToApplicationResponse(app *application.Application) ApplicationResponse {
 		AppName:           app.AppName,
 		APIKey:            app.APIKey,
 		WebhookURL:        app.WebhookURL,
+		Webhooks:          app.Webhooks,
 		Settings:          app.Settings,
 		APIKeyGeneratedAt: app.APIKeyGeneratedAt.Format("2006-01-02T15:04:05Z07:00"),
 		CreatedAt:         app.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),

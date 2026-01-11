@@ -321,7 +321,7 @@ func (h *NotificationHandler) UpdateStatus(c *fiber.Ctx) error {
 
 	status := notification.Status(req.Status)
 
-	err := h.service.UpdateStatus(c.Context(), notificationID, status, req.ErrorMessage)
+	err := h.service.UpdateStatus(c.Context(), notificationID, status, req.ErrorMessage, appID)
 	if err != nil {
 		h.logger.Error("Failed to update notification status", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{

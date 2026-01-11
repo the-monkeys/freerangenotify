@@ -18,6 +18,9 @@ const AppDetail: React.FC = () => {
     const [description, setDescription] = useState('');
     const [webhookUrl, setWebhookUrl] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
+    const [webhooks, setWebhooks] = useState<Record<string, string>>({});
+    const [newWebhookName, setNewWebhookName] = useState('');
+    const [newWebhookUrl, setNewWebhookUrl] = useState('');
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
 
@@ -35,6 +38,7 @@ const AppDetail: React.FC = () => {
             setAppName(appData.app_name);
             setDescription(appData.description || '');
             setWebhookUrl(appData.webhook_url || '');
+            setWebhooks(appData.webhooks || {});
             setSettings(appData.settings || {});
 
             // Initialize static headers text
@@ -55,7 +59,8 @@ const AppDetail: React.FC = () => {
             const updated = await applicationsAPI.update(id, {
                 app_name: appName,
                 description: description,
-                webhook_url: webhookUrl
+                webhook_url: webhookUrl,
+                webhooks: webhooks
             });
             setApp(updated);
             alert('Application updated successfully!');
@@ -158,7 +163,7 @@ const AppDetail: React.FC = () => {
                             />
                         </div>
                         <div className="form-group">
-                            <label className="form-label">Webhook URL</label>
+                            <label className="form-label">Webhook URL (Default)</label>
                             <input
                                 type="url"
                                 className="form-input"
@@ -166,9 +171,89 @@ const AppDetail: React.FC = () => {
                                 onChange={(e) => setWebhookUrl(e.target.value)}
                                 placeholder="https://example.com/webhook"
                             />
+                            <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.4rem' }}>
+                                The default webhook URL used if no named target is specified.
+                            </p>
                         </div>
-                        <div className="flex justify-end">
-                            <button type="submit" className="btn btn-primary">Save Changes</button>
+
+                        {/* Named Webhooks Section */}
+                        <div className="form-group" style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--azure-border)' }}>
+                            <label className="form-label" style={{ fontSize: '1rem', color: 'var(--azure-blue)', display: 'block', marginBottom: '1rem' }}>
+                                Named Webhook Endpoints
+                            </label>
+                            <p style={{ fontSize: '0.85rem', color: '#605e5c', marginBottom: '1.5rem' }}>
+                                Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div className="form-group">
+                                    <label className="form-label text-xs">Target Name</label>
+                                    <input
+                                        type="text"
+                                        className="form-input text-sm"
+                                        value={newWebhookName}
+                                        onChange={(e) => setNewWebhookName(e.target.value)}
+                                        placeholder="e.g. slack"
+                                    />
+                                </div>
+                                <div className="form-group">
+                                    <label className="form-label text-xs">Webhook URL</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="url"
+                                            className="form-input text-sm"
+                                            value={newWebhookUrl}
+                                            onChange={(e) => setNewWebhookUrl(e.target.value)}
+                                            placeholder="https://hooks.slack.com/..."
+                                        />
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary"
+                                            onClick={() => {
+                                                if (newWebhookName && newWebhookUrl) {
+                                                    setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
+                                                    setNewWebhookName('');
+                                                    setNewWebhookUrl('');
+                                                }
+                                            }}
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
+                                {Object.entries(webhooks).map(([name, url]) => (
+                                    <div key={name} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded">
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--azure-blue)' }}>{name}</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#605e5c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="btn btn-danger"
+                                            style={{ padding: '0.2rem 0.5rem', minWidth: 'auto', fontSize: '0.75rem' }}
+                                            onClick={() => {
+                                                const newWebhooks = { ...webhooks };
+                                                delete newWebhooks[name];
+                                                setWebhooks(newWebhooks);
+                                            }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                                {Object.keys(webhooks).length === 0 && (
+                                    <p style={{ fontSize: '0.85rem', color: '#a19f9d', textAlign: 'center', fontStyle: 'italic', padding: '1rem' }}>
+                                        No named webhooks configured.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end mt-8">
+                            <button type="submit" className="btn btn-primary">Save Overview & Webhooks</button>
                         </div>
                     </form>
                 </div>
@@ -181,12 +266,12 @@ const AppDetail: React.FC = () => {
 
             {/* Templates Tab */}
             {activeTab === 'templates' && app && (
-                <AppTemplates appId={app.app_id} apiKey={app.api_key} />
+                <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
             )}
 
             {/* Notifications Tab */}
             {activeTab === 'notifications' && app && (
-                <AppNotifications appId={app.app_id} apiKey={app.api_key} />
+                <AppNotifications appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
             )}
 
             {/* Settings Tab */}
