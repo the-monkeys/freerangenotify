@@ -6,14 +6,15 @@ import AppDetail from './pages/AppDetail';
 import Dashboard from './pages/Dashboard';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import { Toaster } from './components/ui/sonner';
 import './index.css';
 
 const App: React.FC = () => {
   return (
     <Router>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <div className="flex flex-col min-h-screen">
         <Header />
-        <main style={{ flex: 1 }}>
+        <main className="flex-1">
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/apps" element={<AppsList />} />
@@ -22,6 +23,7 @@ const App: React.FC = () => {
           </Routes>
         </main>
         <Footer />
+        <Toaster />
       </div>
     </Router>
   );

@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { notificationsAPI, usersAPI, templatesAPI } from '../services/api';
 import type { Notification, NotificationRequest, User, Template } from '../types';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Badge } from './ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Checkbox } from './ui/checkbox';
+import { toast } from 'sonner';
 
 interface AppNotificationsProps {
     appId: string;
@@ -61,7 +71,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                 try {
                     customData = JSON.parse(dataInput);
                 } catch (e) {
-                    alert('Invalid JSON in custom data');
+                    toast.error('Invalid JSON in custom data');
                     return;
                 }
             }
@@ -94,237 +104,246 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             setSelectedTargets([]);
             setDataInput('');
             fetchData();
-            alert('Notification(s) sent successfully!');
+            toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
-            alert('Failed to send notification');
+            toast.error('Failed to send notification');
         }
     };
 
-    const getStatusColor = (status: string) => {
+    const getStatusBadgeClass = (status: string) => {
         switch (status?.toLowerCase()) {
-            case 'sent': return '#48bb78';
-            case 'failed': return '#f56565';
-            case 'pending': return '#ecc94b';
-            case 'queued': return '#4299e1';
-            case 'delivered': return '#38b2ac';
-            default: return '#a0aec0';
+            case 'sent': return 'bg-green-100 text-green-700 border-green-300';
+            case 'failed': return 'bg-red-100 text-red-700 border-red-300';
+            case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
+            case 'queued': return 'bg-blue-100 text-blue-700 border-blue-300';
+            case 'delivered': return 'bg-teal-100 text-teal-700 border-teal-300';
+            default: return 'bg-gray-100 text-gray-700 border-gray-300';
         }
     };
 
-    if (loading) return <div className="center">Loading notifications...</div>;
+    if (loading) return <div className="flex justify-center py-4">Loading notifications...</div>;
 
     return (
-        <div className="card">
-            <div className="flex justify-between items-center mb-6">
-                <h3 style={{ margin: 0 }}>Notification History</h3>
-                <button
-                    className="btn btn-primary"
-                    onClick={() => setShowSendForm(!showSendForm)}
-                >
-                    {showSendForm ? 'Cancel' : 'Send Notification'}
-                </button>
-            </div>
-
-            {showSendForm && (
-                <form onSubmit={handleSendNotification} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="form-group">
-                            <label className="form-label">
-                                Recipient (User)
-                                {formData.channel === 'webhook' && <span style={{ fontWeight: 'normal', color: '#666', fontSize: '0.8em' }}> (Optional)</span>}
-                            </label>
-                            <select
-                                className="form-input"
-                                value={formData.user_id}
-                                onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-                                required={formData.channel !== 'webhook'}
-                            >
-                                <option value="">{formData.channel === 'webhook' ? 'No user (Anonymous)' : 'Select a user...'}</option>
-                                {(users || []).map(u => (
-                                    <option key={u.user_id} value={u.user_id}>{u.email || u.user_id}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Template (Optional)</label>
-                            <select
-                                className="form-input"
-                                value={formData.template_id || ''}
-                                onChange={(e) => setFormData({ ...formData, template_id: e.target.value })}
-                            >
-                                <option value="">No template (use manual content)</option>
-                                {(templates || []).map(t => (
-                                    <option key={t.id} value={t.id}>{t.name} ({t.channel})</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Channel</label>
-                            <select
-                                className="form-input"
-                                value={formData.channel}
-                                onChange={(e) => setFormData({ ...formData, channel: e.target.value as any })}
-                            >
-                                <option value="email">Email</option>
-                                <option value="push">Push</option>
-                                <option value="sms">SMS</option>
-                                <option value="webhook">Webhook</option>
-                                <option value="in_app">In-App</option>
-                                <option value="sse">SSE (Server-Sent Events)</option>
-                            </select>
-                        </div>
-
-                        {/* Webhook Targets Selection - Multi-select */}
-                        {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
-                            <div className="form-group md:col-span-2">
-                                <label className="form-label">Webhook Targets (Select one or more)</label>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-gray-200 rounded bg-white">
-                                    {Object.keys(webhooks).map(name => (
-                                        <label key={name} className="flex items-center space-x-2 cursor-pointer p-1 hover:bg-gray-50 rounded">
-                                            <input
-                                                type="checkbox"
-                                                className="form-checkbox"
-                                                checked={selectedTargets.includes(name)}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                        setSelectedTargets([...selectedTargets, name]);
-                                                    } else {
-                                                        setSelectedTargets(selectedTargets.filter(t => t !== name));
-                                                    }
-                                                }}
-                                            />
-                                            <span style={{ fontSize: '0.85rem' }}>{name}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                                <p style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#666' }}>
-                                    If multiple targets are selected, a separate notification will be sent to each.
-                                </p>
-                            </div>
-                        )}
-
-                        {/* Webhook URL Override Field */}
-                        {formData.channel === 'webhook' && (
-                            <div className="form-group md:col-span-2">
-                                <label className="form-label">Webhook URL Override (Optional)</label>
-                                <input
-                                    type="url"
-                                    className="form-input"
-                                    value={formData.webhook_url || ''}
-                                    onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
-                                    placeholder="https://discord.com/api/webhooks/..."
-                                    required={!formData.user_id && selectedTargets.length === 0}
-                                />
-                                <p style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: '#666' }}>
-                                    Use this to send to an ad-hoc URL not in the saved list.
-                                </p>
-                            </div>
-                        )}
-                        <div className="form-group">
-                            <label className="form-label">Priority</label>
-                            <select
-                                className="form-input"
-                                value={formData.priority}
-                                onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
-                            >
-                                <option value="low">Low</option>
-                                <option value="normal">Normal</option>
-                                <option value="high">High</option>
-                                <option value="critical">Critical</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Title</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            value={formData.title}
-                            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                            required
-                            placeholder="Notification title"
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Body / Manual Content</label>
-                        <textarea
-                            className="form-input"
-                            value={formData.body}
-                            onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                            required={!formData.template_id}
-                            placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label className="form-label">Custom Data (JSON)</label>
-                        <textarea
-                            className="form-input"
-                            style={{ fontFamily: 'monospace' }}
-                            value={dataInput}
-                            onChange={(e) => setDataInput(e.target.value)}
-                            placeholder='{ "name": "John Doe" }'
-                        />
-                    </div>
-
-                    <div className="flex justify-end mt-4">
-                        <button type="submit" className="btn btn-primary">Send Notification</button>
-                    </div>
-                </form>
-            )}
-
-            {!notifications || notifications.length === 0 ? (
-                <p style={{ color: '#605e5c', textAlign: 'center', padding: '2rem', fontSize: '0.9rem' }}>No notification history found.</p>
-            ) : (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead>
-                            <tr style={{ borderBottom: '1px solid var(--azure-border)', textAlign: 'left' }}>
-                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>ID</th>
-                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>User</th>
-                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Title</th>
-                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Status</th>
-                                <th style={{ padding: '0.75rem', color: '#605e5c' }}>Sent At</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {notifications.map((n) => (
-                                <tr key={n.notification_id} style={{ borderBottom: '1px solid var(--azure-border)' }}>
-                                    <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#a19f9d', fontFamily: 'monospace' }}>{n.notification_id?.substring(0, 8)}...</td>
-                                    <td style={{ padding: '0.75rem', color: '#323130' }}>
-                                        {n.user_id ?
-                                            (users?.find(u => u.user_id === n.user_id)?.email || n.user_id) :
-                                            <span style={{ color: '#666', fontStyle: 'italic' }}>Anonymous (Webhook)</span>
-                                        }
-                                    </td>
-                                    <td style={{ padding: '0.75rem', color: '#323130' }}>{n.title}</td>
-                                    <td style={{ padding: '0.75rem' }}>
-                                        <span style={{
-                                            padding: '0.15rem 0.6rem',
-                                            borderRadius: '2px',
-                                            fontSize: '0.7rem',
-                                            fontWeight: 600,
-                                            background: `${getStatusColor(n.status)}15`,
-                                            color: getStatusColor(n.status),
-                                            border: `1px solid ${getStatusColor(n.status)}`,
-                                            textTransform: 'uppercase'
-                                        }}>
-                                            {n.status}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '0.75rem', fontSize: '0.8rem', color: '#605e5c' }}>
-                                        {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+        <Card>
+            <CardHeader>
+                <div className="flex justify-between items-center">
+                    <CardTitle>Notification History</CardTitle>
+                    <Button
+                        onClick={() => setShowSendForm(!showSendForm)}
+                    >
+                        {showSendForm ? 'Cancel' : 'Send Notification'}
+                    </Button>
                 </div>
-            )}
-        </div>
+            </CardHeader>
+            <CardContent>
+                {showSendForm && (
+                    <form onSubmit={handleSendNotification} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="recipient">
+                                    Recipient (User)
+                                    {formData.channel === 'webhook' && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
+                                </Label>
+                                <Select
+                                    value={formData.user_id}
+                                    onValueChange={(value) => setFormData({ ...formData, user_id: value })}
+                                    required={formData.channel !== 'webhook'}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder={formData.channel === 'webhook' ? 'No user (Anonymous)' : 'Select a user...'} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(users || []).map(u => (
+                                            <SelectItem key={u.user_id} value={u.user_id}>{u.email || u.user_id}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="template">Template (Optional)</Label>
+                                <Select
+                                    value={formData.template_id || ''}
+                                    onValueChange={(value) => setFormData({ ...formData, template_id: value })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="No template (use manual content)" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {(templates || []).map(t => (
+                                            <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="channel">Channel</Label>
+                                <Select
+                                    value={formData.channel}
+                                    onValueChange={(value) => setFormData({ ...formData, channel: value as any })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="email">Email</SelectItem>
+                                        <SelectItem value="push">Push</SelectItem>
+                                        <SelectItem value="sms">SMS</SelectItem>
+                                        <SelectItem value="webhook">Webhook</SelectItem>
+                                        <SelectItem value="in_app">In-App</SelectItem>
+                                        <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Webhook Targets Selection - Multi-select */}
+                            {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label>Webhook Targets (Select one or more)</Label>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-gray-200 rounded bg-white">
+                                        {Object.keys(webhooks).map(name => (
+                                            <div key={name} className="flex items-center space-x-2">
+                                                <Checkbox
+                                                    id={`webhook-${name}`}
+                                                    checked={selectedTargets.includes(name)}
+                                                    onCheckedChange={(checked) => {
+                                                        if (checked) {
+                                                            setSelectedTargets([...selectedTargets, name]);
+                                                        } else {
+                                                            setSelectedTargets(selectedTargets.filter(t => t !== name));
+                                                        }
+                                                    }}
+                                                />
+                                                <Label htmlFor={`webhook-${name}`} className="text-sm cursor-pointer">{name}</Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        If multiple targets are selected, a separate notification will be sent to each.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Webhook URL Override Field */}
+                            {formData.channel === 'webhook' && (
+                                <div className="space-y-2 md:col-span-2">
+                                    <Label htmlFor="webhookUrl">Webhook URL Override (Optional)</Label>
+                                    <Input
+                                        id="webhookUrl"
+                                        type="url"
+                                        value={formData.webhook_url || ''}
+                                        onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
+                                        placeholder="https://discord.com/api/webhooks/..."
+                                        required={!formData.user_id && selectedTargets.length === 0}
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Use this to send to an ad-hoc URL not in the saved list.
+                                    </p>
+                                </div>
+                            )}
+                            <div className="space-y-2">
+                                <Label htmlFor="priority">Priority</Label>
+                                <Select
+                                    value={formData.priority}
+                                    onValueChange={(value) => setFormData({ ...formData, priority: value as any })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="normal">Normal</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="critical">Critical</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="title">Title</Label>
+                            <Input
+                                id="title"
+                                type="text"
+                                value={formData.title}
+                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                required
+                                placeholder="Notification title"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="body">Body / Manual Content</Label>
+                            <Textarea
+                                id="body"
+                                value={formData.body}
+                                onChange={(e) => setFormData({ ...formData, body: e.target.value })}
+                                required={!formData.template_id}
+                                placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="customData">Custom Data (JSON)</Label>
+                            <Textarea
+                                id="customData"
+                                className="font-mono"
+                                value={dataInput}
+                                onChange={(e) => setDataInput(e.target.value)}
+                                placeholder='{ "name": "John Doe" }'
+                            />
+                        </div>
+
+                        <div className="flex justify-end mt-6">
+                            <Button type="submit">Send Notification</Button>
+                        </div>
+                    </form>
+                )}
+
+                {!notifications || notifications.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8 text-sm">No notification history found.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>ID</TableHead>
+                                    <TableHead>User</TableHead>
+                                    <TableHead>Title</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Sent At</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {notifications.map((n) => (
+                                    <TableRow key={n.notification_id}>
+                                        <TableCell className="text-xs text-gray-400 font-mono">{n.notification_id?.substring(0, 8)}...</TableCell>
+                                        <TableCell className="text-gray-900">
+                                            {n.user_id ?
+                                                (users?.find(u => u.user_id === n.user_id)?.email || n.user_id) :
+                                                <span className="text-gray-500 italic">Anonymous (Webhook)</span>
+                                            }
+                                        </TableCell>
+                                        <TableCell className="text-gray-900">{n.title}</TableCell>
+                                        <TableCell>
+                                            <Badge
+                                                variant="outline"
+                                                className={`text-xs uppercase ${getStatusBadgeClass(n.status)}`}
+                                            >
+                                                {n.status}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-sm text-gray-500">
+                                            {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
 };
 
