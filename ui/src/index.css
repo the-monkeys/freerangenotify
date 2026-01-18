@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 /* Global styles for FreeRangeNotify - Azure Theme */
 :root {
     --azure-blue: #0078d4;
