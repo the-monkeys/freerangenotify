@@ -88,10 +88,8 @@ func main() {
 		providerManager.RegisterProvider(apnsProvider)
 	}
 
-	// Initialize Email Provider (SMTP or SendGrid)
-	var emailProviderRegistered bool
-
-	// 1. Try SMTP
+	// Initialize and register SMTP provider if configured
+	logger.Debug("Checking SMTP configuration", zap.String("host", cfg.Providers.SMTP.Host))
 	if cfg.Providers.SMTP.Host != "" {
 		smtpProvider, err := providers.NewSMTPProvider(providers.SMTPConfig{
 			Config: providers.Config{
@@ -113,14 +111,16 @@ func main() {
 			if err := providerManager.RegisterProvider(smtpProvider); err != nil {
 				logger.Warn("Failed to register SMTP provider", zap.Error(err))
 			} else {
-				emailProviderRegistered = true
 				logger.Info("Registered SMTP provider for email channel")
 			}
 		}
+	} else {
+		logger.Warn("SMTP provider not configured - host is empty")
 	}
 
-	// 2. Fallback to SendGrid if SMTP not registered
-	if !emailProviderRegistered {
+	// Initialize and register SendGrid provider if configured
+	logger.Debug("Checking SendGrid configuration", zap.String("api_key", cfg.Providers.SendGrid.APIKey))
+	if cfg.Providers.SendGrid.APIKey != "" {
 		sendgridProvider, err := providers.NewSendGridProvider(providers.SendGridConfig{
 			Config: providers.Config{
 				Timeout:    15 * time.Second,
@@ -136,6 +136,8 @@ func main() {
 		} else {
 			if err := providerManager.RegisterProvider(sendgridProvider); err != nil {
 				logger.Warn("Failed to register SendGrid provider", zap.Error(err))
+			} else {
+				logger.Info("Registered SendGrid provider for email channel")
 			}
 		}
 	}

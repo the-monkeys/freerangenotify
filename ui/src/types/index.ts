@@ -20,8 +20,37 @@ export interface ApplicationSettings {
     enable_analytics?: boolean;
     validation_url?: string;
     validation_config?: ValidationConfig;
-    // Allow dynamic keys if backend supports it
+    email_config?: EmailConfig;
+    daily_email_limit?: number;
+    default_preferences?: DefaultPreferences;
     [key: string]: any;
+}
+
+export interface DefaultPreferences {
+    email_enabled?: boolean;
+    push_enabled?: boolean;
+    sms_enabled?: boolean;
+}
+
+export interface EmailConfig {
+    provider_type: 'system' | 'smtp' | 'sendgrid';
+    smtp_config?: SMTPConfig;
+    sendgrid_config?: SendGridConfig;
+}
+
+export interface SMTPConfig {
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+    from_email?: string;
+    from_name?: string;
+}
+
+export interface SendGridConfig {
+    api_key: string;
+    from_email?: string;
+    from_name?: string;
 }
 
 export interface ValidationConfig {
@@ -102,6 +131,13 @@ export interface AddDeviceRequest {
 }
 
 // ============= Notification Types =============
+export interface Recurrence {
+    cron_expression: string;
+    end_date?: string;
+    count?: number;
+    current_count?: number;
+}
+
 export interface Notification {
     notification_id: string;
     app_id: string;
@@ -109,14 +145,17 @@ export interface Notification {
     channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     priority: 'low' | 'normal' | 'high' | 'critical';
     status: string;
-    title: string;
-    body: string;
-    data?: Record<string, any>;
+    content: {
+        title: string;
+        body: string;
+        data?: Record<string, any>;
+    };
     template_id?: string;
     scheduled_at?: string;
     sent_at?: string;
     created_at: string;
     updated_at: string;
+    recurrence?: Recurrence;
 }
 
 export interface NotificationRequest {
@@ -129,6 +168,8 @@ export interface NotificationRequest {
     template_id?: string;
     webhook_url?: string;
     webhook_target?: string;
+    scheduled_at?: string;
+    recurrence?: Recurrence;
 }
 
 export interface BulkNotificationRequest {

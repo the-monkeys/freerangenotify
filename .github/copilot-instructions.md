@@ -174,3 +174,12 @@ docker-compose logs -f notification-worker
 -   **Dependency Injection**: Wire services through `container.Container` for testability and decoupling.
 -   **Validation**: Use struct tags with go-playground/validator for input validation.
 -   **Repository Pattern**: Access data through repository interfaces in `infrastructure/repository`.
+
+
+
+- Here Webhook and SSE are working fine, now we need to add email notification, without affecting the SSE and Webhook.
+- For Email notification there should be option for users to add, email credentials like smtp credentials in the app settings or user can also choose to use sendgrid or any other email provider to they can use our email credentials from our .env file.
+- For Email notification, the template would be different, here we need to let user use HTML, CSS and JS to create the email template
+- There should be option to enable or disable email notification for each user, 
+- There should be limit in application on how many email user wants to send in a day.
+- Make a detailed plan to implement this feature, and try not to complicate code, keep it simple and easy to understand, if possible do a minimum code change to implement this feature.

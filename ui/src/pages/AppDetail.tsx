@@ -133,11 +133,10 @@ const AppDetail: React.FC = () => {
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`px-5 py-3 border-b-2 ${
-                            activeTab === tab 
-                                ? 'border-blue-600 text-blue-600 font-semibold' 
-                                : 'border-transparent text-gray-500'
-                        } capitalize text-sm hover:text-blue-600 transition-colors shrink-0`}
+                        className={`px-5 py-3 border-b-2 ${activeTab === tab
+                            ? 'border-blue-600 text-blue-600 font-semibold'
+                            : 'border-transparent text-gray-500'
+                            } capitalize text-sm hover:text-blue-600 transition-colors shrink-0`}
                     >
                         {tab}
                     </button>
@@ -293,7 +292,7 @@ const AppDetail: React.FC = () => {
                 <Card>
                     <CardHeader>
                         <CardTitle>Configuration</CardTitle>
-                                    <p className="text-gray-500 text-sm">
+                        <p className="text-gray-500 text-sm">
                             Manage configuration for this application.
                         </p>
                     </CardHeader>
@@ -501,13 +500,221 @@ const AppDetail: React.FC = () => {
                             </div>
 
                             <div>
+                                <h4 className="text-base font-semibold text-blue-600 mb-4">Email Channel Configuration</h4>
+                                <div className="p-4 border border-gray-200 rounded bg-gray-50 mb-8 space-y-6">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="emailProvider">Email Provider</Label>
+                                        <Select
+                                            value={settings.email_config?.provider_type || 'system'}
+                                            onValueChange={(value: string) => setSettings({
+                                                ...settings,
+                                                email_config: {
+                                                    ...settings.email_config,
+                                                    provider_type: value as any
+                                                }
+                                            })}
+                                        >
+                                            <SelectTrigger id="emailProvider">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="system">System Default (Global SMTP/SendGrid)</SelectItem>
+                                                <SelectItem value="smtp">Custom SMTP (Direct Gmail, Outlook, etc.)</SelectItem>
+                                                <SelectItem value="sendgrid">Custom SendGrid API</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-gray-500">
+                                            Choose how emails are sent for this application.
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="dailyEmailLimit">Daily Email Limit</Label>
+                                        <Input
+                                            id="dailyEmailLimit"
+                                            type="number"
+                                            value={settings.daily_email_limit || 0}
+                                            onChange={(e) => setSettings({ ...settings, daily_email_limit: parseInt(e.target.value) || 0 })}
+                                            placeholder="e.g. 100"
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            Maximum number of emails this application can send per day. Set to 0 for unlimited.
+                                        </p>
+                                    </div>
+
+                                    {settings.email_config?.provider_type === 'smtp' && (
+                                        <div className="mt-4 p-4 bg-white border border-gray-200 rounded space-y-4">
+                                            <h5 className="font-semibold text-sm text-blue-800 mb-2">SMTP Settings</h5>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpHost" className="text-xs">SMTP Host</Label>
+                                                    <Input
+                                                        id="smtpHost"
+                                                        type="text"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.host || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
+                                                            }
+                                                        })}
+                                                        placeholder="smtp.gmail.com"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpPort" className="text-xs">SMTP Port</Label>
+                                                    <Input
+                                                        id="smtpPort"
+                                                        type="number"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.port || 587}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpUsername" className="text-xs">Username</Label>
+                                                    <Input
+                                                        id="smtpUsername"
+                                                        type="text"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.username || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpPassword" className="text-xs">Password / App Password</Label>
+                                                    <Input
+                                                        id="smtpPassword"
+                                                        type="password"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.password || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpFromEmail" className="text-xs">From Email Address</Label>
+                                                    <Input
+                                                        id="smtpFromEmail"
+                                                        type="email"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.from_email || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="smtpFromName" className="text-xs">From Display Name</Label>
+                                                    <Input
+                                                        id="smtpFromName"
+                                                        type="text"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.smtp_config?.from_name || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {settings.email_config?.provider_type === 'sendgrid' && (
+                                        <div className="mt-4 p-4 bg-white border border-gray-200 rounded space-y-4">
+                                            <h5 className="font-semibold text-sm text-blue-800 mb-2">SendGrid Settings</h5>
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="sendgridKey" className="text-xs">SendGrid API Key</Label>
+                                                    <Input
+                                                        id="sendgridKey"
+                                                        type="password"
+                                                        className="text-sm"
+                                                        value={settings.email_config?.sendgrid_config?.api_key || ''}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            email_config: {
+                                                                ...settings.email_config!,
+                                                                sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="sendgridFromEmail" className="text-xs">From Email Address</Label>
+                                                        <Input
+                                                            id="sendgridFromEmail"
+                                                            type="email"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.sendgrid_config?.from_email || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="sendgridFromName" className="text-xs">From Display Name</Label>
+                                                        <Input
+                                                            id="sendgridFromName"
+                                                            type="text"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.sendgrid_config?.from_name || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
                                 <h4 className="text-base font-semibold text-blue-600 mb-4">Default Notification Preferences</h4>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                     <div className="flex items-center space-x-3">
                                         <Checkbox
                                             id="emailEnabled"
                                             checked={settings.default_preferences?.email_enabled ?? true}
-                                            onCheckedChange={(checked) => setSettings({
+                                            onCheckedChange={(checked: boolean) => setSettings({
                                                 ...settings,
                                                 default_preferences: {
                                                     ...(settings.default_preferences || {}),
@@ -522,7 +729,7 @@ const AppDetail: React.FC = () => {
                                         <Checkbox
                                             id="pushEnabled"
                                             checked={settings.default_preferences?.push_enabled ?? true}
-                                            onCheckedChange={(checked) => setSettings({
+                                            onCheckedChange={(checked: boolean) => setSettings({
                                                 ...settings,
                                                 default_preferences: {
                                                     ...(settings.default_preferences || {}),
@@ -537,7 +744,7 @@ const AppDetail: React.FC = () => {
                                         <Checkbox
                                             id="smsEnabled"
                                             checked={settings.default_preferences?.sms_enabled ?? true}
-                                            onCheckedChange={(checked) => setSettings({
+                                            onCheckedChange={(checked: boolean) => setSettings({
                                                 ...settings,
                                                 default_preferences: {
                                                     ...(settings.default_preferences || {}),
@@ -548,10 +755,9 @@ const AppDetail: React.FC = () => {
                                         <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
                                     </div>
                                 </div>
-                            </div>
-
-                            <div className="flex justify-end pt-4">
-                                <Button type="submit">Save Configuration</Button>
+                                <div className="flex justify-end pt-4">
+                                    <Button type="submit">Save Configuration</Button>
+                                </div>
                             </div>
                         </form>
                     </CardContent>

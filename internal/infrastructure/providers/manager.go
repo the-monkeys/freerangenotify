@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -14,22 +15,24 @@ import (
 
 // Manager manages multiple notification providers and routes notifications
 type Manager struct {
-	providers    map[notification.Channel]Provider
-	breakers     map[notification.Channel]*CircuitBreaker
-	metrics      *metrics.NotificationMetrics
-	presenceRepo user.PresenceRepository
-	logger       *zap.Logger
-	mu           sync.RWMutex
+	providers      map[notification.Channel]Provider
+	namedProviders map[string]Provider
+	breakers       map[string]*CircuitBreaker
+	metrics        *metrics.NotificationMetrics
+	presenceRepo   user.PresenceRepository
+	logger         *zap.Logger
+	mu             sync.RWMutex
 }
 
 // NewManager creates a new provider manager
 func NewManager(metrics *metrics.NotificationMetrics, presenceRepo user.PresenceRepository, logger *zap.Logger) *Manager {
 	return &Manager{
-		providers:    make(map[notification.Channel]Provider),
-		breakers:     make(map[notification.Channel]*CircuitBreaker),
-		metrics:      metrics,
-		presenceRepo: presenceRepo,
-		logger:       logger,
+		providers:      make(map[notification.Channel]Provider),
+		namedProviders: make(map[string]Provider),
+		breakers:       make(map[string]*CircuitBreaker),
+		metrics:        metrics,
+		presenceRepo:   presenceRepo,
+		logger:         logger,
 	}
 }
 
@@ -39,15 +42,22 @@ func (m *Manager) RegisterProvider(provider Provider) error {
 	defer m.mu.Unlock()
 
 	channel := provider.GetSupportedChannel()
-	if _, exists := m.providers[channel]; exists {
-		return fmt.Errorf("provider already registered for channel %s", channel)
+	name := provider.GetName()
+	namedKey := fmt.Sprintf("%s-%s", name, channel)
+
+	// Register as default for this channel if none exists
+	if _, exists := m.providers[channel]; !exists {
+		m.providers[channel] = provider
 	}
 
-	m.providers[channel] = provider
-	m.breakers[channel] = NewCircuitBreaker(fmt.Sprintf("%s-%s", provider.GetName(), channel), 5, 30*time.Second, m.logger)
+	// Register by name
+	m.namedProviders[namedKey] = provider
+	m.breakers[namedKey] = NewCircuitBreaker(namedKey, 5, 30*time.Second, m.logger)
+
 	m.logger.Info("Provider registered with circuit breaker",
-		zap.String("provider", provider.GetName()),
-		zap.String("channel", string(channel)))
+		zap.String("provider", name),
+		zap.String("channel", string(channel)),
+		zap.String("key", namedKey))
 
 	return nil
 }
@@ -85,7 +95,7 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 		}
 	}
 
-	// Get provider for channel
+	// 2. Resolve provider
 	provider, err := m.GetProvider(notif.Channel)
 	if err != nil {
 		m.logger.Error("Failed to get provider",
@@ -93,6 +103,21 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 			zap.Error(err))
 		return NewErrorResult(err, ErrorTypeInvalid), err
 	}
+
+	// Check if a specific provider is requested in context (for email)
+	if notif.Channel == notification.ChannelEmail {
+		if cfg, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && cfg != nil && cfg.ProviderType != "" && cfg.ProviderType != "system" {
+			namedKey := fmt.Sprintf("%s-%s", cfg.ProviderType, notif.Channel)
+			m.mu.RLock()
+			if p, exists := m.namedProviders[namedKey]; exists {
+				provider = p
+			}
+			m.mu.RUnlock()
+		}
+	}
+
+	// Resolve breaker key
+	breakerKey := fmt.Sprintf("%s-%s", provider.GetName(), notif.Channel)
 
 	// Check provider health
 	if !provider.IsHealthy(ctx) {
@@ -110,11 +135,20 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 
 	// Send notification (wrapped in circuit breaker)
 	var result *Result
-	err = m.breakers[notif.Channel].Execute(func() error {
-		var sendErr error
-		result, sendErr = provider.Send(ctx, notif, usr)
-		return sendErr
-	})
+	m.mu.RLock()
+	breaker, exists := m.breakers[breakerKey]
+	m.mu.RUnlock()
+
+	if !exists {
+		// Fallback: execute without breaker or create one on the fly
+		result, err = provider.Send(ctx, notif, usr)
+	} else {
+		err = breaker.Execute(func() error {
+			var sendErr error
+			result, sendErr = provider.Send(ctx, notif, usr)
+			return sendErr
+		})
+	}
 
 	// Record metrics
 	if m.metrics != nil {

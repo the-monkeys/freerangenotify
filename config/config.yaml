@@ -52,9 +52,19 @@ providers:
     production: false
   
   sendgrid:
-    api_key: "${SENDGRID_API_KEY:-}"
-    from_email: "${SENDGRID_FROM_EMAIL:-noreply@freerangenotify.com}"
-    from_name: "${SENDGRID_FROM_NAME:-FreeRangeNotify}"
+    api_key: "${FREERANGE_PROVIDERS_SENDGRID_API_KEY:-}"
+    from_email: "${FREERANGE_PROVIDERS_SENDGRID_FROM_EMAIL:-noreply@freerangenotify.com}"
+    from_name: "${FREERANGE_PROVIDERS_SENDGRID_FROM_NAME:-FreeRangeNotify}"
+    timeout: 30
+    max_retries: 3
+  
+  smtp:
+    host: "${FREERANGE_PROVIDERS_SMTP_HOST:-}"
+    port: "${FREERANGE_PROVIDERS_SMTP_PORT:-587}"
+    username: "${FREERANGE_PROVIDERS_SMTP_USERNAME:-}"
+    password: "${FREERANGE_PROVIDERS_SMTP_PASSWORD:-}"
+    from_email: "${FREERANGE_PROVIDERS_SMTP_FROM_EMAIL:-}"
+    from_name: "${FREERANGE_PROVIDERS_SMTP_FROM_NAME:-}"
     timeout: 30
     max_retries: 3
   

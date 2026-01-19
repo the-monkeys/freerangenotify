@@ -32,7 +32,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         body: '',
         template_id: '',
         webhook_url: '',
-        data: {}
+        data: {},
+        scheduled_at: undefined,
+        recurrence: undefined
     });
 
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
@@ -99,7 +101,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                 title: '',
                 body: '',
                 template_id: '',
-                data: {}
+                webhook_url: '',
+                data: {},
+                scheduled_at: undefined,
+                recurrence: undefined
             });
             setSelectedTargets([]);
             setDataInput('');
@@ -294,8 +299,85 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             />
                         </div>
 
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <h4 className="text-sm font-semibold text-blue-600">Scheduled Delivery (Optional)</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="scheduledAt">Scheduled Time (Future)</Label>
+                                    <Input
+                                        id="scheduledAt"
+                                        type="datetime-local"
+                                        value={formData.scheduled_at?.substring(0, 16) || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                        }}
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Leave empty for immediate delivery.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="recurrenceCron">Recurrence Cron (e.g. 0 0 * * *)</Label>
+                                    <Input
+                                        id="recurrenceCron"
+                                        type="text"
+                                        value={formData.recurrence?.cron_expression || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            recurrence: e.target.value ? {
+                                                ...formData.recurrence || { cron_expression: '' },
+                                                cron_expression: e.target.value
+                                            } : undefined
+                                        })}
+                                        placeholder="Cron expression"
+                                    />
+                                </div>
+
+                                {formData.recurrence && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="recurrenceEnd">Ends At (Optional)</Label>
+                                            <Input
+                                                id="recurrenceEnd"
+                                                type="datetime-local"
+                                                value={formData.recurrence.end_date?.substring(0, 16) || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        recurrence: {
+                                                            ...formData.recurrence!,
+                                                            end_date: val ? new Date(val).toISOString() : undefined
+                                                        }
+                                                    });
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="recurrenceCount">Max Occurrences (Optional)</Label>
+                                            <Input
+                                                id="recurrenceCount"
+                                                type="number"
+                                                value={formData.recurrence.count || ''}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    recurrence: {
+                                                        ...formData.recurrence!,
+                                                        count: parseInt(e.target.value) || undefined
+                                                    }
+                                                })}
+                                                placeholder="e.g. 10"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="flex justify-end mt-6">
-                            <Button type="submit">Send Notification</Button>
+                            <Button type="submit">Send / Schedule Notification</Button>
                         </div>
                     </form>
                 )}
@@ -311,6 +393,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                     <TableHead>User</TableHead>
                                     <TableHead>Title</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead>Scheduled At</TableHead>
                                     <TableHead>Sent At</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -324,7 +407,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                 <span className="text-gray-500 italic">Anonymous (Webhook)</span>
                                             }
                                         </TableCell>
-                                        <TableCell className="text-gray-900">{n.title}</TableCell>
+                                        <TableCell className="text-gray-900">{n.content?.title || '-'}</TableCell>
                                         <TableCell>
                                             <Badge
                                                 variant="outline"
@@ -332,6 +415,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                             >
                                                 {n.status}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-sm text-gray-500">
+                                            {n.scheduled_at ? (
+                                                <div className="flex flex-col">
+                                                    <span>{new Date(n.scheduled_at).toLocaleString()}</span>
+                                                    {n.recurrence && (
+                                                        <span className="text-[10px] text-blue-600 mt-0.5">
+                                                            🔄 {n.recurrence.cron_expression}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400">Now</span>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-sm text-gray-500">
                                             {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}

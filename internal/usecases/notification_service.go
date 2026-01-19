@@ -95,19 +95,26 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	// Check if user exists (only if UserID is present)
 	var u *user.User
 
-	// Handle anonymous webhook case
+	// Fetch application to check limits and settings
+	app, err := s.appRepo.GetByID(ctx, req.AppID)
+	if err != nil {
+		s.logger.Error("Failed to fetch application", zap.String("app_id", req.AppID), zap.Error(err))
+		return nil, fmt.Errorf("application not found: %w", err)
+	}
+
+	// Check application daily email limit
+	if req.Channel == notification.ChannelEmail && app.Settings.DailyEmailLimit > 0 {
+		allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("app_email_limit:%s", req.AppID), app.Settings.DailyEmailLimit)
+		if err != nil {
+			s.logger.Error("Failed to check application daily email limit", zap.String("app_id", req.AppID), zap.Error(err))
+		} else if !allowed && req.Priority != notification.PriorityCritical {
+			return nil, fmt.Errorf("application daily email limit exceeded")
+		}
+	}
+
 	if req.UserID == "" && req.Channel == notification.ChannelWebhook {
 		// Log that we are processing an anonymous webhook
 		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID))
-
-		// Create a dummy user object or handle nil user in checks?
-		// Better to just skip checks that require user.
-
-		// Skip global DND check
-		// Skip channel enabled check
-		// Skip quiet hours check
-		// Skip daily limit check
-
 	} else {
 		u, err = s.userRepo.GetByID(ctx, req.UserID)
 		if err != nil {
