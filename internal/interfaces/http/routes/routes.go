@@ -75,6 +75,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	notifications.Use(auth)
 	notifications.Post("/", c.NotificationHandler.Send)
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
+	notifications.Post("/broadcast", c.NotificationHandler.Broadcast)
 	notifications.Post("/batch", c.NotificationHandler.SendBatch)
 	notifications.Get("/", c.NotificationHandler.List)
 	notifications.Get("/unread/count", c.NotificationHandler.GetUnreadCount)

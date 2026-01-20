@@ -182,6 +182,16 @@ export interface BulkNotificationRequest {
     template_id?: string;
 }
 
+export interface BroadcastNotificationRequest {
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    priority: 'low' | 'normal' | 'high' | 'critical';
+    title: string;
+    body: string;
+    data?: Record<string, any>;
+    template_id?: string;
+    scheduled_at?: string;
+}
+
 export interface UpdateNotificationStatusRequest {
     status: string;
     error_message?: string;

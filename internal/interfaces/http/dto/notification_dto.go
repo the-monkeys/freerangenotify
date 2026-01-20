@@ -175,6 +175,35 @@ type RecurrenceRequest struct {
 	Count          int        `json:"count,omitempty"`
 }
 
+// BroadcastNotificationRequest represents the API request to broadcast a notification to all users
+type BroadcastNotificationRequest struct {
+	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	Priority      string                 `json:"priority" validate:"required,oneof=low normal high critical"`
+	Title         string                 `json:"title,omitempty"`
+	Body          string                 `json:"body,omitempty"`
+	Data          map[string]interface{} `json:"data,omitempty"`
+	TemplateID    string                 `json:"template_id" validate:"required"`
+	Category      string                 `json:"category,omitempty"`
+	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
+	WebhookURL    string                 `json:"webhook_url,omitempty"`
+	WebhookTarget string                 `json:"webhook_target,omitempty"`
+}
+
+// ToBroadcastRequest converts DTO to domain BroadcastRequest
+func (r *BroadcastNotificationRequest) ToBroadcastRequest(appID string) notification.BroadcastRequest {
+	return notification.BroadcastRequest{
+		AppID:       appID,
+		Channel:     notification.Channel(r.Channel),
+		Priority:    notification.Priority(r.Priority),
+		Title:       r.Title,
+		Body:        r.Body,
+		Data:        r.Data,
+		TemplateID:  r.TemplateID,
+		Category:    r.Category,
+		ScheduledAt: r.ScheduledAt,
+	}
+}
+
 // BatchSendNotificationRequest represents a request to send multiple distinct notifications
 type BatchSendNotificationRequest struct {
 	Notifications []SendNotificationRequest `json:"notifications" validate:"required,min=1,dive"`

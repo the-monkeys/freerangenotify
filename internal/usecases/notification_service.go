@@ -382,6 +382,68 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 	return notifications, nil
 }
 
+// Broadcast sends a notification to all users of an application
+func (s *NotificationService) Broadcast(ctx context.Context, req notification.BroadcastRequest) ([]*notification.Notification, error) {
+	// Validate request
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Fetch all users for the application
+	var allUserIDs []string
+	limit := 100
+	offset := 0
+
+	for {
+		users, err := s.userRepo.List(ctx, user.UserFilter{
+			AppID:  req.AppID,
+			Limit:  limit,
+			Offset: offset,
+		})
+		if err != nil {
+			s.logger.Error("Failed to list users for broadcast", zap.Error(err))
+			return nil, fmt.Errorf("failed to list users: %w", err)
+		}
+
+		if len(users) == 0 {
+			break
+		}
+
+		for _, u := range users {
+			allUserIDs = append(allUserIDs, u.UserID)
+		}
+
+		if len(users) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	if len(allUserIDs) == 0 {
+		return nil, fmt.Errorf("no users found for application %s", req.AppID)
+	}
+
+	s.logger.Info("Starting broadcast to all users",
+		zap.String("app_id", req.AppID),
+		zap.Int("user_count", len(allUserIDs)))
+
+	// Prepare bulk send request
+	bulkReq := notification.BulkSendRequest{
+		AppID:       req.AppID,
+		UserIDs:     allUserIDs,
+		Channel:     req.Channel,
+		Priority:    req.Priority,
+		Title:       req.Title,
+		Body:        req.Body,
+		Data:        req.Data,
+		TemplateID:  req.TemplateID,
+		Category:    req.Category,
+		ScheduledAt: req.ScheduledAt,
+	}
+
+	return s.SendBulk(ctx, bulkReq)
+}
+
 // SendBatch sends multiple distinct notifications
 func (s *NotificationService) SendBatch(ctx context.Context, requests []notification.SendRequest) ([]*notification.Notification, error) {
 	var notifications []*notification.Notification

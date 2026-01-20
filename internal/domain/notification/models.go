@@ -212,6 +212,37 @@ type Service interface {
 	GetUnreadCount(ctx context.Context, userID, appID string) (int64, error)
 	ListUnread(ctx context.Context, userID, appID string) ([]*Notification, error)
 	MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error
+	Broadcast(ctx context.Context, req BroadcastRequest) ([]*Notification, error)
+}
+
+// BroadcastRequest represents a request to send a notification to all users of an application
+type BroadcastRequest struct {
+	AppID       string                 `json:"app_id" validate:"required"`
+	Channel     Channel                `json:"channel" validate:"required"`
+	Priority    Priority               `json:"priority" validate:"required"`
+	Title       string                 `json:"title,omitempty"`
+	Body        string                 `json:"body,omitempty"`
+	Data        map[string]interface{} `json:"data,omitempty"`
+	TemplateID  string                 `json:"template_id" validate:"required"`
+	Category    string                 `json:"category,omitempty"`
+	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+}
+
+// Validate validates the broadcast request
+func (r *BroadcastRequest) Validate() error {
+	if r.AppID == "" {
+		return ErrInvalidAppID
+	}
+	if !r.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if !r.Priority.Valid() {
+		return ErrInvalidPriority
+	}
+	if r.TemplateID == "" {
+		return ErrTemplateRequired
+	}
+	return nil
 }
 
 // Validate validates the notification entity
