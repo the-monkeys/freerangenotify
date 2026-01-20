@@ -5,6 +5,16 @@ import type { Application, ApplicationSettings } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Spinner } from '../components/ui/spinner';
+import { Checkbox } from '../components/ui/checkbox';
+import { toast } from 'sonner';
+import { Copy, Check } from 'lucide-react';
 
 const AppDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -23,6 +33,7 @@ const AppDetail: React.FC = () => {
     const [newWebhookUrl, setNewWebhookUrl] = useState('');
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
+    const [copied, setCopied] = useState(false);
 
 
     useEffect(() => {
@@ -63,10 +74,10 @@ const AppDetail: React.FC = () => {
                 webhooks: webhooks
             });
             setApp(updated);
-            alert('Application updated successfully!');
+            toast.success('Application updated successfully!');
         } catch (error) {
             console.error('Failed to update application:', error);
-            alert('Failed to update application');
+            toast.error('Failed to update application');
         }
     };
 
@@ -75,9 +86,10 @@ const AppDetail: React.FC = () => {
         try {
             await applicationsAPI.regenerateKey(id);
             fetchAppDetails();
-            alert('API Key regenerated.');
+            toast.success('API Key regenerated successfully!');
         } catch (error) {
             console.error('Failed to regenerate key:', error);
+            toast.error('Failed to regenerate API key');
         }
     };
 
@@ -91,47 +103,41 @@ const AppDetail: React.FC = () => {
         }
     };
 
-    if (loading) return <div className="center"><div className="spinner"></div></div>;
-    if (!app) return <div className="center">Application not found</div>;
+    if (loading) return <div className="flex justify-center items-center min-h-screen"><Spinner /></div>;
+    if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
 
     return (
-        <div className="container">
+        <div className="container mx-auto px-4 py-6">
             <div className="mb-6">
-                <button
+                <Button
                     onClick={() => navigate('/')}
-                    className="btn btn-secondary"
-                    style={{ minWidth: 'auto', padding: '0.2rem 0.5rem', marginBottom: '1rem', border: 'none' }}
+                    variant="ghost"
+                    className="mb-4 px-2"
                 >
                     &larr; Back to Applications
-                </button>
-                <h1 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                </Button>
+                <h1 className="text-2xl font-semibold text-gray-900">
                     {app.app_name}
                 </h1>
-                <div style={{ display: 'flex', alignItems: 'center', marginTop: '0.5rem', color: '#605e5c', fontSize: '0.9rem' }}>
-                    <span style={{ marginRight: '0.5rem' }}>ID:</span>
-                    <code style={{ background: '#f3f2f1', padding: '2px 6px', borderRadius: '3px', fontFamily: 'monospace', fontWeight: 600 }}>
+                <div className="flex items-center mt-2 text-gray-500 text-sm">
+                    <span className="mr-2">ID:</span>
+                    <code className="bg-gray-100 px-2 py-0.5 rounded font-mono font-semibold">
                         {app.app_id}
                     </code>
                 </div>
             </div>
 
-            {/* Tabs - Azure Flat Style */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--azure-border)', marginBottom: '2rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+            {/* Tabs */}
+            <div className="flex border-b border-gray-200 mb-8 overflow-x-auto whitespace-nowrap">
                 {(['overview', 'users', 'templates', 'notifications', 'settings', 'integration'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        style={{
-                            padding: '0.75rem 1.25rem',
-                            borderBottom: activeTab === tab ? '2px solid var(--azure-blue)' : '2px solid transparent',
-                            color: activeTab === tab ? 'var(--azure-blue)' : '#605e5c',
-                            fontWeight: activeTab === tab ? 600 : 400,
-                            background: 'none',
-                            textTransform: 'capitalize',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            fontSize: '0.9rem'
-                        }}
+                        className={`px-5 py-3 border-b-2 ${
+                            activeTab === tab 
+                                ? 'border-blue-600 text-blue-600 font-semibold' 
+                                : 'border-transparent text-gray-500'
+                        } capitalize text-sm hover:text-blue-600 transition-colors shrink-0`}
                     >
                         {tab}
                     </button>
@@ -140,123 +146,131 @@ const AppDetail: React.FC = () => {
 
             {/* Overview Tab */}
             {activeTab === 'overview' && (
-                <div className="card">
-                    <h3 className="mb-4">Application Details</h3>
-                    <form onSubmit={handleUpdateOverview}>
-                        <div className="form-group">
-                            <label className="form-label">Application Name</label>
-                            <input
-                                type="text"
-                                className="form-input"
-                                value={appName}
-                                onChange={(e) => setAppName(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Description</label>
-                            <textarea
-                                className="form-input"
-                                style={{ minHeight: '100px' }}
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                            />
-                        </div>
-                        <div className="form-group">
-                            <label className="form-label">Webhook URL (Default)</label>
-                            <input
-                                type="url"
-                                className="form-input"
-                                value={webhookUrl}
-                                onChange={(e) => setWebhookUrl(e.target.value)}
-                                placeholder="https://example.com/webhook"
-                            />
-                            <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.4rem' }}>
-                                The default webhook URL used if no named target is specified.
-                            </p>
-                        </div>
-
-                        {/* Named Webhooks Section */}
-                        <div className="form-group" style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--azure-border)' }}>
-                            <label className="form-label" style={{ fontSize: '1rem', color: 'var(--azure-blue)', display: 'block', marginBottom: '1rem' }}>
-                                Named Webhook Endpoints
-                            </label>
-                            <p style={{ fontSize: '0.85rem', color: '#605e5c', marginBottom: '1.5rem' }}>
-                                Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
-                            </p>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div className="form-group">
-                                    <label className="form-label text-xs">Target Name</label>
-                                    <input
-                                        type="text"
-                                        className="form-input text-sm"
-                                        value={newWebhookName}
-                                        onChange={(e) => setNewWebhookName(e.target.value)}
-                                        placeholder="e.g. slack"
-                                    />
-                                </div>
-                                <div className="form-group">
-                                    <label className="form-label text-xs">Webhook URL</label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="url"
-                                            className="form-input text-sm"
-                                            value={newWebhookUrl}
-                                            onChange={(e) => setNewWebhookUrl(e.target.value)}
-                                            placeholder="https://hooks.slack.com/..."
-                                        />
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary"
-                                            onClick={() => {
-                                                if (newWebhookName && newWebhookUrl) {
-                                                    setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
-                                                    setNewWebhookName('');
-                                                    setNewWebhookUrl('');
-                                                }
-                                            }}
-                                        >
-                                            Add
-                                        </button>
-                                    </div>
-                                </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Application Details</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleUpdateOverview} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="appName">Application Name</Label>
+                                <Input
+                                    id="appName"
+                                    type="text"
+                                    value={appName}
+                                    onChange={(e) => setAppName(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="description">Description</Label>
+                                <Textarea
+                                    id="description"
+                                    className="min-h-[100px]"
+                                    value={description}
+                                    onChange={(e) => setDescription(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="webhookUrl">Webhook URL (Default)</Label>
+                                <Input
+                                    id="webhookUrl"
+                                    type="url"
+                                    value={webhookUrl}
+                                    onChange={(e) => setWebhookUrl(e.target.value)}
+                                    placeholder="https://example.com/webhook"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    The default webhook URL used if no named target is specified.
+                                </p>
                             </div>
 
-                            <div className="space-y-3">
-                                {Object.entries(webhooks).map(([name, url]) => (
-                                    <div key={name} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded">
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--azure-blue)' }}>{name}</div>
-                                            <div style={{ fontSize: '0.8rem', color: '#605e5c', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url}</div>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            className="btn btn-danger"
-                                            style={{ padding: '0.2rem 0.5rem', minWidth: 'auto', fontSize: '0.75rem' }}
-                                            onClick={() => {
-                                                const newWebhooks = { ...webhooks };
-                                                delete newWebhooks[name];
-                                                setWebhooks(newWebhooks);
-                                            }}
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))}
-                                {Object.keys(webhooks).length === 0 && (
-                                    <p style={{ fontSize: '0.85rem', color: '#a19f9d', textAlign: 'center', fontStyle: 'italic', padding: '1rem' }}>
-                                        No named webhooks configured.
+                            {/* Named Webhooks Section */}
+                            <div className="mt-8 pt-8 border-t border-gray-200 space-y-4">
+                                <div>
+                                    <Label className="text-base text-blue-600 block mb-2">
+                                        Named Webhook Endpoints
+                                    </Label>
+                                    <p className="text-sm text-gray-500 mb-6">
+                                        Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
                                     </p>
-                                )}
-                            </div>
-                        </div>
+                                </div>
 
-                        <div className="flex justify-end mt-8">
-                            <button type="submit" className="btn btn-primary">Save Overview & Webhooks</button>
-                        </div>
-                    </form>
-                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="newWebhookName" className="text-xs">Target Name</Label>
+                                        <Input
+                                            id="newWebhookName"
+                                            type="text"
+                                            className="text-sm"
+                                            value={newWebhookName}
+                                            onChange={(e) => setNewWebhookName(e.target.value)}
+                                            placeholder="e.g. slack"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="newWebhookUrl" className="text-xs">Webhook URL</Label>
+                                        <div className="flex gap-2">
+                                            <Input
+                                                id="newWebhookUrl"
+                                                type="url"
+                                                className="text-sm"
+                                                value={newWebhookUrl}
+                                                onChange={(e) => setNewWebhookUrl(e.target.value)}
+                                                placeholder="https://hooks.slack.com/..."
+                                            />
+                                            <Button
+                                                type="button"
+                                                variant="secondary"
+                                                onClick={() => {
+                                                    if (newWebhookName && newWebhookUrl) {
+                                                        setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
+                                                        setNewWebhookName('');
+                                                        setNewWebhookUrl('');
+                                                    }
+                                                }}
+                                            >
+                                                Add
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {Object.entries(webhooks).map(([name, url]) => (
+                                        <div key={name} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-semibold text-sm text-blue-600">{name}</div>
+                                                <div className="text-xs text-gray-500 overflow-hidden text-ellipsis whitespace-nowrap">{url}</div>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="destructive"
+                                                size="sm"
+                                                onClick={() => {
+                                                    const newWebhooks = { ...webhooks };
+                                                    delete newWebhooks[name];
+                                                    setWebhooks(newWebhooks);
+                                                }}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                    ))}
+                                    {Object.keys(webhooks).length === 0 && (
+                                        <p className="text-sm text-gray-400 text-center italic py-4">
+                                            No named webhooks configured.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end mt-8">
+                                <Button type="submit">Save Overview & Webhooks</Button>
+                            </div>
+                        </form>
+                    </CardContent>
+                </Card>
             )}
 
             {/* Users Tab */}
@@ -276,319 +290,353 @@ const AppDetail: React.FC = () => {
 
             {/* Settings Tab */}
             {activeTab === 'settings' && (
-                <div className="card">
-                    <h3 className="mb-4">Configuration</h3>
-                    <p style={{ color: '#718096', marginBottom: '1.5rem' }}>
-                        Manage configuration for this application.
-                    </p>
-
-                    <form
-                        onSubmit={async (e) => {
-                            e.preventDefault();
-                            try {
-                                await applicationsAPI.updateSettings(id!, settings);
-                                alert('Settings saved!');
-                            } catch (err: any) {
-                                alert('Error saving settings: ' + (err.response?.data?.message || err.message));
-                            }
-                        }}
-                        style={{ background: 'var(--azure-white)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}
-                    >
-                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Core Settings</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            <div className="form-group">
-                                <label className="form-label">Rate Limit (requests/hour)</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    value={settings.rate_limit || 0}
-                                    onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
-                                    placeholder="e.g. 1000"
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Retry Attempts</label>
-                                <input
-                                    type="number"
-                                    className="form-input"
-                                    value={settings.retry_attempts || 0}
-                                    onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
-                                    placeholder="e.g. 3"
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">Default Template ID</label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={settings.default_template || ''}
-                                    onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
-                                    placeholder="Template UUID"
-                                />
-                            </div>
-
-                            <div className="form-group flex flex-col justify-end space-y-6">
-                                <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
-                                    <input
-                                        type="checkbox"
-                                        style={{ accentColor: 'var(--azure-blue)', height: '1.2rem', width: '1.2rem' }}
-                                        checked={!!settings.enable_webhooks}
-                                        onChange={(e) => setSettings({ ...settings, enable_webhooks: e.target.checked })}
-                                    />
-                                    <span style={{ fontWeight: 500 }}>Enable Webhooks</span>
-                                </label>
-                                <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
-                                    <input
-                                        type="checkbox"
-                                        style={{ accentColor: 'var(--azure-blue)', height: '1.2rem', width: '1.2rem' }}
-                                        checked={!!settings.enable_analytics}
-                                        onChange={(e) => setSettings({ ...settings, enable_analytics: e.target.checked })}
-                                    />
-                                    <span style={{ fontWeight: 500 }}>Enable Analytics</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Authentication & Security</h4>
-                        <div className="grid grid-cols-1 gap-6 mb-8">
-                            <div className="form-group">
-                                <label className="form-label">Validation URL (Zero-Trust API)</label>
-                                <input
-                                    type="url"
-                                    className="form-input"
-                                    value={settings.validation_url || ''}
-                                    onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
-                                    placeholder="https://your-bank.com/api/verify-token"
-                                />
-                                <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.4rem' }}>
-                                    If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
-                                </p>
-                            </div>
-
-                            {settings.validation_url && (
-                                <div className="p-4 border border-blue-100 rounded bg-blue-50 mt-4">
-                                    <h5 className="font-semibold text-sm mb-3 text-blue-800">Validation Request Configuration</h5>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <div className="form-group">
-                                            <label className="form-label text-xs">Method</label>
-                                            <select
-                                                className="form-input text-sm"
-                                                value={settings.validation_config?.method || 'POST'}
-                                                onChange={(e) => setSettings({
-                                                    ...settings,
-                                                    validation_config: {
-                                                        ...settings.validation_config,
-                                                        method: e.target.value,
-                                                        token_placement: settings.validation_config?.token_placement || 'body_json',
-                                                        token_key: settings.validation_config?.token_key || 'token',
-                                                    }
-                                                })}
-                                            >
-                                                <option value="POST">POST</option>
-                                                <option value="GET">GET</option>
-                                            </select>
-                                        </div>
-                                        <div className="form-group">
-                                            <label className="form-label text-xs">Token Placement</label>
-                                            <select
-                                                className="form-input text-sm"
-                                                value={settings.validation_config?.token_placement || 'body_json'}
-                                                onChange={(e) => setSettings({
-                                                    ...settings,
-                                                    validation_config: {
-                                                        ...settings.validation_config,
-                                                        method: settings.validation_config?.method || 'POST',
-                                                        token_placement: e.target.value,
-                                                        token_key: settings.validation_config?.token_key || 'token',
-                                                    }
-                                                })}
-                                            >
-                                                <option value="body_json">Body (JSON)</option>
-                                                <option value="body_form">Body (Form URL Encoded)</option>
-                                                <option value="header">Header</option>
-                                                <option value="query">Query Parameter</option>
-                                                <option value="cookie">Cookie</option>
-                                            </select>
-                                        </div>
-                                        <div className="form-group col-span-2">
-                                            <label className="form-label text-xs">Token Key Name</label>
-                                            <input
-                                                type="text"
-                                                className="form-input text-sm"
-                                                value={settings.validation_config?.token_key || 'token'}
-                                                onChange={(e) => setSettings({
-                                                    ...settings,
-                                                    validation_config: {
-                                                        ...settings.validation_config!,
-                                                        token_key: e.target.value
-                                                    }
-                                                })}
-                                                placeholder="e.g. Authorization, access_token, mat"
-                                            />
-                                            <p className="text-xs text-gray-500 mt-1">The name of the header, cookie, or field that contains the token.</p>
-                                        </div>
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Configuration</CardTitle>
+                                    <p className="text-gray-500 text-sm">
+                            Manage configuration for this application.
+                        </p>
+                    </CardHeader>
+                    <CardContent>
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                try {
+                                    await applicationsAPI.updateSettings(id!, settings);
+                                    toast.success('Settings saved successfully!');
+                                } catch (err: any) {
+                                    toast.error('Error saving settings: ' + (err.response?.data?.message || err.message));
+                                }
+                            }}
+                            className="space-y-8"
+                        >
+                            <div>
+                                <h4 className="text-base font-semibold text-blue-600 mb-4">Core Settings</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="rateLimit">Rate Limit (requests/hour)</Label>
+                                        <Input
+                                            id="rateLimit"
+                                            type="number"
+                                            value={settings.rate_limit || 0}
+                                            onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
+                                            placeholder="e.g. 1000"
+                                        />
                                     </div>
 
-                                    <div className="form-group">
-                                        <label className="form-label text-xs mb-2 block">Static Headers (e.g., Client-ID, User-Agent)</label>
-                                        <textarea
-                                            className="form-input text-sm font-mono"
-                                            rows={3}
-                                            placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
-                                            value={staticHeadersText}
-                                            onChange={(e) => {
-                                                const newText = e.target.value;
-                                                setStaticHeadersText(newText);
-
-                                                const lines = newText.split('\n');
-                                                const headers: Record<string, string> = {};
-                                                lines.forEach(line => {
-                                                    const parts = line.split(':');
-                                                    if (parts.length >= 2) {
-                                                        const key = parts[0].trim();
-                                                        const val = parts.slice(1).join(':').trim();
-                                                        if (key) headers[key] = val;
-                                                    }
-                                                });
-                                                setSettings({
-                                                    ...settings,
-                                                    validation_config: {
-                                                        ...settings.validation_config!,
-                                                        static_headers: headers
-                                                    }
-                                                });
-                                            }}
+                                    <div className="space-y-2">
+                                        <Label htmlFor="retryAttempts">Retry Attempts</Label>
+                                        <Input
+                                            id="retryAttempts"
+                                            type="number"
+                                            value={settings.retry_attempts || 0}
+                                            onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
+                                            placeholder="e.g. 3"
                                         />
-                                        <p className="text-xs text-gray-500 mt-1">One header per line. Format: Header-Name: Value</p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="defaultTemplate">Default Template ID</Label>
+                                        <Input
+                                            id="defaultTemplate"
+                                            type="text"
+                                            value={settings.default_template || ''}
+                                            onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
+                                            placeholder="Template UUID"
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-col justify-end space-y-4">
+                                        <div className="flex items-center space-x-3">
+                                            <Checkbox
+                                                id="enableWebhooks"
+                                                checked={!!settings.enable_webhooks}
+                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_webhooks: !!checked })}
+                                            />
+                                            <Label htmlFor="enableWebhooks" className="font-medium cursor-pointer">
+                                                Enable Webhooks
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-center space-x-3">
+                                            <Checkbox
+                                                id="enableAnalytics"
+                                                checked={!!settings.enable_analytics}
+                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_analytics: !!checked })}
+                                            />
+                                            <Label htmlFor="enableAnalytics" className="font-medium cursor-pointer">
+                                                Enable Analytics
+                                            </Label>
+                                        </div>
                                     </div>
                                 </div>
-                            )}
-                        </div>
+                            </div>
 
-                        <h4 className="mb-4" style={{ color: 'var(--azure-blue)', fontSize: '1rem' }}>Default Notification Preferences</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
-                                <input
-                                    type="checkbox"
-                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
-                                    checked={settings.default_preferences?.email_enabled ?? true}
-                                    onChange={(e) => setSettings({
-                                        ...settings,
-                                        default_preferences: {
-                                            ...(settings.default_preferences || {}),
-                                            email_enabled: e.target.checked
-                                        }
-                                    })}
-                                />
-                                <span>Email Enabled</span>
-                            </label>
+                            <div>
+                                <h4 className="text-base font-semibold text-blue-600 mb-4">Authentication & Security</h4>
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="validationUrl">Validation URL (Zero-Trust API)</Label>
+                                        <Input
+                                            id="validationUrl"
+                                            type="url"
+                                            value={settings.validation_url || ''}
+                                            onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
+                                            placeholder="https://your-bank.com/api/verify-token"
+                                        />
+                                        <p className="text-xs text-gray-500">
+                                            If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
+                                        </p>
+                                    </div>
 
-                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
-                                <input
-                                    type="checkbox"
-                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
-                                    checked={settings.default_preferences?.push_enabled ?? true}
-                                    onChange={(e) => setSettings({
-                                        ...settings,
-                                        default_preferences: {
-                                            ...(settings.default_preferences || {}),
-                                            push_enabled: e.target.checked
-                                        }
-                                    })}
-                                />
-                                <span>Push Enabled</span>
-                            </label>
+                                    {settings.validation_url && (
+                                        <div className="p-4 border border-blue-100 rounded bg-blue-50 space-y-4">
+                                            <h5 className="font-semibold text-sm text-blue-800">Validation Request Configuration</h5>
 
-                            <label className="flex items-center space-x-3 cursor-pointer" style={{ fontSize: '0.9rem' }}>
-                                <input
-                                    type="checkbox"
-                                    style={{ accentColor: '#48bb78', height: '1.2rem', width: '1.2rem' }}
-                                    checked={settings.default_preferences?.sms_enabled ?? true}
-                                    onChange={(e) => setSettings({
-                                        ...settings,
-                                        default_preferences: {
-                                            ...(settings.default_preferences || {}),
-                                            sms_enabled: e.target.checked
-                                        }
-                                    })}
-                                />
-                                <span>SMS Enabled</span>
-                            </label>
-                        </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="validationMethod" className="text-xs">Method</Label>
+                                                    <Select
+                                                        value={settings.validation_config?.method || 'POST'}
+                                                        onValueChange={(value) => setSettings({
+                                                            ...settings,
+                                                            validation_config: {
+                                                                ...settings.validation_config,
+                                                                method: value,
+                                                                token_placement: settings.validation_config?.token_placement || 'body_json',
+                                                                token_key: settings.validation_config?.token_key || 'token',
+                                                            }
+                                                        })}
+                                                    >
+                                                        <SelectTrigger className="text-sm">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="POST">POST</SelectItem>
+                                                            <SelectItem value="GET">GET</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="tokenPlacement" className="text-xs">Token Placement</Label>
+                                                    <Select
+                                                        value={settings.validation_config?.token_placement || 'body_json'}
+                                                        onValueChange={(value) => setSettings({
+                                                            ...settings,
+                                                            validation_config: {
+                                                                ...settings.validation_config,
+                                                                method: settings.validation_config?.method || 'POST',
+                                                                token_placement: value,
+                                                                token_key: settings.validation_config?.token_key || 'token',
+                                                            }
+                                                        })}
+                                                    >
+                                                        <SelectTrigger className="text-sm">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="body_json">Body (JSON)</SelectItem>
+                                                            <SelectItem value="body_form">Body (Form URL Encoded)</SelectItem>
+                                                            <SelectItem value="header">Header</SelectItem>
+                                                            <SelectItem value="query">Query Parameter</SelectItem>
+                                                            <SelectItem value="cookie">Cookie</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-2 col-span-2">
+                                                    <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
+                                                    <Input
+                                                        id="tokenKey"
+                                                        type="text"
+                                                        className="text-sm"
+                                                        value={settings.validation_config?.token_key || 'token'}
+                                                        onChange={(e) => setSettings({
+                                                            ...settings,
+                                                            validation_config: {
+                                                                ...settings.validation_config!,
+                                                                token_key: e.target.value
+                                                            }
+                                                        })}
+                                                        placeholder="e.g. Authorization, access_token, mat"
+                                                    />
+                                                    <p className="text-xs text-gray-500">The name of the header, cookie, or field that contains the token.</p>
+                                                </div>
+                                            </div>
 
-                        <div className="mt-12 flex justify-end">
-                            <button type="submit" className="btn btn-primary">Save Configuration</button>
-                        </div>
-                    </form>
-                </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="staticHeaders" className="text-xs">Static Headers (e.g., Client-ID, User-Agent)</Label>
+                                                <Textarea
+                                                    id="staticHeaders"
+                                                    className="text-sm font-mono"
+                                                    rows={3}
+                                                    placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
+                                                    value={staticHeadersText}
+                                                    onChange={(e) => {
+                                                        const newText = e.target.value;
+                                                        setStaticHeadersText(newText);
+
+                                                        const lines = newText.split('\n');
+                                                        const headers: Record<string, string> = {};
+                                                        lines.forEach(line => {
+                                                            const parts = line.split(':');
+                                                            if (parts.length >= 2) {
+                                                                const key = parts[0].trim();
+                                                                const val = parts.slice(1).join(':').trim();
+                                                                if (key) headers[key] = val;
+                                                            }
+                                                        });
+                                                        setSettings({
+                                                            ...settings,
+                                                            validation_config: {
+                                                                ...settings.validation_config!,
+                                                                static_headers: headers
+                                                            }
+                                                        });
+                                                    }}
+                                                />
+                                                <p className="text-xs text-gray-500">One header per line. Format: Header-Name: Value</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h4 className="text-base font-semibold text-blue-600 mb-4">Default Notification Preferences</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div className="flex items-center space-x-3">
+                                        <Checkbox
+                                            id="emailEnabled"
+                                            checked={settings.default_preferences?.email_enabled ?? true}
+                                            onCheckedChange={(checked) => setSettings({
+                                                ...settings,
+                                                default_preferences: {
+                                                    ...(settings.default_preferences || {}),
+                                                    email_enabled: !!checked
+                                                }
+                                            })}
+                                        />
+                                        <Label htmlFor="emailEnabled" className="cursor-pointer">Email Enabled</Label>
+                                    </div>
+
+                                    <div className="flex items-center space-x-3">
+                                        <Checkbox
+                                            id="pushEnabled"
+                                            checked={settings.default_preferences?.push_enabled ?? true}
+                                            onCheckedChange={(checked) => setSettings({
+                                                ...settings,
+                                                default_preferences: {
+                                                    ...(settings.default_preferences || {}),
+                                                    push_enabled: !!checked
+                                                }
+                                            })}
+                                        />
+                                        <Label htmlFor="pushEnabled" className="cursor-pointer">Push Enabled</Label>
+                                    </div>
+
+                                    <div className="flex items-center space-x-3">
+                                        <Checkbox
+                                            id="smsEnabled"
+                                            checked={settings.default_preferences?.sms_enabled ?? true}
+                                            onCheckedChange={(checked) => setSettings({
+                                                ...settings,
+                                                default_preferences: {
+                                                    ...(settings.default_preferences || {}),
+                                                    sms_enabled: !!checked
+                                                }
+                                            })}
+                                        />
+                                        <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end pt-4">
+                                <Button type="submit">Save Configuration</Button>
+                            </div>
+                        </form>
+                    </CardContent>
+                </Card>
             )}
 
             {/* Integration Tab */}
             {activeTab === 'integration' && (
-                <div>
-                    <div className="card mb-4">
-                        <h3 className="mb-4">API Credentials</h3>
-                        <div className="form-group mb-6">
-                            <label className="form-label">API Key</label>
-                            <div className="flex gap-4">
-                                <div style={{ position: 'relative', flex: 1 }}>
-                                    <input
-                                        type={showApiKey ? "text" : "password"}
-                                        className="form-input"
-                                        value={app.api_key}
-                                        readOnly
-                                        style={{
-                                            background: 'var(--azure-bg)',
-                                            border: '1px solid var(--azure-border)',
-                                            color: '#605e5c',
-                                            paddingRight: '3rem'
-                                        }}
-                                    />
-                                    <button
+                <div className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>API Credentials</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="space-y-2 mb-6">
+                                <Label htmlFor="apiKey">API Key</Label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Input
+                                            id="apiKey"
+                                            type={showApiKey ? "text" : "password"}
+                                            value={app.api_key}
+                                            readOnly
+                                            className="bg-gray-50 border-gray-200 text-gray-500 pr-24"
+                                        />
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={async () => {
+                                                    try {
+                                                        await navigator.clipboard.writeText(app.api_key);
+                                                        setCopied(true);
+                                                        toast.success('API key copied to clipboard!');
+                                                        setTimeout(() => setCopied(false), 2000);
+                                                    } catch (err) {
+                                                        toast.error('Failed to copy API key');
+                                                    }
+                                                }}
+                                                className="h-8 w-8 p-0"
+                                            >
+                                                {copied ? (
+                                                    <Check className="h-4 w-4 text-green-600" />
+                                                ) : (
+                                                    <Copy className="h-4 w-4" />
+                                                )}
+                                            </Button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowApiKey(!showApiKey)}
+                                                className="text-blue-600 text-xs font-semibold hover:underline px-2"
+                                            >
+                                                {showApiKey ? 'Hide' : 'Show'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <Button
                                         type="button"
-                                        onClick={() => setShowApiKey(!showApiKey)}
-                                        style={{
-                                            position: 'absolute',
-                                            right: '0.75rem',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            background: 'none',
-                                            border: 'none',
-                                            color: 'var(--azure-blue)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.8rem',
-                                            fontWeight: 600
-                                        }}
+                                        variant="secondary"
+                                        onClick={handleRegenerateKey}
                                     >
-                                        {showApiKey ? 'Hide' : 'Show'}
-                                    </button>
+                                        Regenerate
+                                    </Button>
                                 </div>
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary"
-                                    onClick={handleRegenerateKey}
-                                >
-                                    Regenerate
-                                </button>
+                                <p className="text-xs text-gray-500">
+                                    This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
+                                </p>
                             </div>
-                            <p style={{ fontSize: '0.8rem', color: '#605e5c', marginTop: '0.5rem' }}>
-                                This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
-                            </p>
-                        </div>
-                    </div>
+                        </CardContent>
+                    </Card>
 
-                    <div className="card" style={{ border: '1px solid #f56565' }}>
-                        <h3 className="mb-4" style={{ color: '#a4262c', borderColor: '#edebe9' }}>Danger Zone</h3>
-                        <p style={{ marginBottom: '1rem', color: '#605e5c', fontSize: '0.9rem' }}>
-                            Deleting this application will remove all associated data. This action is irreversible.
-                        </p>
-                        <button onClick={handleDeleteApp} className="btn btn-danger">
-                            Delete Application
-                        </button>
-                    </div>
+                    <Card className="border-red-300">
+                        <CardHeader>
+                            <CardTitle className="text-red-600">Danger Zone</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="mb-4 text-gray-500 text-sm">
+                                Deleting this application will remove all associated data. This action is irreversible.
+                            </p>
+                            <Button onClick={handleDeleteApp} variant="destructive">
+                                Delete Application
+                            </Button>
+                        </CardContent>
+                    </Card>
                 </div>
             )}
         </div>

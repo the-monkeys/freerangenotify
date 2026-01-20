@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { templatesAPI } from '../services/api';
 import type { Template, CreateTemplateRequest } from '../types';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Badge } from './ui/badge';
+import { toast } from 'sonner';
 
 interface AppTemplatesProps {
     appId: string;
@@ -62,9 +70,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 variables: []
             });
             fetchTemplates();
+            toast.success('Template created successfully!');
         } catch (error) {
             console.error('Failed to create template:', error);
-            alert('Failed to create template: ' + error);
+            toast.error('Failed to create template');
         }
     };
 
@@ -106,7 +115,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         try {
             parsedData = JSON.parse(preview.data);
         } catch (e) {
-            alert('Invalid JSON data');
+            toast.error('Invalid JSON data');
             return;
         }
 
@@ -123,7 +132,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             });
         } catch (error) {
             console.error('Failed to render preview:', error);
-            alert('Failed to render preview');
+            toast.error('Failed to render preview');
             setActivePreviews({
                 ...activePreviews,
                 [tmplId]: { ...preview, loading: false }
@@ -131,245 +140,245 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
-    if (loading) return <div className="center">Loading templates...</div>;
+    if (loading) return <div className="flex justify-center py-4">Loading templates...</div>;
 
     return (
-        <div className="card">
-            <div className="flex justify-between items-center mb-6">
-                <h3 style={{ margin: 0 }}>Notification Templates</h3>
-                <button
-                    className="btn btn-primary"
-                    onClick={() => setShowAddForm(!showAddForm)}
-                >
-                    {showAddForm ? 'Cancel' : 'Create Template'}
-                </button>
-            </div>
-
-            {showAddForm && (
-                <form onSubmit={handleCreateTemplate} className="mb-8" style={{ background: 'var(--azure-bg)', padding: '1.5rem', borderRadius: '2px', border: '1px solid var(--azure-border)' }}>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="form-group">
-                            <label className="form-label">Template Name</label>
-                            <input
+        <Card>
+            <CardHeader>
+                <div className="flex justify-between items-center">
+                    <CardTitle>Notification Templates</CardTitle>
+                    <Button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                    >
+                        {showAddForm ? 'Cancel' : 'Create Template'}
+                    </Button>
+                </div>
+            </CardHeader>
+            <CardContent>
+                {showAddForm && (
+                    <form onSubmit={handleCreateTemplate} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="templateName">Template Name</Label>
+                                <Input
+                                    id="templateName"
+                                    type="text"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    required
+                                    placeholder="e.g. welcome_email"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="channel">Channel</Label>
+                                <Select
+                                    value={formData.channel}
+                                    onValueChange={(value) => setFormData({ ...formData, channel: value as any })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="email">Email</SelectItem>
+                                        <SelectItem value="push">Push</SelectItem>
+                                        <SelectItem value="sms">SMS</SelectItem>
+                                        <SelectItem value="webhook">Webhook</SelectItem>
+                                        <SelectItem value="in_app">In-App</SelectItem>
+                                        <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                            <div className="space-y-2">
+                                <Label htmlFor="webhookTarget">Webhook Target</Label>
+                                <Select
+                                    value={formData.webhook_target || ''}
+                                    onValueChange={(value) => setFormData({ ...formData, webhook_target: value })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Default (Application Webhook URL)" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="">Default (Application Webhook URL)</SelectItem>
+                                        {Object.keys(webhooks).map(name => (
+                                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-gray-500">
+                                    Select a specific named webhook endpoint for this template.
+                                </p>
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="subject">Subject (for Email)</Label>
+                            <Input
+                                id="subject"
                                 type="text"
-                                className="form-input"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                required
-                                placeholder="e.g. welcome_email"
+                                value={formData.subject || ''}
+                                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                                placeholder="Email subject"
                             />
                         </div>
-                        <div className="form-group">
-                            <label className="form-label">Channel</label>
-                            <select
-                                className="form-input"
-                                value={formData.channel}
-                                onChange={(e) => setFormData({ ...formData, channel: e.target.value as any })}
-                            >
-                                <option value="email">Email</option>
-                                <option value="push">Push</option>
-                                <option value="sms">SMS</option>
-                                <option value="webhook">Webhook</option>
-                                <option value="in_app">In-App</option>
-                                <option value="sse">SSE (Server-Sent Events)</option>
-                            </select>
-                        </div>
-                    </div>
-                    {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
-                        <div className="form-group">
-                            <label className="form-label">Webhook Target</label>
-                            <select
-                                className="form-input"
-                                value={formData.webhook_target || ''}
-                                onChange={(e) => setFormData({ ...formData, webhook_target: e.target.value })}
-                            >
-                                <option value="">Default (Application Webhook URL)</option>
-                                {Object.keys(webhooks).map(name => (
-                                    <option key={name} value={name}>{name}</option>
-                                ))}
-                            </select>
-                            <p style={{ fontSize: '0.75rem', color: '#605e5c', marginTop: '0.25rem' }}>
-                                Select a specific named webhook endpoint for this template.
+                        <div className="space-y-2">
+                            <Label htmlFor="body">Body / Content</Label>
+                            <Textarea
+                                id="body"
+                                className="min-h-[150px] font-mono"
+                                value={formData.body}
+                                onChange={(e) => {
+                                    // Simple regex to auto-detect variables like {{.var_name}}
+                                    const newBody = e.target.value;
+                                    const regex = /{{\s*\.?(\w+)\s*}}/g;
+                                    const matches = new Set<string>();
+                                    let match;
+                                    while ((match = regex.exec(newBody)) !== null) {
+                                        if (match[1]) matches.add(match[1]);
+                                    }
+                                    // Combine custom added vars with auto-detected ones
+                                    const currentVars = new Set(formData.variables || []);
+                                    for (const m of matches) currentVars.add(m);
+
+                                    setFormData({
+                                        ...formData,
+                                        body: newBody,
+                                        variables: Array.from(currentVars)
+                                    });
+                                }}
+                                required
+                                placeholder="Hello {{.name}}, welcome!"
+                            />
+                            <p className="text-xs text-gray-500">
+                                Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
                             </p>
                         </div>
-                    )}
-                    <div className="form-group">
-                        <label className="form-label">Subject (for Email)</label>
-                        <input
-                            type="text"
-                            className="form-input"
-                            value={formData.subject || ''}
-                            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                            placeholder="Email subject"
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label className="form-label">Body / Content</label>
-                        <textarea
-                            className="form-input"
-                            style={{ minHeight: '150px', fontFamily: 'monospace' }}
-                            value={formData.body}
-                            onChange={(e) => {
-                                // Simple regex to auto-detect variables like {{.var_name}}
-                                const newBody = e.target.value;
-                                const regex = /{{\s*\.?(\w+)\s*}}/g;
-                                const matches = new Set<string>();
-                                let match;
-                                while ((match = regex.exec(newBody)) !== null) {
-                                    if (match[1]) matches.add(match[1]);
-                                }
-                                // Combine custom added vars with auto-detected ones
-                                const currentVars = new Set(formData.variables || []);
-                                for (const m of matches) currentVars.add(m);
-
-                                setFormData({
-                                    ...formData,
-                                    body: newBody,
-                                    variables: Array.from(currentVars)
-                                });
-                            }}
-                            required
-                            placeholder="Hello {{.name}}, welcome!"
-                        />
-                        <p style={{ fontSize: '0.75rem', color: '#605e5c', marginTop: '0.25rem' }}>
-                            Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
-                        </p>
-                    </div>
-                    <div className="form-group">
-                        <label className="form-label">Variables (Must be declared to pass validation)</label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                className="form-input"
-                                value={varInput}
-                                onChange={(e) => setVarInput(e.target.value)}
-                                placeholder="name"
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleAddVariable();
-                                    }
-                                }}
-                            />
-                            <button type="button" className="btn btn-secondary" onClick={handleAddVariable}>Add</button>
+                        <div className="space-y-2">
+                            <Label>Variables (Must be declared to pass validation)</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    type="text"
+                                    value={varInput}
+                                    onChange={(e) => setVarInput(e.target.value)}
+                                    placeholder="name"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddVariable();
+                                        }
+                                    }}
+                                />
+                                <Button type="button" variant="secondary" onClick={handleAddVariable}>Add</Button>
+                            </div>
+                            <div className="mt-2 flex gap-2 flex-wrap">
+                                {(formData.variables || []).map(v => (
+                                    <Badge key={v} variant="outline" className="text-sm">
+                                        {v}
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, variables: formData.variables?.filter(x => x !== v) || [] })}
+                                            className="ml-2 text-red-600 hover:text-red-700 font-bold"
+                                        >
+                                            &times;
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
                         </div>
-                        <div className="mt-2 flex gap-2 flex-wrap">
-                            {(formData.variables || []).map(v => (
-                                <span key={v} style={{ background: 'var(--azure-bg)', border: '1px solid var(--azure-border)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem' }}>
-                                    {v}
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, variables: formData.variables?.filter(x => x !== v) || [] })}
-                                        style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#a4262c', cursor: 'pointer', fontWeight: 600 }}
-                                    >
-                                        &times;
-                                    </button>
-                                </span>
-                            ))}
+                        <div className="flex justify-end mt-6">
+                            <Button type="submit">Create Template</Button>
                         </div>
-                    </div>
-                    <div className="flex justify-end mt-4">
-                        <button type="submit" className="btn btn-primary">Create Template</button>
-                    </div>
-                </form>
-            )}
+                    </form>
+                )}
 
-            {!templates || templates.length === 0 ? (
-                <p style={{ color: '#718096', textAlign: 'center', padding: '2rem' }}>No templates found.</p>
-            ) : (
-                <div className="grid grid-cols-1 gap-6">
-                    {templates.map((tmpl) => (
-                        <div key={tmpl.id} className="card" style={{ background: 'var(--azure-white)', border: '1px solid var(--azure-border)' }}>
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <h4 style={{ margin: 0, color: 'var(--azure-blue)', fontSize: '1.1rem', fontWeight: 600, border: 'none' }}>{tmpl.name}</h4>
-                                    <p style={{ fontSize: '0.85rem', color: '#605e5c', margin: '0.25rem 0' }}>{tmpl.description || 'No description'}</p>
-                                </div>
-                                <span style={{ fontSize: '0.75rem', background: 'var(--azure-bg)', color: 'var(--azure-blue)', border: '1px solid var(--azure-blue)', padding: '0.15rem 0.6rem', borderRadius: '2px', textTransform: 'uppercase', fontWeight: 600 }}>
-                                    {tmpl.channel}
-                                </span>
-                            </div>
-
-                            {tmpl.channel === 'webhook' && (
-                                <div className="mb-2" style={{ fontSize: '0.8rem', color: 'var(--azure-blue)', fontWeight: 600 }}>
-                                    Target: <span style={{ color: '#323130' }}>{tmpl.webhook_target || 'Default'}</span>
-                                </div>
-                            )}
-
-                            <div className="mb-4" style={{ background: '#f8f8f8', padding: '1rem', borderRadius: '2px', border: '1px dashed var(--azure-border)' }}>
-                                <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>TEMPLATE BODY</div>
-                                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.85rem', color: '#323130' }}>{tmpl.body}</pre>
-                            </div>
-
-                            <div className="flex justify-between items-center mb-4">
-                                <div style={{ fontSize: '0.8rem', color: '#605e5c' }}>
-                                    <strong style={{ color: '#323130' }}>Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
-                                </div>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => togglePreview(tmpl.id)}
-                                        className="btn btn-secondary"
-                                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
-                                    >
-                                        {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteTemplate(tmpl.id)}
-                                        className="btn btn-danger"
-                                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </div>
-
-                            {activePreviews[tmpl.id] && (
-                                <div style={{ marginTop: '1rem', borderTop: '1px solid var(--azure-border)', paddingTop: '1rem' }}>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {!templates || templates.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">No templates found.</p>
+                ) : (
+                    <div className="space-y-6">
+                        {templates.map((tmpl) => (
+                            <Card key={tmpl.id} className="bg-white border-gray-200">
+                                <CardContent className="pt-6">
+                                    <div className="flex justify-between items-start mb-4">
                                         <div>
-                                            <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>PREVIEW DATA (JSON)</div>
-                                            <textarea
-                                                className="form-input"
-                                                style={{ height: '100px', fontFamily: 'monospace', fontSize: '0.75rem' }}
-                                                value={activePreviews[tmpl.id].data}
-                                                onChange={(e) => setActivePreviews({
-                                                    ...activePreviews,
-                                                    [tmpl.id]: { ...activePreviews[tmpl.id], data: e.target.value }
-                                                })}
-                                                placeholder='{"name": "Jack"}'
-                                            />
-                                            <button
-                                                className="btn btn-primary mt-2"
-                                                style={{ width: '100%', fontSize: '0.75rem' }}
-                                                onClick={() => handleRenderPreview(tmpl.id)}
-                                                disabled={activePreviews[tmpl.id].loading}
-                                            >
-                                                {activePreviews[tmpl.id].loading ? 'Rendering...' : 'Render Preview'}
-                                            </button>
+                                            <h4 className="text-lg font-semibold text-blue-600 mb-1">{tmpl.name}</h4>
+                                            <p className="text-sm text-gray-500">{tmpl.description || 'No description'}</p>
                                         </div>
-                                        <div>
-                                            <div style={{ fontSize: '0.7rem', color: '#605e5c', marginBottom: '0.5rem', fontWeight: 600 }}>RENDERED OUTPUT</div>
-                                            <div style={{
-                                                background: '#f3f2f1',
-                                                height: '100px',
-                                                padding: '0.75rem',
-                                                borderRadius: '2px',
-                                                border: '1px solid var(--azure-border)',
-                                                overflowY: 'auto',
-                                                fontSize: '0.85rem',
-                                                color: '#323130'
-                                            }}>
-                                                {activePreviews[tmpl.id].rendered || <span style={{ color: '#a19f9d', fontStyle: 'italic' }}>Click Render to see output...</span>}
-                                            </div>
+                                        <Badge variant="outline" className="text-xs uppercase bg-gray-50 text-blue-600 border-blue-600">
+                                            {tmpl.channel}
+                                        </Badge>
+                                    </div>
+
+                                    {tmpl.channel === 'webhook' && (
+                                        <div className="mb-2 text-sm font-semibold text-blue-600">
+                                            Target: <span className="text-gray-900">{tmpl.webhook_target || 'Default'}</span>
+                                        </div>
+                                    )}
+
+                                    <div className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200">
+                                        <div className="text-xs text-gray-500 mb-2 font-semibold">TEMPLATE BODY</div>
+                                        <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0">{tmpl.body}</pre>
+                                    </div>
+
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div className="text-sm text-gray-500">
+                                            <strong className="text-gray-900">Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                onClick={() => togglePreview(tmpl.id)}
+                                                variant="secondary"
+                                                size="sm"
+                                            >
+                                                {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleDeleteTemplate(tmpl.id)}
+                                                variant="destructive"
+                                                size="sm"
+                                            >
+                                                Delete
+                                            </Button>
                                         </div>
                                     </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
+
+                                    {activePreviews[tmpl.id] && (
+                                        <div className="mt-4 border-t border-gray-200 pt-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <div className="text-xs text-gray-500 font-semibold mb-2">PREVIEW DATA (JSON)</div>
+                                                    <Textarea
+                                                        className="h-[100px] font-mono text-xs"
+                                                        value={activePreviews[tmpl.id].data}
+                                                        onChange={(e) => setActivePreviews({
+                                                            ...activePreviews,
+                                                            [tmpl.id]: { ...activePreviews[tmpl.id], data: e.target.value }
+                                                        })}
+                                                        placeholder='{"name": "Jack"}'
+                                                    />
+                                                    <Button
+                                                        className="w-full text-xs"
+                                                        onClick={() => handleRenderPreview(tmpl.id)}
+                                                        disabled={activePreviews[tmpl.id].loading}
+                                                    >
+                                                        {activePreviews[tmpl.id].loading ? 'Rendering...' : 'Render Preview'}
+                                                    </Button>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="text-xs text-gray-500 font-semibold mb-2">RENDERED OUTPUT</div>
+                                                    <div className="bg-gray-50 h-[100px] p-3 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900">
+                                                        {activePreviews[tmpl.id].rendered || <span className="text-gray-400 italic">Click Render to see output...</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
 };
 
