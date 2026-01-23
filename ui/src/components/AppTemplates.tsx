@@ -35,6 +35,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
 
     // Preview state
     const [activePreviews, setActivePreviews] = useState<Record<string, { data: string, rendered: string, loading: boolean }>>({});
+    // Collapsed body state
+    const [expandedBodies, setExpandedBodies] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         if (apiKey) {
@@ -314,9 +316,32 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         </div>
                                     )}
 
-                                    <div className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200">
-                                        <div className="text-xs text-gray-500 mb-2 font-semibold">TEMPLATE BODY</div>
-                                        <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0">{tmpl.body}</pre>
+                                    <div
+                                        className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200 cursor-pointer relative group transition-colors hover:bg-gray-100"
+                                        onClick={() => {
+                                            setExpandedBodies(prev => ({
+                                                ...prev,
+                                                [tmpl.id]: !prev[tmpl.id]
+                                            }));
+                                        }}
+                                        title="Click to expand/collapse"
+                                    >
+                                        <div className="flex justify-between items-center mb-2">
+                                            <div className="text-xs text-gray-500 font-semibold">TEMPLATE BODY</div>
+                                            <div className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {expandedBodies[tmpl.id] ? 'COLLAPSE' : 'EXPAND'}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            maxHeight: expandedBodies[tmpl.id] ? 'none' : '60px',
+                                            overflow: 'hidden',
+                                            transition: 'max-height 0.3s ease-in-out'
+                                        }}>
+                                            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0">{tmpl.body}</pre>
+                                        </div>
+                                        {!expandedBodies[tmpl.id] && (
+                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none rounded-b" />
+                                        )}
                                     </div>
 
                                     <div className="flex justify-between items-center mb-4">

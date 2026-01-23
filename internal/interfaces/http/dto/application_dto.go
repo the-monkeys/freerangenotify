@@ -23,6 +23,8 @@ type UpdateSettingsRequest struct {
 	RateLimit          *int                          `json:"rate_limit" validate:"omitempty,min=1"`
 	RetryAttempts      *int                          `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
 	DefaultTemplate    *string                       `json:"default_template" validate:"omitempty"`
+	EmailConfig        *application.EmailConfig      `json:"email_config"`
+	DailyEmailLimit    *int                          `json:"daily_email_limit" validate:"omitempty,min=0"`
 	EnableWebhooks     *bool                         `json:"enable_webhooks"`
 	EnableAnalytics    *bool                         `json:"enable_analytics"`
 	ValidationURL      *string                       `json:"validation_url"`

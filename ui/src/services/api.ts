@@ -11,6 +11,7 @@ import type {
   UpdateUserRequest,
   NotificationRequest,
   BulkNotificationRequest,
+  BroadcastNotificationRequest,
   UpdateNotificationStatusRequest,
   CreateTemplateRequest,
   UpdateTemplateRequest,
@@ -201,6 +202,13 @@ export const notificationsAPI = {
 
   sendBulk: async (apiKey: string, payload: BulkNotificationRequest) => {
     const { data } = await api.post('/notifications/bulk', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  broadcast: async (apiKey: string, payload: BroadcastNotificationRequest) => {
+    const { data } = await api.post('/notifications/broadcast', payload, {
       headers: getAuthHeaders(apiKey)
     });
     return data;

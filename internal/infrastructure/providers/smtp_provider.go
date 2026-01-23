@@ -7,6 +7,7 @@ import (
 	"net/smtp"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -84,15 +85,35 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 		), nil
 	}
 
-	addr := fmt.Sprintf("%s:%d", p.host, p.port)
+	host := p.host
+	port := p.port
+	username := p.username
+	password := p.password
+	fromEmail := p.fromEmail
+	fromName := p.fromName
+
+	// Check for dynamic config override in context
+	if cfg, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && cfg != nil {
+		if cfg.ProviderType == "smtp" && cfg.SMTP != nil {
+			host = cfg.SMTP.Host
+			port = cfg.SMTP.Port
+			username = cfg.SMTP.Username
+			password = cfg.SMTP.Password
+			fromEmail = cfg.SMTP.FromEmail
+			fromName = cfg.SMTP.FromName
+			p.logger.Debug("Using dynamic SMTP configuration", zap.String("notification_id", notif.NotificationID))
+		}
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
 	var auth smtp.Auth
-	if p.username != "" && p.password != "" {
-		auth = smtp.PlainAuth("", p.username, p.password, p.host)
+	if username != "" && password != "" {
+		auth = smtp.PlainAuth("", username, password, host)
 	}
 
 	// Construct message
 	to := []string{usr.Email}
-	msg := p.buildMessage(usr.Email, notif.Content.Title, notif.Content.Body)
+	msg := p.buildMessageCustom(usr.Email, notif.Content.Title, notif.Content.Body, fromEmail, fromName)
 
 	// Send email with retries
 	var err error
@@ -101,12 +122,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 			time.Sleep(p.config.RetryDelay)
 		}
 
-		// Note: net/smtp.SendMail does not support context cancellation directly,
-		// but we can wrap the connection establishment if we implemented the client manually.
-		// For simplicity/standard lib usage, we use SendMail which blocks.
-		// In a production "world-class" system, we might want a pool of workers or a better client.
-		// Use the sender function
-		err = p.sender(addr, auth, p.fromEmail, to, msg)
+		err = p.sender(addr, auth, fromEmail, to, msg)
 		if err == nil {
 			break
 		}
@@ -133,9 +149,14 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 
 // buildMessage constructs a MIME message
 func (p *SMTPProvider) buildMessage(to, subject, body string) []byte {
+	return p.buildMessageCustom(to, subject, body, p.fromEmail, p.fromName)
+}
+
+// buildMessageCustom constructs a MIME message with custom from details
+func (p *SMTPProvider) buildMessageCustom(to, subject, body, fromEmail, fromName string) []byte {
 	// Basic MIME headers
 	headers := make(map[string]string)
-	headers["From"] = fmt.Sprintf("%s <%s>", p.fromName, p.fromEmail)
+	headers["From"] = fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	headers["To"] = to
 	headers["Subject"] = subject
 	headers["MIME-Version"] = "1.0"

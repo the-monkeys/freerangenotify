@@ -23,11 +23,34 @@ type Settings struct {
 	RateLimit          int                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
 	RetryAttempts      int                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
 	DefaultTemplate    string              `json:"default_template" es:"default_template"` // default template ID
+	EmailConfig        *EmailConfig        `json:"email_config,omitempty" es:"email_config"`
+	DailyEmailLimit    int                 `json:"daily_email_limit" es:"daily_email_limit"`
 	EnableWebhooks     bool                `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
 	EnableAnalytics    bool                `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
 	ValidationURL      string              `json:"validation_url,omitempty" es:"validation_url"`
 	ValidationConfig   *ValidationConfig   `json:"validation_config,omitempty" es:"validation_config"`
 	DefaultPreferences *DefaultPreferences `json:"default_preferences,omitempty" es:"default_preferences"`
+}
+
+type EmailConfig struct {
+	ProviderType string          `json:"provider_type" es:"provider_type"` // "smtp", "sendgrid", "system"
+	SMTP         *SMTPConfig     `json:"smtp,omitempty" es:"smtp"`
+	SendGrid     *SendGridConfig `json:"sendgrid,omitempty" es:"sendgrid"`
+}
+
+type SMTPConfig struct {
+	Host      string `json:"host" es:"host"`
+	Port      int    `json:"port" es:"port"`
+	Username  string `json:"username" es:"username"`
+	Password  string `json:"password" es:"password"`
+	FromEmail string `json:"from_email" es:"from_email"`
+	FromName  string `json:"from_name" es:"from_name"`
+}
+
+type SendGridConfig struct {
+	APIKey    string `json:"api_key" es:"api_key"`
+	FromEmail string `json:"from_email" es:"from_email"`
+	FromName  string `json:"from_name" es:"from_name"`
 }
 
 // ValidationConfig represents configuration for external token validation

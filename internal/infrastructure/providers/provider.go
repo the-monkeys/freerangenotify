@@ -89,3 +89,10 @@ func NewErrorResult(err error, errorType string) *Result {
 		Metadata:  make(map[string]interface{}),
 	}
 }
+
+// Provider Context Keys
+type contextKey string
+
+const (
+	EmailConfigKey contextKey = "email_config"
+)

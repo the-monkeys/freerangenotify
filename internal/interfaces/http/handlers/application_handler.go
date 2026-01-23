@@ -266,6 +266,12 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	if req.ValidationConfig != nil {
 		settings.ValidationConfig = req.ValidationConfig
 	}
+	if req.EmailConfig != nil {
+		settings.EmailConfig = req.EmailConfig
+	}
+	if req.DailyEmailLimit != nil {
+		settings.DailyEmailLimit = *req.DailyEmailLimit
+	}
 	if req.DefaultPreferences != nil {
 		if settings.DefaultPreferences == nil {
 			settings.DefaultPreferences = &application.DefaultPreferences{}

@@ -203,6 +203,10 @@ func Load() (*Config, error) {
 	viper.SetDefault("security.rate_limit", 1000)
 	viper.SetDefault("security.rate_limit_window", 3600)
 
+	viper.SetDefault("providers.smtp.host", "")
+	viper.SetDefault("providers.smtp.port", 587)
+	viper.SetDefault("providers.sendgrid.api_key", "")
+
 	// Configure viper
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")

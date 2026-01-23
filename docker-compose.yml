@@ -118,7 +118,7 @@ services:
       dockerfile: Dockerfile
     container_name: freerange-ui
     ports:
-      - "3000:5173" # Map host port 3000 to container Vite port 5173
+      - "3000:3000" # Map host port 3000 to container Vite port 3000
     environment:
       - CHOKIDAR_USEPOLLING=true # Enable file watching in Docker
       - VITE_API_BASE_URL=http://notification-service:8080 # Internal URL for Vite proxy

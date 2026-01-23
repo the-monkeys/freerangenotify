@@ -203,6 +203,50 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusAccepted).JSON(response)
 }
 
+// Broadcast handles POST /v1/notifications/broadcast
+// @Summary Broadcast notification to all users
+// @Description Send a notification to all users of an application
+// @Tags notifications
+// @Accept json
+// @Produce json
+// @Param request body dto.BroadcastNotificationRequest true "Broadcast notification request"
+// @Success 202 {object} dto.BulkSendResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Security ApiKeyAuth
+// @Router /v1/notifications/broadcast [post]
+func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.BroadcastNotificationRequest
+	if err := c.BodyParser(&req); err != nil {
+		h.logger.Error("Failed to parse broadcast request", zap.Error(err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	// Convert to domain request
+	broadcastReq := req.ToBroadcastRequest(appID)
+
+	// Send broadcast notifications
+	notifications, err := h.service.Broadcast(c.Context(), broadcastReq)
+	if err != nil {
+		h.logger.Error("Failed to broadcast notifications", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Convert to response
+	response := dto.BulkSendResponse{
+		Sent:  len(notifications),
+		Total: len(notifications), // In broadcast, total is what was found and sent
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(response)
+}
+
 // List handles GET /v1/notifications
 // @Summary List notifications
 // @Description Get a list of notifications with filtering

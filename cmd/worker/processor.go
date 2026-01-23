@@ -358,6 +358,17 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		zap.String("channel", string(notif.Channel)),
 		zap.String("user_id", notif.UserID))
 
+	// If it's an email, we might have custom credentials
+	if notif.Channel == notification.ChannelEmail {
+		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		if err == nil && app != nil && app.Settings.EmailConfig != nil {
+			ctx = context.WithValue(ctx, providers.EmailConfigKey, app.Settings.EmailConfig)
+			p.logger.Debug("Injecting custom email config into context",
+				zap.String("app_id", notif.AppID),
+				zap.String("provider_type", app.Settings.EmailConfig.ProviderType))
+		}
+	}
+
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
 		p.logger.Error("Provider manager send failed",

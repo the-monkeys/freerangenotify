@@ -24,6 +24,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
     const [showSendForm, setShowSendForm] = useState(false);
+    const [showBroadcastForm, setShowBroadcastForm] = useState(false);
     const [formData, setFormData] = useState<NotificationRequest>({
         user_id: '',
         channel: 'email',
@@ -32,7 +33,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         body: '',
         template_id: '',
         webhook_url: '',
-        data: {}
+        data: {},
+        scheduled_at: undefined,
+        recurrence: undefined
     });
 
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
@@ -59,6 +62,66 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             console.error('Failed to fetch notification data:', error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const [confirmingBroadcast, setConfirmingBroadcast] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleBroadcastSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setConfirmingBroadcast(true);
+    };
+
+    const executeBroadcast = async () => {
+        setConfirmingBroadcast(false);
+        setIsSubmitting(true);
+
+        try {
+            // Parse custom data if any
+            let customData = {};
+            if (dataInput) {
+                try {
+                    customData = JSON.parse(dataInput);
+                } catch (e) {
+                    alert('Invalid JSON in custom data');
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
+            await notificationsAPI.broadcast(apiKey, {
+                channel: formData.channel,
+                priority: formData.priority,
+                title: formData.title,
+                body: formData.body,
+                template_id: formData.template_id || undefined,
+                data: customData,
+                scheduled_at: formData.scheduled_at
+            });
+
+            setShowBroadcastForm(false);
+            setFormData({
+                user_id: '',
+                channel: 'email',
+                priority: 'normal',
+                title: '',
+                body: '',
+                template_id: '',
+                webhook_url: '',
+                data: {},
+                scheduled_at: undefined,
+                recurrence: undefined
+            });
+            setDataInput('');
+            fetchData();
+            // Show success message (using a simple alert for now, but could be a toast)
+            setTimeout(() => alert('Broadcast initiated successfully!'), 100);
+        } catch (error) {
+            console.error('Failed to broadcast notification:', error);
+            alert('Failed to broadcast notification');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -99,7 +162,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                 title: '',
                 body: '',
                 template_id: '',
-                data: {}
+                webhook_url: '',
+                data: {},
+                scheduled_at: undefined,
+                recurrence: undefined
             });
             setSelectedTargets([]);
             setDataInput('');
@@ -129,11 +195,26 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             <CardHeader>
                 <div className="flex justify-between items-center">
                     <CardTitle>Notification History</CardTitle>
-                    <Button
-                        onClick={() => setShowSendForm(!showSendForm)}
-                    >
-                        {showSendForm ? 'Cancel' : 'Send Notification'}
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            variant={showSendForm ? "outline" : "default"}
+                            onClick={() => {
+                                if (showBroadcastForm) setShowBroadcastForm(false);
+                                setShowSendForm(!showSendForm);
+                            }}
+                        >
+                            {showSendForm ? 'Cancel' : 'Send Notification'}
+                        </Button>
+                        <Button
+                            variant={showBroadcastForm ? "outline" : "secondary"}
+                            onClick={() => {
+                                if (showSendForm) setShowSendForm(false);
+                                setShowBroadcastForm(!showBroadcastForm);
+                            }}
+                        >
+                            {showBroadcastForm ? 'Cancel' : 'Broadcast to All'}
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
@@ -294,10 +375,236 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             />
                         </div>
 
+                        <div className="space-y-4 pt-4 border-t border-gray-100">
+                            <h4 className="text-sm font-semibold text-blue-600">Scheduled Delivery (Optional)</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="scheduledAt">Scheduled Time (Future)</Label>
+                                    <Input
+                                        id="scheduledAt"
+                                        type="datetime-local"
+                                        value={formData.scheduled_at?.substring(0, 16) || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                        }}
+                                    />
+                                    <p className="text-xs text-gray-500">
+                                        Leave empty for immediate delivery.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="recurrenceCron">Recurrence Cron (e.g. 0 0 * * *)</Label>
+                                    <Input
+                                        id="recurrenceCron"
+                                        type="text"
+                                        value={formData.recurrence?.cron_expression || ''}
+                                        onChange={(e) => setFormData({
+                                            ...formData,
+                                            recurrence: e.target.value ? {
+                                                ...formData.recurrence || { cron_expression: '' },
+                                                cron_expression: e.target.value
+                                            } : undefined
+                                        })}
+                                        placeholder="Cron expression"
+                                    />
+                                </div>
+
+                                {formData.recurrence && (
+                                    <>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="recurrenceEnd">Ends At (Optional)</Label>
+                                            <Input
+                                                id="recurrenceEnd"
+                                                type="datetime-local"
+                                                value={formData.recurrence.end_date?.substring(0, 16) || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        recurrence: {
+                                                            ...formData.recurrence!,
+                                                            end_date: val ? new Date(val).toISOString() : undefined
+                                                        }
+                                                    });
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="recurrenceCount">Max Occurrences (Optional)</Label>
+                                            <Input
+                                                id="recurrenceCount"
+                                                type="number"
+                                                value={formData.recurrence.count || ''}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    recurrence: {
+                                                        ...formData.recurrence!,
+                                                        count: parseInt(e.target.value) || undefined
+                                                    }
+                                                })}
+                                                placeholder="e.g. 10"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="flex justify-end mt-6">
-                            <Button type="submit">Send Notification</Button>
+                            <Button type="submit">Send / Schedule Notification</Button>
                         </div>
                     </form>
+                )}
+
+                {showBroadcastForm && (
+                    <Card className="mb-6 border-orange-200 bg-orange-50/30">
+                        <CardHeader>
+                            <CardTitle className="text-orange-800 text-lg">Broadcast to All Users</CardTitle>
+                            <p className="text-sm text-orange-600/80 mt-1">This will send a notification to ALL users of this application.</p>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={handleBroadcastSubmit} className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="broadcastTemplate">Template (Optional)</Label>
+                                        <Select
+                                            value={formData.template_id || 'none'}
+                                            onValueChange={(val) => setFormData({ ...formData, template_id: val === 'none' ? undefined : val })}
+                                        >
+                                            <SelectTrigger id="broadcastTemplate">
+                                                <SelectValue placeholder="No template" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">No template (manual content)</SelectItem>
+                                                {(templates || []).map(t => (
+                                                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="broadcastChannel">Channel</Label>
+                                        <Select
+                                            value={formData.channel}
+                                            onValueChange={(val) => setFormData({ ...formData, channel: val as any })}
+                                        >
+                                            <SelectTrigger id="broadcastChannel">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="email">Email</SelectItem>
+                                                <SelectItem value="push">Push</SelectItem>
+                                                <SelectItem value="sms">SMS</SelectItem>
+                                                <SelectItem value="in_app">In-App</SelectItem>
+                                                <SelectItem value="sse">SSE</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="broadcastPriority">Priority</Label>
+                                        <Select
+                                            value={formData.priority}
+                                            onValueChange={(val) => setFormData({ ...formData, priority: val as any })}
+                                        >
+                                            <SelectTrigger id="broadcastPriority">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="low">Low</SelectItem>
+                                                <SelectItem value="normal">Normal</SelectItem>
+                                                <SelectItem value="high">High</SelectItem>
+                                                <SelectItem value="critical">Critical</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="broadcastTitle">Title</Label>
+                                    <Input
+                                        id="broadcastTitle"
+                                        value={formData.title}
+                                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                        required
+                                        placeholder="Broadcast title"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="broadcastBody">Body / Manual Content</Label>
+                                    <Textarea
+                                        id="broadcastBody"
+                                        value={formData.body}
+                                        onChange={(e) => setFormData({ ...formData, body: e.target.value })}
+                                        required={!formData.template_id}
+                                        className="min-h-[100px]"
+                                        placeholder={formData.template_id ? "Optional (overridden by template)" : "Content"}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="broadcastData">Custom Data (JSON)</Label>
+                                    <Textarea
+                                        id="broadcastData"
+                                        className="font-mono text-xs"
+                                        value={dataInput}
+                                        onChange={(e) => setDataInput(e.target.value)}
+                                        placeholder='{ "key": "value" }'
+                                    />
+                                </div>
+
+                                <div className="flex justify-between items-center pt-2">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="broadcastScheduled">Scheduled Time (Optional)</Label>
+                                        <Input
+                                            id="broadcastScheduled"
+                                            type="datetime-local"
+                                            className="w-auto text-sm"
+                                            value={formData.scheduled_at?.substring(0, 16) || ''}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                            }}
+                                        />
+                                    </div>
+                                    <Button
+                                        type="submit"
+                                        className="bg-orange-600 hover:bg-orange-700 text-white"
+                                        disabled={isSubmitting}
+                                    >
+                                        {isSubmitting ? 'Processing...' : '🚀 Send Broadcast'}
+                                    </Button>
+                                </div>
+
+                                {confirmingBroadcast && (
+                                    <div className="mt-4 p-4 border-2 border-orange-400 bg-white rounded-lg shadow-lg text-center animate-in fade-in zoom-in duration-200">
+                                        <h4 className="font-bold text-orange-800 mb-2">⚠️ Confirm Broadcast</h4>
+                                        <p className="text-sm text-gray-700 mb-4">Are you sure you want to send this to ALL users?<br />This action cannot be undone.</p>
+                                        <div className="flex justify-center gap-3">
+                                            <Button
+                                                variant="outline"
+                                                onClick={() => setConfirmingBroadcast(false)}
+                                                type="button"
+                                                disabled={isSubmitting}
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                className="bg-orange-600 hover:bg-orange-700"
+                                                onClick={executeBroadcast}
+                                                type="button"
+                                                disabled={isSubmitting}
+                                            >
+                                                {isSubmitting ? 'Sending...' : 'Yes, Broadcast'}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </form>
+                        </CardContent>
+                    </Card>
                 )}
 
                 {!notifications || notifications.length === 0 ? (
@@ -311,6 +618,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                     <TableHead>User</TableHead>
                                     <TableHead>Title</TableHead>
                                     <TableHead>Status</TableHead>
+                                    <TableHead>Scheduled At</TableHead>
                                     <TableHead>Sent At</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -324,7 +632,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                 <span className="text-gray-500 italic">Anonymous (Webhook)</span>
                                             }
                                         </TableCell>
-                                        <TableCell className="text-gray-900">{n.title}</TableCell>
+                                        <TableCell className="text-gray-900">{n.content?.title || '-'}</TableCell>
                                         <TableCell>
                                             <Badge
                                                 variant="outline"
@@ -332,6 +640,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                             >
                                                 {n.status}
                                             </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-sm text-gray-500">
+                                            {n.scheduled_at ? (
+                                                <div className="flex flex-col">
+                                                    <span>{new Date(n.scheduled_at).toLocaleString()}</span>
+                                                    {n.recurrence && (
+                                                        <span className="text-[10px] text-blue-600 mt-0.5">
+                                                            🔄 {n.recurrence.cron_expression}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-400">Now</span>
+                                            )}
                                         </TableCell>
                                         <TableCell className="text-sm text-gray-500">
                                             {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}

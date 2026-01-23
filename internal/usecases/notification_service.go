@@ -95,19 +95,26 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	// Check if user exists (only if UserID is present)
 	var u *user.User
 
-	// Handle anonymous webhook case
+	// Fetch application to check limits and settings
+	app, err := s.appRepo.GetByID(ctx, req.AppID)
+	if err != nil {
+		s.logger.Error("Failed to fetch application", zap.String("app_id", req.AppID), zap.Error(err))
+		return nil, fmt.Errorf("application not found: %w", err)
+	}
+
+	// Check application daily email limit
+	if req.Channel == notification.ChannelEmail && app.Settings.DailyEmailLimit > 0 {
+		allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("app_email_limit:%s", req.AppID), app.Settings.DailyEmailLimit)
+		if err != nil {
+			s.logger.Error("Failed to check application daily email limit", zap.String("app_id", req.AppID), zap.Error(err))
+		} else if !allowed && req.Priority != notification.PriorityCritical {
+			return nil, fmt.Errorf("application daily email limit exceeded")
+		}
+	}
+
 	if req.UserID == "" && req.Channel == notification.ChannelWebhook {
 		// Log that we are processing an anonymous webhook
 		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID))
-
-		// Create a dummy user object or handle nil user in checks?
-		// Better to just skip checks that require user.
-
-		// Skip global DND check
-		// Skip channel enabled check
-		// Skip quiet hours check
-		// Skip daily limit check
-
 	} else {
 		u, err = s.userRepo.GetByID(ctx, req.UserID)
 		if err != nil {
@@ -373,6 +380,68 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 		zap.Int("sent", len(notifications)))
 
 	return notifications, nil
+}
+
+// Broadcast sends a notification to all users of an application
+func (s *NotificationService) Broadcast(ctx context.Context, req notification.BroadcastRequest) ([]*notification.Notification, error) {
+	// Validate request
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Fetch all users for the application
+	var allUserIDs []string
+	limit := 100
+	offset := 0
+
+	for {
+		users, err := s.userRepo.List(ctx, user.UserFilter{
+			AppID:  req.AppID,
+			Limit:  limit,
+			Offset: offset,
+		})
+		if err != nil {
+			s.logger.Error("Failed to list users for broadcast", zap.Error(err))
+			return nil, fmt.Errorf("failed to list users: %w", err)
+		}
+
+		if len(users) == 0 {
+			break
+		}
+
+		for _, u := range users {
+			allUserIDs = append(allUserIDs, u.UserID)
+		}
+
+		if len(users) < limit {
+			break
+		}
+		offset += limit
+	}
+
+	if len(allUserIDs) == 0 {
+		return nil, fmt.Errorf("no users found for application %s", req.AppID)
+	}
+
+	s.logger.Info("Starting broadcast to all users",
+		zap.String("app_id", req.AppID),
+		zap.Int("user_count", len(allUserIDs)))
+
+	// Prepare bulk send request
+	bulkReq := notification.BulkSendRequest{
+		AppID:       req.AppID,
+		UserIDs:     allUserIDs,
+		Channel:     req.Channel,
+		Priority:    req.Priority,
+		Title:       req.Title,
+		Body:        req.Body,
+		Data:        req.Data,
+		TemplateID:  req.TemplateID,
+		Category:    req.Category,
+		ScheduledAt: req.ScheduledAt,
+	}
+
+	return s.SendBulk(ctx, bulkReq)
 }
 
 // SendBatch sends multiple distinct notifications
