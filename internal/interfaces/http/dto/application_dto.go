@@ -4,18 +4,20 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/application"
 
 // CreateApplicationRequest represents a request to create a new application
 type CreateApplicationRequest struct {
-	AppName    string                `json:"app_name" validate:"required,min=3,max=100"`
-	WebhookURL string                `json:"webhook_url" validate:"omitempty,url"`
-	Webhooks   map[string]string     `json:"webhooks,omitempty"`
-	Settings   *application.Settings `json:"settings,omitempty"`
+	AppName     string                `json:"app_name" validate:"required,min=3,max=100"`
+	Description string                `json:"description" validate:"omitempty,max=500"`
+	WebhookURL  string                `json:"webhook_url" validate:"omitempty,url"`
+	Webhooks    map[string]string     `json:"webhooks,omitempty"`
+	Settings    *application.Settings `json:"settings,omitempty"`
 }
 
 // UpdateApplicationRequest represents a request to update an application
 type UpdateApplicationRequest struct {
-	AppName    string                `json:"app_name" validate:"omitempty,min=3,max=100"`
-	WebhookURL string                `json:"webhook_url" validate:"omitempty,url"`
-	Webhooks   map[string]string     `json:"webhooks,omitempty"`
-	Settings   *application.Settings `json:"settings,omitempty"`
+	AppName     string                `json:"app_name" validate:"omitempty,min=3,max=100"`
+	Description string                `json:"description" validate:"omitempty,max=500"`
+	WebhookURL  string                `json:"webhook_url" validate:"omitempty,url"`
+	Webhooks    map[string]string     `json:"webhooks,omitempty"`
+	Settings    *application.Settings `json:"settings,omitempty"`
 }
 
 // UpdateSettingsRequest represents a request to update application settings
@@ -42,6 +44,7 @@ type DefaultPreferencesDTO struct {
 type ApplicationResponse struct {
 	AppID             string               `json:"app_id"`
 	AppName           string               `json:"app_name"`
+	Description       string               `json:"description"`
 	APIKey            string               `json:"api_key"`
 	WebhookURL        string               `json:"webhook_url,omitempty"`
 	Webhooks          map[string]string    `json:"webhooks,omitempty"`
@@ -70,6 +73,7 @@ func ToApplicationResponse(app *application.Application) ApplicationResponse {
 	return ApplicationResponse{
 		AppID:             app.AppID,
 		AppName:           app.AppName,
+		Description:       app.Description,
 		APIKey:            app.APIKey,
 		WebhookURL:        app.WebhookURL,
 		Webhooks:          app.Webhooks,
