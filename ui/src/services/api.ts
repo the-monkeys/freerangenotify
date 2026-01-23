@@ -21,9 +21,13 @@ import type {
   TemplateVersion,
 } from '../types';
 
-// Always use relative URLs - Vite proxy handles routing to backend
+// Use environment variable for backend URL
+// In development, Vite proxy handles routing (can use relative URLs)
+// In production (Vercel), must use absolute backend URL
 const api = axios.create({
-  baseURL: '/v1',
+  baseURL: import.meta.env.VITE_API_BASE_URL 
+    ? `${import.meta.env.VITE_API_BASE_URL}/v1`
+    : '/v1',
   headers: {
     'Content-Type': 'application/json',
   },
