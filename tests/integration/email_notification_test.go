@@ -5,12 +5,14 @@ import (
 	"testing"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"go.uber.org/zap"
 )
@@ -32,14 +34,21 @@ func setupEmailTest(t *testing.T) (
 	// Create indices
 	database.CreateNotificationIndex(esClient)
 	database.CreateUserIndex(esClient)
-	database.CreateApplicationIndex(esClient)
-	database.CreateTemplateIndex(esClient)
+	// database.CreateApplicationIndex(esClient) // Not implemented yet
+	// database.CreateTemplateIndex(esClient)    // Not implemented yet
 
 	// Create repositories
-	appRepo := database.NewApplicationRepository(esClient, "frn_test_apps")
-	userRepo := database.NewUserRepository(esClient, "frn_test_users")
-	notifRepo := database.NewNotificationRepository(esClient, "frn_test_notifications")
-	templateRepo := database.NewTemplateRepository(esClient, "frn_test_templates")
+	appRepo := repository.NewApplicationRepository(esClient, logger)
+	userRepo := repository.NewUserRepository(esClient, logger)
+	notifRepo := repository.NewNotificationRepository(esClient, logger)
+
+	// Wrap esClient for TemplateRepository
+	dbEsClient := &database.ElasticsearchClient{
+		Client: esClient,
+		Config: &config.DatabaseConfig{},
+		Logger: logger,
+	}
+	templateRepo := database.NewTemplateRepository(dbEsClient, logger)
 
 	// Setup Redis for limiter
 	redisClient := redis.NewClient(&redis.Options{
@@ -55,16 +64,14 @@ func setupEmailTest(t *testing.T) (
 	notifService := usecases.NewNotificationService(
 		notifRepo,
 		userRepo,
+		appRepo,
+		templateRepo,
 		testQueue,
 		logger,
 		usecases.NotificationServiceConfig{},
 		nil, // metrics
+		redisLimiter,
 	)
-	// Inject dependencies manually since we don't have a full container here
-	// This is a bit hacky but works for unit/integration testing the service logic
-
-	// Wait, I should use usecases.NewNotificationService with the proper arguments if it supports it
-	// Actually, I need to check the constructor again.
 
 	cleanupFunc := func() {
 		redisClient.FlushDB(ctx)
