@@ -1,0 +1,79 @@
+name: Auto Version Bump
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - main
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.title, '[skip-bump]')"
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Get current version
+        id: get_version
+        run: |
+          VERSION_FILE="internal/version/VERSION"
+          if [ -f "$VERSION_FILE" ]; then
+            CURRENT_VERSION=$(cat "$VERSION_FILE" | tr -d '[:space:]')
+          else
+            CURRENT_VERSION="0.0.0"
+          fi
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Calculate new version
+        id: calc_version
+        run: |
+          CURRENT_VERSION="${{ steps.get_version.outputs.current_version }}"
+          # Extract the base version (x.y.z)
+          BASE_VERSION=$(echo "$CURRENT_VERSION" | sed -E 's/([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          
+          # Increment patch
+          IFS='.' read -r major minor patch <<< "$BASE_VERSION"
+          NEW_PATCH=$((patch + 1))
+          NEW_VERSION="$major.$minor.$NEW_PATCH-alpha"
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumping from $CURRENT_VERSION to $NEW_VERSION"
+
+      - name: Update files
+        run: |
+          NEW_VERSION="${{ steps.calc_version.outputs.new_version }}"
+          
+          # 1. Update internal/version/VERSION
+          echo "$NEW_VERSION" > internal/version/VERSION
+          
+          # 2. Update ui/package.json
+          if [ -f "ui/package.json" ]; then
+            sed -i "s/\"version\": \".*\"/\"version\": \"$NEW_VERSION\"/" ui/package.json
+          fi
+          
+          # 3. Update Swagger version in cmd/server/main.go
+          if [ -f "cmd/server/main.go" ]; then
+            sed -i "s/\/\/ @version .*/\/\/ @version $NEW_VERSION/" cmd/server/main.go
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add internal/version/VERSION
+          [ -f "ui/package.json" ] && git add ui/package.json
+          [ -f "cmd/server/main.go" ] && git add cmd/server/main.go
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: auto-bump version to ${{ steps.calc_version.outputs.new_version }} [skip-bump]"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
