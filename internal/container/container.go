@@ -2,9 +2,11 @@ package container
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
@@ -16,6 +18,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
+	"github.com/the-monkeys/freerangenotify/pkg/jwt"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -47,6 +50,10 @@ type Container struct {
 	TemplateService     *usecases.TemplateService
 	PresenceService     usecases.PresenceService
 	PresenceRepository  user.PresenceRepository
+	AuthService         auth.Service
+
+	// JWT
+	JWTManager *jwt.Manager
 
 	// Handlers
 	UserHandler         *handlers.UserHandler
@@ -57,6 +64,7 @@ type Container struct {
 	AdminHandler        *handlers.AdminHandler
 	HealthHandler       *handlers.HealthHandler
 	SSEHandler          *handlers.SSEHandler
+	AuthHandler         *handlers.AuthHandler
 
 	// SSE
 	SSEBroadcaster *sse.Broadcaster
@@ -138,6 +146,15 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 
+	// Initialize JWT manager
+	accessTokenDuration := time.Duration(cfg.Security.JWTAccessExpiration) * time.Minute
+	refreshTokenDuration := time.Duration(cfg.Security.JWTRefreshExpiration) * time.Minute
+	container.JWTManager = jwt.NewManager(cfg.Security.JWTSecret, accessTokenDuration, refreshTokenDuration)
+
+	// Initialize auth repository and service
+	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), logger)
+	container.AuthService = services.NewAuthService(authRepo, container.JWTManager, container.NotificationService, logger)
+
 	// Initialize handlers
 	container.ApplicationHandler = handlers.NewApplicationHandler(
 		container.ApplicationService,
@@ -163,6 +180,11 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.AdminHandler = handlers.NewAdminHandler(
 		container.Queue,
+		logger,
+	)
+	container.AuthHandler = handlers.NewAuthHandler(
+		container.AuthService,
+		container.Validator,
 		logger,
 	)
 	container.HealthHandler = handlers.NewHealthHandler(

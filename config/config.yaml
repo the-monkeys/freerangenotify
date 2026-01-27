@@ -83,6 +83,8 @@ monitoring:
 
 security:
   jwt_secret: "${JWT_SECRET:-dev-secret-key-change-in-production}"
+  jwt_access_expiration: 15  # minutes
+  jwt_refresh_expiration: 10080  # 7 days in minutes
   api_key_header: "X-API-Key"
   rate_limit: 100  # requests per window
   rate_limit_window: 3600  # seconds
