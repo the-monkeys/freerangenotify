@@ -40,11 +40,14 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 
 	// Define all indices to create
 	indices := map[string]func() map[string]interface{}{
-		"applications":  im.templates.GetApplicationsTemplate,
-		"users":         im.templates.GetUsersTemplate,
-		"notifications": im.templates.GetNotificationsTemplate,
-		"templates":     im.templates.GetTemplatesTemplate,
-		"analytics":     im.templates.GetAnalyticsTemplate,
+		"applications":          im.templates.GetApplicationsTemplate,
+		"users":                 im.templates.GetUsersTemplate,
+		"notifications":         im.templates.GetNotificationsTemplate,
+		"templates":             im.templates.GetTemplatesTemplate,
+		"analytics":             im.templates.GetAnalyticsTemplate,
+		"auth_users":            im.templates.GetAuthUsersTemplate,
+		"password_reset_tokens": im.templates.GetPasswordResetTokensTemplate,
+		"refresh_tokens":        im.templates.GetRefreshTokensTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

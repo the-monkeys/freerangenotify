@@ -1,10 +1,20 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
 const LandingPage: React.FC = () => {
     const navigate = useNavigate();
+    const { isAuthenticated } = useAuth();
+
+    const handleGetStarted = () => {
+        if (isAuthenticated) {
+            navigate('/apps');
+        } else {
+            navigate('/register');
+        }
+    };
 
     const showcaseProducts = [
         {
@@ -31,9 +41,9 @@ const LandingPage: React.FC = () => {
                         <Button 
                             size="lg" 
                             className="bg-white text-blue-600 hover:bg-gray-50 px-8 py-6 text-base font-medium shadow-lg"
-                            onClick={() => navigate('/apps')}
+                            onClick={handleGetStarted}
                         >
-                            Get Started
+                            {isAuthenticated ? 'Go to Dashboard' : 'Get Started'}
                         </Button>
                         <Button 
                             size="lg" 
