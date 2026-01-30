@@ -40,7 +40,7 @@ const ForgotPassword: React.FC = () => {
           <CardContent>
             <div className="text-center space-y-4">
               <p className="text-sm text-gray-600">
-                Click the link in the email to reset your password. The link will expire in 1 hour.
+                Click the link in the email to reset your password. The link will expire in 5 minutes.
               </p>
               <Link to="/login">
                 <Button className="w-full">Back to Login</Button>
