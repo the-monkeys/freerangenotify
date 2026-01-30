@@ -31,18 +31,6 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	auth.Post("/forgot-password", c.AuthHandler.ForgotPassword)
 	auth.Post("/reset-password", c.AuthHandler.ResetPassword)
 
-	// Application management (typically used by admins, but not protected by API key in this example)
-	// In production, you might want to add admin authentication here
-	apps := v1.Group("/apps")
-	apps.Post("/", c.ApplicationHandler.Create)
-	apps.Get("/:id", c.ApplicationHandler.GetByID)
-	apps.Put("/:id", c.ApplicationHandler.Update)
-	apps.Delete("/:id", c.ApplicationHandler.Delete)
-	apps.Get("/", c.ApplicationHandler.List)
-	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
-	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
-	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
-
 	// Health check
 	v1.Get("/health", c.HealthHandler.Check)
 
@@ -121,6 +109,18 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
+
+	// Application management routes (JWT protected for admin dashboard)
+	apps := v1.Group("/apps")
+	apps.Use(jwtAuth)
+	apps.Post("/", c.ApplicationHandler.Create)
+	apps.Get("/", c.ApplicationHandler.List)
+	apps.Get("/:id", c.ApplicationHandler.GetByID)
+	apps.Put("/:id", c.ApplicationHandler.Update)
+	apps.Delete("/:id", c.ApplicationHandler.Delete)
+	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
+	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
+	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
 
 	// Queue management
 	queues := admin.Group("/queues")

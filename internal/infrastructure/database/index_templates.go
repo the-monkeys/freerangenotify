@@ -35,6 +35,9 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 				"api_key": map[string]interface{}{
 					"type": "keyword",
 				},
+				"admin_user_id": map[string]interface{}{
+					"type": "keyword",
+				},
 				"webhook_url": map[string]interface{}{
 					"type": "keyword",
 				},

@@ -11,6 +11,7 @@ type Application struct {
 	AppName           string            `json:"app_name" es:"app_name"`
 	APIKey            string            `json:"api_key" es:"api_key"`
 	APIKeyGeneratedAt time.Time         `json:"api_key_generated_at" es:"api_key_generated_at"`
+	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"` // The admin user who owns this app
 	WebhookURL        string            `json:"webhook_url,omitempty" es:"webhook_url"`
 	Webhooks          map[string]string `json:"webhooks,omitempty" es:"webhooks"`
 	Settings          Settings          `json:"settings" es:"settings"`
@@ -70,9 +71,10 @@ type DefaultPreferences struct {
 
 // ApplicationFilter represents query filters for applications
 type ApplicationFilter struct {
-	AppName string `json:"app_name,omitempty"`
-	Limit   int    `json:"limit,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
+	AppName     string `json:"app_name,omitempty"`
+	AdminUserID string `json:"admin_user_id,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	Offset      int    `json:"offset,omitempty"`
 }
 
 // Repository defines the interface for application data operations
