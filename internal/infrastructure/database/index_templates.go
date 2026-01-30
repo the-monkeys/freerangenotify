@@ -32,6 +32,9 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 						},
 					},
 				},
+				"description": map[string]interface{}{
+					"type": "text",
+				},
 				"api_key": map[string]interface{}{
 					"type": "keyword",
 				},

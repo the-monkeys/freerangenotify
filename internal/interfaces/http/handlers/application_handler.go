@@ -48,6 +48,7 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 	app := &application.Application{
 		AppName:     req.AppName,
 		AdminUserID: userID,
+		Description: req.Description,
 		WebhookURL:  req.WebhookURL,
 		Webhooks:    req.Webhooks,
 	}
@@ -138,6 +139,9 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	// Update fields
 	if req.AppName != "" {
 		app.AppName = req.AppName
+	}
+	if req.Description != "" {
+		app.Description = req.Description
 	}
 	if req.WebhookURL != "" {
 		app.WebhookURL = req.WebhookURL

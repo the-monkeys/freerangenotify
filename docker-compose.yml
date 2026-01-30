@@ -50,16 +50,16 @@ services:
     build: .
     container_name: freerange-notification-service
     ports:
-      - "8080:8080"
+      - "${FREERANGE_SERVER_PORT:-8080}:8080"
     depends_on:
       elasticsearch:
         condition: service_healthy
     env_file:
       - .env
     environment:
-      - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
-      - FREERANGE_REDIS_HOST=redis
-      - FREERANGE_REDIS_PORT=6379
+      - FREERANGE_DATABASE_URLS=${FREERANGE_DATABASE_URLS:-http://elasticsearch:9200}
+      - FREERANGE_REDIS_HOST=${FREERANGE_REDIS_HOST:-redis}
+      - FREERANGE_REDIS_PORT=${FREERANGE_REDIS_PORT:-6379}
     networks:
       - freerange-network
     healthcheck:
@@ -82,34 +82,12 @@ services:
     env_file:
       - .env
     environment:
-      - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
-      - FREERANGE_REDIS_HOST=redis
-      - FREERANGE_REDIS_PORT=6379
+      - FREERANGE_DATABASE_URLS=${FREERANGE_DATABASE_URLS:-http://elasticsearch:9200}
+      - FREERANGE_REDIS_HOST=${FREERANGE_REDIS_HOST:-redis}
+      - FREERANGE_REDIS_PORT=${FREERANGE_REDIS_PORT:-6379}
     networks:
       - freerange-network
     restart: unless-stopped
-
-  # # Go Webhook Receiver (for testing webhooks and presence)
-  # go-receiver:
-  #   build: .
-  #   container_name: freerange-go-receiver
-  #   command: [ "./receiver" ]
-  #   ports:
-  #     - "8090:8090"
-  #   environment:
-  #     - PORT=8090
-  #     - USER_ID=test-user-123
-  #     - API_KEY=frn_test_key
-  #     - HUB_URL=http://notification-service:8080
-  #   depends_on:
-  #     - notification-service
-  #   networks:
-  #     - freerange-network
-  #   restart: unless-stopped
-
-  # SSE Receiver for testing
-
-
 
   # UI: React Vite (TypeScript)
   ui:
@@ -121,7 +99,7 @@ services:
       - "3000:3000" # Map host port 3000 to container Vite port 3000
     environment:
       - CHOKIDAR_USEPOLLING=true # Enable file watching in Docker
-      - VITE_API_BASE_URL=http://notification-service:8080 # Internal URL for Vite proxy
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL} # Externalized to .env
     volumes:
       - ./ui:/app # Mount source code for hot reloading
       - /app/node_modules # Prevent overwriting node_modules
@@ -130,70 +108,11 @@ services:
     depends_on:
       - notification-service
     restart: unless-stopped
-  # Kibana for Elasticsearch management (development only)
-  # kibana:
-  #   image: docker.elastic.co/kibana/kibana:8.11.0
-  #   container_name: freerange-kibana
-  #   depends_on:
-  #     elasticsearch:
-  #       condition: service_healthy
-  #   environment:
-  #     - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-  #     - XPACK_SECURITY_ENABLED=false
-  #   ports:
-  #     - "5601:5601"
-  #   networks:
-  #     - freerange-network
-
-  # Redis Commander for Redis management (development only)
-  # redis-commander:
-  #   image: rediscommander/redis-commander:latest
-  #   container_name: freerange-redis-commander
-  #   depends_on:
-  #     - redis
-  #   environment:
-  #     - REDIS_HOSTS=local:redis:6379
-  #   ports:
-  #     - "8081:8081"
-  #   networks:
-  #     - freerange-network
-
-  # Prometheus for monitoring
-  # prometheus:
-  #   image: prom/prometheus:latest
-  #   container_name: freerange-prometheus
-  #   command:
-  #     - '--config.file=/etc/prometheus/prometheus.yml'
-  #     - '--storage.tsdb.path=/prometheus'
-  #     - '--web.console.libraries=/etc/prometheus/console_libraries'
-  #     - '--web.console.templates=/etc/prometheus/consoles'
-  #     - '--web.enable-lifecycle'
-  #   ports:
-  #     - "9090:9090"
-  #   volumes:
-  #     - ./deployments/docker/prometheus.yml:/etc/prometheus/prometheus.yml
-  #     - prometheus_data:/prometheus
-  #   networks:
-  #     - freerange-network
-
-  # Grafana for dashboards
-  # grafana:
-  #   image: grafana/grafana:latest
-  #   container_name: freerange-grafana
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - GF_SECURITY_ADMIN_PASSWORD=admin
-  #   volumes:
-  #     - grafana_data:/var/lib/grafana
-  #   networks:
-  #     - freerange-network
 
 volumes:
   elasticsearch_data:
   redis_data:
-    # prometheus_data:
-    # grafana_data:
+
 
 networks:
   freerange-network:

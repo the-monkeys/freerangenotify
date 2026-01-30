@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/the-monkeys/freerangenotify/internal/version"
 )
 
 // Config holds all configuration for the application
@@ -166,7 +167,7 @@ type CORSConfig struct {
 func Load() (*Config, error) {
 	// Set default values
 	viper.SetDefault("app.name", "FreeRangeNotify")
-	viper.SetDefault("app.version", "1.0.0")
+	viper.SetDefault("app.version", version.Get())
 	viper.SetDefault("app.environment", "development")
 	viper.SetDefault("app.debug", true)
 	viper.SetDefault("app.log_level", "info")

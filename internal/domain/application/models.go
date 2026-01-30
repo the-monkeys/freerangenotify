@@ -9,6 +9,7 @@ import (
 type Application struct {
 	AppID             string            `json:"app_id" es:"app_id"`
 	AppName           string            `json:"app_name" es:"app_name"`
+	Description       string            `json:"description" es:"description"`
 	APIKey            string            `json:"api_key" es:"api_key"`
 	APIKeyGeneratedAt time.Time         `json:"api_key_generated_at" es:"api_key_generated_at"`
 	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"` // The admin user who owns this app
