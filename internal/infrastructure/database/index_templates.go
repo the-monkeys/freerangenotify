@@ -38,6 +38,9 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 				"api_key": map[string]interface{}{
 					"type": "keyword",
 				},
+				"admin_user_id": map[string]interface{}{
+					"type": "keyword",
+				},
 				"webhook_url": map[string]interface{}{
 					"type": "keyword",
 				},
@@ -379,6 +382,124 @@ func (it *IndexTemplates) GetAnalyticsTemplate() map[string]interface{} {
 				"metadata": map[string]interface{}{
 					"type":    "object",
 					"enabled": false, // Don't index metadata for flexibility
+				},
+			},
+		},
+	}
+}
+
+// GetAuthUsersTemplate returns the Elasticsearch mapping for admin users index
+func (it *IndexTemplates) GetAuthUsersTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"email": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"password_hash": map[string]interface{}{
+					"type":  "keyword",
+					"index": false, // Don't index password hash
+				},
+				"full_name": map[string]interface{}{
+					"type": "text",
+				},
+				"is_active": map[string]interface{}{
+					"type": "boolean",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+				"last_login_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetPasswordResetTokensTemplate returns the Elasticsearch mapping for password reset tokens
+func (it *IndexTemplates) GetPasswordResetTokensTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"token_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"token": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"expires_at": map[string]interface{}{
+					"type": "date",
+				},
+				"used": map[string]interface{}{
+					"type": "boolean",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetRefreshTokensTemplate returns the Elasticsearch mapping for refresh tokens
+func (it *IndexTemplates) GetRefreshTokensTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"token_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"token": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"expires_at": map[string]interface{}{
+					"type": "date",
+				},
+				"revoked": map[string]interface{}{
+					"type": "boolean",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
 				},
 			},
 		},

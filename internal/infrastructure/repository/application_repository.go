@@ -114,6 +114,15 @@ func (r *ApplicationRepository) buildApplicationQuery(filter application.Applica
 
 	var filters []map[string]interface{}
 
+	// Always filter by admin_user_id if provided
+	if filter.AdminUserID != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"admin_user_id": filter.AdminUserID,
+			},
+		})
+	}
+
 	if filter.AppName != "" {
 		filters = append(filters, map[string]interface{}{
 			"match": map[string]interface{}{

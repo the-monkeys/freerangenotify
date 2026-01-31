@@ -144,11 +144,13 @@ type MonitoringConfig struct {
 
 // SecurityConfig contains security-related configuration
 type SecurityConfig struct {
-	JWTSecret       string     `mapstructure:"jwt_secret"`
-	APIKeyHeader    string     `mapstructure:"api_key_header"`
-	RateLimit       int        `mapstructure:"rate_limit"`
-	RateLimitWindow int        `mapstructure:"rate_limit_window"`
-	CORS            CORSConfig `mapstructure:"cors"`
+	JWTSecret            string     `mapstructure:"jwt_secret"`
+	JWTAccessExpiration  int        `mapstructure:"jwt_access_expiration"`  // in minutes
+	JWTRefreshExpiration int        `mapstructure:"jwt_refresh_expiration"` // in minutes
+	APIKeyHeader         string     `mapstructure:"api_key_header"`
+	RateLimit            int        `mapstructure:"rate_limit"`
+	RateLimitWindow      int        `mapstructure:"rate_limit_window"`
+	CORS                 CORSConfig `mapstructure:"cors"`
 }
 
 // CORSConfig contains CORS configuration
@@ -201,6 +203,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("monitoring.namespace", "freerange")
 
 	viper.SetDefault("security.api_key_header", "X-API-Key")
+	viper.SetDefault("security.jwt_secret", "your-secret-key-change-in-production")
+	viper.SetDefault("security.jwt_access_expiration", 15)     // 15 minutes
+	viper.SetDefault("security.jwt_refresh_expiration", 10080) // 7 days
 	viper.SetDefault("security.rate_limit", 1000)
 	viper.SetDefault("security.rate_limit_window", 3600)
 

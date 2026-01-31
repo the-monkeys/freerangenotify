@@ -23,17 +23,13 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 // setupPublicRoutes configures public routes
 func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
-	// Application management (typically used by admins, but not protected by API key in this example)
-	// In production, you might want to add admin authentication here
-	apps := v1.Group("/apps")
-	apps.Post("/", c.ApplicationHandler.Create)
-	apps.Get("/:id", c.ApplicationHandler.GetByID)
-	apps.Put("/:id", c.ApplicationHandler.Update)
-	apps.Delete("/:id", c.ApplicationHandler.Delete)
-	apps.Get("/", c.ApplicationHandler.List)
-	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
-	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
-	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
+	// Authentication routes (public)
+	auth := v1.Group("/auth")
+	auth.Post("/register", c.AuthHandler.Register)
+	auth.Post("/login", c.AuthHandler.Login)
+	auth.Post("/refresh", c.AuthHandler.RefreshToken)
+	auth.Post("/forgot-password", c.AuthHandler.ForgotPassword)
+	auth.Post("/reset-password", c.AuthHandler.ResetPassword)
 
 	// Health check
 	v1.Get("/health", c.HealthHandler.Check)
@@ -103,6 +99,28 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 // setupAdminRoutes configures administrative routes
 func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	admin := v1.Group("/admin")
+
+	// JWT-protected admin routes
+	jwtAuth := middleware.JWTAuth(c.AuthService, c.Logger)
+	adminAuth := admin.Group("")
+	adminAuth.Use(jwtAuth)
+
+	// Auth-protected routes
+	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
+	adminAuth.Post("/logout", c.AuthHandler.Logout)
+	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
+
+	// Application management routes (JWT protected for admin dashboard)
+	apps := v1.Group("/apps")
+	apps.Use(jwtAuth)
+	apps.Post("/", c.ApplicationHandler.Create)
+	apps.Get("/", c.ApplicationHandler.List)
+	apps.Get("/:id", c.ApplicationHandler.GetByID)
+	apps.Put("/:id", c.ApplicationHandler.Update)
+	apps.Delete("/:id", c.ApplicationHandler.Delete)
+	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
+	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
+	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
 
 	// Queue management
 	queues := admin.Group("/queues")

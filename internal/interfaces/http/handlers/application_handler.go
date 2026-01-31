@@ -30,6 +30,12 @@ func NewApplicationHandler(service usecases.ApplicationService, v *validator.Val
 
 // Create handles POST /v1/apps
 func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	var req dto.CreateApplicationRequest
 	if err := c.BodyParser(&req); err != nil {
 		return errors.BadRequest("Invalid request body")
@@ -41,6 +47,7 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 
 	app := &application.Application{
 		AppName:     req.AppName,
+		AdminUserID: userID,
 		Description: req.Description,
 		WebhookURL:  req.WebhookURL,
 		Webhooks:    req.Webhooks,
@@ -63,6 +70,12 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 
 // GetByID handles GET /v1/apps/:id
 func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
@@ -71,6 +84,11 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	app, err := h.service.GetByID(c.Context(), appID)
 	if err != nil {
 		return err
+	}
+
+	// Verify ownership
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	response := dto.ToApplicationResponse(app)
@@ -87,6 +105,12 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 
 // Update handles PUT /v1/apps/:id
 func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
@@ -105,6 +129,11 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	app, err := h.service.GetByID(c.Context(), appID)
 	if err != nil {
 		return err
+	}
+
+	// Verify ownership
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	// Update fields
@@ -142,9 +171,24 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 
 // Delete handles DELETE /v1/apps/:id
 func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
+	}
+
+	// Verify ownership
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return err
+	}
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	if err := h.service.Delete(c.Context(), appID); err != nil {
@@ -159,6 +203,12 @@ func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
 
 // List handles GET /v1/apps
 func (h *ApplicationHandler) List(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	// Parse query parameters
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size", "20"))
@@ -172,10 +222,12 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 
 	offset := (page - 1) * pageSize
 
+	// Always filter by current user's applications
 	filter := application.ApplicationFilter{
-		AppName: c.Query("app_name"),
-		Limit:   pageSize,
-		Offset:  offset,
+		AppName:     c.Query("app_name"),
+		AdminUserID: userID,
+		Limit:       pageSize,
+		Offset:      offset,
 	}
 
 	apps, total, err := h.service.List(c.Context(), filter)
@@ -206,9 +258,24 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 
 // RegenerateAPIKey handles POST /v1/apps/:id/regenerate-key
 func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
+	}
+
+	// Verify ownership
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return err
+	}
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	newAPIKey, err := h.service.RegenerateAPIKey(c.Context(), appID)
@@ -227,9 +294,24 @@ func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
 
 // UpdateSettings handles PUT /v1/apps/:id/settings
 func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
+	}
+
+	// Verify ownership
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return err
+	}
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	var req dto.UpdateSettingsRequest
@@ -303,9 +385,24 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 
 // GetSettings handles GET /v1/apps/:id/settings
 func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
+	// Get admin user ID from JWT context
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app_id is required")
+	}
+
+	// Verify ownership
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return err
+	}
+	if app.AdminUserID != userID {
+		return errors.Forbidden("You do not have access to this application")
 	}
 
 	settings, err := h.service.GetSettings(c.Context(), appID)

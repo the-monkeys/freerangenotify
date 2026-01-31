@@ -119,6 +119,17 @@ func Unauthorized(message string) *AppError {
 	}
 }
 
+// Forbidden creates a forbidden error
+func Forbidden(message string) *AppError {
+	return &AppError{
+		Category:  CategoryAuth,
+		Severity:  SeverityMedium,
+		Message:   message,
+		Code:      string(ErrCodeForbidden),
+		Retryable: false,
+	}
+}
+
 // Internal creates an internal error wrapping another error
 func Internal(message string, err error) *AppError {
 	return &AppError{
