@@ -810,13 +810,13 @@ const WebhookTargetSelect: React.FC<{
     value: string[];
     onChange: (value: string[]) => void;
 }> = ({ targets, value, onChange }) => {
-    const toggleTarget = (name: string) => {
-        if (value.includes(name)) {
-            onChange(value.filter(t => t !== name));
-            return;
-        }
-        onChange([...value, name]);
-    };
+    // const toggleTarget = (name: string) => {
+    //     if (value.includes(name)) {
+    //         onChange(value.filter(t => t !== name));
+    //         return;
+    //     }
+    //     onChange([...value, name]);
+    // };
 
     return (
         <div className="space-y-2">
