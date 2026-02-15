@@ -3,6 +3,14 @@ import { notificationsAPI, usersAPI, templatesAPI } from '../services/api';
 import type { Notification, NotificationRequest, User, Template } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger
+} from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
@@ -18,34 +26,33 @@ interface AppNotificationsProps {
     webhooks?: Record<string, string>;
 }
 
-const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks }) => {
+const createEmptyForm = (): NotificationRequest => ({
+    user_id: '',
+    channel: 'email',
+    priority: 'normal',
+    title: '',
+    body: '',
+    template_id: '',
+    webhook_url: '',
+    data: {},
+    scheduled_at: undefined,
+    recurrence: undefined
+});
+
+const parseCustomData = (raw: string) => {
+    if (!raw) return {};
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+};
+
+const useNotificationData = (apiKey: string) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showSendForm, setShowSendForm] = useState(false);
-    const [showBroadcastForm, setShowBroadcastForm] = useState(false);
-    const [formData, setFormData] = useState<NotificationRequest>({
-        user_id: '',
-        channel: 'email',
-        priority: 'normal',
-        title: '',
-        body: '',
-        template_id: '',
-        webhook_url: '',
-        data: {},
-        scheduled_at: undefined,
-        recurrence: undefined
-    });
-
-    const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
-    const [dataInput, setDataInput] = useState('');
-
-    useEffect(() => {
-        if (apiKey) {
-            fetchData();
-        }
-    }, [apiKey]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -65,6 +72,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         }
     };
 
+    useEffect(() => {
+        if (apiKey) {
+            fetchData();
+        }
+    }, [apiKey]);
+
+    return { notifications, users, templates, loading, refresh: fetchData };
+};
+
+const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks }) => {
+    const { notifications, users, templates, loading, refresh } = useNotificationData(apiKey);
+    const [showSendForm, setShowSendForm] = useState(false);
+    const [showBroadcastForm, setShowBroadcastForm] = useState(false);
+    const [formData, setFormData] = useState<NotificationRequest>(createEmptyForm());
+    const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const [dataInput, setDataInput] = useState('');
     const [confirmingBroadcast, setConfirmingBroadcast] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -78,16 +102,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         setIsSubmitting(true);
 
         try {
-            // Parse custom data if any
-            let customData = {};
-            if (dataInput) {
-                try {
-                    customData = JSON.parse(dataInput);
-                } catch (e) {
-                    alert('Invalid JSON in custom data');
-                    setIsSubmitting(false);
-                    return;
-                }
+            const customData = parseCustomData(dataInput);
+            if (customData === null) {
+                toast.error('Invalid JSON in custom data');
+                setIsSubmitting(false);
+                return;
             }
 
             await notificationsAPI.broadcast(apiKey, {
@@ -101,25 +120,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             });
 
             setShowBroadcastForm(false);
-            setFormData({
-                user_id: '',
-                channel: 'email',
-                priority: 'normal',
-                title: '',
-                body: '',
-                template_id: '',
-                webhook_url: '',
-                data: {},
-                scheduled_at: undefined,
-                recurrence: undefined
-            });
+            setFormData(createEmptyForm());
             setDataInput('');
-            fetchData();
-            // Show success message (using a simple alert for now, but could be a toast)
-            setTimeout(() => alert('Broadcast initiated successfully!'), 100);
+            refresh();
+            toast.success('Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
-            alert('Failed to broadcast notification');
+            toast.error('Failed to broadcast notification');
         } finally {
             setIsSubmitting(false);
         }
@@ -128,15 +135,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
     const handleSendNotification = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            // Parse custom data if any
-            let customData = {};
-            if (dataInput) {
-                try {
-                    customData = JSON.parse(dataInput);
-                } catch (e) {
-                    toast.error('Invalid JSON in custom data');
-                    return;
-                }
+            const customData = parseCustomData(dataInput);
+            if (customData === null) {
+                toast.error('Invalid JSON in custom data');
+                return;
+            }
+
+            const userIds = selectedUsers.length > 0 ? selectedUsers : (formData.user_id ? [formData.user_id] : []);
+            const requiresUser = formData.channel !== 'webhook';
+            if (requiresUser && userIds.length === 0) {
+                toast.error('Select at least one user.');
+                return;
             }
 
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
@@ -149,27 +158,26 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                     })
                 );
                 await Promise.all(sendPromises);
+            } else if (userIds.length > 1) {
+                const sendPromises = userIds.map(userId =>
+                    notificationsAPI.send(apiKey, {
+                        ...formData,
+                        user_id: userId,
+                        data: customData
+                    })
+                );
+                await Promise.all(sendPromises);
             } else {
                 // Single send (default behavior)
-                await notificationsAPI.send(apiKey, { ...formData, data: customData });
+                await notificationsAPI.send(apiKey, { ...formData, user_id: userIds[0] || formData.user_id, data: customData });
             }
 
             setShowSendForm(false);
-            setFormData({
-                user_id: '',
-                channel: 'email',
-                priority: 'normal',
-                title: '',
-                body: '',
-                template_id: '',
-                webhook_url: '',
-                data: {},
-                scheduled_at: undefined,
-                recurrence: undefined
-            });
+            setFormData(createEmptyForm());
+            setSelectedUsers([]);
             setSelectedTargets([]);
             setDataInput('');
-            fetchData();
+            refresh();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
@@ -223,23 +231,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="recipient">
-                                    Recipient (User)
+                                    Recipients (Users)
                                     {formData.channel === 'webhook' && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
                                 </Label>
-                                <Select
-                                    value={formData.user_id}
-                                    onValueChange={(value) => setFormData({ ...formData, user_id: value })}
-                                    required={formData.channel !== 'webhook'}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder={formData.channel === 'webhook' ? 'No user (Anonymous)' : 'Select a user...'} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {(users || []).map(u => (
-                                            <SelectItem key={u.user_id} value={u.user_id}>{u.email || u.user_id}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <UserMultiSelect
+                                    users={users}
+                                    value={selectedUsers}
+                                    onChange={setSelectedUsers}
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="template">Template (Optional)</Label>
@@ -261,7 +260,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                 <Label htmlFor="channel">Channel</Label>
                                 <Select
                                     value={formData.channel}
-                                    onValueChange={(value) => setFormData({ ...formData, channel: value as any })}
+                                    onValueChange={(value) => {
+                                        const next = value as any;
+                                        setFormData({
+                                            ...formData,
+                                            channel: next,
+                                            webhook_url: next === 'webhook' ? formData.webhook_url : ''
+                                        });
+                                        if (next !== 'webhook') {
+                                            setSelectedTargets([]);
+                                        }
+                                    }}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
@@ -281,24 +290,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
                                 <div className="space-y-2 md:col-span-2">
                                     <Label>Webhook Targets (Select one or more)</Label>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-gray-200 rounded bg-white">
-                                        {Object.keys(webhooks).map(name => (
-                                            <div key={name} className="flex items-center space-x-2">
-                                                <Checkbox
-                                                    id={`webhook-${name}`}
-                                                    checked={selectedTargets.includes(name)}
-                                                    onCheckedChange={(checked) => {
-                                                        if (checked) {
-                                                            setSelectedTargets([...selectedTargets, name]);
-                                                        } else {
-                                                            setSelectedTargets(selectedTargets.filter(t => t !== name));
-                                                        }
-                                                    }}
-                                                />
-                                                <Label htmlFor={`webhook-${name}`} className="text-sm cursor-pointer">{name}</Label>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <WebhookTargetSelect
+                                        targets={Object.keys(webhooks)}
+                                        value={selectedTargets}
+                                        onChange={setSelectedTargets}
+                                    />
                                     <p className="text-xs text-gray-500">
                                         If multiple targets are selected, a separate notification will be sent to each.
                                     </p>
@@ -315,7 +311,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                         value={formData.webhook_url || ''}
                                         onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
                                         placeholder="https://discord.com/api/webhooks/..."
-                                        required={!formData.user_id && selectedTargets.length === 0}
+                                        required={selectedUsers.length === 0 && selectedTargets.length === 0}
                                     />
                                     <p className="text-xs text-gray-500">
                                         Use this to send to an ad-hoc URL not in the saved list.
@@ -453,7 +449,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                         </div>
 
                         <div className="flex justify-end mt-6">
-                            <Button type="submit">Send / Schedule Notification</Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setFormData(createEmptyForm());
+                                        setSelectedUsers([]);
+                                        setSelectedTargets([]);
+                                        setDataInput('');
+                                    }}
+                                >
+                                    Reset
+                                </Button>
+                                <Button type="submit">Send / Schedule Notification</Button>
+                            </div>
                         </div>
                     </form>
                 )}
@@ -488,7 +498,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                         <Label htmlFor="broadcastChannel">Channel</Label>
                                         <Select
                                             value={formData.channel}
-                                            onValueChange={(val) => setFormData({ ...formData, channel: val as any })}
+                                            onValueChange={(val) => {
+                                                const next = val as any;
+                                                setFormData({
+                                                    ...formData,
+                                                    channel: next,
+                                                    webhook_url: next === 'webhook' ? formData.webhook_url : ''
+                                                });
+                                                if (next !== 'webhook') {
+                                                    setSelectedTargets([]);
+                                                }
+                                            }}
                                         >
                                             <SelectTrigger id="broadcastChannel">
                                                 <SelectValue />
@@ -670,3 +690,161 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
 };
 
 export default AppNotifications;
+
+
+const UserMultiSelect: React.FC<{
+    users: User[] | undefined;
+    value: string[];
+    onChange: (value: string[]) => void;
+}> = ({ users, value, onChange }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isOpen, setIsOpen] = useState(false);
+        const normalizedQuery = searchTerm.trim().toLowerCase();
+    const filteredUsers = (users || []).filter(u => {
+        if (!normalizedQuery) return true;
+        const email = u.email?.toLowerCase() || '';
+        const id = u.user_id.toLowerCase();
+        return email.includes(normalizedQuery) || id.includes(normalizedQuery);
+    });
+    const selectedUsers = value.map(id => users?.find(u => u.user_id === id)).filter(Boolean) as User[];
+    const toggleUser = (userId: string) => {
+        if (value.includes(userId)) {
+            onChange(value.filter(id => id !== userId));
+            return;
+        }
+        onChange([...value, userId]);
+    };
+    const totalUsers = users?.length || 0;
+    const selectedCount = value.length;
+    const selectorLabel = selectedCount === 0
+        ? 'Select users'
+        : `${selectedCount} user${selectedCount === 1 ? '' : 's'} selected`;
+
+    return (
+        <div className="space-y-2">
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                <DialogTrigger asChild>
+                    <Button variant="outline" type="button" className="w-full justify-between">
+                        <span className="truncate text-left">{selectorLabel}</span>
+                        <span className="text-xs text-gray-500">{selectedCount}/{totalUsers}</span>
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Select users</DialogTitle>
+                        <DialogDescription>
+                            Search by email or user ID. Select one or more recipients.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                        <Input
+                            type="text"
+                            placeholder="Search by email or user ID"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+                            <span>Selected {selectedCount} of {totalUsers}</span>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    className="hover:text-gray-700"
+                                    onClick={() => onChange(filteredUsers.map(u => u.user_id))}
+                                >
+                                    Select all (filtered)
+                                </button>
+                                <button
+                                    type="button"
+                                    className="hover:text-gray-700"
+                                    onClick={() => onChange([])}
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto rounded border border-gray-200">
+                            {filteredUsers.length === 0 ? (
+                                <p className="text-gray-500 text-sm p-3">No users found.</p>
+                            ) : (
+                                <div className="divide-y divide-gray-100">
+                                    {filteredUsers.map(u => (
+                                        <div key={u.user_id} className="flex items-center justify-between px-3 py-2">
+                                            <div className="min-w-0">
+                                                <div className="font-medium text-gray-900 truncate">{u.email || 'No email'}</div>
+                                                <div className="text-xs text-gray-500 truncate">{u.user_id}</div>
+                                            </div>
+                                            <Checkbox
+                                                checked={value.includes(u.user_id)}
+                                                onCheckedChange={() => toggleUser(u.user_id)}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        {selectedUsers.length > 0 && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                                {selectedUsers.map(user => (
+                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
+                                        {user.email || user.user_id}
+                                        <button
+                                            type="button"
+                                            className="text-blue-500 hover:text-blue-700"
+                                            onClick={() => toggleUser(user.user_id)}
+                                        >
+                                            Remove
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}
+
+const WebhookTargetSelect: React.FC<{
+    targets: string[];
+    value: string[];
+    onChange: (value: string[]) => void;
+}> = ({ targets, value, onChange }) => {
+    // const toggleTarget = (name: string) => {
+    //     if (value.includes(name)) {
+    //         onChange(value.filter(t => t !== name));
+    //         return;
+    //     }
+    //     onChange([...value, name]);
+    // };
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Selected {value.length} of {targets.length}</span>
+                <div className="flex gap-2">
+                    <button type="button" className="hover:text-gray-700" onClick={() => onChange(targets)}>Select all</button>
+                    <button type="button" className="hover:text-gray-700" onClick={() => onChange([])}>Clear</button>
+                </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-gray-200 rounded bg-white">
+                {targets.map(name => (
+                    <div key={name} className="flex items-center space-x-2">
+                        <Checkbox
+                            id={`webhook-${name}`}
+                            checked={value.includes(name)}
+                            onCheckedChange={(checked) => {
+                                if (checked) {
+                                    onChange([...value, name]);
+                                } else {
+                                    onChange(value.filter(t => t !== name));
+                                }
+                            }}
+                        />
+                        <Label htmlFor={`webhook-${name}`} className="text-sm cursor-pointer">{name}</Label>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
