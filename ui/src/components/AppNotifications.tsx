@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
+import { Switch } from './ui/switch';
 import { toast } from 'sonner';
 
 interface AppNotificationsProps {
@@ -85,53 +86,13 @@ const useNotificationData = (apiKey: string) => {
 
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks }) => {
     const { notifications, users, templates, loading, refresh } = useNotificationData(apiKey);
-    const [showSendForm, setShowSendForm] = useState(false);
-    const [showBroadcastForm, setShowBroadcastForm] = useState(false);
+    const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
+    const [sendToAllUsers, setSendToAllUsers] = useState(false);
     const [formData, setFormData] = useState<NotificationRequest>(resetForm());
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const [dataInput, setDataInput] = useState('');
-    const [confirmingBroadcast, setConfirmingBroadcast] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
-    const handleBroadcastSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        setConfirmingBroadcast(true);
-    };
-
-    const executeBroadcast = async () => {
-        setConfirmingBroadcast(false);
-        setIsSubmitting(true);
-
-        try {
-            const customData = parseCustomData(dataInput);
-            if (customData === null) {
-                toast.error('Invalid JSON in custom data');
-                setIsSubmitting(false);
-                return;
-            }
-
-            await notificationsAPI.broadcast(apiKey, {
-                channel: formData.channel,
-                priority: formData.priority,
-                title: formData.title,
-                body: formData.body,
-                template_id: formData.template_id || undefined,
-                data: customData,
-                scheduled_at: formData.scheduled_at
-            });
-
-            setShowBroadcastForm(false);
-            toast.success('Broadcast initiated successfully.');
-        } catch (error) {
-            console.error('Failed to broadcast notification:', error);
-            toast.error('Failed to send broadcast notification');
-            refresh();
-        } finally {
-            handleReset();
-            setIsSubmitting(false);
-        }
-    };
 
     const handleSendNotification = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -142,41 +103,53 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                 return;
             }
 
-            const userIds = selectedUsers.length > 0 ? selectedUsers : (formData.user_id ? [formData.user_id] : []);
-            const requiresUser = formData.channel !== 'webhook';
-            if (requiresUser && userIds.length === 0) {
-                toast.error('Select at least one user.');
-                return;
-            }
-
-            if (formData.channel === 'webhook' && selectedTargets.length > 0) {
-                // Multi-target sending: send separate requests for each target
-                const sendPromises = selectedTargets.map(target =>
-                    notificationsAPI.send(apiKey, {
-                        ...formData,
-                        webhook_target: target,
-                        data: customData
-                    })
-                );
-                await Promise.all(sendPromises);
-            } else if (userIds.length > 1) {
-                const sendPromises = userIds.map(userId =>
-                    notificationsAPI.send(apiKey, {
-                        ...formData,
-                        user_id: userId,
-                        data: customData
-                    })
-                );
-                await Promise.all(sendPromises);
+            if (sendToAllUsers) {
+                await notificationsAPI.broadcast(apiKey, {
+                    channel: formData.channel,
+                    priority: formData.priority,
+                    title: formData.title,
+                    body: formData.body,
+                    template_id: formData.template_id || undefined,
+                    data: customData,
+                    scheduled_at: formData.scheduled_at
+                });
+                toast.success('Broadcast initiated successfully.');
             } else {
-                // Single send (default behavior)
-                await notificationsAPI.send(apiKey, { ...formData, user_id: userIds[0] || formData.user_id, data: customData });
+                const userIds = selectedUsers.length > 0 ? selectedUsers : (formData.user_id ? [formData.user_id] : []);
+                const requiresUser = formData.channel !== 'webhook';
+                if (requiresUser && userIds.length === 0) {
+                    toast.error('Select at least one user.');
+                    return;
+                }
+
+                if (formData.channel === 'webhook' && selectedTargets.length > 0) {
+                    const sendPromises = selectedTargets.map(target =>
+                        notificationsAPI.send(apiKey, {
+                            ...formData,
+                            webhook_target: target,
+                            data: customData
+                        })
+                    );
+                    await Promise.all(sendPromises);
+                } else if (userIds.length > 1) {
+                    const sendPromises = userIds.map(userId =>
+                        notificationsAPI.send(apiKey, {
+                            ...formData,
+                            user_id: userId,
+                            data: customData
+                        })
+                    );
+                    await Promise.all(sendPromises);
+                } else {
+                    await notificationsAPI.send(apiKey, { ...formData, user_id: userIds[0] || formData.user_id, data: customData });
+                }
+
+                toast.success('Notification(s) sent successfully!');
             }
 
-            setShowSendForm(false);
+            setIsSendDialogOpen(false);
             handleReset();
             refresh();
-            toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
             toast.error('Failed to send notification');
@@ -188,6 +161,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         setSelectedUsers([]);
         setSelectedTargets([]);
         setDataInput('');
+        setSendToAllUsers(false);
     }
 
     function handleChannelChange(value: string) {
@@ -198,6 +172,18 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             webhook_url: next === 'webhook' ? formData.webhook_url : ''
         });
         if (next !== 'webhook') {
+            setSelectedTargets([]);
+        }
+    }
+
+    function applyTemplateSelection(templateId: string | undefined) {
+        const selectedTemplate = (templates || []).find(t => t.id === templateId);
+        setFormData(prev => ({
+            ...prev,
+            template_id: templateId || '',
+            channel: selectedTemplate?.channel ? (selectedTemplate.channel as any) : prev.channel
+        }));
+        if (selectedTemplate?.channel && selectedTemplate.channel !== TemplateChannel.WEBHOOK) {
             setSelectedTargets([]);
         }
     }
@@ -220,417 +206,275 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             <CardHeader>
                 <div className="flex justify-between items-center">
                     <CardTitle>Notification History</CardTitle>
-                    <div className="flex gap-2">
-                        <Button
-                            variant={showSendForm ? "outline" : "default"}
-                            onClick={() => {
-                                if (showBroadcastForm) setShowBroadcastForm(false);
-                                setShowSendForm(!showSendForm);
-                            }}
-                        >
-                            {showSendForm ? 'Cancel' : 'Send Notification'}
-                        </Button>
-                        <Button
-                            variant={showBroadcastForm ? "outline" : "secondary"}
-                            onClick={() => {
-                                if (showSendForm) setShowSendForm(false);
-                                setShowBroadcastForm(!showBroadcastForm);
-                            }}
-                        >
-                            {showBroadcastForm ? 'Cancel' : 'Broadcast to All'}
-                        </Button>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <Dialog open={isSendDialogOpen} onOpenChange={setIsSendDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button variant="default">Send Notification</Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-[90vw] sm:max-w-6xl">
+                                <DialogHeader>
+                                    <DialogTitle>Send Notification</DialogTitle>
+                                    <DialogDescription>
+                                        Choose recipients, content, and delivery options.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <Card>
+                                    <CardContent className="pt-6">
+                                        <form onSubmit={handleSendNotification} className="space-y-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <Label htmlFor="recipient">
+                                                            Recipients (Users)
+                                                            {formData.channel === TemplateChannel.WEBHOOK && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
+                                                        </Label>
+                                                        <div className="flex items-center gap-2">
+                                                            <Switch
+                                                                checked={sendToAllUsers}
+                                                                onCheckedChange={(checked) => {
+                                                                    setSendToAllUsers(checked);
+                                                                    if (checked) {
+                                                                        setSelectedUsers([]);
+                                                                    }
+                                                                }}
+                                                                size="sm"
+                                                            />
+                                                            <span className="text-xs text-gray-600">Send to all users</span>
+                                                        </div>
+                                                    </div>
+                                                    <UserMultiSelect
+                                                        users={users}
+                                                        value={selectedUsers}
+                                                        onChange={setSelectedUsers}
+                                                        disabled={sendToAllUsers}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="template">Template (Optional)</Label>
+                                                    <Select
+                                                        value={formData.template_id || 'none'}
+                                                        onValueChange={(value) => applyTemplateSelection(value === 'none' ? undefined : value)}
+                                                    >
+                                                        <SelectTrigger id="template">
+                                                            <SelectValue placeholder="No template (use manual content)" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="none">No template (manual content)</SelectItem>
+                                                            {(templates || []).map(t => (
+                                                                <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="channel">Channel</Label>
+                                                    <Select
+                                                        value={formData.channel}
+                                                        onValueChange={(value) => handleChannelChange(value)}
+                                                        disabled={!!formData.template_id}
+                                                    >
+                                                        <SelectTrigger id="channel">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value={TemplateChannel.EMAIL}>Email</SelectItem>
+                                                            <SelectItem value={TemplateChannel.PUSH}>Push</SelectItem>
+                                                            <SelectItem value={TemplateChannel.SMS}>SMS</SelectItem>
+                                                            <SelectItem value={TemplateChannel.WEBHOOK}>Webhook</SelectItem>
+                                                            <SelectItem value={TemplateChannel.IN_APP}>In-App</SelectItem>
+                                                            <SelectItem value={TemplateChannel.SSE}>SSE (Server-Sent Events)</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {formData.template_id && (
+                                                        <p className="text-xs text-gray-500">Channel is set by the selected template.</p>
+                                                    )}
+                                                </div>
+
+                                                {formData.channel === TemplateChannel.WEBHOOK && webhooks && Object.keys(webhooks).length > 0 && (
+                                                    <div className="space-y-2 md:col-span-2">
+                                                        <Label>Webhook Targets (Select one or more)</Label>
+                                                        <WebhookTargetSelect
+                                                            targets={Object.keys(webhooks)}
+                                                            value={selectedTargets}
+                                                            onChange={setSelectedTargets}
+                                                        />
+                                                        <p className="text-xs text-gray-500">
+                                                            If multiple targets are selected, a separate notification will be sent to each.
+                                                        </p>
+                                                    </div>
+                                                )}
+
+                                                {formData.channel === TemplateChannel.WEBHOOK && (
+                                                    <div className="space-y-2 md:col-span-2">
+                                                        <Label htmlFor="webhookUrl">Webhook URL Override (Optional)</Label>
+                                                        <Input
+                                                            id="webhookUrl"
+                                                            type="url"
+                                                            value={formData.webhook_url || ''}
+                                                            onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
+                                                            placeholder="https://discord.com/api/webhooks/..."
+                                                            required={selectedUsers.length === 0 && selectedTargets.length === 0}
+                                                        />
+                                                        <p className="text-xs text-gray-500">
+                                                            Use this to send to an ad-hoc URL not in the saved list.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="priority">Priority</Label>
+                                                    <Select
+                                                        value={formData.priority}
+                                                        onValueChange={(value) => setFormData({ ...formData, priority: value as any })}
+                                                    >
+                                                        <SelectTrigger id="priority">
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value={NotificationPriority.LOW}>Low</SelectItem>
+                                                            <SelectItem value={NotificationPriority.NORMAL}>Normal</SelectItem>
+                                                            <SelectItem value={NotificationPriority.HIGH}>High</SelectItem>
+                                                            <SelectItem value={NotificationPriority.CRITICAL}>Critical</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="title">Title</Label>
+                                                <Input
+                                                    id="title"
+                                                    type="text"
+                                                    value={formData.title}
+                                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                                    required
+                                                    placeholder="Notification title"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="body">Body / Manual Content</Label>
+                                                <Textarea
+                                                    id="body"
+                                                    value={formData.body}
+                                                    onChange={(e) => setFormData({ ...formData, body: e.target.value })}
+                                                    required={!formData.template_id}
+                                                    placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
+                                                />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <Label htmlFor="customData">Custom Data (JSON)</Label>
+                                                <Textarea
+                                                    id="customData"
+                                                    className="font-mono"
+                                                    value={dataInput}
+                                                    onChange={(e) => setDataInput(e.target.value)}
+                                                    placeholder='{ "name": "John Doe" }'
+                                                />
+                                            </div>
+
+                                            <div className="space-y-4 pt-4 border-t border-gray-100">
+                                                <h4 className="text-sm font-semibold text-blue-600">Scheduled Delivery (Optional)</h4>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="scheduledAt">Scheduled Time (Future)</Label>
+                                                        <Input
+                                                            id="scheduledAt"
+                                                            type="datetime-local"
+                                                            value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                                            }}
+                                                        />
+                                                        <p className="text-xs text-gray-500">
+                                                            Leave empty for immediate delivery.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="recurrenceCron">Recurrence Cron (e.g. 0 0 * * *)</Label>
+                                                        <Input
+                                                            id="recurrenceCron"
+                                                            type="text"
+                                                            value={formData.recurrence?.cron_expression || ''}
+                                                            onChange={(e) => setFormData({
+                                                                ...formData,
+                                                                recurrence: e.target.value ? {
+                                                                    ...formData.recurrence || { cron_expression: '' },
+                                                                    cron_expression: e.target.value
+                                                                } : undefined
+                                                            })}
+                                                            placeholder="Cron expression"
+                                                        />
+                                                    </div>
+
+                                                    {formData.recurrence && (
+                                                        <>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="recurrenceEnd">Ends At (Optional)</Label>
+                                                                <Input
+                                                                    id="recurrenceEnd"
+                                                                    type="datetime-local"
+                                                                    value={formData.recurrence.end_date?.substring(0, 16) || ''}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            recurrence: {
+                                                                                ...formData.recurrence!,
+                                                                                end_date: val ? new Date(val).toISOString() : undefined
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="recurrenceCount">Max Occurrences (Optional)</Label>
+                                                                <Input
+                                                                    id="recurrenceCount"
+                                                                    type="number"
+                                                                    value={formData.recurrence.count || ''}
+                                                                    onChange={(e) => setFormData({
+                                                                        ...formData,
+                                                                        recurrence: {
+                                                                            ...formData.recurrence!,
+                                                                            count: parseInt(e.target.value) || undefined
+                                                                        }
+                                                                    })}
+                                                                    placeholder="e.g. 10"
+                                                                />
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-end mt-6">
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        onClick={() => {
+                                                            handleReset();
+                                                            setIsSendDialogOpen(false);
+                                                        }}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                    <Button type="submit">Send / Schedule Notification</Button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </CardContent>
+                                </Card>
+                            </DialogContent>
+                        </Dialog>
+
                     </div>
                 </div>
             </CardHeader>
             <CardContent>
-                {showSendForm && (
-                    <form onSubmit={handleSendNotification} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="recipient">
-                                    Recipients (Users)
-                                    {formData.channel === TemplateChannel.WEBHOOK && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
-                                </Label>
-                                <UserMultiSelect
-                                    users={users}
-                                    value={selectedUsers}
-                                    onChange={setSelectedUsers}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="template">Template (Optional)</Label>
-                                <Select
-                                    value={formData.template_id || ''}
-                                    onValueChange={(value) => setFormData({ ...formData, template_id: value })}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="No template (use manual content)" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {(templates || []).map(t => (
-                                            <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="channel">Channel</Label>
-                                <Select
-                                    value={formData.channel}
-                                    onValueChange={(value) => {
-                                        handleChannelChange(value);
-                                    }}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value={TemplateChannel.EMAIL}>Email</SelectItem>
-                                        <SelectItem value={TemplateChannel.PUSH}>Push</SelectItem>
-                                        <SelectItem value={TemplateChannel.SMS}>SMS</SelectItem>
-                                        <SelectItem value={TemplateChannel.WEBHOOK}>Webhook</SelectItem>
-                                        <SelectItem value={TemplateChannel.IN_APP}>In-App</SelectItem>
-                                        <SelectItem value={TemplateChannel.SSE}>SSE (Server-Sent Events)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            {/* Webhook Targets Selection - Multi-select */}
-                            {formData.channel === TemplateChannel.WEBHOOK && webhooks && Object.keys(webhooks).length > 0 && (
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label>Webhook Targets (Select one or more)</Label>
-                                    <WebhookTargetSelect
-                                        targets={Object.keys(webhooks)}
-                                        value={selectedTargets}
-                                        onChange={setSelectedTargets}
-                                    />
-                                    <p className="text-xs text-gray-500">
-                                        If multiple targets are selected, a separate notification will be sent to each.
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Webhook URL Override Field */}
-                            {formData.channel === TemplateChannel.WEBHOOK && (
-                                <div className="space-y-2 md:col-span-2">
-                                    <Label htmlFor="webhookUrl">Webhook URL Override (Optional)</Label>
-                                    <Input
-                                        id="webhookUrl"
-                                        type="url"
-                                        value={formData.webhook_url || ''}
-                                        onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
-                                        placeholder="https://discord.com/api/webhooks/..."
-                                        required={selectedUsers.length === 0 && selectedTargets.length === 0}
-                                    />
-                                    <p className="text-xs text-gray-500">
-                                        Use this to send to an ad-hoc URL not in the saved list.
-                                    </p>
-                                </div>
-                            )}
-                            <div className="space-y-2">
-                                <Label htmlFor="priority">Priority</Label>
-                                <Select
-                                    value={formData.priority}
-                                    onValueChange={(value) => setFormData({ ...formData, priority: value as any })}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="low">Low</SelectItem>
-                                        <SelectItem value="normal">Normal</SelectItem>
-                                        <SelectItem value="high">High</SelectItem>
-                                        <SelectItem value="critical">Critical</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="title">Title</Label>
-                            <Input
-                                id="title"
-                                type="text"
-                                value={formData.title}
-                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                required
-                                placeholder="Notification title"
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="body">Body / Manual Content</Label>
-                            <Textarea
-                                id="body"
-                                value={formData.body}
-                                onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                                required={!formData.template_id}
-                                placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="customData">Custom Data (JSON)</Label>
-                            <Textarea
-                                id="customData"
-                                className="font-mono"
-                                value={dataInput}
-                                onChange={(e) => setDataInput(e.target.value)}
-                                placeholder='{ "name": "John Doe" }'
-                            />
-                        </div>
-
-                        <div className="space-y-4 pt-4 border-t border-gray-100">
-                            <h4 className="text-sm font-semibold text-blue-600">Scheduled Delivery (Optional)</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="scheduledAt">Scheduled Time (Future)</Label>
-                                    <Input
-                                        id="scheduledAt"
-                                        type="datetime-local"
-                                        value={formData.scheduled_at?.substring(0, 16) || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
-                                        }}
-                                    />
-                                    <p className="text-xs text-gray-500">
-                                        Leave empty for immediate delivery.
-                                    </p>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="recurrenceCron">Recurrence Cron (e.g. 0 0 * * *)</Label>
-                                    <Input
-                                        id="recurrenceCron"
-                                        type="text"
-                                        value={formData.recurrence?.cron_expression || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            recurrence: e.target.value ? {
-                                                ...formData.recurrence || { cron_expression: '' },
-                                                cron_expression: e.target.value
-                                            } : undefined
-                                        })}
-                                        placeholder="Cron expression"
-                                    />
-                                </div>
-
-                                {formData.recurrence && (
-                                    <>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="recurrenceEnd">Ends At (Optional)</Label>
-                                            <Input
-                                                id="recurrenceEnd"
-                                                type="datetime-local"
-                                                value={formData.recurrence.end_date?.substring(0, 16) || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setFormData({
-                                                        ...formData,
-                                                        recurrence: {
-                                                            ...formData.recurrence!,
-                                                            end_date: val ? new Date(val).toISOString() : undefined
-                                                        }
-                                                    });
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="recurrenceCount">Max Occurrences (Optional)</Label>
-                                            <Input
-                                                id="recurrenceCount"
-                                                type="number"
-                                                value={formData.recurrence.count || ''}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    recurrence: {
-                                                        ...formData.recurrence!,
-                                                        count: parseInt(e.target.value) || undefined
-                                                    }
-                                                })}
-                                                placeholder="e.g. 10"
-                                            />
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end mt-6">
-                            <div className="flex gap-2">
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={handleReset}
-                                >
-                                    Reset
-                                </Button>
-                                <Button type="submit">Send / Schedule Notification</Button>
-                            </div>
-                        </div>
-                    </form>
-                )}
-
-                {showBroadcastForm && (
-                    <Card className="mb-6 border-orange-200 bg-orange-50/30">
-                        <CardHeader>
-                            <CardTitle className="text-orange-800 text-lg">Broadcast to All Users</CardTitle>
-                            <p className="text-sm text-orange-600/80 mt-1">This will send a notification to ALL users of this application.</p>
-                        </CardHeader>
-                        <CardContent>
-                            <form onSubmit={handleBroadcastSubmit} className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="broadcastTemplate">Template (Optional)</Label>
-                                        <Select
-                                            value={formData.template_id || 'none'}
-                                            onValueChange={(val) => setFormData({ ...formData, template_id: val === 'none' ? undefined : val })}
-                                        >
-                                            <SelectTrigger id="broadcastTemplate">
-                                                <SelectValue placeholder="No template" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="none">No template (manual content)</SelectItem>
-                                                {(templates || []).map(t => (
-                                                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="broadcastChannel">Channel</Label>
-                                        <Select
-                                            value={formData.channel}
-                                            onValueChange={(val) => {
-                                                const next = val as any;
-                                                setFormData({
-                                                    ...formData,
-                                                    channel: next,
-                                                    webhook_url: next === 'webhook' ? formData.webhook_url : ''
-                                                });
-                                                if (next !== 'webhook') {
-                                                    setSelectedTargets([]);
-                                                }
-                                            }}
-                                        >
-                                            <SelectTrigger id="broadcastChannel">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="email">Email</SelectItem>
-                                                <SelectItem value="push">Push</SelectItem>
-                                                <SelectItem value="sms">SMS</SelectItem>
-                                                <SelectItem value="in_app">In-App</SelectItem>
-                                                <SelectItem value="sse">SSE</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="broadcastPriority">Priority</Label>
-                                        <Select
-                                            value={formData.priority}
-                                            onValueChange={(val) => setFormData({ ...formData, priority: val as any })}
-                                        >
-                                            <SelectTrigger id="broadcastPriority">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="low">Low</SelectItem>
-                                                <SelectItem value="normal">Normal</SelectItem>
-                                                <SelectItem value="high">High</SelectItem>
-                                                <SelectItem value="critical">Critical</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="broadcastTitle">Title</Label>
-                                    <Input
-                                        id="broadcastTitle"
-                                        value={formData.title}
-                                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                        required
-                                        placeholder="Broadcast title"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="broadcastBody">Body / Manual Content</Label>
-                                    <Textarea
-                                        id="broadcastBody"
-                                        value={formData.body}
-                                        onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                                        required={!formData.template_id}
-                                        className="min-h-25"
-                                        placeholder={formData.template_id ? "Optional (overridden by template)" : "Content"}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="broadcastData">Custom Data (JSON)</Label>
-                                    <Textarea
-                                        id="broadcastData"
-                                        className="font-mono text-xs"
-                                        value={dataInput}
-                                        onChange={(e) => setDataInput(e.target.value)}
-                                        placeholder='{ "key": "value" }'
-                                    />
-                                </div>
-
-                                <div className="flex justify-between items-center pt-2">
-                                    <div className="space-y-1">
-                                        <Label htmlFor="broadcastScheduled">Scheduled Time (Optional)</Label>
-                                        <Input
-                                            id="broadcastScheduled"
-                                            type="datetime-local"
-                                            className="w-auto text-sm"
-                                            value={formData.scheduled_at?.substring(0, 16) || ''}
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
-                                            }}
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        className="bg-orange-600 hover:bg-orange-700 text-white"
-                                        disabled={isSubmitting}
-                                    >
-                                        {isSubmitting ? 'Processing...' : '🚀 Send Broadcast'}
-                                    </Button>
-                                </div>
-
-                                {confirmingBroadcast && (
-                                    <div className="mt-4 p-4 border-2 border-orange-400 bg-white rounded-lg shadow-lg text-center animate-in fade-in zoom-in duration-200">
-                                        <h4 className="font-bold text-orange-800 mb-2">⚠️ Confirm Broadcast</h4>
-                                        <p className="text-sm text-gray-700 mb-4">Are you sure you want to send this to ALL users?<br />This action cannot be undone.</p>
-                                        <div className="flex justify-center gap-3">
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => setConfirmingBroadcast(false)}
-                                                type="button"
-                                                disabled={isSubmitting}
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                className="bg-orange-600 hover:bg-orange-700"
-                                                onClick={executeBroadcast}
-                                                type="button"
-                                                disabled={isSubmitting}
-                                            >
-                                                {isSubmitting ? 'Sending...' : 'Yes, Broadcast'}
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
-                            </form>
-                        </CardContent>
-                    </Card>
-                )}
-
                 {!notifications || notifications.length === 0 ? (
                     <p className="text-gray-500 text-center py-8 text-sm">No notification history found.</p>
                 ) : (
@@ -700,7 +544,8 @@ const UserMultiSelect: React.FC<{
     users: User[] | undefined;
     value: string[];
     onChange: (value: string[]) => void;
-}> = ({ users, value, onChange }) => {
+    disabled?: boolean;
+}> = ({ users, value, onChange, disabled = false }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     const normalizedQuery = searchTerm.trim().toLowerCase();
@@ -725,10 +570,10 @@ const UserMultiSelect: React.FC<{
         : `${selectedCount} user${selectedCount === 1 ? '' : 's'} selected`;
 
     return (
-        <div className="space-y-2">
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <div className={`space-y-2 ${disabled ? 'opacity-60' : ''}`}>
+            <Dialog open={isOpen} onOpenChange={(next) => { if (!disabled) setIsOpen(next); }}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" type="button" className="w-full justify-between">
+                    <Button variant="outline" type="button" className="w-full justify-between" disabled={disabled}>
                         <span className="truncate text-left">{selectorLabel}</span>
                         <span className="text-xs text-gray-500">{selectedCount}/{totalUsers}</span>
                     </Button>
@@ -746,6 +591,7 @@ const UserMultiSelect: React.FC<{
                             placeholder="Search by email or user ID"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
+                            disabled={disabled}
                         />
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
                             <span>Selected {selectedCount} of {totalUsers}</span>
