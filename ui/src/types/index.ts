@@ -12,6 +12,24 @@ export interface Application {
     // status is not in the DTO response shown, but was used in my AppDetail fake code. DTO has no status field.
 }
 
+// ============= Enums =============
+
+export enum TemplateChannel {
+    PUSH = 'push',
+    EMAIL = 'email',
+    SMS = 'sms',
+    WEBHOOK = 'webhook',
+    IN_APP = 'in_app',
+    SSE = 'sse'
+}
+
+export enum NotificationPriority {
+    LOW = 'low',
+    NORMAL = 'normal',
+    HIGH = 'high',
+    CRITICAL = 'critical'
+}
+
 // ============= Auth Types =============
 export interface AdminUser {
     user_id: string;
@@ -185,8 +203,8 @@ export interface Notification {
     notification_id: string;
     app_id: string;
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
-    priority: 'low' | 'normal' | 'high' | 'critical';
+    channel: TemplateChannel;
+    priority: NotificationPriority;
     status: string;
     content: {
         title: string;
@@ -203,8 +221,8 @@ export interface Notification {
 
 export interface NotificationRequest {
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
-    priority: 'low' | 'normal' | 'high' | 'critical';
+    channel: TemplateChannel;
+    priority: NotificationPriority;
     title: string;
     body: string;
     data?: Record<string, any>;
@@ -217,8 +235,8 @@ export interface NotificationRequest {
 
 export interface BulkNotificationRequest {
     user_ids: string[];
-    channel: string;
-    priority: string;
+    channel: TemplateChannel;
+    priority: NotificationPriority;
     title: string;
     body: string;
     data?: Record<string, any>;
@@ -226,8 +244,8 @@ export interface BulkNotificationRequest {
 }
 
 export interface BroadcastNotificationRequest {
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
-    priority: 'low' | 'normal' | 'high' | 'critical';
+    channel: TemplateChannel;
+    priority: NotificationPriority;
     title: string;
     body: string;
     data?: Record<string, any>;
@@ -246,7 +264,7 @@ export interface Template {
     app_id: string;
     name: string;
     description?: string;
-    channel: string;
+    channel: TemplateChannel;
     webhook_target?: string;
     subject?: string;
     body: string;
@@ -271,7 +289,7 @@ export interface CreateTemplateRequest {
     app_id: string;
     name: string;
     description?: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel: TemplateChannel;
     webhook_target?: string;
     subject?: string;
     body: string;

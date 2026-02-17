@@ -24,6 +24,11 @@ type Notification = {
         data: Record<string, string | number | boolean>;
         notification?: string;
     };
+    rendered_notification?: {
+        title: string;
+        body: string;
+        data?: Record<string, string | number | boolean>;
+    };
     template_id: string;
     sent_at: string;
     read_at: string | null;
@@ -227,6 +232,14 @@ export default function Notifications() {
         }
     };
 
+    const getRenderedTitle = (notification: Notification) =>
+        notification.rendered_notification?.title || notification?.content?.title;
+
+    const getRenderedBody = (notification: Notification) =>
+        notification.rendered_notification?.body ||
+        notification.content?.notification ||
+        notification.content?.body;
+
     return (
         <Popover>
             <PopoverTrigger asChild>
@@ -287,10 +300,10 @@ export default function Notifications() {
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="flex-1 space-y-1">
                                             <p className="text-sm font-medium leading-none">
-                                                {notification.content.title}
+                                                {getRenderedTitle(notification)}
                                             </p>
                                             <p className="text-sm text-muted-foreground">
-                                                {notification.content.notification || notification.content.body}
+                                                {getRenderedBody(notification)}
                                             </p>
                                             <p className="text-xs text-muted-foreground">
                                                 {formatTime(notification.sent_at || notification.created_at)}

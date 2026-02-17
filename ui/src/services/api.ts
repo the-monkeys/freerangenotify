@@ -37,6 +37,9 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const headers = config.headers ?? {};
+    // existingAuth checks if the request already has an Authorization header (case-insensitive)
+    // If not, it looks for the token in localStorage and adds it to the request
+    // the existingauth was for the case where we might be calling an endpoint that already has an auth header set (app id), in which case we don't want to override it with the token from localStorage
     const existingAuth = (headers as Record<string, string>).Authorization
       || (headers as Record<string, string>).authorization;
     const token = localStorage.getItem('access_token');
