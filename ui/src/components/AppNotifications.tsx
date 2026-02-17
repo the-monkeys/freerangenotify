@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { notificationsAPI, usersAPI, templatesAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template } from '../types';
+import { type Notification, type NotificationRequest, type User, type Template, TemplateChannel, NotificationPriority } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import {
@@ -26,18 +26,20 @@ interface AppNotificationsProps {
     webhooks?: Record<string, string>;
 }
 
-const createEmptyForm = (): NotificationRequest => ({
-    user_id: '',
-    channel: 'email',
-    priority: 'normal',
-    title: '',
-    body: '',
-    template_id: '',
-    webhook_url: '',
-    data: {},
-    scheduled_at: undefined,
-    recurrence: undefined
-});
+function resetForm(): NotificationRequest {
+    return {
+        user_id: '',
+        channel: TemplateChannel.EMAIL,
+        priority: NotificationPriority.NORMAL,
+        title: '',
+        body: '',
+        template_id: '',
+        webhook_url: '',
+        data: {},
+        scheduled_at: undefined,
+        recurrence: undefined
+    };
+}
 
 const parseCustomData = (raw: string) => {
     if (!raw) return {};
@@ -85,7 +87,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
     const { notifications, users, templates, loading, refresh } = useNotificationData(apiKey);
     const [showSendForm, setShowSendForm] = useState(false);
     const [showBroadcastForm, setShowBroadcastForm] = useState(false);
-    const [formData, setFormData] = useState<NotificationRequest>(createEmptyForm());
+    const [formData, setFormData] = useState<NotificationRequest>(resetForm());
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const [dataInput, setDataInput] = useState('');
@@ -120,14 +122,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             });
 
             setShowBroadcastForm(false);
-            setFormData(createEmptyForm());
-            setDataInput('');
-            refresh();
             toast.success('Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
-            toast.error('Failed to broadcast notification');
+            toast.error('Failed to send broadcast notification');
+            refresh();
         } finally {
+            handleReset();
             setIsSubmitting(false);
         }
     };
@@ -173,10 +174,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             }
 
             setShowSendForm(false);
-            setFormData(createEmptyForm());
-            setSelectedUsers([]);
-            setSelectedTargets([]);
-            setDataInput('');
+            handleReset();
             refresh();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
@@ -184,6 +182,25 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
             toast.error('Failed to send notification');
         }
     };
+
+    function handleReset() {
+        setFormData(resetForm());
+        setSelectedUsers([]);
+        setSelectedTargets([]);
+        setDataInput('');
+    }
+
+    function handleChannelChange(value: string) {
+        const next = value as any;
+        setFormData({
+            ...formData,
+            channel: next,
+            webhook_url: next === 'webhook' ? formData.webhook_url : ''
+        });
+        if (next !== 'webhook') {
+            setSelectedTargets([]);
+        }
+    }
 
     const getStatusBadgeClass = (status: string) => {
         switch (status?.toLowerCase()) {
@@ -261,15 +278,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                 <Select
                                     value={formData.channel}
                                     onValueChange={(value) => {
-                                        const next = value as any;
-                                        setFormData({
-                                            ...formData,
-                                            channel: next,
-                                            webhook_url: next === 'webhook' ? formData.webhook_url : ''
-                                        });
-                                        if (next !== 'webhook') {
-                                            setSelectedTargets([]);
-                                        }
+                                        handleChannelChange(value);
                                     }}
                                 >
                                     <SelectTrigger>
@@ -453,12 +462,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={() => {
-                                        setFormData(createEmptyForm());
-                                        setSelectedUsers([]);
-                                        setSelectedTargets([]);
-                                        setDataInput('');
-                                    }}
+                                    onClick={handleReset}
                                 >
                                     Reset
                                 </Button>
@@ -559,7 +563,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                         value={formData.body}
                                         onChange={(e) => setFormData({ ...formData, body: e.target.value })}
                                         required={!formData.template_id}
-                                        className="min-h-[100px]"
+                                        className="min-h-25"
                                         placeholder={formData.template_id ? "Optional (overridden by template)" : "Content"}
                                     />
                                 </div>
@@ -699,7 +703,7 @@ const UserMultiSelect: React.FC<{
 }> = ({ users, value, onChange }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
-        const normalizedQuery = searchTerm.trim().toLowerCase();
+    const normalizedQuery = searchTerm.trim().toLowerCase();
     const filteredUsers = (users || []).filter(u => {
         if (!normalizedQuery) return true;
         const email = u.email?.toLowerCase() || '';
