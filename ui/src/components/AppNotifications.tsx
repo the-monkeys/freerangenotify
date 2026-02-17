@@ -96,6 +96,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
 
     const handleSendNotification = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         try {
             const customData = parseCustomData(dataInput);
             if (customData === null) {
@@ -153,6 +155,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
         } catch (error) {
             console.error('Failed to send notification:', error);
             toast.error('Failed to send notification');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -246,7 +250,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                         users={users}
                                                         value={selectedUsers}
                                                         onChange={setSelectedUsers}
-                                                        disabled={sendToAllUsers}
+                                                        disabled={sendToAllUsers || isSubmitting}
                                                     />
                                                 </div>
                                                 <div className="space-y-2">
@@ -311,6 +315,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                             id="webhookUrl"
                                                             type="url"
                                                             value={formData.webhook_url || ''}
+                                                            disabled={isSubmitting}
                                                             onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
                                                             placeholder="https://discord.com/api/webhooks/..."
                                                             required={selectedUsers.length === 0 && selectedTargets.length === 0}
@@ -345,6 +350,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                     id="title"
                                                     type="text"
                                                     value={formData.title}
+                                                    disabled={isSubmitting}
                                                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                                     required
                                                     placeholder="Notification title"
@@ -356,6 +362,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                 <Textarea
                                                     id="body"
                                                     value={formData.body}
+                                                    disabled={isSubmitting}
                                                     onChange={(e) => setFormData({ ...formData, body: e.target.value })}
                                                     required={!formData.template_id}
                                                     placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
@@ -368,6 +375,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                     id="customData"
                                                     className="font-mono"
                                                     value={dataInput}
+                                                    disabled={isSubmitting}
                                                     onChange={(e) => setDataInput(e.target.value)}
                                                     placeholder='{ "name": "John Doe" }'
                                                 />
@@ -382,6 +390,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                             id="scheduledAt"
                                                             type="datetime-local"
                                                             value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                            disabled={isSubmitting}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
                                                                 setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
@@ -398,6 +407,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                             id="recurrenceCron"
                                                             type="text"
                                                             value={formData.recurrence?.cron_expression || ''}
+                                                            disabled={isSubmitting}
                                                             onChange={(e) => setFormData({
                                                                 ...formData,
                                                                 recurrence: e.target.value ? {
@@ -417,6 +427,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                                     id="recurrenceEnd"
                                                                     type="datetime-local"
                                                                     value={formData.recurrence.end_date?.substring(0, 16) || ''}
+                                                                    disabled={isSubmitting}
                                                                     onChange={(e) => {
                                                                         const val = e.target.value;
                                                                         setFormData({
@@ -435,6 +446,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                                     id="recurrenceCount"
                                                                     type="number"
                                                                     value={formData.recurrence.count || ''}
+                                                                    disabled={isSubmitting}
                                                                     onChange={(e) => setFormData({
                                                                         ...formData,
                                                                         recurrence: {
@@ -455,6 +467,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                     <Button
                                                         type="button"
                                                         variant="outline"
+                                                        disabled={isSubmitting}
                                                         onClick={() => {
                                                             handleReset();
                                                             setIsSendDialogOpen(false);
@@ -462,7 +475,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                                     >
                                                         Cancel
                                                     </Button>
-                                                    <Button type="submit">Send / Schedule Notification</Button>
+                                                    <Button type="submit" disabled={isSubmitting}>
+                                                        {isSubmitting ? 'Sending...' : 'Send / Schedule Notification'}
+                                                    </Button>
                                                 </div>
                                             </div>
                                         </form>
