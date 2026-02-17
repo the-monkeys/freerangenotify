@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { templatesAPI } from '../services/api';
-import type { Template, CreateTemplateRequest } from '../types';
+import { templatesAPI } from '../services/api';import { type Template, type CreateTemplateRequest, TemplateChannel } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -8,6 +7,14 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from './ui/dialog';
 import { toast } from 'sonner';
 
 interface AppTemplatesProps {
@@ -23,7 +30,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [formData, setFormData] = useState<CreateTemplateRequest>({
         app_id: appId,
         name: '',
-        channel: 'email',
+        channel: TemplateChannel.EMAIL,
         webhook_target: '',
         subject: '',
         body: '',
@@ -37,6 +44,11 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [activePreviews, setActivePreviews] = useState<Record<string, { data: string, rendered: string, loading: boolean }>>({});
     // Collapsed body state
     const [expandedBodies, setExpandedBodies] = useState<Record<string, boolean>>({});
+
+    // Edit dialog state
+    const [editOpen, setEditOpen] = useState(false);
+    const [editForm, setEditForm] = useState<Partial<CreateTemplateRequest> & { id?: string }>({});
+    const [editVarInput, setEditVarInput] = useState('');
 
     useEffect(() => {
         if (apiKey) {
@@ -64,7 +76,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             setFormData({
                 app_id: appId,
                 name: '',
-                channel: 'email',
+                channel: TemplateChannel.EMAIL,
                 webhook_target: '',
                 subject: '',
                 body: '',
@@ -93,6 +105,52 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             fetchTemplates();
         } catch (error) {
             console.error('Failed to delete template:', error);
+        }
+    };
+
+    const openEditDialog = (tmpl: Template) => {
+        setEditForm({
+            id: tmpl.id,
+            app_id: tmpl.app_id,
+            name: tmpl.name,
+            channel: tmpl.channel as TemplateChannel,
+            webhook_target: tmpl.webhook_target || '',
+            subject: tmpl.subject || '',
+            body: tmpl.body,
+            description: tmpl.description || '',
+            variables: tmpl.variables || []
+        });
+        setEditVarInput('');
+        setEditOpen(true);
+    };
+
+    const handleUpdateTemplate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editForm.id) return;
+
+        try {
+            await templatesAPI.update(apiKey, editForm.id, {
+                description: editForm.description || '',
+                webhook_target: editForm.webhook_target || '',
+                subject: editForm.subject || '',
+                body: editForm.body || '',
+                variables: editForm.variables || []
+            });
+            setEditOpen(false);
+            setEditForm({});
+            fetchTemplates();
+            toast.success('Template updated successfully!');
+        } catch (error) {
+            console.error('Failed to update template:', error);
+            toast.error('Failed to update template');
+        }
+    };
+
+    const handleAddEditVariable = () => {
+        const vars = editForm.variables || [];
+        if (editVarInput && !vars.includes(editVarInput)) {
+            setEditForm({ ...editForm, variables: [...vars, editVarInput] });
+            setEditVarInput('');
         }
     };
 
@@ -227,7 +285,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                             <Label htmlFor="body">Body / Content</Label>
                             <Textarea
                                 id="body"
-                                className="min-h-[150px] font-mono"
+                                className="min-h-40 font-mono"
                                 value={formData.body}
                                 onChange={(e) => {
                                     // Simple regex to auto-detect variables like {{.var_name}}
@@ -340,7 +398,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0">{tmpl.body}</pre>
                                         </div>
                                         {!expandedBodies[tmpl.id] && (
-                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none rounded-b" />
+                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-linear-to-t from-gray-50 to-transparent pointer-events-none rounded-b" />
                                         )}
                                     </div>
 
@@ -355,6 +413,13 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 size="sm"
                                             >
                                                 {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
+                                            </Button>
+                                            <Button
+                                                onClick={() => openEditDialog(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Edit
                                             </Button>
                                             <Button
                                                 onClick={() => handleDeleteTemplate(tmpl.id)}
@@ -372,7 +437,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 <div className="space-y-2">
                                                     <div className="text-xs text-gray-500 font-semibold mb-2">PREVIEW DATA (JSON)</div>
                                                     <Textarea
-                                                        className="h-[100px] font-mono text-xs"
+                                                        className="h-25 font-mono text-xs"
                                                         value={activePreviews[tmpl.id].data}
                                                         onChange={(e) => setActivePreviews({
                                                             ...activePreviews,
@@ -390,7 +455,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 </div>
                                                 <div className="space-y-2">
                                                     <div className="text-xs text-gray-500 font-semibold mb-2">RENDERED OUTPUT</div>
-                                                    <div className="bg-gray-50 h-[100px] p-3 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900">
+                                                    <div className="bg-gray-50 h-25 p-3 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900">
                                                         {activePreviews[tmpl.id].rendered || <span className="text-gray-400 italic">Click Render to see output...</span>}
                                                     </div>
                                                 </div>
@@ -403,6 +468,169 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     </div>
                 )}
             </CardContent>
+
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="sm:max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Edit Template</DialogTitle>
+                        <DialogDescription>
+                            Update template content and variables. Name and channel are read-only.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleUpdateTemplate} className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="editTemplateName">Template Name</Label>
+                                <Input
+                                    id="editTemplateName"
+                                    type="text"
+                                    value={editForm.name || ''}
+                                    disabled
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="editChannel">Channel</Label>
+                                <Select
+                                    value={editForm.channel || ''}
+                                    onValueChange={(value) => setEditForm({ ...editForm, channel: value as TemplateChannel })}
+                                    disabled
+                                >
+                                    <SelectTrigger className='w-full'>
+                                        <SelectValue placeholder="Select a channel" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value={TemplateChannel.EMAIL}>Email</SelectItem>
+                                        <SelectItem value={TemplateChannel.SMS}>SMS</SelectItem>
+                                        <SelectItem value={TemplateChannel.WEBHOOK}>Webhook</SelectItem>
+                                        <SelectItem value={TemplateChannel.PUSH}>Push</SelectItem>
+                                        <SelectItem value={TemplateChannel.IN_APP}>In-App</SelectItem>
+                                        <SelectItem value={TemplateChannel.SSE}>SSE (Server-Sent Events)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {editForm.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                            <div className="space-y-2">
+                                <Label htmlFor="editWebhookTarget">Webhook Target</Label>
+                                <Select
+                                    value={editForm.webhook_target || ''}
+                                    onValueChange={(value) => setEditForm({ ...editForm, webhook_target: value })}
+                                >
+                                    <SelectTrigger className='w-full'>
+                                        <SelectValue placeholder="Default (Application Webhook URL)" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="">Default (Application Webhook URL)</SelectItem>
+                                        {Object.keys(webhooks).map(name => (
+                                            <SelectItem key={name} value={name}>{name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-gray-500">
+                                    Select a specific named webhook endpoint for this template.
+                                </p>
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <Label htmlFor="editSubject">Subject (for Email)</Label>
+                            <Input
+                                id="editSubject"
+                                type="text"
+                                value={editForm.subject || ''}
+                                onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })}
+                                placeholder="Email subject"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="editBody">Body / Content</Label>
+                            <Textarea
+                                id="editBody"
+                                className="min-h-40 font-mono"
+                                value={editForm.body || ''}
+                                onChange={(e) => {
+                                    const newBody = e.target.value;
+                                    const regex = /{{\s*\.?([\w]+)\s*}}/g;
+                                    const matches = new Set<string>();
+                                    let match;
+                                    while ((match = regex.exec(newBody)) !== null) {
+                                        if (match[1]) matches.add(match[1]);
+                                    }
+                                    const currentVars = new Set(editForm.variables || []);
+                                    for (const m of matches) currentVars.add(m);
+
+                                    setEditForm({
+                                        ...editForm,
+                                        body: newBody,
+                                        variables: Array.from(currentVars)
+                                    });
+                                }}
+                                required
+                                placeholder="Hello {{.name}}, welcome!"
+                            />
+                            <p className="text-xs text-gray-500">
+                                Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Variables (Must be declared to pass validation)</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    type="text"
+                                    value={editVarInput}
+                                    onChange={(e) => setEditVarInput(e.target.value)}
+                                    placeholder="name"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddEditVariable();
+                                        }
+                                    }}
+                                />
+                                <Button type="button" variant="secondary" onClick={handleAddEditVariable}>Add</Button>
+                            </div>
+                            <div className="mt-2 flex gap-2 flex-wrap">
+                                {(editForm.variables || []).map(v => (
+                                    <Badge key={v} variant="outline" className="text-sm">
+                                        {v}
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditForm({
+                                                ...editForm,
+                                                variables: (editForm.variables || []).filter(x => x !== v)
+                                            })}
+                                            className="ml-2 text-red-600 hover:text-red-700 font-bold"
+                                        >
+                                            &times;
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="editDescription">Description</Label>
+                            <Input
+                                id="editDescription"
+                                type="text"
+                                value={editForm.description || ''}
+                                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                                placeholder="Optional description"
+                            />
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button type="submit">Save Changes</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </Card>
     );
 };
