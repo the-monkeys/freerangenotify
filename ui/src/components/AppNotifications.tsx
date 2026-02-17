@@ -249,7 +249,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             <div className="space-y-2">
                                 <Label htmlFor="recipient">
                                     Recipients (Users)
-                                    {formData.channel === 'webhook' && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
+                                    {formData.channel === TemplateChannel.WEBHOOK && <span className="font-normal text-gray-500 text-xs"> (Optional)</span>}
                                 </Label>
                                 <UserMultiSelect
                                     users={users}
@@ -285,18 +285,18 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="email">Email</SelectItem>
-                                        <SelectItem value="push">Push</SelectItem>
-                                        <SelectItem value="sms">SMS</SelectItem>
-                                        <SelectItem value="webhook">Webhook</SelectItem>
-                                        <SelectItem value="in_app">In-App</SelectItem>
-                                        <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
+                                        <SelectItem value={TemplateChannel.EMAIL}>Email</SelectItem>
+                                        <SelectItem value={TemplateChannel.PUSH}>Push</SelectItem>
+                                        <SelectItem value={TemplateChannel.SMS}>SMS</SelectItem>
+                                        <SelectItem value={TemplateChannel.WEBHOOK}>Webhook</SelectItem>
+                                        <SelectItem value={TemplateChannel.IN_APP}>In-App</SelectItem>
+                                        <SelectItem value={TemplateChannel.SSE}>SSE (Server-Sent Events)</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
 
                             {/* Webhook Targets Selection - Multi-select */}
-                            {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
+                            {formData.channel === TemplateChannel.WEBHOOK && webhooks && Object.keys(webhooks).length > 0 && (
                                 <div className="space-y-2 md:col-span-2">
                                     <Label>Webhook Targets (Select one or more)</Label>
                                     <WebhookTargetSelect
@@ -311,7 +311,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             )}
 
                             {/* Webhook URL Override Field */}
-                            {formData.channel === 'webhook' && (
+                            {formData.channel === TemplateChannel.WEBHOOK && (
                                 <div className="space-y-2 md:col-span-2">
                                     <Label htmlFor="webhookUrl">Webhook URL Override (Optional)</Label>
                                     <Input
