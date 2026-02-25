@@ -162,6 +162,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	templates := v1.Group("/templates")
 	applyAuth(templates)
 	templates.Get("/library", c.TemplateHandler.GetLibrary)
+	templates.Post("/library/:name/render", c.TemplateHandler.RenderLibraryTemplate)
 	templates.Post("/library/:name/clone", c.TemplateHandler.CloneFromLibrary)
 	templates.Post("/seed", c.TemplateHandler.SeedTemplates)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)

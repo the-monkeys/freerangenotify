@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	gotemplate "text/template"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -614,6 +615,77 @@ func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
 	})
 }
 
+// RenderLibraryTemplate renders a library template with provided data or built-in sample data.
+// @Summary Render a library template
+// @Description Render a pre-built library template without cloning it first
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param name path string true "Library template name"
+// @Param body body dto.RenderTemplateRequest true "Render request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/library/{name}/render [post]
+func (h *TemplateHandler) RenderLibraryTemplate(c *fiber.Ctx) error {
+	name := c.Params("name")
+	if name == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Library template name is required",
+			"message": "Please provide a valid library template name",
+		})
+	}
+
+	var req dto.RenderTemplateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+	}
+
+	var source *template.Template
+	for i := range seed.LibraryTemplates {
+		if seed.LibraryTemplates[i].Name == name {
+			source = &seed.LibraryTemplates[i]
+			break
+		}
+	}
+	if source == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Library template not found",
+			"message": "No library template with name: " + name,
+		})
+	}
+
+	data := req.Data
+	if data == nil {
+		if sd, ok := source.Metadata["sample_data"].(map[string]interface{}); ok {
+			data = sd
+		}
+	}
+	if data == nil {
+		data = map[string]interface{}{}
+	}
+
+	rendered, err := renderPreviewTemplate(source.Body, data)
+	if err != nil {
+		h.logger.Error("Failed to render library template",
+			zap.String("name", name),
+			zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to render library template",
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"rendered_body": rendered,
+	})
+}
+
 // CloneFromLibrary clones a library template into the user's app.
 // @Summary Clone a library template
 // @Description Clone a pre-built library template into the authenticated application
@@ -669,6 +741,20 @@ func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(toTemplateResponse(tmpl))
+}
+
+func renderPreviewTemplate(body string, data map[string]interface{}) (string, error) {
+	tmpl, err := gotemplate.New("library_preview").Parse(body)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // RollbackTemplate creates a new version whose content is copied from a target version
