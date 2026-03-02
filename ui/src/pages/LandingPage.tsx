@@ -28,26 +28,26 @@ const LandingPage: React.FC = () => {
     return (
         <div className="bg-white">
             {/* Hero Section */}
-            <section className="bg-linear-to-br from-blue-600 via-blue-500 to-indigo-600 text-white py-32 text-center">
-                <div className="max-w-4xl mx-auto px-8">
-                    <h1 className="text-5xl md:text-6xl font-bold mb-6 tracking-tight text-white">
+            <section className="bg-linear-to-br from-blue-600 via-blue-500 to-indigo-600 text-white py-16 sm:py-24 md:py-32 text-center">
+                <div className="max-w-4xl mx-auto px-4 sm:px-8">
+                    <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold mb-6 tracking-tight text-white">
                         Modern Notification Infrastructure
                     </h1>
-                    <p className="text-xl md:text-2xl max-w-2xl mx-auto mb-12 opacity-95 leading-relaxed font-light">
+                    <p className="text-base sm:text-xl md:text-2xl max-w-2xl mx-auto mb-8 sm:mb-12 opacity-95 leading-relaxed font-light">
                         A powerful, scalable, and reliable notification service designed for the modern web.
                         Deliver emails, push notifications, SMS, and real-time SSE messages with ease.
                     </p>
                     <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                        <Button 
-                            size="lg" 
+                        <Button
+                            size="lg"
                             className="bg-white text-blue-600 hover:bg-gray-50 px-8 py-6 text-base font-medium shadow-lg"
                             onClick={handleGetStarted}
                         >
                             {isAuthenticated ? 'Go to Dashboard' : 'Get Started'}
                         </Button>
-                        <Button 
-                            size="lg" 
-                            variant="outline" 
+                        <Button
+                            size="lg"
+                            variant="outline"
                             className="border-2 border-white text-white bg-transparent hover:bg-white/10 px-8 py-6 text-base font-medium"
                             onClick={() => window.open('https://github.com/the-monkeys/freerangenotify', '_blank')}
                         >
@@ -58,9 +58,9 @@ const LandingPage: React.FC = () => {
             </section>
 
             {/* Features Section */}
-            <section className="py-24 bg-white">
-                <div className="max-w-6xl mx-auto px-8">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-16">
+            <section className="py-12 sm:py-24 bg-white">
+                <div className="max-w-6xl mx-auto px-4 sm:px-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 sm:gap-16">
                         <div className="text-center">
                             <div className="text-5xl mb-6">🚀</div>
                             <h3 className="text-xl font-semibold mb-4 text-gray-900">Scalable Architecture</h3>
@@ -87,8 +87,8 @@ const LandingPage: React.FC = () => {
             </section>
 
             {/* Showcase Section */}
-            <section className="py-20 bg-gray-50">
-                <div className="max-w-6xl mx-auto px-8">
+            <section className="py-12 sm:py-20 bg-gray-50">
+                <div className="max-w-6xl mx-auto px-4 sm:px-8">
                     <h2 className="text-center text-3xl text-gray-900 mb-4 font-semibold">
                         Powering Leading Products
                     </h2>
@@ -108,10 +108,10 @@ const LandingPage: React.FC = () => {
                                 </CardHeader>
                                 {product.url && (
                                     <CardContent>
-                                        <a 
-                                            href={product.url} 
-                                            target="_blank" 
-                                            rel="noopener noreferrer" 
+                                        <a
+                                            href={product.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                             className="text-blue-600 font-semibold text-sm hover:text-blue-700 hover:underline inline-flex items-center gap-1"
                                         >
                                             Visit Product

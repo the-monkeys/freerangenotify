@@ -201,10 +201,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
     return (
         <Card>
             <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <CardTitle>Notification History</CardTitle>
                     <div className="flex gap-2">
                         <Button
+                            size="sm"
                             variant={showSendForm ? "outline" : "default"}
                             onClick={() => {
                                 if (showBroadcastForm) setShowBroadcastForm(false);
@@ -214,6 +215,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                             {showSendForm ? 'Cancel' : 'Send Notification'}
                         </Button>
                         <Button
+                            size="sm"
                             variant={showBroadcastForm ? "outline" : "secondary"}
                             onClick={() => {
                                 if (showSendForm) setShowSendForm(false);
@@ -575,7 +577,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks })
                                     />
                                 </div>
 
-                                <div className="flex justify-between items-center pt-2">
+                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 pt-2">
                                     <div className="space-y-1">
                                         <Label htmlFor="broadcastScheduled">Scheduled Time (Optional)</Label>
                                         <Input
@@ -699,7 +701,7 @@ const UserMultiSelect: React.FC<{
 }> = ({ users, value, onChange }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
-        const normalizedQuery = searchTerm.trim().toLowerCase();
+    const normalizedQuery = searchTerm.trim().toLowerCase();
     const filteredUsers = (users || []).filter(u => {
         if (!normalizedQuery) return true;
         const email = u.email?.toLowerCase() || '';

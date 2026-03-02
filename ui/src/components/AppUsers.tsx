@@ -129,7 +129,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     return (
         <Card>
             <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <CardTitle>Application Users</CardTitle>
                     <Button
                         onClick={() => {
