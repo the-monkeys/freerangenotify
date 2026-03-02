@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import api from "../services/api";
 import type { AdminUser } from '../types';
 
@@ -8,6 +8,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => Promise<void>;
+  fetchCurrentUser: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -27,7 +28,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const fetchCurrentUser = async () => {
+  const fetchCurrentUser = useCallback(async () => {
     try {
       const response = await api.get('/admin/me');
       setUser(response.data);
@@ -38,12 +39,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const login = async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
     const { user, access_token, refresh_token } = response.data;
-    
+
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
     setUser(user);
@@ -56,7 +57,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       full_name: fullName,
     });
     const { user, access_token, refresh_token } = response.data;
-    
+
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
     setUser(user);
@@ -82,6 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         login,
         register,
         logout,
+        fetchCurrentUser,
         isAuthenticated: !!user,
       }}
     >

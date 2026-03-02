@@ -18,6 +18,7 @@ type Config struct {
 	Providers  ProvidersConfig  `mapstructure:"providers"`
 	Monitoring MonitoringConfig `mapstructure:"monitoring"`
 	Security   SecurityConfig   `mapstructure:"security"`
+	OIDC       OIDCConfig       `mapstructure:"oidc"`
 }
 
 // AppConfig contains application-level configuration
@@ -163,6 +164,16 @@ type CORSConfig struct {
 	MaxAge           int      `mapstructure:"max_age"`
 }
 
+// OIDCConfig contains OpenID Connect configuration for SSO
+type OIDCConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	Issuer       string `mapstructure:"issuer"`
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	RedirectURL  string `mapstructure:"redirect_url"`
+	FrontendURL  string `mapstructure:"frontend_url"`
+}
+
 // Load loads configuration from various sources
 func Load() (*Config, error) {
 	// Set default values
@@ -212,6 +223,13 @@ func Load() (*Config, error) {
 	viper.SetDefault("providers.smtp.host", "")
 	viper.SetDefault("providers.smtp.port", 587)
 	viper.SetDefault("providers.sendgrid.api_key", "")
+
+	viper.SetDefault("oidc.enabled", false)
+	viper.SetDefault("oidc.issuer", "https://identity.monkeys.support")
+	viper.SetDefault("oidc.client_id", "")
+	viper.SetDefault("oidc.client_secret", "")
+	viper.SetDefault("oidc.redirect_url", "http://localhost:8080/v1/auth/sso/callback")
+	viper.SetDefault("oidc.frontend_url", "http://localhost:3000")
 
 	// Configure viper
 	viper.SetConfigName("config")

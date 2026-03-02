@@ -31,6 +31,18 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	auth.Post("/forgot-password", c.AuthHandler.ForgotPassword)
 	auth.Post("/reset-password", c.AuthHandler.ResetPassword)
 
+	// SSO routes
+	if c.OIDCProvider != nil && c.OAuth2Config != nil {
+		auth.Get("/sso/login", c.AuthHandler.HandleSSOLogin(c.OAuth2Config))
+
+		frontendURL := c.Config.OIDC.FrontendURL
+		if frontendURL == "" {
+			frontendURL = "http://localhost:3000"
+		}
+
+		auth.Get("/sso/callback", c.AuthHandler.HandleSSOCallback(c.OAuth2Config, c.OIDCVerifier, frontendURL))
+	}
+
 	// Health check
 	v1.Get("/health", c.HealthHandler.Check)
 

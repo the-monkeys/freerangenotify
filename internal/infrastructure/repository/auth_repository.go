@@ -103,7 +103,30 @@ func (r *authRepository) GetUserByID(ctx context.Context, userID string) (*auth.
 	return &result.Source, nil
 }
 
-// GetUserByEmail retrieves a user by email
+// DeleteUser deletes a user by ID
+func (r *authRepository) DeleteUser(ctx context.Context, userID string) error {
+	req := esapi.DeleteRequest{
+		Index:      authUsersIndex,
+		DocumentID: userID,
+		Refresh:    "true",
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("error deleting user: %s", res.String())
+	}
+
+	return nil
+}
+
+// GetUserByEmail retrieves a user by email.
+// When multiple users share the same email (race-condition duplicate),
+// the oldest account (by created_at) is returned deterministically.
 func (r *authRepository) GetUserByEmail(ctx context.Context, email string) (*auth.AdminUser, error) {
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -111,6 +134,10 @@ func (r *authRepository) GetUserByEmail(ctx context.Context, email string) (*aut
 				"email.keyword": email,
 			},
 		},
+		"sort": []map[string]interface{}{
+			{"created_at": map[string]interface{}{"order": "asc"}},
+		},
+		"size": 1,
 	}
 
 	data, err := json.Marshal(query)
@@ -483,7 +510,7 @@ func (r *authRepository) RevokeAllUserTokens(ctx context.Context, userID string)
 		},
 		"query": map[string]interface{}{
 			"term": map[string]interface{}{
-				"user_id.keyword": userID,
+				"user_id": userID,
 			},
 		},
 	}
