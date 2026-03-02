@@ -107,7 +107,7 @@ const AppDetail: React.FC = () => {
     if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
 
     return (
-        <div className="container mx-auto px-4 py-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="mb-6">
                 <Button
                     onClick={() => navigate('/')}
@@ -116,27 +116,27 @@ const AppDetail: React.FC = () => {
                 >
                     &larr; Back to Applications
                 </Button>
-                <h1 className="text-2xl font-semibold text-gray-900">
+                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
                     {app.app_name}
                 </h1>
                 <div className="flex items-center mt-2 text-gray-500 text-sm">
                     <span className="mr-2">ID:</span>
-                    <code className="bg-gray-100 px-2 py-0.5 rounded font-mono font-semibold">
+                    <code className="bg-gray-100 px-2 py-0.5 rounded font-mono font-semibold text-xs sm:text-sm break-all">
                         {app.app_id}
                     </code>
                 </div>
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-gray-200 mb-8 overflow-x-auto whitespace-nowrap">
+            <div className="flex border-b border-gray-200 mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
                 {(['overview', 'users', 'templates', 'notifications', 'settings', 'integration'] as const).map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`px-5 py-3 border-b-2 ${activeTab === tab
+                        className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b-2 ${activeTab === tab
                             ? 'border-blue-600 text-blue-600 font-semibold'
                             : 'border-transparent text-gray-500'
-                            } capitalize text-sm hover:text-blue-600 transition-colors shrink-0`}
+                            } capitalize text-xs sm:text-sm hover:text-blue-600 transition-colors shrink-0`}
                     >
                         {tab}
                     </button>
@@ -441,7 +441,7 @@ const AppDetail: React.FC = () => {
                                                         </SelectContent>
                                                     </Select>
                                                 </div>
-                                                <div className="space-y-2 col-span-2">
+                                                <div className="space-y-2 md:col-span-2">
                                                     <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
                                                     <Input
                                                         id="tokenKey"
@@ -774,7 +774,7 @@ const AppDetail: React.FC = () => {
                         <CardContent>
                             <div className="space-y-2 mb-6">
                                 <Label htmlFor="apiKey">API Key</Label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                     <div className="relative flex-1">
                                         <Input
                                             id="apiKey"

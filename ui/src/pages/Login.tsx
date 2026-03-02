@@ -89,8 +89,31 @@ const Login: React.FC = () => {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-gray-300" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-2 text-gray-500 rounded text-xs">Or continue with</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"
+              onClick={() => {
+                // Determine API base URL
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/v1';
+                window.location.href = `${apiUrl}/auth/sso/login`;
+              }}
+            >
+              <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = 'https://monkeys.support/favicon.ico'; }} />
+              Log in with Monkeys Identity
+            </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
+          <div className="mt-6 text-center text-sm">
             Don't have an account?{' '}
             <Link to="/register" className="text-blue-600 hover:text-blue-700 underline font-medium">
               Sign up

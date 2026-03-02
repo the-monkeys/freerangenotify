@@ -1,14 +1,19 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 )
 
 // AuthHandler handles authentication HTTP requests
@@ -321,4 +326,131 @@ func formatTimePtr(t time.Time) string {
 		return ""
 	}
 	return t.Format("2006-01-02T15:04:05Z07:00")
+}
+
+// SSOLogin redirects the user to the IdP for authentication
+// @Summary Redirect to SSO Identity Provider
+// @Tags Auth
+// @Router /v1/auth/sso/login [get]
+func (h *AuthHandler) HandleSSOLogin(oauth2Config *oauth2.Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		// Generate random state
+		state, err := generateRandomState()
+		if err != nil {
+			h.logger.Error("Failed to generate oauth state", zap.Error(err))
+			return errors.Internal("Failed to initialize SSO", err)
+		}
+
+		// Store state in a cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "sso_state",
+			Value:    state,
+			Path:     "/",
+			MaxAge:   300, // 5 minutes
+			HTTPOnly: true,
+			Secure:   c.Protocol() == "https",
+			SameSite: "Lax",
+		})
+
+		// Redirect to IdP
+		url := oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOnline)
+		return c.Redirect(url, fiber.StatusFound)
+	}
+}
+
+// SSOCallback handles the callback from the IdP
+// @Summary Handle SSO Callback
+// @Tags Auth
+// @Router /v1/auth/sso/callback [get]
+func (h *AuthHandler) HandleSSOCallback(oauth2Config *oauth2.Config, verifier *oidc.IDTokenVerifier, frontendURL string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		state := c.Query("state")
+		code := c.Query("code")
+
+		// Verify state
+		cookieState := c.Cookies("sso_state")
+		if state != cookieState || state == "" {
+			h.logger.Warn("Invalid SSO state", zap.String("query_state", state), zap.String("cookie_state", cookieState))
+			return c.Redirect(frontendURL + "/login?error=invalid_state")
+		}
+
+		// Clear state cookie
+		c.Cookie(&fiber.Cookie{
+			Name:     "sso_state",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HTTPOnly: true,
+		})
+
+		// Exchange code for token
+		ctx := c.Context()
+		oauth2Token, err := oauth2Config.Exchange(ctx, code)
+		if err != nil {
+			h.logger.Error("Failed to exchange token", zap.Error(err))
+			return c.Redirect(frontendURL + "/login?error=token_exchange_failed")
+		}
+
+		// Extract ID Token
+		rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+		if !ok {
+			h.logger.Error("No id_token found in oauth2 token")
+			return c.Redirect(frontendURL + "/login?error=missing_id_token")
+		}
+
+		// Verify ID Token
+		idToken, err := verifier.Verify(ctx, rawIDToken)
+		if err != nil {
+			h.logger.Error("Failed to verify ID token", zap.Error(err))
+			return c.Redirect(frontendURL + "/login?error=invalid_id_token")
+		}
+
+		// Extract claims
+		var claims struct {
+			Email             string `json:"email"`
+			Name              string `json:"name"`
+			PreferredUsername string `json:"preferred_username"`
+		}
+		if err := idToken.Claims(&claims); err != nil {
+			h.logger.Error("Failed to parse claims", zap.Error(err))
+			return c.Redirect(frontendURL + "/login?error=invalid_claims")
+		}
+
+		if claims.Email == "" {
+			h.logger.Error("No email in ID token")
+			return c.Redirect(frontendURL + "/login?error=missing_email")
+		}
+
+		// Use name, fall back to preferred_username
+		displayName := claims.Name
+		if displayName == "" {
+			displayName = claims.PreferredUsername
+		}
+
+		// Log the user in or register them
+		response, err := h.authService.SSOLogin(ctx, claims.Email, displayName)
+		if err != nil {
+			h.logger.Error("Failed to process SSO login", zap.Error(err))
+			return c.Redirect(frontendURL + "/login?error=login_failed")
+		}
+
+		// Build the redirect URL with tokens
+		redirectURI := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s",
+			frontendURL,
+			response.Tokens.AccessToken,
+			response.Tokens.RefreshToken,
+		)
+
+		return c.Redirect(redirectURI, fiber.StatusFound)
+	}
+}
+
+func generateRandomState() (string, error) {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	// Use RawURLEncoding to avoid '+' and '/' characters that break in URL query parameters
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

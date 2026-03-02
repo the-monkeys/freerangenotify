@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"context"
+
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
@@ -21,6 +24,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/pkg/jwt"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 )
 
 // Container holds all dependencies for the application
@@ -68,6 +72,11 @@ type Container struct {
 
 	// SSE
 	SSEBroadcaster *sse.Broadcaster
+
+	// OIDC
+	OIDCProvider *oidc.Provider
+	OAuth2Config *oauth2.Config
+	OIDCVerifier *oidc.IDTokenVerifier
 }
 
 // NewContainer creates a new dependency injection container
@@ -154,6 +163,41 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize auth repository and service
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), logger)
 	container.AuthService = services.NewAuthService(authRepo, container.JWTManager, container.NotificationService, logger)
+
+	// Initialize OIDC
+	if cfg.OIDC.Enabled {
+		if cfg.OIDC.ClientID == "" {
+			logger.Warn("OIDC is enabled but client_id is empty. SSO routes will not be registered. " +
+				"Register a client in Monkeys Identity and set FREERANGE_OIDC_CLIENT_ID and FREERANGE_OIDC_CLIENT_SECRET.")
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			provider, err := oidc.NewProvider(ctx, cfg.OIDC.Issuer)
+			if err != nil {
+				logger.Error("Failed to initialize OIDC provider — SSO routes will not be registered. "+
+					"Verify that the issuer URL is reachable and has a valid /.well-known/openid-configuration",
+					zap.String("issuer", cfg.OIDC.Issuer),
+					zap.Error(err),
+				)
+			} else {
+				container.OIDCProvider = provider
+				container.OAuth2Config = &oauth2.Config{
+					ClientID:     cfg.OIDC.ClientID,
+					ClientSecret: cfg.OIDC.ClientSecret,
+					RedirectURL:  cfg.OIDC.RedirectURL,
+					Endpoint:     provider.Endpoint(),
+					Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+				}
+				container.OIDCVerifier = provider.Verifier(&oidc.Config{ClientID: cfg.OIDC.ClientID})
+				logger.Info("OIDC provider initialized successfully",
+					zap.String("issuer", cfg.OIDC.Issuer),
+					zap.String("client_id", cfg.OIDC.ClientID),
+					zap.String("redirect_url", cfg.OIDC.RedirectURL),
+				)
+			}
+		}
+	}
 
 	// Initialize handlers
 	container.ApplicationHandler = handlers.NewApplicationHandler(

@@ -88,6 +88,7 @@ type Repository interface {
 	GetUserByEmail(ctx context.Context, email string) (*AdminUser, error)
 	UpdateUser(ctx context.Context, user *AdminUser) error
 	UpdateLastLogin(ctx context.Context, userID string, loginTime time.Time) error
+	DeleteUser(ctx context.Context, userID string) error
 
 	// Password reset operations
 	CreateResetToken(ctx context.Context, token *PasswordResetToken) error
@@ -117,4 +118,7 @@ type Service interface {
 	// User operations
 	GetCurrentUser(ctx context.Context, userID string) (*AdminUser, error)
 	ValidateToken(ctx context.Context, token string) (*AdminUser, error)
+
+	// SSO
+	SSOLogin(ctx context.Context, email, name string) (*AuthResponse, error)
 }

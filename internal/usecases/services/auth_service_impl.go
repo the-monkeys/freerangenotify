@@ -71,7 +71,21 @@ func (s *authService) Register(ctx context.Context, req *auth.RegisterRequest) (
 	}
 
 	if err := s.repo.CreateUser(ctx, user); err != nil {
+		// Race condition: another request may have created a user with the same email
+		// between our check and our create. Re-check.
+		rechecked, recheckErr := s.repo.GetUserByEmail(ctx, req.Email)
+		if recheckErr == nil && rechecked != nil && rechecked.UserID != user.UserID {
+			return nil, errors.BadRequest("User with this email already exists")
+		}
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Double-check: if a duplicate was created in a race, detect it and remove ours
+	duplicateUser, _ := s.repo.GetUserByEmail(ctx, req.Email)
+	if duplicateUser != nil && duplicateUser.UserID != user.UserID {
+		// Another user was created first (has earlier created_at). Remove our duplicate.
+		_ = s.repo.DeleteUser(ctx, user.UserID)
+		return nil, errors.BadRequest("User with this email already exists")
 	}
 
 	// Generate tokens
@@ -540,4 +554,98 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
 	)
 
 	return nil
+}
+
+// SSOLogin handles authentication via Single Sign-On (OIDC)
+func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.AuthResponse, error) {
+	// Check if user already exists
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user == nil {
+		// Auto-register (JIT provisioning) for SSO users
+		// We'll generate a random complex password since they won't use it directly
+		randomPassword, err := generateSecureToken(32)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate random password for SSO user: %w", err)
+		}
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(randomPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash random password: %w", err)
+		}
+
+		user = &auth.AdminUser{
+			UserID:       uuid.New().String(),
+			Email:        email,
+			PasswordHash: string(hashedPassword),
+			FullName:     name,
+			IsActive:     true,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}
+
+		if err := s.repo.CreateUser(ctx, user); err != nil {
+			return nil, fmt.Errorf("failed to auto-register SSO user: %w", err)
+		}
+
+		// Race condition guard: if a concurrent Register or SSOLogin created
+		// a duplicate user with the same email, GetUserByEmail (sorted by
+		// created_at ASC) returns the canonical (oldest) one. If that's not
+		// us, delete our duplicate and use the canonical user instead.
+		canonical, _ := s.repo.GetUserByEmail(ctx, email)
+		if canonical != nil && canonical.UserID != user.UserID {
+			_ = s.repo.DeleteUser(ctx, user.UserID)
+			user = canonical
+			s.logger.Info("SSO login resolved to existing user (race-condition duplicate removed)",
+				zap.String("user_id", user.UserID),
+				zap.String("email", user.Email),
+			)
+		} else {
+			s.logger.Info("User auto-registered via SSO",
+				zap.String("user_id", user.UserID),
+				zap.String("email", user.Email),
+			)
+		}
+	} else {
+		// User exists, just check if they are active
+		if !user.IsActive {
+			return nil, errors.Unauthorized("Account is deactivated")
+		}
+
+		// Update name if changed on IdP and user hasn't explicitly set it or it's empty
+		if name != "" && user.FullName == "" {
+			user.FullName = name
+			user.UpdatedAt = time.Now()
+			if updateErr := s.repo.UpdateUser(ctx, user); updateErr != nil {
+				s.logger.Warn("Failed to update user's FullName from SSO", zap.Error(updateErr))
+			}
+		}
+	}
+
+	// Update last login
+	if err := s.repo.UpdateLastLogin(ctx, user.UserID, time.Now()); err != nil {
+		s.logger.Error("Failed to update last login", zap.Error(err))
+	}
+
+	// Generate tokens
+	tokens, err := s.generateTokenPair(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+	}
+
+	s.logger.Info("User logged in successfully via SSO",
+		zap.String("user_id", user.UserID),
+		zap.String("email", user.Email),
+	)
+
+	// Don't return password hash
+	user.PasswordHash = ""
+
+	return &auth.AuthResponse{
+		User:   user,
+		Tokens: tokens,
+	}, nil
 }

@@ -25,7 +25,7 @@ import type {
 // In development, Vite proxy handles routing (can use relative URLs)
 // In production (Vercel), must use absolute backend URL
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL 
+  baseURL: import.meta.env.VITE_API_BASE_URL
     ? `${import.meta.env.VITE_API_BASE_URL}/v1`
     : '/v1',
   headers: {
@@ -56,7 +56,11 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Don't attempt refresh for auth endpoints (prevents infinite loop)
+    const isAuthEndpoint = originalRequest.url?.includes('/auth/refresh') ||
+      originalRequest.url?.includes('/auth/login');
+
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
       try {

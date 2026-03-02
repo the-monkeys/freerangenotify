@@ -48,10 +48,10 @@ const AppsList: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Applications</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">Applications</h1>
           <p className="text-gray-500 mt-1 text-sm">Manage your notification applications and API keys</p>
         </div>
         <Button

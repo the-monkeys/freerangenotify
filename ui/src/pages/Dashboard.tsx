@@ -35,10 +35,10 @@ const Dashboard: React.FC = () => {
   }, []);
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-8">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-8">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">System Status</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">System Status</h1>
           <p className="text-gray-500 text-sm mt-1">Monitor message queues and health status</p>
         </div>
         <Button asChild>
@@ -77,9 +77,9 @@ const Dashboard: React.FC = () => {
           {/* DLQ Section */}
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                 <CardTitle className="text-red-600">Dead Letter Queue (DLQ)</CardTitle>
-                <Badge 
+                <Badge
                   variant={dlqItems.length > 0 ? "destructive" : "outline"}
                   className={dlqItems.length > 0 ? "bg-red-100 text-red-700 border-red-300" : "bg-green-100 text-green-700 border-green-300"}
                 >
