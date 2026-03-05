@@ -327,3 +327,62 @@ func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 		"data":    preferences,
 	})
 }
+
+// BulkCreate handles POST /v1/users/bulk
+func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
+	appID, ok := c.Locals("app_id").(string)
+	if !ok || appID == "" {
+		return errors.Unauthorized("Application not authenticated")
+	}
+
+	var req dto.BulkCreateUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	var users []*user.User
+	var bulkErrors []dto.BulkUserError
+
+	for i, ur := range req.Users {
+		u := &user.User{
+			UserID:     ur.UserID,
+			AppID:      appID,
+			Email:      ur.Email,
+			Phone:      ur.Phone,
+			Timezone:   ur.Timezone,
+			Language:   ur.Language,
+			WebhookURL: ur.WebhookURL,
+		}
+		if ur.Preferences != nil {
+			u.Preferences = *ur.Preferences
+		}
+
+		// Validate: require at least email or phone
+		if u.Email == "" && u.Phone == "" {
+			bulkErrors = append(bulkErrors, dto.BulkUserError{
+				Index:   i,
+				Email:   ur.Email,
+				Message: "email or phone required",
+			})
+			continue
+		}
+		users = append(users, u)
+	}
+
+	if len(users) > 0 {
+		if err := h.service.BulkCreate(c.Context(), users); err != nil {
+			h.logger.Error("Bulk user creation failed", zap.Error(err))
+			return err
+		}
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(dto.BulkCreateUserResponse{
+		Created: len(users),
+		Total:   len(req.Users),
+		Errors:  bulkErrors,
+	})
+}

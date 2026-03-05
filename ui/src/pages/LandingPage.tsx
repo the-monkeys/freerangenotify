@@ -23,6 +23,13 @@ const LandingPage: React.FC = () => {
             url: 'https://monkeys.com.co',
             accent: '#E34D3C'
         },
+        {
+            name: 'Monkeys Identity',
+            description: 'A comprehensive identity management solution for secure authentication and user management.',
+            url: 'https://identity.monkeys.support',
+            accent: '#E34D3C'
+        },
+
     ];
 
     return (

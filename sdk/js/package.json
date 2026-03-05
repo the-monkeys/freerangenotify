@@ -1,0 +1,27 @@
+{
+    "name": "@freerangenotify/sdk",
+    "version": "0.1.0",
+    "description": "Official JavaScript/TypeScript SDK for FreeRangeNotify",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "notifications",
+        "push",
+        "email",
+        "sms",
+        "webhook",
+        "sse"
+    ],
+    "license": "MIT",
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}

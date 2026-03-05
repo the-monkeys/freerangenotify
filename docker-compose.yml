@@ -48,6 +48,7 @@ services:
   # Notification Service
   notification-service:
     build: .
+    image: freerange-notify:latest
     container_name: freerange-notification-service
     ports:
       - "${FREERANGE_SERVER_PORT:-8080}:8080"
@@ -71,9 +72,9 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # Notification Worker
+  # Notification Worker (reuses the image built by notification-service)
   notification-worker:
-    build: .
+    image: freerange-notify:latest
     container_name: freerange-notification-worker
     command: [ "./worker" ]
     depends_on:

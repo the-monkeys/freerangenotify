@@ -48,6 +48,10 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 
 	// SSE endpoint
 	v1.Get("/sse", c.SSEHandler.Connect)
+
+	// Webhook playground — public receive & read endpoints
+	v1.Post("/playground/:id", c.PlaygroundHandler.ReceiveWebhook)
+	v1.Get("/playground/:id", c.PlaygroundHandler.GetPayloads)
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -59,6 +63,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users := v1.Group("/users")
 	users.Use(auth)
 	users.Post("/", c.UserHandler.Create)
+	users.Post("/bulk", c.UserHandler.BulkCreate)
 	users.Get("/:id", c.UserHandler.GetByID)
 	users.Put("/:id", c.UserHandler.Update)
 	users.Delete("/:id", c.UserHandler.Delete)
@@ -77,6 +82,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	presence := v1.Group("/presence")
 	presence.Use(auth)
 	presence.Post("/check-in", c.PresenceHandler.CheckIn)
+
+	// Quick-send (simplified notification endpoint)
+	v1.Post("/quick-send", auth, c.QuickSendHandler.Send)
 
 	// Notification routes
 	notifications := v1.Group("/notifications")
@@ -98,6 +106,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Template routes
 	templates := v1.Group("/templates")
 	templates.Use(auth)
+	templates.Get("/library", c.TemplateHandler.GetLibrary)
+	templates.Post("/library/:name/clone", c.TemplateHandler.CloneFromLibrary)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)
 	templates.Get("/", c.TemplateHandler.ListTemplates)
 	templates.Get("/:id", c.TemplateHandler.GetTemplate)
@@ -139,4 +149,16 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	queues.Get("/stats", c.AdminHandler.GetQueueStats)
 	queues.Get("/dlq", c.AdminHandler.ListDLQ)
 	queues.Post("/dlq/replay", c.AdminHandler.ReplayDLQ)
+
+	// Provider health
+	admin.Get("/providers/health", c.AdminHandler.GetProviderHealth)
+
+	// Webhook playground
+	adminAuth.Post("/playground/webhook", c.PlaygroundHandler.CreatePlayground)
+
+	// Analytics
+	adminAuth.Get("/analytics/summary", c.AnalyticsHandler.GetSummary)
+
+	// Activity feed (real-time SSE stream of notification events)
+	adminAuth.Get("/activity-feed", c.SSEHandler.AdminActivityFeed)
 }

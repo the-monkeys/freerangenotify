@@ -9,7 +9,7 @@ import (
 // SendNotificationRequest represents the API request to send a notification
 type SendNotificationRequest struct {
 	UserID        string                 `json:"user_id"` // Removed validate:"required"
-	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	Channel       string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
 	Priority      string                 `json:"priority" validate:"required,oneof=low normal high critical"`
 	Title         string                 `json:"title,omitempty"`
 	Body          string                 `json:"body,omitempty"`

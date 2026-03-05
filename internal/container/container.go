@@ -69,6 +69,12 @@ type Container struct {
 	HealthHandler       *handlers.HealthHandler
 	SSEHandler          *handlers.SSEHandler
 	AuthHandler         *handlers.AuthHandler
+	QuickSendHandler    *handlers.QuickSendHandler
+	PlaygroundHandler   *handlers.PlaygroundHandler
+	AnalyticsHandler    *handlers.AnalyticsHandler
+
+	// Quick-Send
+	QuickSendService *usecases.QuickSendService
 
 	// SSE
 	SSEBroadcaster *sse.Broadcaster
@@ -224,6 +230,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.AdminHandler = handlers.NewAdminHandler(
 		container.Queue,
+		nil, // Provider manager is only available in worker process
 		logger,
 	)
 	container.AuthHandler = handlers.NewAuthHandler(
@@ -240,6 +247,35 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.SSEBroadcaster,
 		container.ApplicationService,
 		container.NotificationService,
+		container.RedisClient,
+		logger,
+	)
+
+	// Quick-Send service and handler
+	container.QuickSendService = usecases.NewQuickSendService(
+		container.NotificationService,
+		repos.User,
+		repos.Template,
+		container.TemplateService,
+		logger,
+	)
+	container.QuickSendHandler = handlers.NewQuickSendHandler(
+		container.QuickSendService,
+		container.Validator,
+		logger,
+	)
+
+	// Playground handler
+	playgroundBaseURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	container.PlaygroundHandler = handlers.NewPlaygroundHandler(
+		container.RedisClient,
+		playgroundBaseURL,
+		logger,
+	)
+
+	// Analytics handler
+	container.AnalyticsHandler = handlers.NewAnalyticsHandler(
+		repos.Notification,
 		logger,
 	)
 

@@ -19,6 +19,11 @@ import type {
   CreateTemplateVersionRequest,
   AddDeviceRequest,
   TemplateVersion,
+  QuickSendRequest,
+  QuickSendResponse,
+  ProviderHealth,
+  DLQItem,
+  AnalyticsSummary,
 } from '../types';
 
 // Use environment variable for backend URL
@@ -160,11 +165,11 @@ interface UserListResponse {
 }
 
 export const usersAPI = {
-  list: async (apiKey: string) => {
-    const { data } = await api.get<ApiResponse<UserListResponse>>('/users/', {
+  list: async (apiKey: string, page = 1, pageSize = 20) => {
+    const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?page=${page}&page_size=${pageSize}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data.data.users;
+    return data.data;
   },
 
   get: async (apiKey: string, id: string) => {
@@ -240,12 +245,20 @@ interface NotificationListResponse {
 }
 
 export const notificationsAPI = {
-  list: async (apiKey: string) => {
+  list: async (apiKey: string, page = 1, pageSize = 20, filters?: { status?: string; channel?: string; from?: string; to?: string }) => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('page_size', String(pageSize));
+    if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+    if (filters?.channel && filters.channel !== 'all') params.set('channel', filters.channel);
+    if (filters?.from) params.set('from_date', new Date(filters.from).toISOString());
+    if (filters?.to) params.set('to_date', new Date(filters.to).toISOString());
+
     // Note: This endpoint is currently NOT wrapped in success/data envelope in backend
-    const { data } = await api.get<NotificationListResponse>('/notifications/', {
+    const { data } = await api.get<NotificationListResponse>(`/notifications/?${params.toString()}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data.notifications;
+    return data;
   },
 
   get: async (apiKey: string, id: string) => {
@@ -297,6 +310,16 @@ export const notificationsAPI = {
   },
 };
 
+// ============= Quick-Send API =============
+export const quickSendAPI = {
+  send: async (apiKey: string, payload: QuickSendRequest) => {
+    const { data } = await api.post<QuickSendResponse>('/quick-send', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+};
+
 // ============= Template APIs =============
 interface TemplateListResponse {
   templates: Template[];
@@ -306,12 +329,12 @@ interface TemplateListResponse {
 }
 
 export const templatesAPI = {
-  list: async (apiKey: string) => {
+  list: async (apiKey: string, limit = 20, offset = 0) => {
     // Note: This endpoint is currently NOT wrapped in success/data envelope in backend
-    const { data } = await api.get<TemplateListResponse>('/templates/', {
+    const { data } = await api.get<TemplateListResponse>(`/templates/?limit=${limit}&offset=${offset}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data.templates;
+    return data;
   },
 
   get: async (apiKey: string, id: string) => {
@@ -361,6 +384,20 @@ export const templatesAPI = {
     });
     return data;
   },
+
+  getLibrary: async (apiKey: string) => {
+    const { data } = await api.get<{ templates: Template[] }>('/templates/library', {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  cloneFromLibrary: async (apiKey: string, name: string) => {
+    const { data } = await api.post<Template>(`/templates/library/${name}/clone`, {}, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
 };
 
 // ============= Admin APIs =============
@@ -376,9 +413,34 @@ export const adminAPI = {
   },
 
   listDLQ: async () => {
-    const { data } = await api.get<{ items: any[] }>('/admin/queues/dlq');
+    const { data } = await api.get<{ items: DLQItem[] }>('/admin/queues/dlq');
     return data.items;
-  }
+  },
+
+  replayDLQ: async (limit = 10) => {
+    const { data } = await api.post<{ replayed_count: number }>(`/admin/queues/dlq/replay?limit=${limit}`);
+    return data;
+  },
+
+  getProviderHealth: async () => {
+    const { data } = await api.get<{ providers: Record<string, ProviderHealth> }>('/admin/providers/health');
+    return data.providers;
+  },
+
+  createPlayground: async () => {
+    const { data } = await api.post<{ id: string; url: string; expires_in: string }>('/admin/playground/webhook');
+    return data;
+  },
+
+  getPlaygroundPayloads: async (id: string) => {
+    const { data } = await api.get<{ id: string; payloads: any[]; count: number }>(`/playground/${id}`);
+    return data;
+  },
+
+  getAnalyticsSummary: async (period = '7d') => {
+    const { data } = await api.get<AnalyticsSummary>(`/admin/analytics/summary?period=${period}`);
+    return data;
+  },
 };
 
 export default api;

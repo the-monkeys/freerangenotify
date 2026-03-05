@@ -32,6 +32,14 @@ type Settings struct {
 	ValidationURL      string              `json:"validation_url,omitempty" es:"validation_url"`
 	ValidationConfig   *ValidationConfig   `json:"validation_config,omitempty" es:"validation_config"`
 	DefaultPreferences *DefaultPreferences `json:"default_preferences,omitempty" es:"default_preferences"`
+	ProviderFallbacks  []ProviderFallback  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
+}
+
+// ProviderFallback defines an ordered list of providers to try for a channel.
+// If the primary provider fails, the system will attempt the next provider in the list.
+type ProviderFallback struct {
+	Channel   string   `json:"channel" es:"channel"`     // e.g. "email", "push", "sms"
+	Providers []string `json:"providers" es:"providers"` // Ordered: ["sendgrid", "smtp"]
 }
 
 type EmailConfig struct {

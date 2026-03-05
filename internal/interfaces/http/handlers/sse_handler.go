@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
@@ -21,15 +23,17 @@ type SSEHandler struct {
 	broadcaster  *sse.Broadcaster
 	appService   usecases.ApplicationService
 	notifService notification.Service
+	redisClient  *redis.Client
 	logger       *zap.Logger
 }
 
 // NewSSEHandler creates a new SSE handler
-func NewSSEHandler(broadcaster *sse.Broadcaster, appService usecases.ApplicationService, notifService notification.Service, logger *zap.Logger) *SSEHandler {
+func NewSSEHandler(broadcaster *sse.Broadcaster, appService usecases.ApplicationService, notifService notification.Service, redisClient *redis.Client, logger *zap.Logger) *SSEHandler {
 	return &SSEHandler{
 		broadcaster:  broadcaster,
 		appService:   appService,
 		notifService: notifService,
+		redisClient:  redisClient,
 		logger:       logger,
 	}
 }
@@ -214,4 +218,67 @@ func (h *SSEHandler) validateExternal(token string, app *application.Application
 	// If legacy logic expected specific struct, we might fail here if we rely on new logic only.
 	// But assuming the external API returns SOMETHING identifiable.
 	return "", fmt.Errorf("could not find user identifier (user_id, id, sub, uid) in response")
+}
+
+// AdminActivityFeed streams real-time notification status events to admin dashboards via SSE.
+// It subscribes to the "notification:activity" Redis pub/sub channel and forwards events.
+func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
+	if h.redisClient == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "activity feed not available (no Redis connection)",
+		})
+	}
+
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("Access-Control-Allow-Origin", "*")
+	c.Set("Access-Control-Allow-Headers", "Cache-Control")
+
+	// Disable write deadline for long-lived stream
+	if c.Context().Conn() != nil {
+		_ = c.Context().Conn().SetWriteDeadline(time.Time{})
+	}
+
+	ctxDone := c.Context().Done()
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		subCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		pubsub := h.redisClient.Subscribe(subCtx, "notification:activity")
+		defer pubsub.Close()
+
+		ch := pubsub.Channel()
+
+		h.logger.Info("Admin activity feed SSE client connected")
+
+		// Send initial connection event
+		fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
+		w.Flush()
+
+		// Heartbeat ticker to keep the connection alive
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case msg, ok := <-ch:
+				if !ok {
+					return
+				}
+				fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+				w.Flush()
+
+			case <-ticker.C:
+				fmt.Fprintf(w, ": keepalive\n\n")
+				w.Flush()
+
+			case <-ctxDone:
+				h.logger.Info("Admin activity feed SSE client disconnected")
+				return
+			}
+		}
+	})
+
+	return nil
 }

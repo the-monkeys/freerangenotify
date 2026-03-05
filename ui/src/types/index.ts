@@ -240,6 +240,27 @@ export interface UpdateNotificationStatusRequest {
     error_message?: string;
 }
 
+// ============= Quick-Send Types =============
+export interface QuickSendRequest {
+    to: string;
+    channel?: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    template?: string;
+    subject?: string;
+    body?: string;
+    data?: Record<string, any>;
+    priority?: 'low' | 'normal' | 'high' | 'critical';
+    scheduled_at?: string;
+    webhook_url?: string;
+}
+
+export interface QuickSendResponse {
+    notification_id: string;
+    status: string;
+    user_id: string;
+    channel: string;
+    message: string;
+}
+
 // ============= Template Types =============
 export interface Template {
     id: string;
@@ -312,4 +333,49 @@ export interface ApiResponse<T> {
     data: T;
     message: string;
     success: boolean;
+}
+
+// ============= Provider Health Types =============
+export interface ProviderHealth {
+    name: string;
+    channel: string;
+    healthy: boolean;
+    breaker_state: string; // closed, open, half-open
+}
+
+// ============= DLQ Types =============
+export interface DLQItem {
+    notification_id: string;
+    priority: string;
+    reason: string;
+    timestamp: string;
+    retry_count: number;
+}
+
+// ============= Analytics Types =============
+export interface ChannelAnalytics {
+    channel: string;
+    sent: number;
+    delivered: number;
+    failed: number;
+    total: number;
+    success_rate: number;
+}
+
+export interface DailyStat {
+    date: string;
+    count: number;
+}
+
+export interface AnalyticsSummary {
+    period: string;
+    total_sent: number;
+    total_delivered: number;
+    total_failed: number;
+    total_pending: number;
+    total_read: number;
+    total_all: number;
+    success_rate: number;
+    by_channel: ChannelAnalytics[];
+    daily_breakdown: DailyStat[];
 }

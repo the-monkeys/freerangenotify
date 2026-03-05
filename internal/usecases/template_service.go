@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -25,10 +26,20 @@ func NewTemplateService(repo templateDomain.Repository, logger *zap.Logger) *Tem
 
 // Create creates a new template with validation
 func (s *TemplateService) Create(ctx context.Context, req *templateDomain.CreateRequest) (*templateDomain.Template, error) {
+	// Default locale to "en" if not provided
+	if req.Locale == "" {
+		req.Locale = "en"
+	}
+
 	// Validate channel
 	validChannels := map[string]bool{"push": true, "email": true, "sms": true, "webhook": true, "in_app": true, "sse": true}
 	if !validChannels[req.Channel] {
 		return nil, fmt.Errorf("invalid channel: %s", req.Channel)
+	}
+
+	// Auto-detect variables from body if not explicitly provided
+	if len(req.Variables) == 0 {
+		req.Variables = extractVariables(req.Body)
 	}
 
 	// Validate variables in template
@@ -127,7 +138,11 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 	}
 	if req.Body != nil && *req.Body != "" {
 		tmpl.Body = *req.Body
-		// Validate new body
+		// Auto-detect variables from new body if variables not explicitly overridden
+		if req.Variables == nil || len(*req.Variables) == 0 {
+			tmpl.Variables = extractVariables(tmpl.Body)
+		}
+		// Validate new body against variables
 		if err := s.validateTemplateVariables(tmpl.Body, tmpl.Variables); err != nil {
 			return nil, fmt.Errorf("template validation failed: %w", err)
 		}
@@ -271,6 +286,27 @@ func (s *TemplateService) GetVersions(ctx context.Context, appID, name, locale s
 	}
 
 	return versions, nil
+}
+
+// extractVariables parses Go template variables ({{.varName}}) from body text.
+// Returns a deduplicated, sorted slice of variable names.
+func extractVariables(body string) []string {
+	re := regexp.MustCompile(`\{\{\s*\.?(\w+)\s*\}\}`)
+	matches := re.FindAllStringSubmatch(body, -1)
+
+	seen := make(map[string]struct{})
+	var vars []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			name := match[1]
+			if _, exists := seen[name]; !exists {
+				seen[name] = struct{}{}
+				vars = append(vars, name)
+			}
+		}
+	}
+	sort.Strings(vars)
+	return vars
 }
 
 // validateTemplateVariables validates that all variables used in the template body are defined

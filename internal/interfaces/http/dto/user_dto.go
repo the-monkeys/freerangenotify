@@ -87,3 +87,22 @@ func ToUserResponse(u *user.User) UserResponse {
 		UpdatedAt:   u.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
+
+// BulkCreateUserRequest represents a request to create multiple users at once.
+type BulkCreateUserRequest struct {
+	Users []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
+}
+
+// BulkCreateUserResponse is the response for bulk user creation.
+type BulkCreateUserResponse struct {
+	Created int             `json:"created"`
+	Total   int             `json:"total"`
+	Errors  []BulkUserError `json:"errors,omitempty"`
+}
+
+// BulkUserError describes a single failure in a bulk user creation.
+type BulkUserError struct {
+	Index   int    `json:"index"`
+	Email   string `json:"email,omitempty"`
+	Message string `json:"message"`
+}

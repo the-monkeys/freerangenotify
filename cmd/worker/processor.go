@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	stdtemplate "text/template"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
@@ -38,6 +40,7 @@ type NotificationProcessor struct {
 	appRepo         application.Repository
 	templateRepo    template.Repository
 	providerManager *providers.Manager
+	redisClient     *redis.Client
 	logger          *zap.Logger
 	config          ProcessorConfig
 	metrics         *metrics.NotificationMetrics
@@ -54,6 +57,7 @@ func NewNotificationProcessor(
 	appRepo application.Repository,
 	templateRepo template.Repository,
 	providerManager *providers.Manager,
+	redisClient *redis.Client,
 	logger *zap.Logger,
 	config ProcessorConfig,
 	metrics *metrics.NotificationMetrics,
@@ -65,10 +69,29 @@ func NewNotificationProcessor(
 		appRepo:         appRepo,
 		templateRepo:    templateRepo,
 		providerManager: providerManager,
+		redisClient:     redisClient,
 		logger:          logger,
 		config:          config,
 		metrics:         metrics,
 		stopChan:        make(chan struct{}),
+	}
+}
+
+// publishActivity publishes a notification status event to Redis pub/sub
+// for the admin activity feed. Fire-and-forget — errors are logged but not returned.
+func (p *NotificationProcessor) publishActivity(ctx context.Context, notificationID string, channel string, status string) {
+	if p.redisClient == nil {
+		return
+	}
+	event := map[string]string{
+		"notification_id": notificationID,
+		"channel":         channel,
+		"status":          status,
+		"timestamp":       time.Now().Format(time.RFC3339),
+	}
+	data, _ := json.Marshal(event)
+	if err := p.redisClient.Publish(ctx, "notification:activity", string(data)).Err(); err != nil {
+		p.logger.Debug("Failed to publish activity event", zap.Error(err))
 	}
 }
 
@@ -184,6 +207,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusProcessing); err != nil {
 		logger.Error("Failed to update status to processing", zap.Error(err))
 	}
+	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "processing")
 
 	// Get user details (only if UserID is present)
 	var usr *user.User
@@ -325,6 +349,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusSent); err != nil {
 		logger.Error("Failed to update status to sent", zap.Error(err))
 	}
+	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "sent")
 
 	// Record metrics
 	if p.metrics != nil {
@@ -366,6 +391,27 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 			p.logger.Debug("Injecting custom email config into context",
 				zap.String("app_id", notif.AppID),
 				zap.String("provider_type", app.Settings.EmailConfig.ProviderType))
+		}
+	}
+
+	// Check for provider fallback chains
+	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+	if err == nil && app != nil && len(app.Settings.ProviderFallbacks) > 0 {
+		for _, fb := range app.Settings.ProviderFallbacks {
+			if fb.Channel == string(notif.Channel) && len(fb.Providers) > 0 {
+				p.logger.Info("Using provider fallback chain",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("channel", fb.Channel),
+					zap.Strings("providers", fb.Providers))
+				result, fbErr := p.providerManager.SendWithFallback(ctx, notif, usr, fb.Providers)
+				if fbErr != nil {
+					return fmt.Errorf("all fallback providers failed: %w", fbErr)
+				}
+				if !result.Success {
+					return fmt.Errorf("fallback delivery failed: %s", result.ErrorType)
+				}
+				return nil
+			}
 		}
 	}
 
@@ -420,6 +466,7 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 
 		// Update status to failed
 		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
+		p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "failed")
 		// Update error message separately
 		notif.ErrorMessage = errorMsg
 		p.notifRepo.Update(ctx, notif)
@@ -463,40 +510,12 @@ func (p *NotificationProcessor) checkUserPreferences(usr *user.User, notif *noti
 
 	// Check quiet hours (except for critical notifications)
 	if notif.Priority != notification.PriorityCritical {
-		if p.isQuietHours(usr) {
+		if utils.IsQuietHours(usr) {
 			return false
 		}
 	}
 
 	return true
-}
-
-// isQuietHours checks if user is in quiet hours
-func (p *NotificationProcessor) isQuietHours(usr *user.User) bool {
-	// If quiet hours not configured, not in quiet hours
-	if usr.Preferences.QuietHours.Start == "" || usr.Preferences.QuietHours.End == "" {
-		return false
-	}
-
-	now := time.Now()
-	if usr.Timezone != "" {
-		loc, err := time.LoadLocation(usr.Timezone)
-		if err != nil {
-			p.logger.Warn("Invalid timezone", zap.String("user_id", usr.UserID), zap.String("timezone", usr.Timezone))
-		} else {
-			now = now.In(loc)
-		}
-	}
-
-	currentTime := now.Format("15:04")
-	start := usr.Preferences.QuietHours.Start
-	end := usr.Preferences.QuietHours.End
-
-	// Handle quiet hours spanning midnight
-	if start < end {
-		return currentTime >= start && currentTime < end
-	}
-	return currentTime >= start || currentTime < end
 }
 
 func (p *NotificationProcessor) scheduler(ctx context.Context) {

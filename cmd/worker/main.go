@@ -215,6 +215,7 @@ func main() {
 		c.DatabaseManager.Repositories.Application,
 		c.DatabaseManager.Repositories.Template,
 		providerManager,
+		c.RedisClient,
 		logger,
 		ProcessorConfig{
 			WorkerCount:     workerCount,

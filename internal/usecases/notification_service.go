@@ -3,6 +3,8 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,8 +15,15 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
+
+// appCacheEntry stores a cached application with expiry time.
+type appCacheEntry struct {
+	app       *application.Application
+	expiresAt time.Time
+}
 
 // NotificationService implements the notification service interface
 type NotificationService struct {
@@ -27,6 +36,8 @@ type NotificationService struct {
 	maxRetries       int
 	metrics          *metrics.NotificationMetrics
 	limiter          limiter.Limiter
+	appCache         map[string]*appCacheEntry
+	appCacheMu       sync.RWMutex
 }
 
 // NotificationServiceConfig holds configuration for the notification service
@@ -56,6 +67,7 @@ func NewNotificationService(
 		maxRetries:       config.MaxRetries,
 		metrics:          metrics,
 		limiter:          l,
+		appCache:         make(map[string]*appCacheEntry),
 	}
 }
 
@@ -70,16 +82,35 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("priority", string(req.Priority)),
 		zap.Any("data", req.Data))
 
-	// Validate request
-	if err := req.Validate(); err != nil {
-		return nil, err
+	// 2.2: Resolve user_id if it's not a UUID (email/external ID → internal UUID)
+	if req.UserID != "" {
+		resolvedID, err := s.resolveUserID(ctx, req.AppID, req.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve user: %w", err)
+		}
+		req.UserID = resolvedID
 	}
 
-	// Fetch template (required)
-	tmpl, err := s.templateRepo.GetByID(ctx, req.TemplateID)
+	// 2.3: Resolve template by name or UUID
+	tmpl, err := s.resolveTemplate(ctx, req.AppID, req.TemplateID)
 	if err != nil {
 		s.logger.Error("Template not found", zap.String("template_id", req.TemplateID), zap.Error(err))
 		return nil, notification.ErrTemplateNotFound
+	}
+	// Update TemplateID to resolved UUID for downstream consistency
+	req.TemplateID = tmpl.ID
+
+	// 2.4: Infer channel from template if not explicitly set
+	if req.Channel == "" {
+		req.Channel = notification.Channel(tmpl.Channel)
+		s.logger.Debug("Inferred channel from template",
+			zap.String("template_id", tmpl.ID),
+			zap.String("channel", string(req.Channel)))
+	}
+
+	// Validate request (after resolution so channel/user/template are populated)
+	if err := req.Validate(); err != nil {
+		return nil, err
 	}
 
 	// Use template subject/body as title/body
@@ -133,7 +164,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		}
 
 		// Check quiet hours
-		if s.isQuietHours(u) && req.Priority != notification.PriorityCritical {
+		if utils.IsQuietHours(u) && req.Priority != notification.PriorityCritical {
 			return nil, fmt.Errorf("user is in quiet hours, only critical notifications allowed")
 		}
 
@@ -290,7 +321,7 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 		}
 
 		// Check quiet hours (skip non-critical during quiet hours)
-		if s.isQuietHours(u) && req.Priority != notification.PriorityCritical {
+		if utils.IsQuietHours(u) && req.Priority != notification.PriorityCritical {
 			s.logger.Debug("User in quiet hours, skipping non-critical notification",
 				zap.String("user_id", userID))
 			continue
@@ -690,6 +721,77 @@ func (s *NotificationService) FlushQueued(ctx context.Context, userID string) er
 	return nil
 }
 
+// resolveUserID converts an email or external identifier to an internal UUID.
+// If the identifier is already a valid UUID, it is returned as-is.
+func (s *NotificationService) resolveUserID(ctx context.Context, appID, identifier string) (string, error) {
+	// If it parses as a UUID, use directly
+	if _, err := uuid.Parse(identifier); err == nil {
+		return identifier, nil
+	}
+
+	// Try email lookup
+	if strings.Contains(identifier, "@") {
+		u, err := s.userRepo.GetByEmail(ctx, appID, identifier)
+		if err == nil {
+			return u.UserID, nil
+		}
+	}
+
+	return "", fmt.Errorf("user %q not found; use a valid email address or internal UUID", identifier)
+}
+
+// resolveTemplate resolves a template reference by name or UUID.
+// It tries UUID first, then name with locale "en", then name with empty locale.
+func (s *NotificationService) resolveTemplate(ctx context.Context, appID, ref string) (*template.Template, error) {
+	if ref == "" {
+		return nil, notification.ErrTemplateNotFound
+	}
+
+	// Try UUID first
+	if _, err := uuid.Parse(ref); err == nil {
+		tmpl, err := s.templateRepo.GetByID(ctx, ref)
+		if err == nil {
+			return tmpl, nil
+		}
+	}
+
+	// Try by name with default locale "en"
+	tmpl, err := s.templateRepo.GetByAppAndName(ctx, appID, ref, "en")
+	if err == nil {
+		return tmpl, nil
+	}
+
+	// Try by name with empty locale (any locale)
+	tmpl, err = s.templateRepo.GetByAppAndName(ctx, appID, ref, "")
+	if err == nil {
+		return tmpl, nil
+	}
+
+	return nil, notification.ErrTemplateNotFound
+}
+
+// getCachedApp fetches an application by ID with a short in-memory cache (30s TTL)
+// to avoid repeated Elasticsearch queries during bulk operations.
+func (s *NotificationService) getCachedApp(ctx context.Context, appID string) (*application.Application, error) {
+	s.appCacheMu.RLock()
+	if entry, ok := s.appCache[appID]; ok && time.Now().Before(entry.expiresAt) {
+		s.appCacheMu.RUnlock()
+		return entry.app, nil
+	}
+	s.appCacheMu.RUnlock()
+
+	app, err := s.appRepo.GetByID(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+
+	s.appCacheMu.Lock()
+	s.appCache[appID] = &appCacheEntry{app: app, expiresAt: time.Now().Add(30 * time.Second)}
+	s.appCacheMu.Unlock()
+
+	return app, nil
+}
+
 // isChannelEnabled checks if a channel is enabled for the user, honoring overrides and defaults
 func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User, channel notification.Channel, category string) bool {
 	// 1. Check category-specific overrides
@@ -726,11 +828,8 @@ func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User
 		return *userPref
 	}
 
-	// 3. Check App Defaults
-	// We need to fetch the application to get defaults.
-	// Optimize: Add caching layer for Application or pass App down from caller if available.
-	// For now, we fetch.
-	app, err := s.appRepo.GetByID(ctx, u.AppID)
+	// 3. Check App Defaults (with in-memory cache to avoid repeated ES queries)
+	app, err := s.getCachedApp(ctx, u.AppID)
 	if err == nil && app.Settings.DefaultPreferences != nil {
 		var appPref *bool
 		switch channel {
@@ -754,34 +853,6 @@ func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User
 	return true
 }
 
-// isQuietHours checks if the user is in quiet hours
-func (s *NotificationService) isQuietHours(u *user.User) bool {
-	// If quiet hours not configured (empty strings), not in quiet hours
-	if u.Preferences.QuietHours.Start == "" || u.Preferences.QuietHours.End == "" {
-		return false
-	}
-
-	now := time.Now()
-	if u.Timezone != "" {
-		loc, err := time.LoadLocation(u.Timezone)
-		if err != nil {
-			s.logger.Warn("Invalid timezone for user", zap.String("user_id", u.UserID), zap.String("timezone", u.Timezone))
-		} else {
-			now = now.In(loc)
-		}
-	}
-
-	currentTime := now.Format("15:04")
-	start := u.Preferences.QuietHours.Start
-	end := u.Preferences.QuietHours.End
-
-	// Handle quiet hours spanning midnight
-	if start < end {
-		return currentTime >= start && currentTime < end
-	}
-	return currentTime >= start || currentTime < end
-}
-
 // GetUnreadCount returns the number of unread notifications for a user
 func (s *NotificationService) GetUnreadCount(ctx context.Context, userID, appID string) (int64, error) {
 	filter := notification.NotificationFilter{
@@ -792,10 +863,23 @@ func (s *NotificationService) GetUnreadCount(ctx context.Context, userID, appID 
 	return s.notificationRepo.Count(ctx, &filter)
 }
 
-// MarkRead marks multiple notifications as read
+// MarkRead marks multiple notifications as read after verifying ownership.
 func (s *NotificationService) MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error {
-	// In a real scenario, we should verify that these notifications belong to the appID and userID
-	// For simplicity in this test environment, we'll proceed with bulk update
+	for _, id := range notificationIDs {
+		notif, err := s.notificationRepo.GetByID(ctx, id)
+		if err != nil {
+			s.logger.Warn("MarkRead: notification not found, skipping",
+				zap.String("notification_id", id), zap.Error(err))
+			continue
+		}
+		if notif.AppID != appID || notif.UserID != userID {
+			s.logger.Warn("MarkRead ownership check failed",
+				zap.String("notification_id", id),
+				zap.String("claimed_user", userID),
+				zap.String("actual_user", notif.UserID))
+			return fmt.Errorf("notification %s does not belong to user %s", id, userID)
+		}
+	}
 	return s.notificationRepo.BulkUpdateStatus(ctx, notificationIDs, notification.StatusRead)
 }
 
