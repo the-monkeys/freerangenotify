@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -14,17 +15,21 @@ import (
 
 // ApplicationHandler handles application-related HTTP requests
 type ApplicationHandler struct {
-	service   usecases.ApplicationService
-	validator *validator.Validator
-	logger    *zap.Logger
+	service        usecases.ApplicationService
+	membershipRepo auth.MembershipRepository
+	appRepo        application.Repository
+	validator      *validator.Validator
+	logger         *zap.Logger
 }
 
 // NewApplicationHandler creates a new ApplicationHandler
-func NewApplicationHandler(service usecases.ApplicationService, v *validator.Validator, logger *zap.Logger) *ApplicationHandler {
+func NewApplicationHandler(service usecases.ApplicationService, membershipRepo auth.MembershipRepository, appRepo application.Repository, v *validator.Validator, logger *zap.Logger) *ApplicationHandler {
 	return &ApplicationHandler{
-		service:   service,
-		validator: v,
-		logger:    logger,
+		service:        service,
+		membershipRepo: membershipRepo,
+		appRepo:        appRepo,
+		validator:      v,
+		logger:         logger,
 	}
 }
 
@@ -222,7 +227,7 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 
 	offset := (page - 1) * pageSize
 
-	// Always filter by current user's applications
+	// Fetch apps the user owns
 	filter := application.ApplicationFilter{
 		AppName:     c.Query("app_name"),
 		AdminUserID: userID,
@@ -233,6 +238,30 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	apps, total, err := h.service.List(c.Context(), filter)
 	if err != nil {
 		return err
+	}
+
+	// Also include apps where the user is a team member
+	if h.membershipRepo != nil && h.appRepo != nil {
+		memberships, mErr := h.membershipRepo.ListByUser(c.Context(), userID)
+		if mErr == nil && len(memberships) > 0 {
+			// Build a set of owned app IDs to avoid duplicates
+			ownedIDs := make(map[string]struct{}, len(apps))
+			for _, a := range apps {
+				ownedIDs[a.AppID] = struct{}{}
+			}
+
+			for _, m := range memberships {
+				if _, exists := ownedIDs[m.AppID]; exists {
+					continue
+				}
+				memberApp, aErr := h.appRepo.GetByID(c.Context(), m.AppID)
+				if aErr != nil {
+					continue
+				}
+				apps = append(apps, memberApp)
+				total++
+			}
+		}
 	}
 
 	appResponses := make([]dto.ApplicationResponse, len(apps))

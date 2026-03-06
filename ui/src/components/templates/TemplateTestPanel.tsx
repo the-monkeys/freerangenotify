@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { templatesAPI, usersAPI } from '../../services/api';
 import type { Template, User } from '../../types';
+import { extractErrorMessage } from '../../lib/utils';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -79,7 +80,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
             const result = await templatesAPI.render(apiKey, template.id, { data: vars });
             setPreview(result.rendered_body || JSON.stringify(result));
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Preview failed');
+            toast.error(extractErrorMessage(err, 'Preview failed'));
         } finally {
             setLoadingPreview(false);
         }
@@ -102,7 +103,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
             const user = users.find(u => u.user_id === selectedUserId);
             toast.success(`Test notification sent to ${user?.email || selectedUserId}`);
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to send test');
+            toast.error(extractErrorMessage(err, 'Failed to send test'));
         } finally {
             setLoadingSend(false);
         }

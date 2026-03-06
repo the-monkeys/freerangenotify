@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { workflowsAPI, usersAPI, applicationsAPI } from '../../services/api';
 import type { Workflow, WorkflowStep, WorkflowStatus, User, Application } from '../../types';
+import { extractErrorMessage } from '../../lib/utils';
 import WorkflowStepCard from '../../components/workflows/WorkflowStepCard';
 import WorkflowStepEditor from '../../components/workflows/WorkflowStepEditor';
 import ResourcePicker from '../../components/ResourcePicker';
@@ -169,7 +170,7 @@ const WorkflowBuilder: React.FC = () => {
             });
             toast.success('Workflow triggered successfully');
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to trigger workflow');
+            toast.error(extractErrorMessage(err, 'Failed to trigger workflow'));
         } finally {
             setTriggering(false);
         }

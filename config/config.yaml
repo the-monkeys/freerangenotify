@@ -135,14 +135,14 @@ features:
   # Phase 1
   workflow_enabled: true
   digest_enabled: true
-  sse_hmac_enforced: false
+  sse_hmac_enforced: true
   # Phase 2
   topics_enabled: true
   throttle_enabled: false
   audit_enabled: true
-  rbac_enabled: false
+  rbac_enabled: true
   # Phase 4
-  template_versioning_enabled: false
+  template_versioning_enabled: true 
   snooze_enabled: true
   # Phase 6
-  multi_environment_enabled: false
+  multi_environment_enabled: true

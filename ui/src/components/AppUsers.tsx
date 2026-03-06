@@ -129,6 +129,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
 
     const handleEditClick = (user: User) => {
         setEditingUser(user.user_id);
+        const qh = user.preferences?.quiet_hours;
         setFormData({
             user_id: user.user_id,
             external_id: user.external_id || '',
@@ -142,7 +143,11 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 sms_enabled: user.preferences?.sms_enabled ?? true,
                 dnd: user.preferences?.dnd ?? false,
                 daily_limit: user.preferences?.daily_limit ?? 0,
-                quiet_hours: user.preferences?.quiet_hours || { enabled: false, start: '', end: '' }
+                quiet_hours: {
+                    enabled: qh?.enabled ?? !!(qh?.start || qh?.end),
+                    start: qh?.start || '',
+                    end: qh?.end || '',
+                }
             }
         });
         setShowAddForm(true);

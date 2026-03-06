@@ -21,6 +21,7 @@ import (
 
 type authService struct {
 	repo                auth.Repository
+	membershipRepo      auth.MembershipRepository
 	jwtManager          *jwt.Manager
 	notificationService notification.Service
 	logger              *zap.Logger
@@ -29,12 +30,14 @@ type authService struct {
 // NewAuthService creates a new auth service
 func NewAuthService(
 	repo auth.Repository,
+	membershipRepo auth.MembershipRepository,
 	jwtManager *jwt.Manager,
 	notificationService notification.Service,
 	logger *zap.Logger,
 ) auth.Service {
 	return &authService{
 		repo:                repo,
+		membershipRepo:      membershipRepo,
 		jwtManager:          jwtManager,
 		notificationService: notificationService,
 		logger:              logger,
@@ -99,6 +102,14 @@ func (s *authService) Register(ctx context.Context, req *auth.RegisterRequest) (
 		zap.String("email", user.Email),
 	)
 
+	// Claim any pending team invitations sent to this email
+	if s.membershipRepo != nil {
+		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+			s.logger.Warn("Failed to claim pending memberships on register",
+				zap.String("email", user.Email), zap.Error(err))
+		}
+	}
+
 	// Don't return password hash
 	user.PasswordHash = ""
 
@@ -145,6 +156,14 @@ func (s *authService) Login(ctx context.Context, req *auth.LoginRequest) (*auth.
 		zap.String("user_id", user.UserID),
 		zap.String("email", user.Email),
 	)
+
+	// Claim any pending team invitations sent to this email
+	if s.membershipRepo != nil {
+		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+			s.logger.Warn("Failed to claim pending memberships on login",
+				zap.String("email", user.Email), zap.Error(err))
+		}
+	}
 
 	// Don't return password hash
 	user.PasswordHash = ""
@@ -640,6 +659,14 @@ func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.A
 		zap.String("user_id", user.UserID),
 		zap.String("email", user.Email),
 	)
+
+	// Claim any pending team invitations sent to this email
+	if s.membershipRepo != nil {
+		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+			s.logger.Warn("Failed to claim pending memberships on SSO login",
+				zap.String("email", user.Email), zap.Error(err))
+		}
+	}
 
 	// Don't return password hash
 	user.PasswordHash = ""

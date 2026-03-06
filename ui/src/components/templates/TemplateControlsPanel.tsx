@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { templatesAPI } from '../../services/api';
 import type { ContentControl } from '../../types';
+import { extractErrorMessage } from '../../lib/utils';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -50,7 +51,7 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
             }
             setValues(merged);
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to load controls');
+            toast.error(extractErrorMessage(err, 'Failed to load controls'));
         } finally {
             setLoading(false);
         }
@@ -62,7 +63,7 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
             await templatesAPI.updateControls(apiKey, templateId, { control_values: values });
             toast.success('Controls updated');
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to save controls');
+            toast.error(extractErrorMessage(err, 'Failed to save controls'));
         } finally {
             setSaving(false);
         }

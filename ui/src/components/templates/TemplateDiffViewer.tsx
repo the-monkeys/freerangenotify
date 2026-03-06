@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { templatesAPI } from '../../services/api';
 import type { TemplateVersion, TemplateDiffResponse } from '../../types';
+import { extractErrorMessage } from '../../lib/utils';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -44,7 +45,7 @@ const TemplateDiffViewer: React.FC<TemplateDiffViewerProps> = ({
             const result = await templatesAPI.diff(apiKey, templateId, Number(fromVersion), Number(toVersion));
             setDiff(result);
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to load diff');
+            toast.error(extractErrorMessage(err, 'Failed to load diff'));
         } finally {
             setLoading(false);
         }

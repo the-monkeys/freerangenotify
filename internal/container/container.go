@@ -9,6 +9,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/audit"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
@@ -102,6 +103,7 @@ type Container struct {
 	TeamService    auth.TeamService
 	TeamHandler    *handlers.TeamHandler
 	MembershipRepo auth.MembershipRepository
+	AppRepo        application.Repository
 
 	// Custom Providers (Phase 3)
 	CustomProviderHandler *handlers.CustomProviderHandler
@@ -163,6 +165,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.SSEBroadcaster.SetRedis(redisClient)
 
 	// Initialize services
+	container.AppRepo = repos.Application
 	container.ApplicationService = services.NewApplicationService(repos.Application, logger)
 	container.UserService = services.NewUserService(repos.User, logger)
 	container.NotificationService = usecases.NewNotificationService(
@@ -200,9 +203,13 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	refreshTokenDuration := time.Duration(cfg.Security.JWTRefreshExpiration) * time.Minute
 	container.JWTManager = jwt.NewManager(cfg.Security.JWTSecret, accessTokenDuration, refreshTokenDuration)
 
+	// Initialize membership repo early — needed by AuthService to claim
+	// pending team invitations on login/register regardless of RBAC toggle.
+	container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
+
 	// Initialize auth repository and service
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), logger)
-	container.AuthService = services.NewAuthService(authRepo, container.JWTManager, container.NotificationService, logger)
+	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, logger)
 
 	// Initialize OIDC
 	if cfg.OIDC.Enabled {
@@ -242,6 +249,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize handlers
 	container.ApplicationHandler = handlers.NewApplicationHandler(
 		container.ApplicationService,
+		container.MembershipRepo,
+		repos.Application,
 		container.Validator,
 		logger,
 	)
@@ -414,8 +423,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// ── Phase 2: RBAC (feature-gated) ──
 	if cfg.Features.RBACEnabled {
-		container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
-		container.TeamService = services.NewTeamService(container.MembershipRepo, logger)
+		container.TeamService = services.NewTeamService(container.MembershipRepo, authRepo, logger)
 		container.TeamHandler = handlers.NewTeamHandler(container.TeamService, repos.Application, logger)
 		logger.Info("RBAC / Team management enabled")
 	}
