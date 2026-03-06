@@ -32,6 +32,9 @@ type QuickSendRequest struct {
 
 	// Optional: explicit webhook URL (for webhook channel without user)
 	WebhookURL string `json:"webhook_url,omitempty"`
+
+	// EnvironmentID is set by the auth middleware (not from JSON body).
+	EnvironmentID string `json:"-"`
 }
 
 // QuickSendResponse is the response for quick-send.

@@ -507,3 +507,384 @@ func (it *IndexTemplates) GetRefreshTokensTemplate() map[string]interface{} {
 		},
 	}
 }
+
+// --- Phase 1: Workflow & Digest Index Templates ---
+
+// GetWorkflowsTemplate returns the Elasticsearch mapping for workflows index.
+func (it *IndexTemplates) GetWorkflowsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"name": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"trigger_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"description": map[string]interface{}{
+					"type": "text",
+				},
+				"steps": map[string]interface{}{
+					"type": "nested",
+					"properties": map[string]interface{}{
+						"id": map[string]interface{}{
+							"type": "keyword",
+						},
+						"name": map[string]interface{}{
+							"type": "text",
+						},
+						"type": map[string]interface{}{
+							"type": "keyword",
+						},
+						"order": map[string]interface{}{
+							"type": "integer",
+						},
+						"config": map[string]interface{}{
+							"type":    "object",
+							"enabled": false,
+						},
+						"on_success": map[string]interface{}{
+							"type": "keyword",
+						},
+						"on_failure": map[string]interface{}{
+							"type": "keyword",
+						},
+						"skip_if": map[string]interface{}{
+							"type":    "object",
+							"enabled": false,
+						},
+					},
+				},
+				"status": map[string]interface{}{
+					"type": "keyword",
+				},
+				"version": map[string]interface{}{
+					"type": "integer",
+				},
+				"created_by": map[string]interface{}{
+					"type": "keyword",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetWorkflowExecutionsTemplate returns the ES mapping for workflow_executions index.
+func (it *IndexTemplates) GetWorkflowExecutionsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"workflow_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"transaction_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"current_step_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"status": map[string]interface{}{
+					"type": "keyword",
+				},
+				"payload": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"step_results": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"started_at": map[string]interface{}{
+					"type": "date",
+				},
+				"completed_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetDigestRulesTemplate returns the Elasticsearch mapping for digest_rules index.
+func (it *IndexTemplates) GetDigestRulesTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"name": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"digest_key": map[string]interface{}{
+					"type": "keyword",
+				},
+				"window": map[string]interface{}{
+					"type": "keyword",
+				},
+				"channel": map[string]interface{}{
+					"type": "keyword",
+				},
+				"template_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"max_batch": map[string]interface{}{
+					"type": "integer",
+				},
+				"status": map[string]interface{}{
+					"type": "keyword",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// ── Phase 2 Index Templates ──
+
+// GetTopicsTemplate returns the Elasticsearch mapping for topics index.
+func (it *IndexTemplates) GetTopicsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"topic_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"name": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type": "keyword",
+						},
+					},
+				},
+				"key": map[string]interface{}{
+					"type": "keyword",
+				},
+				"description": map[string]interface{}{
+					"type": "text",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetTopicSubscriptionsTemplate returns the Elasticsearch mapping for topic_subscriptions index.
+func (it *IndexTemplates) GetTopicSubscriptionsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"subscription_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"topic_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetAuditLogsTemplate returns the Elasticsearch mapping for audit_logs index.
+func (it *IndexTemplates) GetAuditLogsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 1,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"audit_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"actor_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"actor_type": map[string]interface{}{
+					"type": "keyword",
+				},
+				"action": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"changes": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"ip_address": map[string]interface{}{
+					"type": "ip",
+				},
+				"user_agent": map[string]interface{}{
+					"type": "text",
+				},
+				"timestamp": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetEnvironmentsTemplate returns the Elasticsearch mapping for the environments index.
+func (it *IndexTemplates) GetEnvironmentsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"name": map[string]interface{}{
+					"type": "keyword",
+				},
+				"slug": map[string]interface{}{
+					"type": "keyword",
+				},
+				"api_key": map[string]interface{}{
+					"type": "keyword",
+				},
+				"is_default": map[string]interface{}{
+					"type": "boolean",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
+// GetAppMembershipsTemplate returns the Elasticsearch mapping for app_memberships index.
+func (it *IndexTemplates) GetAppMembershipsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"membership_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"user_email": map[string]interface{}{
+					"type": "keyword",
+				},
+				"role": map[string]interface{}{
+					"type": "keyword",
+				},
+				"invited_by": map[string]interface{}{
+					"type": "keyword",
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}

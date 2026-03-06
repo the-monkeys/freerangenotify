@@ -20,6 +20,9 @@ var (
 	ErrDNDEnabled            = errors.New("user has Do Not Disturb enabled")
 	ErrTemplateRequired      = errors.New("template_id is required")
 	ErrTemplateNotFound      = errors.New("template not found")
+	ErrCannotSnooze          = errors.New("notification cannot be snoozed")
+	ErrCannotArchive         = errors.New("notification cannot be archived")
+	ErrInvalidSnoozeDuration = errors.New("invalid snooze duration")
 )
 
 // IsValidationError checks if an error is a validation error

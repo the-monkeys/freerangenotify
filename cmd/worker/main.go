@@ -10,7 +10,11 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/container"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/orchestrator"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"go.uber.org/zap"
 )
 
@@ -192,6 +196,71 @@ func main() {
 		}
 	}
 
+	// ── Phase 3: Slack provider ──
+	if cfg.Providers.Slack.Enabled {
+		slackProvider, err := providers.NewSlackProvider(providers.SlackConfig{
+			Config: providers.Config{
+				Timeout:    time.Duration(cfg.Providers.Slack.Timeout) * time.Second,
+				MaxRetries: cfg.Providers.Slack.MaxRetries,
+				RetryDelay: 2 * time.Second,
+			},
+			DefaultWebhookURL: cfg.Providers.Slack.DefaultWebhookURL,
+		}, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize Slack provider", zap.Error(err))
+		} else {
+			if err := providerManager.RegisterProvider(slackProvider); err != nil {
+				logger.Warn("Failed to register Slack provider", zap.Error(err))
+			} else {
+				logger.Info("Registered Slack provider")
+			}
+		}
+	}
+
+	// ── Phase 3: Discord provider ──
+	if cfg.Providers.Discord.Enabled {
+		discordProvider, err := providers.NewDiscordProvider(providers.DiscordConfig{
+			Config: providers.Config{
+				Timeout:    time.Duration(cfg.Providers.Discord.Timeout) * time.Second,
+				MaxRetries: cfg.Providers.Discord.MaxRetries,
+				RetryDelay: 2 * time.Second,
+			},
+			DefaultWebhookURL: cfg.Providers.Discord.DefaultWebhookURL,
+		}, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize Discord provider", zap.Error(err))
+		} else {
+			if err := providerManager.RegisterProvider(discordProvider); err != nil {
+				logger.Warn("Failed to register Discord provider", zap.Error(err))
+			} else {
+				logger.Info("Registered Discord provider")
+			}
+		}
+	}
+
+	// ── Phase 3: WhatsApp provider (Twilio-backed) ──
+	if cfg.Providers.WhatsApp.Enabled {
+		whatsappProvider, err := providers.NewWhatsAppProvider(providers.WhatsAppConfig{
+			Config: providers.Config{
+				Timeout:    time.Duration(cfg.Providers.WhatsApp.Timeout) * time.Second,
+				MaxRetries: cfg.Providers.WhatsApp.MaxRetries,
+				RetryDelay: 2 * time.Second,
+			},
+			AccountSID: cfg.Providers.WhatsApp.AccountSID,
+			AuthToken:  cfg.Providers.WhatsApp.AuthToken,
+			FromNumber: cfg.Providers.WhatsApp.FromNumber,
+		}, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize WhatsApp provider", zap.Error(err))
+		} else {
+			if err := providerManager.RegisterProvider(whatsappProvider); err != nil {
+				logger.Warn("Failed to register WhatsApp provider", zap.Error(err))
+			} else {
+				logger.Info("Registered WhatsApp provider")
+			}
+		}
+	}
+
 	logger.Info("Provider manager initialized",
 		zap.Strings("channels", func() []string {
 			channels := providerManager.GetSupportedChannels()
@@ -239,6 +308,49 @@ func main() {
 	logger.Info("Notification worker started successfully",
 		zap.Int("worker_count", workerCount))
 
+	// ── Phase 1: Workflow Engine (feature-gated) ──
+	var workflowEngine *orchestrator.Engine
+	if cfg.Features.WorkflowEnabled {
+		wfQueue, ok := c.Queue.(queue.WorkflowQueue)
+		if !ok {
+			logger.Fatal("Queue does not implement WorkflowQueue interface; cannot start workflow engine")
+		}
+		wfRepo := repository.NewWorkflowRepository(c.DatabaseManager.Client.GetClient(), logger)
+		workflowEngine = orchestrator.NewEngine(
+			wfRepo,
+			c.NotificationService,
+			wfQueue,
+			c.RedisClient,
+			logger,
+			c.Metrics,
+			cfg.Queue.Workers,
+		)
+		workflowEngine.Start(processorCtx)
+		logger.Info("Workflow engine started")
+	}
+
+	// ── Phase 1: Digest Manager (feature-gated) ──
+	var digestManager *orchestrator.DigestManager
+	if cfg.Features.DigestEnabled {
+		digestRepo := repository.NewDigestRepository(c.DatabaseManager.Client.GetClient(), logger)
+		digestManager = orchestrator.NewDigestManager(
+			digestRepo,
+			c.NotificationService,
+			c.RedisClient,
+			logger,
+		)
+		processor.SetDigestManager(digestManager)
+		digestManager.StartFlushPoller(processorCtx)
+		logger.Info("Digest manager started")
+	}
+
+	// ── Phase 2: Per-Subscriber Throttle (feature-gated) ──
+	if cfg.Features.ThrottleEnabled {
+		subscriberThrottle := limiter.NewSubscriberThrottle(c.RedisClient, logger)
+		processor.SetSubscriberThrottle(subscriberThrottle)
+		logger.Info("Subscriber throttle enabled")
+	}
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -248,6 +360,20 @@ func main() {
 
 	// Cancel processor context
 	processorCancel()
+
+	// Shutdown workflow engine
+	if workflowEngine != nil {
+		shutdownEngineCtx, shutdownEngineCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownEngineCancel()
+		if err := workflowEngine.Shutdown(shutdownEngineCtx); err != nil {
+			logger.Error("Error shutting down workflow engine", zap.Error(err))
+		}
+	}
+
+	// Shutdown digest manager
+	if digestManager != nil {
+		digestManager.Shutdown()
+	}
 
 	// Wait for processor to finish with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)

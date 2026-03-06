@@ -33,13 +33,16 @@ type AddDeviceRequest struct {
 
 // UpdatePreferencesRequest represents a request to update preferences
 type UpdatePreferencesRequest struct {
-	EmailEnabled *bool                              `json:"email_enabled"`
-	PushEnabled  *bool                              `json:"push_enabled"`
-	SMSEnabled   *bool                              `json:"sms_enabled"`
-	QuietHours   *user.QuietHours                   `json:"quiet_hours,omitempty"`
-	DND          bool                               `json:"dnd"`
-	Categories   map[string]user.CategoryPreference `json:"categories,omitempty"`
-	DailyLimit   int                                `json:"daily_limit"`
+	EmailEnabled    *bool                              `json:"email_enabled"`
+	PushEnabled     *bool                              `json:"push_enabled"`
+	SMSEnabled      *bool                              `json:"sms_enabled"`
+	SlackEnabled    *bool                              `json:"slack_enabled"`    // Phase 5
+	DiscordEnabled  *bool                              `json:"discord_enabled"`  // Phase 5
+	WhatsAppEnabled *bool                              `json:"whatsapp_enabled"` // Phase 5
+	QuietHours      *user.QuietHours                   `json:"quiet_hours,omitempty"`
+	DND             bool                               `json:"dnd"`
+	Categories      map[string]user.CategoryPreference `json:"categories,omitempty"`
+	DailyLimit      int                                `json:"daily_limit"`
 }
 
 // UserResponse represents a user response

@@ -5,6 +5,11 @@ import type { Application, ApplicationSettings } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
+import AppTeam from '../components/apps/AppTeam';
+import AppProviders from '../components/apps/AppProviders';
+import AppEnvironments from '../components/apps/AppEnvironments';
+import DigestRulesList from './digest/DigestRulesList';
+import TopicsList from './topics/TopicsList';
 import SetupWizard from '../components/SetupWizard';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -16,13 +21,22 @@ import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
 import { Copy, Check } from 'lucide-react';
+import { Badge } from '../components/ui/badge';
 
 const AppDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [app, setApp] = useState<Application | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'templates' | 'notifications' | 'settings' | 'integration'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration'>('overview');
+
+    const tabLabels: Record<string, string> = {
+        'digest-rules': 'Digest Rules',
+        'topics': 'Topics',
+        'team': 'Team',
+        'providers': 'Providers',
+        'environments': 'Environments',
+    };
 
     // Local state for editing
     const [appName, setAppName] = useState('');
@@ -36,6 +50,7 @@ const AppDetail: React.FC = () => {
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
     const [showWizard, setShowWizard] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
 
 
     useEffect(() => {
@@ -72,6 +87,10 @@ const AppDetail: React.FC = () => {
             setWebhookUrl(appData.webhook_url || '');
             setWebhooks(appData.webhooks || {});
             setSettings(appData.settings || {});
+
+            // Persist for standalone pages
+            localStorage.setItem('last_api_key', appData.api_key);
+            localStorage.setItem('last_app_id', appData.app_id);
 
             // Initialize static headers text
             const text = Object.entries(appData.settings?.validation_config?.static_headers || {})
@@ -137,12 +156,12 @@ const AppDetail: React.FC = () => {
                 >
                     &larr; Back to Applications
                 </Button>
-                <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+                <h1 className="text-xl sm:text-2xl font-semibold text-foreground">
                     {app.app_name}
                 </h1>
-                <div className="flex items-center mt-2 text-gray-500 text-sm">
+                <div className="flex items-center mt-2 text-muted-foreground text-sm">
                     <span className="mr-2">ID:</span>
-                    <code className="bg-gray-100 px-2 py-0.5 rounded font-mono font-semibold text-xs sm:text-sm break-all">
+                    <code className="bg-muted px-2 py-0.5 rounded font-mono font-semibold text-xs sm:text-sm break-all">
                         {app.app_id}
                     </code>
                 </div>
@@ -158,724 +177,762 @@ const AppDetail: React.FC = () => {
                     }}
                 />
             ) : (<>
-            {/* Tabs */}
-            <div className="flex border-b border-gray-200 mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
-                {(['overview', 'users', 'templates', 'notifications', 'settings', 'integration'] as const).map((tab) => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b-2 ${activeTab === tab
-                            ? 'border-blue-600 text-blue-600 font-semibold'
-                            : 'border-transparent text-gray-500'
-                            } capitalize text-xs sm:text-sm hover:text-blue-600 transition-colors shrink-0`}
-                    >
-                        {tab}
-                    </button>
-                ))}
-            </div>
+                {/* Tabs */}
+                <div className="flex border-b border-border mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
+                    {(['overview', 'users', 'templates', 'notifications', 'digest-rules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration'] as const).map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b-2 ${activeTab === tab
+                                ? 'border-foreground text-foreground font-semibold'
+                                : 'border-transparent text-muted-foreground'
+                                } capitalize text-xs sm:text-sm hover:text-foreground transition-colors shrink-0 inline-flex items-center gap-1.5`}
+                        >
+                            {tabLabels[tab] || tab}
+                            {tab === 'notifications' && unreadCount > 0 && (
+                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4 inline-flex items-center justify-center">
+                                    {unreadCount > 99 ? '99+' : unreadCount}
+                                </Badge>
+                            )}
+                        </button>
+                    ))}
+                </div>
 
-            {/* Overview Tab */}
-            {activeTab === 'overview' && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Application Details</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <form onSubmit={handleUpdateOverview} className="space-y-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="appName">Application Name</Label>
-                                <Input
-                                    id="appName"
-                                    type="text"
-                                    value={appName}
-                                    onChange={(e) => setAppName(e.target.value)}
-                                    required
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="description">Description</Label>
-                                <Textarea
-                                    id="description"
-                                    className="min-h-[100px]"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="webhookUrl">Webhook URL (Default)</Label>
-                                <Input
-                                    id="webhookUrl"
-                                    type="url"
-                                    value={webhookUrl}
-                                    onChange={(e) => setWebhookUrl(e.target.value)}
-                                    placeholder="https://example.com/webhook"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                    The default webhook URL used if no named target is specified.
-                                </p>
-                            </div>
-
-                            {/* Named Webhooks Section */}
-                            <div className="mt-8 pt-8 border-t border-gray-200 space-y-4">
-                                <div>
-                                    <Label className="text-base text-blue-600 block mb-2">
-                                        Named Webhook Endpoints
-                                    </Label>
-                                    <p className="text-sm text-gray-500 mb-6">
-                                        Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
+                {/* Overview Tab */}
+                {activeTab === 'overview' && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Application Details</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={handleUpdateOverview} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="appName">Application Name</Label>
+                                    <Input
+                                        id="appName"
+                                        type="text"
+                                        value={appName}
+                                        onChange={(e) => setAppName(e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="description">Description</Label>
+                                    <Textarea
+                                        id="description"
+                                        className="min-h-[100px]"
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="webhookUrl">Webhook URL (Default)</Label>
+                                    <Input
+                                        id="webhookUrl"
+                                        type="url"
+                                        value={webhookUrl}
+                                        onChange={(e) => setWebhookUrl(e.target.value)}
+                                        placeholder="https://example.com/webhook"
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        The default webhook URL used if no named target is specified.
                                     </p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="newWebhookName" className="text-xs">Target Name</Label>
-                                        <Input
-                                            id="newWebhookName"
-                                            type="text"
-                                            className="text-sm"
-                                            value={newWebhookName}
-                                            onChange={(e) => setNewWebhookName(e.target.value)}
-                                            placeholder="e.g. slack"
-                                        />
+                                {/* Named Webhooks Section */}
+                                <div className="mt-8 pt-8 border-t border-border space-y-4">
+                                    <div>
+                                        <Label className="text-base text-foreground block mb-2">
+                                            Named Webhook Endpoints
+                                        </Label>
+                                        <p className="text-sm text-muted-foreground mb-6">
+                                            Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
+                                        </p>
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="newWebhookUrl" className="text-xs">Webhook URL</Label>
-                                        <div className="flex gap-2">
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="newWebhookName" className="text-xs">Target Name</Label>
                                             <Input
-                                                id="newWebhookUrl"
-                                                type="url"
+                                                id="newWebhookName"
+                                                type="text"
                                                 className="text-sm"
-                                                value={newWebhookUrl}
-                                                onChange={(e) => setNewWebhookUrl(e.target.value)}
-                                                placeholder="https://hooks.slack.com/..."
+                                                value={newWebhookName}
+                                                onChange={(e) => setNewWebhookName(e.target.value)}
+                                                placeholder="e.g. slack"
                                             />
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                onClick={() => {
-                                                    if (newWebhookName && newWebhookUrl) {
-                                                        setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
-                                                        setNewWebhookName('');
-                                                        setNewWebhookUrl('');
-                                                    }
-                                                }}
-                                            >
-                                                Add
-                                            </Button>
                                         </div>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-3">
-                                    {Object.entries(webhooks).map(([name, url]) => (
-                                        <div key={name} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="font-semibold text-sm text-blue-600">{name}</div>
-                                                <div className="text-xs text-gray-500 overflow-hidden text-ellipsis whitespace-nowrap">{url}</div>
-                                            </div>
-                                            <Button
-                                                type="button"
-                                                variant="destructive"
-                                                size="sm"
-                                                onClick={() => {
-                                                    const newWebhooks = { ...webhooks };
-                                                    delete newWebhooks[name];
-                                                    setWebhooks(newWebhooks);
-                                                }}
-                                            >
-                                                Remove
-                                            </Button>
-                                        </div>
-                                    ))}
-                                    {Object.keys(webhooks).length === 0 && (
-                                        <p className="text-sm text-gray-400 text-center italic py-4">
-                                            No named webhooks configured.
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end mt-8">
-                                <Button type="submit">Save Overview & Webhooks</Button>
-                            </div>
-                        </form>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Users Tab */}
-            {activeTab === 'users' && app && (
-                <AppUsers apiKey={app.api_key} />
-            )}
-
-            {/* Templates Tab */}
-            {activeTab === 'templates' && app && (
-                <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
-            )}
-
-            {/* Notifications Tab */}
-            {activeTab === 'notifications' && app && (
-                <AppNotifications appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
-            )}
-
-            {/* Settings Tab */}
-            {activeTab === 'settings' && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Configuration</CardTitle>
-                        <p className="text-gray-500 text-sm">
-                            Manage configuration for this application.
-                        </p>
-                    </CardHeader>
-                    <CardContent>
-                        <form
-                            onSubmit={async (e) => {
-                                e.preventDefault();
-                                try {
-                                    await applicationsAPI.updateSettings(id!, settings);
-                                    toast.success('Settings saved successfully!');
-                                } catch (err: any) {
-                                    toast.error('Error saving settings: ' + (err.response?.data?.message || err.message));
-                                }
-                            }}
-                            className="space-y-8"
-                        >
-                            <div>
-                                <h4 className="text-base font-semibold text-blue-600 mb-4">Core Settings</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="rateLimit">Rate Limit (requests/hour)</Label>
-                                        <Input
-                                            id="rateLimit"
-                                            type="number"
-                                            value={settings.rate_limit || 0}
-                                            onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
-                                            placeholder="e.g. 1000"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label htmlFor="retryAttempts">Retry Attempts</Label>
-                                        <Input
-                                            id="retryAttempts"
-                                            type="number"
-                                            value={settings.retry_attempts || 0}
-                                            onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
-                                            placeholder="e.g. 3"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label htmlFor="defaultTemplate">Default Template ID</Label>
-                                        <Input
-                                            id="defaultTemplate"
-                                            type="text"
-                                            value={settings.default_template || ''}
-                                            onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
-                                            placeholder="Template UUID"
-                                        />
-                                    </div>
-
-                                    <div className="flex flex-col justify-end space-y-4">
-                                        <div className="flex items-center space-x-3">
-                                            <Checkbox
-                                                id="enableWebhooks"
-                                                checked={!!settings.enable_webhooks}
-                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_webhooks: !!checked })}
-                                            />
-                                            <Label htmlFor="enableWebhooks" className="font-medium cursor-pointer">
-                                                Enable Webhooks
-                                            </Label>
-                                        </div>
-                                        <div className="flex items-center space-x-3">
-                                            <Checkbox
-                                                id="enableAnalytics"
-                                                checked={!!settings.enable_analytics}
-                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_analytics: !!checked })}
-                                            />
-                                            <Label htmlFor="enableAnalytics" className="font-medium cursor-pointer">
-                                                Enable Analytics
-                                            </Label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <h4 className="text-base font-semibold text-blue-600 mb-4">Authentication & Security</h4>
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="validationUrl">Validation URL (Zero-Trust API)</Label>
-                                        <Input
-                                            id="validationUrl"
-                                            type="url"
-                                            value={settings.validation_url || ''}
-                                            onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
-                                            placeholder="https://your-bank.com/api/verify-token"
-                                        />
-                                        <p className="text-xs text-gray-500">
-                                            If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
-                                        </p>
-                                    </div>
-
-                                    {settings.validation_url && (
-                                        <div className="p-4 border border-blue-100 rounded bg-blue-50 space-y-4">
-                                            <h5 className="font-semibold text-sm text-blue-800">Validation Request Configuration</h5>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="validationMethod" className="text-xs">Method</Label>
-                                                    <Select
-                                                        value={settings.validation_config?.method || 'POST'}
-                                                        onValueChange={(value) => setSettings({
-                                                            ...settings,
-                                                            validation_config: {
-                                                                ...settings.validation_config,
-                                                                method: value,
-                                                                token_placement: settings.validation_config?.token_placement || 'body_json',
-                                                                token_key: settings.validation_config?.token_key || 'token',
-                                                            }
-                                                        })}
-                                                    >
-                                                        <SelectTrigger className="text-sm">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="POST">POST</SelectItem>
-                                                            <SelectItem value="GET">GET</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="tokenPlacement" className="text-xs">Token Placement</Label>
-                                                    <Select
-                                                        value={settings.validation_config?.token_placement || 'body_json'}
-                                                        onValueChange={(value) => setSettings({
-                                                            ...settings,
-                                                            validation_config: {
-                                                                ...settings.validation_config,
-                                                                method: settings.validation_config?.method || 'POST',
-                                                                token_placement: value,
-                                                                token_key: settings.validation_config?.token_key || 'token',
-                                                            }
-                                                        })}
-                                                    >
-                                                        <SelectTrigger className="text-sm">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="body_json">Body (JSON)</SelectItem>
-                                                            <SelectItem value="body_form">Body (Form URL Encoded)</SelectItem>
-                                                            <SelectItem value="header">Header</SelectItem>
-                                                            <SelectItem value="query">Query Parameter</SelectItem>
-                                                            <SelectItem value="cookie">Cookie</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div className="space-y-2 md:col-span-2">
-                                                    <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
-                                                    <Input
-                                                        id="tokenKey"
-                                                        type="text"
-                                                        className="text-sm"
-                                                        value={settings.validation_config?.token_key || 'token'}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            validation_config: {
-                                                                ...settings.validation_config!,
-                                                                token_key: e.target.value
-                                                            }
-                                                        })}
-                                                        placeholder="e.g. Authorization, access_token, mat"
-                                                    />
-                                                    <p className="text-xs text-gray-500">The name of the header, cookie, or field that contains the token.</p>
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <Label htmlFor="staticHeaders" className="text-xs">Static Headers (e.g., Client-ID, User-Agent)</Label>
-                                                <Textarea
-                                                    id="staticHeaders"
-                                                    className="text-sm font-mono"
-                                                    rows={3}
-                                                    placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
-                                                    value={staticHeadersText}
-                                                    onChange={(e) => {
-                                                        const newText = e.target.value;
-                                                        setStaticHeadersText(newText);
-
-                                                        const lines = newText.split('\n');
-                                                        const headers: Record<string, string> = {};
-                                                        lines.forEach(line => {
-                                                            const parts = line.split(':');
-                                                            if (parts.length >= 2) {
-                                                                const key = parts[0].trim();
-                                                                const val = parts.slice(1).join(':').trim();
-                                                                if (key) headers[key] = val;
-                                                            }
-                                                        });
-                                                        setSettings({
-                                                            ...settings,
-                                                            validation_config: {
-                                                                ...settings.validation_config!,
-                                                                static_headers: headers
-                                                            }
-                                                        });
-                                                    }}
+                                        <div className="space-y-2">
+                                            <Label htmlFor="newWebhookUrl" className="text-xs">Webhook URL</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="newWebhookUrl"
+                                                    type="url"
+                                                    className="text-sm"
+                                                    value={newWebhookUrl}
+                                                    onChange={(e) => setNewWebhookUrl(e.target.value)}
+                                                    placeholder="https://hooks.slack.com/..."
                                                 />
-                                                <p className="text-xs text-gray-500">One header per line. Format: Header-Name: Value</p>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    onClick={() => {
+                                                        if (newWebhookName && newWebhookUrl) {
+                                                            setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
+                                                            setNewWebhookName('');
+                                                            setNewWebhookUrl('');
+                                                        }
+                                                    }}
+                                                >
+                                                    Add
+                                                </Button>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div>
-                                <h4 className="text-base font-semibold text-blue-600 mb-4">Email Channel Configuration</h4>
-                                <div className="p-4 border border-gray-200 rounded bg-gray-50 mb-8 space-y-6">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="emailProvider">Email Provider</Label>
-                                        <Select
-                                            value={settings.email_config?.provider_type || 'system'}
-                                            onValueChange={(value: string) => setSettings({
-                                                ...settings,
-                                                email_config: {
-                                                    ...settings.email_config,
-                                                    provider_type: value as any
-                                                }
-                                            })}
-                                        >
-                                            <SelectTrigger id="emailProvider">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="system">System Default (Global SMTP/SendGrid)</SelectItem>
-                                                <SelectItem value="smtp">Custom SMTP (Direct Gmail, Outlook, etc.)</SelectItem>
-                                                <SelectItem value="sendgrid">Custom SendGrid API</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <p className="text-xs text-gray-500">
-                                            Choose how emails are sent for this application.
-                                        </p>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <Label htmlFor="dailyEmailLimit">Daily Email Limit</Label>
-                                        <Input
-                                            id="dailyEmailLimit"
-                                            type="number"
-                                            value={settings.daily_email_limit || 0}
-                                            onChange={(e) => setSettings({ ...settings, daily_email_limit: parseInt(e.target.value) || 0 })}
-                                            placeholder="e.g. 100"
-                                        />
-                                        <p className="text-xs text-gray-500">
-                                            Maximum number of emails this application can send per day. Set to 0 for unlimited.
-                                        </p>
-                                    </div>
-
-                                    {settings.email_config?.provider_type === 'smtp' && (
-                                        <div className="mt-4 p-4 bg-white border border-gray-200 rounded space-y-4">
-                                            <h5 className="font-semibold text-sm text-blue-800 mb-2">SMTP Settings</h5>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpHost" className="text-xs">SMTP Host</Label>
-                                                    <Input
-                                                        id="smtpHost"
-                                                        type="text"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.host || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
-                                                            }
-                                                        })}
-                                                        placeholder="smtp.gmail.com"
-                                                    />
+                                    <div className="space-y-3">
+                                        {Object.entries(webhooks).map(([name, url]) => (
+                                            <div key={name} className="flex items-center justify-between p-3 bg-muted border border-border rounded">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-semibold text-sm text-foreground">{name}</div>
+                                                    <div className="text-xs text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{url}</div>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpPort" className="text-xs">SMTP Port</Label>
-                                                    <Input
-                                                        id="smtpPort"
-                                                        type="number"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.port || 587}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpUsername" className="text-xs">Username</Label>
-                                                    <Input
-                                                        id="smtpUsername"
-                                                        type="text"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.username || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpPassword" className="text-xs">Password / App Password</Label>
-                                                    <Input
-                                                        id="smtpPassword"
-                                                        type="password"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.password || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpFromEmail" className="text-xs">From Email Address</Label>
-                                                    <Input
-                                                        id="smtpFromEmail"
-                                                        type="email"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.from_email || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="smtpFromName" className="text-xs">From Display Name</Label>
-                                                    <Input
-                                                        id="smtpFromName"
-                                                        type="text"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.smtp_config?.from_name || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
+                                                <Button
+                                                    type="button"
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        const newWebhooks = { ...webhooks };
+                                                        delete newWebhooks[name];
+                                                        setWebhooks(newWebhooks);
+                                                    }}
+                                                >
+                                                    Remove
+                                                </Button>
                                             </div>
-                                        </div>
-                                    )}
-
-                                    {settings.email_config?.provider_type === 'sendgrid' && (
-                                        <div className="mt-4 p-4 bg-white border border-gray-200 rounded space-y-4">
-                                            <h5 className="font-semibold text-sm text-blue-800 mb-2">SendGrid Settings</h5>
-                                            <div className="space-y-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="sendgridKey" className="text-xs">SendGrid API Key</Label>
-                                                    <Input
-                                                        id="sendgridKey"
-                                                        type="password"
-                                                        className="text-sm"
-                                                        value={settings.email_config?.sendgrid_config?.api_key || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            email_config: {
-                                                                ...settings.email_config!,
-                                                                sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
-                                                            }
-                                                        })}
-                                                    />
-                                                </div>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="sendgridFromEmail" className="text-xs">From Email Address</Label>
-                                                        <Input
-                                                            id="sendgridFromEmail"
-                                                            type="email"
-                                                            className="text-sm"
-                                                            value={settings.email_config?.sendgrid_config?.from_email || ''}
-                                                            onChange={(e) => setSettings({
-                                                                ...settings,
-                                                                email_config: {
-                                                                    ...settings.email_config!,
-                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
-                                                                }
-                                                            })}
-                                                        />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <Label htmlFor="sendgridFromName" className="text-xs">From Display Name</Label>
-                                                        <Input
-                                                            id="sendgridFromName"
-                                                            type="text"
-                                                            className="text-sm"
-                                                            value={settings.email_config?.sendgrid_config?.from_name || ''}
-                                                            onChange={(e) => setSettings({
-                                                                ...settings,
-                                                                email_config: {
-                                                                    ...settings.email_config!,
-                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
-                                                                }
-                                                            })}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div>
-                                <h4 className="text-base font-semibold text-blue-600 mb-4">Default Notification Preferences</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="flex items-center space-x-3">
-                                        <Checkbox
-                                            id="emailEnabled"
-                                            checked={settings.default_preferences?.email_enabled ?? true}
-                                            onCheckedChange={(checked: boolean) => setSettings({
-                                                ...settings,
-                                                default_preferences: {
-                                                    ...(settings.default_preferences || {}),
-                                                    email_enabled: !!checked
-                                                }
-                                            })}
-                                        />
-                                        <Label htmlFor="emailEnabled" className="cursor-pointer">Email Enabled</Label>
-                                    </div>
-
-                                    <div className="flex items-center space-x-3">
-                                        <Checkbox
-                                            id="pushEnabled"
-                                            checked={settings.default_preferences?.push_enabled ?? true}
-                                            onCheckedChange={(checked: boolean) => setSettings({
-                                                ...settings,
-                                                default_preferences: {
-                                                    ...(settings.default_preferences || {}),
-                                                    push_enabled: !!checked
-                                                }
-                                            })}
-                                        />
-                                        <Label htmlFor="pushEnabled" className="cursor-pointer">Push Enabled</Label>
-                                    </div>
-
-                                    <div className="flex items-center space-x-3">
-                                        <Checkbox
-                                            id="smsEnabled"
-                                            checked={settings.default_preferences?.sms_enabled ?? true}
-                                            onCheckedChange={(checked: boolean) => setSettings({
-                                                ...settings,
-                                                default_preferences: {
-                                                    ...(settings.default_preferences || {}),
-                                                    sms_enabled: !!checked
-                                                }
-                                            })}
-                                        />
-                                        <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
+                                        ))}
+                                        {Object.keys(webhooks).length === 0 && (
+                                            <p className="text-sm text-muted-foreground text-center italic py-4">
+                                                No named webhooks configured.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="flex justify-end pt-4">
-                                    <Button type="submit">Save Configuration</Button>
-                                </div>
-                            </div>
-                        </form>
-                    </CardContent>
-                </Card>
-            )}
 
-            {/* Integration Tab */}
-            {activeTab === 'integration' && (
-                <div className="space-y-4">
+                                <div className="flex justify-end mt-8">
+                                    <Button type="submit">Save Overview & Webhooks</Button>
+                                </div>
+                            </form>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Users Tab */}
+                {activeTab === 'users' && app && (
+                    <AppUsers apiKey={app.api_key} />
+                )}
+
+                {/* Templates Tab */}
+                {activeTab === 'templates' && app && (
+                    <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
+                )}
+
+                {/* Notifications Tab */}
+                {activeTab === 'notifications' && app && (
+                    <AppNotifications appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
+                )}
+
+                {/* Settings Tab */}
+                {activeTab === 'settings' && (
                     <Card>
                         <CardHeader>
-                            <CardTitle>API Credentials</CardTitle>
+                            <CardTitle>Configuration</CardTitle>
+                            <p className="text-muted-foreground text-sm">
+                                Manage configuration for this application.
+                            </p>
                         </CardHeader>
                         <CardContent>
-                            <div className="space-y-2 mb-6">
-                                <Label htmlFor="apiKey">API Key</Label>
-                                <div className="flex flex-col sm:flex-row gap-2">
-                                    <div className="relative flex-1">
-                                        <Input
-                                            id="apiKey"
-                                            type={showApiKey ? "text" : "password"}
-                                            value={app.api_key}
-                                            readOnly
-                                            className="bg-gray-50 border-gray-200 text-gray-500 pr-24"
-                                        />
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={async () => {
-                                                    try {
-                                                        await navigator.clipboard.writeText(app.api_key);
-                                                        setCopied(true);
-                                                        toast.success('API key copied to clipboard!');
-                                                        setTimeout(() => setCopied(false), 2000);
-                                                    } catch (err) {
-                                                        toast.error('Failed to copy API key');
-                                                    }
-                                                }}
-                                                className="h-8 w-8 p-0"
-                                            >
-                                                {copied ? (
-                                                    <Check className="h-4 w-4 text-green-600" />
-                                                ) : (
-                                                    <Copy className="h-4 w-4" />
-                                                )}
-                                            </Button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowApiKey(!showApiKey)}
-                                                className="text-blue-600 text-xs font-semibold hover:underline px-2"
-                                            >
-                                                {showApiKey ? 'Hide' : 'Show'}
-                                            </button>
+                            <form
+                                onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    try {
+                                        await applicationsAPI.updateSettings(id!, settings);
+                                        toast.success('Settings saved successfully!');
+                                    } catch (err: any) {
+                                        toast.error('Error saving settings: ' + (err.response?.data?.message || err.message));
+                                    }
+                                }}
+                                className="space-y-8"
+                            >
+                                <div>
+                                    <h4 className="text-base font-semibold text-foreground mb-4">Core Settings</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="rateLimit">Rate Limit (requests/hour)</Label>
+                                            <Input
+                                                id="rateLimit"
+                                                type="number"
+                                                value={settings.rate_limit || 0}
+                                                onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
+                                                placeholder="e.g. 1000"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="retryAttempts">Retry Attempts</Label>
+                                            <Input
+                                                id="retryAttempts"
+                                                type="number"
+                                                value={settings.retry_attempts || 0}
+                                                onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
+                                                placeholder="e.g. 3"
+                                            />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="defaultTemplate">Default Template ID</Label>
+                                            <Input
+                                                id="defaultTemplate"
+                                                type="text"
+                                                value={settings.default_template || ''}
+                                                onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
+                                                placeholder="Template UUID"
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-col justify-end space-y-4">
+                                            <div className="flex items-center space-x-3">
+                                                <Checkbox
+                                                    id="enableWebhooks"
+                                                    checked={!!settings.enable_webhooks}
+                                                    onCheckedChange={(checked) => setSettings({ ...settings, enable_webhooks: !!checked })}
+                                                />
+                                                <Label htmlFor="enableWebhooks" className="font-medium cursor-pointer">
+                                                    Enable Webhooks
+                                                </Label>
+                                            </div>
+                                            <div className="flex items-center space-x-3">
+                                                <Checkbox
+                                                    id="enableAnalytics"
+                                                    checked={!!settings.enable_analytics}
+                                                    onCheckedChange={(checked) => setSettings({ ...settings, enable_analytics: !!checked })}
+                                                />
+                                                <Label htmlFor="enableAnalytics" className="font-medium cursor-pointer">
+                                                    Enable Analytics
+                                                </Label>
+                                            </div>
                                         </div>
                                     </div>
-                                    <Button
-                                        type="button"
-                                        variant="secondary"
-                                        onClick={handleRegenerateKey}
-                                    >
-                                        Regenerate
-                                    </Button>
                                 </div>
-                                <p className="text-xs text-gray-500">
-                                    This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
 
-                    <Card className="border-red-300">
-                        <CardHeader>
-                            <CardTitle className="text-red-600">Danger Zone</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <p className="mb-4 text-gray-500 text-sm">
-                                Deleting this application will remove all associated data. This action is irreversible.
-                            </p>
-                            <Button onClick={handleDeleteApp} variant="destructive">
-                                Delete Application
-                            </Button>
+                                <div>
+                                    <h4 className="text-base font-semibold text-foreground mb-4">Authentication & Security</h4>
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="validationUrl">Validation URL (Zero-Trust API)</Label>
+                                            <Input
+                                                id="validationUrl"
+                                                type="url"
+                                                value={settings.validation_url || ''}
+                                                onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
+                                                placeholder="https://your-bank.com/api/verify-token"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
+                                            </p>
+                                        </div>
+
+                                        {settings.validation_url && (
+                                            <div className="p-4 border border-border rounded bg-muted space-y-4">
+                                                <h5 className="font-semibold text-sm text-foreground">Validation Request Configuration</h5>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="validationMethod" className="text-xs">Method</Label>
+                                                        <Select
+                                                            value={settings.validation_config?.method || 'POST'}
+                                                            onValueChange={(value) => setSettings({
+                                                                ...settings,
+                                                                validation_config: {
+                                                                    ...settings.validation_config,
+                                                                    method: value,
+                                                                    token_placement: settings.validation_config?.token_placement || 'body_json',
+                                                                    token_key: settings.validation_config?.token_key || 'token',
+                                                                }
+                                                            })}
+                                                        >
+                                                            <SelectTrigger className="text-sm">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="POST">POST</SelectItem>
+                                                                <SelectItem value="GET">GET</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="tokenPlacement" className="text-xs">Token Placement</Label>
+                                                        <Select
+                                                            value={settings.validation_config?.token_placement || 'body_json'}
+                                                            onValueChange={(value) => setSettings({
+                                                                ...settings,
+                                                                validation_config: {
+                                                                    ...settings.validation_config,
+                                                                    method: settings.validation_config?.method || 'POST',
+                                                                    token_placement: value,
+                                                                    token_key: settings.validation_config?.token_key || 'token',
+                                                                }
+                                                            })}
+                                                        >
+                                                            <SelectTrigger className="text-sm">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="body_json">Body (JSON)</SelectItem>
+                                                                <SelectItem value="body_form">Body (Form URL Encoded)</SelectItem>
+                                                                <SelectItem value="header">Header</SelectItem>
+                                                                <SelectItem value="query">Query Parameter</SelectItem>
+                                                                <SelectItem value="cookie">Cookie</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    <div className="space-y-2 md:col-span-2">
+                                                        <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
+                                                        <Input
+                                                            id="tokenKey"
+                                                            type="text"
+                                                            className="text-sm"
+                                                            value={settings.validation_config?.token_key || 'token'}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                validation_config: {
+                                                                    ...settings.validation_config!,
+                                                                    token_key: e.target.value
+                                                                }
+                                                            })}
+                                                            placeholder="e.g. Authorization, access_token, mat"
+                                                        />
+                                                        <p className="text-xs text-muted-foreground">The name of the header, cookie, or field that contains the token.</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2">
+                                                    <Label htmlFor="staticHeaders" className="text-xs">Static Headers (e.g., Client-ID, User-Agent)</Label>
+                                                    <Textarea
+                                                        id="staticHeaders"
+                                                        className="text-sm font-mono"
+                                                        rows={3}
+                                                        placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
+                                                        value={staticHeadersText}
+                                                        onChange={(e) => {
+                                                            const newText = e.target.value;
+                                                            setStaticHeadersText(newText);
+
+                                                            const lines = newText.split('\n');
+                                                            const headers: Record<string, string> = {};
+                                                            lines.forEach(line => {
+                                                                const parts = line.split(':');
+                                                                if (parts.length >= 2) {
+                                                                    const key = parts[0].trim();
+                                                                    const val = parts.slice(1).join(':').trim();
+                                                                    if (key) headers[key] = val;
+                                                                }
+                                                            });
+                                                            setSettings({
+                                                                ...settings,
+                                                                validation_config: {
+                                                                    ...settings.validation_config!,
+                                                                    static_headers: headers
+                                                                }
+                                                            });
+                                                        }}
+                                                    />
+                                                    <p className="text-xs text-muted-foreground">One header per line. Format: Header-Name: Value</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h4 className="text-base font-semibold text-foreground mb-4">Email Channel Configuration</h4>
+                                    <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="emailProvider">Email Provider</Label>
+                                            <Select
+                                                value={settings.email_config?.provider_type || 'system'}
+                                                onValueChange={(value: string) => setSettings({
+                                                    ...settings,
+                                                    email_config: {
+                                                        ...settings.email_config,
+                                                        provider_type: value as any
+                                                    }
+                                                })}
+                                            >
+                                                <SelectTrigger id="emailProvider">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="system">System Default (Global SMTP/SendGrid)</SelectItem>
+                                                    <SelectItem value="smtp">Custom SMTP (Direct Gmail, Outlook, etc.)</SelectItem>
+                                                    <SelectItem value="sendgrid">Custom SendGrid API</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">
+                                                Choose how emails are sent for this application.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <Label htmlFor="dailyEmailLimit">Daily Email Limit</Label>
+                                            <Input
+                                                id="dailyEmailLimit"
+                                                type="number"
+                                                value={settings.daily_email_limit || 0}
+                                                onChange={(e) => setSettings({ ...settings, daily_email_limit: parseInt(e.target.value) || 0 })}
+                                                placeholder="e.g. 100"
+                                            />
+                                            <p className="text-xs text-muted-foreground">
+                                                Maximum number of emails this application can send per day. Set to 0 for unlimited.
+                                            </p>
+                                        </div>
+
+                                        {settings.email_config?.provider_type === 'smtp' && (
+                                            <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
+                                                <h5 className="font-semibold text-sm text-foreground mb-2">SMTP Settings</h5>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpHost" className="text-xs">SMTP Host</Label>
+                                                        <Input
+                                                            id="smtpHost"
+                                                            type="text"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.host || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
+                                                                }
+                                                            })}
+                                                            placeholder="smtp.gmail.com"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpPort" className="text-xs">SMTP Port</Label>
+                                                        <Input
+                                                            id="smtpPort"
+                                                            type="number"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.port || 587}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpUsername" className="text-xs">Username</Label>
+                                                        <Input
+                                                            id="smtpUsername"
+                                                            type="text"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.username || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpPassword" className="text-xs">Password / App Password</Label>
+                                                        <Input
+                                                            id="smtpPassword"
+                                                            type="password"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.password || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpFromEmail" className="text-xs">From Email Address</Label>
+                                                        <Input
+                                                            id="smtpFromEmail"
+                                                            type="email"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.from_email || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="smtpFromName" className="text-xs">From Display Name</Label>
+                                                        <Input
+                                                            id="smtpFromName"
+                                                            type="text"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.smtp_config?.from_name || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {settings.email_config?.provider_type === 'sendgrid' && (
+                                            <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
+                                                <h5 className="font-semibold text-sm text-foreground mb-2">SendGrid Settings</h5>
+                                                <div className="space-y-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="sendgridKey" className="text-xs">SendGrid API Key</Label>
+                                                        <Input
+                                                            id="sendgridKey"
+                                                            type="password"
+                                                            className="text-sm"
+                                                            value={settings.email_config?.sendgrid_config?.api_key || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config!,
+                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
+                                                                }
+                                                            })}
+                                                        />
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="sendgridFromEmail" className="text-xs">From Email Address</Label>
+                                                            <Input
+                                                                id="sendgridFromEmail"
+                                                                type="email"
+                                                                className="text-sm"
+                                                                value={settings.email_config?.sendgrid_config?.from_email || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    email_config: {
+                                                                        ...settings.email_config!,
+                                                                        sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
+                                                                    }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="sendgridFromName" className="text-xs">From Display Name</Label>
+                                                            <Input
+                                                                id="sendgridFromName"
+                                                                type="text"
+                                                                className="text-sm"
+                                                                value={settings.email_config?.sendgrid_config?.from_name || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    email_config: {
+                                                                        ...settings.email_config!,
+                                                                        sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
+                                                                    }
+                                                                })}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h4 className="text-base font-semibold text-foreground mb-4">Default Notification Preferences</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="flex items-center space-x-3">
+                                            <Checkbox
+                                                id="emailEnabled"
+                                                checked={settings.default_preferences?.email_enabled ?? true}
+                                                onCheckedChange={(checked: boolean) => setSettings({
+                                                    ...settings,
+                                                    default_preferences: {
+                                                        ...(settings.default_preferences || {}),
+                                                        email_enabled: !!checked
+                                                    }
+                                                })}
+                                            />
+                                            <Label htmlFor="emailEnabled" className="cursor-pointer">Email Enabled</Label>
+                                        </div>
+
+                                        <div className="flex items-center space-x-3">
+                                            <Checkbox
+                                                id="pushEnabled"
+                                                checked={settings.default_preferences?.push_enabled ?? true}
+                                                onCheckedChange={(checked: boolean) => setSettings({
+                                                    ...settings,
+                                                    default_preferences: {
+                                                        ...(settings.default_preferences || {}),
+                                                        push_enabled: !!checked
+                                                    }
+                                                })}
+                                            />
+                                            <Label htmlFor="pushEnabled" className="cursor-pointer">Push Enabled</Label>
+                                        </div>
+
+                                        <div className="flex items-center space-x-3">
+                                            <Checkbox
+                                                id="smsEnabled"
+                                                checked={settings.default_preferences?.sms_enabled ?? true}
+                                                onCheckedChange={(checked: boolean) => setSettings({
+                                                    ...settings,
+                                                    default_preferences: {
+                                                        ...(settings.default_preferences || {}),
+                                                        sms_enabled: !!checked
+                                                    }
+                                                })}
+                                            />
+                                            <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end pt-4">
+                                        <Button type="submit">Save Configuration</Button>
+                                    </div>
+                                </div>
+                            </form>
                         </CardContent>
                     </Card>
-                </div>
-            )}
+                )}
+
+                {/* Digest Rules Tab */}
+                {activeTab === 'digest-rules' && app && (
+                    <DigestRulesList apiKey={app.api_key} embedded />
+                )}
+
+                {/* Topics Tab */}
+                {activeTab === 'topics' && app && (
+                    <TopicsList apiKey={app.api_key} embedded />
+                )}
+
+                {/* Team Tab */}
+                {activeTab === 'team' && app && (
+                    <AppTeam appId={app.app_id} />
+                )}
+
+                {/* Providers Tab */}
+                {activeTab === 'providers' && app && (
+                    <AppProviders appId={app.app_id} />
+                )}
+
+                {/* Environments Tab */}
+                {activeTab === 'environments' && app && (
+                    <AppEnvironments
+                        appId={app.app_id}
+                        currentApiKey={app.api_key}
+                        onApiKeyChange={(_apiKey, envName) => {
+                            toast.success(`Switched to ${envName} environment`);
+                            // Re-fetch app details to reflect the new API key context
+                            fetchAppDetails();
+                        }}
+                    />
+                )}
+
+                {/* Integration Tab */}
+                {activeTab === 'integration' && (
+                    <div className="space-y-4">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>API Credentials</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="space-y-2 mb-6">
+                                    <Label htmlFor="apiKey">API Key</Label>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <div className="relative flex-1">
+                                            <Input
+                                                id="apiKey"
+                                                type={showApiKey ? "text" : "password"}
+                                                value={app.api_key}
+                                                readOnly
+                                                className="bg-muted border-border text-muted-foreground pr-24"
+                                            />
+                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={async () => {
+                                                        try {
+                                                            await navigator.clipboard.writeText(app.api_key);
+                                                            setCopied(true);
+                                                            toast.success('API key copied to clipboard!');
+                                                            setTimeout(() => setCopied(false), 2000);
+                                                        } catch (err) {
+                                                            toast.error('Failed to copy API key');
+                                                        }
+                                                    }}
+                                                    className="h-8 w-8 p-0"
+                                                >
+                                                    {copied ? (
+                                                        <Check className="h-4 w-4 text-green-600" />
+                                                    ) : (
+                                                        <Copy className="h-4 w-4" />
+                                                    )}
+                                                </Button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowApiKey(!showApiKey)}
+                                                    className="text-foreground text-xs font-semibold hover:underline px-2"
+                                                >
+                                                    {showApiKey ? 'Hide' : 'Show'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                            onClick={handleRegenerateKey}
+                                        >
+                                            Regenerate
+                                        </Button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
+                                    </p>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-red-300">
+                            <CardHeader>
+                                <CardTitle className="text-red-600">Danger Zone</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <p className="mb-4 text-muted-foreground text-sm">
+                                    Deleting this application will remove all associated data. This action is irreversible.
+                                </p>
+                                <Button onClick={handleDeleteApp} variant="destructive">
+                                    Delete Application
+                                </Button>
+                            </CardContent>
+                        </Card>
+                    </div>
+                )}
             </>)}
         </div>
     );

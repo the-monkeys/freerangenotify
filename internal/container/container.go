@@ -9,12 +9,18 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-redis/redis/v8"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/audit"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
+	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
@@ -75,6 +81,34 @@ type Container struct {
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
+
+	// Workflow Engine (Phase 1 — feature-gated)
+	WorkflowService workflow.Service
+	WorkflowHandler *handlers.WorkflowHandler
+
+	// Digest Engine (Phase 1 — feature-gated)
+	DigestService digest.Service
+	DigestHandler *handlers.DigestHandler
+
+	// Topics (Phase 2 — feature-gated)
+	TopicService topic.Service
+	TopicHandler *handlers.TopicHandler
+
+	// Audit Logs (Phase 2 — feature-gated)
+	AuditService audit.Service
+	AuditHandler *handlers.AuditHandler
+
+	// RBAC / Team Management (Phase 2 — feature-gated)
+	TeamService    auth.TeamService
+	TeamHandler    *handlers.TeamHandler
+	MembershipRepo auth.MembershipRepository
+
+	// Custom Providers (Phase 3)
+	CustomProviderHandler *handlers.CustomProviderHandler
+
+	// Multi-Environment (Phase 6 — feature-gated)
+	EnvironmentService environment.Service
+	EnvironmentHandler *handlers.EnvironmentHandler
 
 	// SSE
 	SSEBroadcaster *sse.Broadcaster
@@ -220,8 +254,26 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.NotificationService,
 		logger,
 	)
+	// Create SMTP provider for template test-send (best-effort — nil if not configured)
+	var smtpProvider providers.Provider
+	if cfg.Providers.SMTP.Host != "" {
+		sp, err := providers.NewSMTPProvider(providers.SMTPConfig{
+			Host:      cfg.Providers.SMTP.Host,
+			Port:      cfg.Providers.SMTP.Port,
+			Username:  cfg.Providers.SMTP.Username,
+			Password:  cfg.Providers.SMTP.Password,
+			FromEmail: cfg.Providers.SMTP.FromEmail,
+			FromName:  cfg.Providers.SMTP.FromName,
+		}, logger)
+		if err != nil {
+			logger.Warn("SMTP provider not available for template test-send", zap.Error(err))
+		} else {
+			smtpProvider = sp
+		}
+	}
 	container.TemplateHandler = handlers.NewTemplateHandler(
 		container.TemplateService,
+		smtpProvider,
 		logger,
 	)
 	container.PresenceHandler = handlers.NewPresenceHandler(
@@ -279,6 +331,94 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		repos.Notification,
 		logger,
 	)
+
+	// ── Phase 3: Custom Provider Handler ──
+	container.CustomProviderHandler = handlers.NewCustomProviderHandler(
+		container.ApplicationService,
+		logger,
+	)
+
+	// ── Phase 1: Workflow Engine (feature-gated) ──
+	if cfg.Features.WorkflowEnabled {
+		wfQueue, ok := container.Queue.(queue.WorkflowQueue)
+		if !ok {
+			logger.Error("Queue does not implement WorkflowQueue — workflow engine disabled")
+		} else {
+			wfRepo := repository.NewWorkflowRepository(dbManager.Client.GetClient(), logger)
+			container.WorkflowService = services.NewWorkflowService(wfRepo, wfQueue, logger)
+			container.WorkflowHandler = handlers.NewWorkflowHandler(
+				container.WorkflowService,
+				container.Validator,
+				logger,
+			)
+			logger.Info("Workflow engine enabled")
+		}
+	}
+
+	// ── Phase 1: Digest Engine (feature-gated) ──
+	if cfg.Features.DigestEnabled {
+		digestRepo := repository.NewDigestRepository(dbManager.Client.GetClient(), logger)
+		container.DigestService = services.NewDigestService(digestRepo, logger)
+		container.DigestHandler = handlers.NewDigestHandler(
+			container.DigestService,
+			container.Validator,
+			logger,
+		)
+		logger.Info("Digest engine enabled")
+	}
+
+	// ── Phase 1: SSE HMAC enforcement (feature-gated) ──
+	if cfg.Features.SSEHMACEnforced {
+		container.SSEHandler.SetHMACEnforced(true)
+		logger.Info("SSE HMAC subscriber authentication enforced")
+	}
+
+	// ── Phase 2: Topics (feature-gated) ──
+	if cfg.Features.TopicsEnabled {
+		topicRepo := repository.NewTopicRepository(dbManager.Client.GetClient(), logger)
+		container.TopicService = services.NewTopicService(topicRepo, logger)
+		container.TopicHandler = handlers.NewTopicHandler(container.TopicService, container.Validator, logger)
+
+		// Wire topic service into notification service for fan-out
+		if ns, ok := container.NotificationService.(*usecases.NotificationService); ok {
+			ns.SetTopicService(container.TopicService)
+		}
+		logger.Info("Topics feature enabled")
+	}
+
+	// ── Phase 2: Audit Logs (feature-gated) ──
+	if cfg.Features.AuditEnabled {
+		auditRepo := repository.NewAuditRepository(dbManager.Client.GetClient(), logger)
+		container.AuditService = services.NewAuditService(auditRepo, logger)
+		container.AuditHandler = handlers.NewAuditHandler(container.AuditService, logger)
+		logger.Info("Audit logging enabled")
+	}
+
+	// ── Phase 2: RBAC (feature-gated) ──
+	if cfg.Features.RBACEnabled {
+		container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
+		container.TeamService = services.NewTeamService(container.MembershipRepo, logger)
+		container.TeamHandler = handlers.NewTeamHandler(container.TeamService, logger)
+		logger.Info("RBAC / Team management enabled")
+	}
+
+	// ── Phase 6: Multi-Environment (feature-gated) ──
+	if cfg.Features.MultiEnvironmentEnabled {
+		envRepo := repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger)
+		// wfRepo may be nil if workflow engine is not enabled
+		var wfRepo workflow.Repository
+		if container.WorkflowService != nil {
+			wfRepoInst := repository.NewWorkflowRepository(dbManager.Client.GetClient(), logger)
+			wfRepo = wfRepoInst
+		}
+		container.EnvironmentService = usecases.NewEnvironmentService(envRepo, repos.Template, wfRepo, logger)
+		container.EnvironmentHandler = handlers.NewEnvironmentHandler(
+			container.EnvironmentService,
+			container.Validator,
+			logger,
+		)
+		logger.Info("Multi-Environment feature enabled")
+	}
 
 	return container, nil
 }

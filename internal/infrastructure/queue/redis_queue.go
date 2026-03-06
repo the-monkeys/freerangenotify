@@ -433,3 +433,73 @@ func (q *RedisQueue) getQueueName(priority notification.Priority) string {
 		return QueueNormal
 	}
 }
+
+// --- Workflow Queue Methods (Phase 1) ---
+
+const (
+	workflowQueueKey   = "frn:queue:workflow"
+	workflowDelayedKey = "frn:workflow:delayed"
+)
+
+// EnqueueWorkflow adds a workflow execution step to the workflow queue.
+func (q *RedisQueue) EnqueueWorkflow(ctx context.Context, item WorkflowQueueItem) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal workflow queue item: %w", err)
+	}
+	return q.client.RPush(ctx, workflowQueueKey, data).Err()
+}
+
+// DequeueWorkflow removes and returns the next workflow item from the queue.
+func (q *RedisQueue) DequeueWorkflow(ctx context.Context) (*WorkflowQueueItem, error) {
+	result, err := q.client.BLPop(ctx, BlockTimeout, workflowQueueKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var item WorkflowQueueItem
+	if err := json.Unmarshal([]byte(result[1]), &item); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal workflow queue item: %w", err)
+	}
+	return &item, nil
+}
+
+// EnqueueWorkflowDelayed adds a workflow item to a sorted set for delayed execution.
+func (q *RedisQueue) EnqueueWorkflowDelayed(ctx context.Context, item WorkflowQueueItem, executeAt time.Time) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal workflow queue item: %w", err)
+	}
+	return q.client.ZAdd(ctx, workflowDelayedKey, &redis.Z{
+		Score:  float64(executeAt.Unix()),
+		Member: string(data),
+	}).Err()
+}
+
+// GetDelayedWorkflowItems returns workflow items whose scheduled time has passed.
+func (q *RedisQueue) GetDelayedWorkflowItems(ctx context.Context, limit int64) ([]WorkflowQueueItem, error) {
+	now := float64(time.Now().Unix())
+	results, err := q.client.ZRangeByScore(ctx, workflowDelayedKey, &redis.ZRangeBy{
+		Min:   "-inf",
+		Max:   fmt.Sprintf("%f", now),
+		Count: limit,
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	var items []WorkflowQueueItem
+	for _, r := range results {
+		var item WorkflowQueueItem
+		if err := json.Unmarshal([]byte(r), &item); err != nil {
+			q.logger.Error("Failed to unmarshal delayed workflow item", zap.Error(err))
+			continue
+		}
+		// Remove from sorted set
+		q.client.ZRem(ctx, workflowDelayedKey, r)
+		items = append(items, item)
+	}
+	return items, nil
+}

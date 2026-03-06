@@ -133,3 +133,4 @@ deploy/
 # Scratch files
 abc.json
 ui/a.json
+cmd/newsletter-broadcaster/*

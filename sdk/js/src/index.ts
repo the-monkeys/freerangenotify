@@ -1,242 +1,148 @@
 /**
  * FreeRangeNotify JavaScript/TypeScript SDK
  *
- * Usage:
+ * Sub-client pattern for resource-oriented access:
+ *
  *   import { FreeRangeNotify } from '@freerangenotify/sdk';
  *
- *   const client = new FreeRangeNotify('your-api-key', {
- *     baseURL: 'https://notify.example.com/v1',
- *   });
+ *   const client = new FreeRangeNotify('frn_xxx', { baseURL: 'http://localhost:8080/v1' });
  *
- *   await client.send({ to: 'user@example.com', template: 'welcome_email', data: { name: 'Alice' } });
+ *   await client.notifications.send({ user_id: '...', channel: 'email', template_id: 'welcome' });
+ *   await client.users.create({ email: 'alice@example.com' });
+ *   await client.templates.list({ channel: 'email' });
+ *
+ *   // Backward-compatible convenience methods
+ *   await client.send({ to: 'user@example.com', template: 'welcome_email' });
  */
 
-export interface SendParams {
-  to: string;
-  template?: string;
-  subject?: string;
-  body?: string;
-  data?: Record<string, unknown>;
-  channel?: string;
-  priority?: 'low' | 'normal' | 'high' | 'critical';
-  scheduledAt?: Date;
-}
-
-export interface SendResult {
-  notification_id: string;
-  status: string;
-  user_id: string;
-  channel: string;
-}
-
-export interface BroadcastParams {
-  template: string;
-  data?: Record<string, unknown>;
-  channel?: string;
-  priority?: string;
-}
-
-export interface BroadcastResult {
-  total_sent: number;
-  notifications: SendResult[];
-}
-
-export interface CreateUserParams {
-  email?: string;
-  phone?: string;
-  timezone?: string;
-  language?: string;
-  external_id?: string;
-}
-
-export interface UpdateUserParams {
-  external_id?: string;
-  email?: string;
-  phone?: string;
-  timezone?: string;
-  language?: string;
-  webhook_url?: string;
-}
-
-export interface User {
-  user_id: string;
-  external_id: string;
-  email: string;
-  phone: string;
-  timezone: string;
-  language: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SSENotification {
-  notification_id: string;
-  title: string;
-  body: string;
-  channel?: string;
-  category?: string;
-  status: string;
-  data?: Record<string, unknown>;
-  created_at: string;
-}
-
-export interface SSEConnectionOptions {
-  /** Called when a notification arrives via SSE. */
-  onNotification: (notification: SSENotification) => void;
-  /** Called when the SSE connection is established. */
-  onConnected?: () => void;
-  /** Called when the SSE connection encounters an error. */
-  onError?: (event: Event) => void;
-}
-
-export interface SSEConnection {
-  /** Close the SSE connection. */
-  close: () => void;
-}
+import { HttpClient } from './client';
+import { NotificationsClient } from './notifications';
+import { UsersClient } from './users';
+import { TemplatesClient } from './templates';
+import { WorkflowsClient } from './workflows';
+import { TopicsClient } from './topics';
+import { PresenceClient } from './presence';
+import { connectSSE } from './sse';
+import type {
+  QuickSendParams,
+  SendResult,
+  BroadcastParams,
+  BroadcastResult,
+  CreateUserParams,
+  UpdateUserParams,
+  User,
+  SSEConnectionOptions,
+  SSEConnection,
+} from './types';
 
 export interface FreeRangeNotifyOptions {
   baseURL?: string;
-}
-
-export class FreeRangeNotifyError extends Error {
-  status: number;
-  body: string;
-
-  constructor(status: number, body: string) {
-    super(`FreeRangeNotify API error (${status}): ${body}`);
-    this.name = 'FreeRangeNotifyError';
-    this.status = status;
-    this.body = body;
-  }
+  /**
+   * Environment label (informational only).
+   * The actual environment is determined server-side by the API key used.
+   * Use a per-environment API key (e.g., `frn_dev_xxx`, `frn_stg_xxx`, `frn_prod_xxx`)
+   * to scope all operations to that environment.
+   */
+  environment?: string;
 }
 
 export class FreeRangeNotify {
   private readonly apiKey: string;
   private readonly baseURL: string;
+  private readonly http: HttpClient;
+
+  /** Notification operations: send, list, mark-read, snooze, archive, etc. */
+  readonly notifications: NotificationsClient;
+  /** User management: CRUD, devices, preferences, subscriber hash. */
+  readonly users: UsersClient;
+  /** Template management: CRUD, versioning, rollback, diff, render, test. */
+  readonly templates: TemplatesClient;
+  /** Workflow management: CRUD, trigger, executions. */
+  readonly workflows: WorkflowsClient;
+  /** Topic management: CRUD, subscribers. */
+  readonly topics: TopicsClient;
+  /** Presence: smart delivery check-in. */
+  readonly presence: PresenceClient;
 
   constructor(apiKey: string, options?: FreeRangeNotifyOptions) {
     if (!apiKey) throw new Error('API key is required');
     this.apiKey = apiKey;
     this.baseURL = (options?.baseURL || 'http://localhost:8080/v1').replace(/\/+$/, '');
+    this.http = new HttpClient(this.apiKey, this.baseURL);
+
+    this.notifications = new NotificationsClient(this.http);
+    this.users = new UsersClient(this.http);
+    this.templates = new TemplatesClient(this.http);
+    this.workflows = new WorkflowsClient(this.http);
+    this.topics = new TopicsClient(this.http);
+    this.presence = new PresenceClient(this.http);
   }
 
-  /**
-   * Send a notification to a single recipient using Quick-Send.
-   */
-  async send(params: SendParams): Promise<SendResult> {
-    return this.request<SendResult>('POST', '/quick-send', {
-      to: params.to,
-      template: params.template,
-      subject: params.subject,
-      body: params.body,
-      data: params.data,
-      channel: params.channel,
-      priority: params.priority,
-      scheduled_at: params.scheduledAt?.toISOString(),
-    });
+  // ── Backward-compatible convenience methods ──
+
+  /** Send a notification via Quick-Send (delegates to notifications.quickSend). */
+  async send(params: QuickSendParams): Promise<SendResult> {
+    return this.notifications.quickSend(params);
   }
 
-  /**
-   * Broadcast a notification to all users in the application.
-   */
+  /** Broadcast to all users (delegates to notifications.broadcast). */
   async broadcast(params: BroadcastParams): Promise<BroadcastResult> {
-    return this.request<BroadcastResult>('POST', '/notifications/broadcast', params);
+    return this.notifications.broadcast(params);
   }
 
-  /**
-   * Create a user profile for targeting notifications.
-   */
+  /** Create a user (delegates to users.create). */
   async createUser(params: CreateUserParams): Promise<User> {
-    return this.request<User>('POST', '/users/', params);
+    return this.users.create(params);
   }
 
-  /**
-   * Update an existing user (e.g. to change external_id after a username change).
-   */
+  /** Update a user (delegates to users.update). */
   async updateUser(userId: string, params: UpdateUserParams): Promise<User> {
-    return this.request<User>('PUT', `/users/${userId}`, params);
+    return this.users.update(userId, params);
   }
 
-  /**
-   * List users in the application.
-   */
+  /** List users (delegates to users.list). */
   async listUsers(page = 1, pageSize = 20): Promise<{ users: User[]; total_count: number }> {
-    return this.request('GET', `/users/?page=${page}&page_size=${pageSize}`);
+    const result = await this.users.list(page, pageSize);
+    return { users: result.users, total_count: result.total_count };
   }
+
+  // ── SSE ──
 
   /**
    * Open a real-time SSE connection for a user.
-   *
-   * Uses named SSE events — the server sends `event: notification` with a flat JSON payload.
-   *
-   * `userId` can be the internal UUID or an `external_id`. When a token is provided,
-   * the server resolves `external_id` to the internal UUID automatically.
    *
    * ```ts
    * const conn = client.connectSSE('user-uuid', {
    *   onNotification: (n) => console.log(n.title, n.body),
    *   onConnected: () => console.log('SSE connected'),
    * });
-   * // Using external_id:
-   * const conn = client.connectSSE('my_platform_username', { ... });
    * // later: conn.close();
    * ```
    */
   connectSSE(userId: string, options: SSEConnectionOptions): SSEConnection {
-    if (!userId) throw new Error('userId is required for SSE');
-    if (!options.onNotification) throw new Error('onNotification callback is required');
-
-    // Build URL with user_id + optional token for auth. Strip /v1 suffix to get origin.
-    const origin = this.baseURL.replace(/\/v1$/, '');
-    let url = `${origin}/v1/sse?user_id=${encodeURIComponent(userId)}`;
-    url += `&token=${encodeURIComponent(this.apiKey)}`;
-
-    const es = new EventSource(url);
-
-    es.addEventListener('connected', () => {
-      options.onConnected?.();
-    });
-
-    es.addEventListener('notification', (event) => {
-      try {
-        const notif: SSENotification = JSON.parse((event as MessageEvent).data);
-        options.onNotification(notif);
-      } catch {
-        // ignore malformed
-      }
-    });
-
-    if (options.onError) {
-      es.onerror = options.onError;
-    }
-
-    return {
-      close: () => es.close(),
-    };
-  }
-
-  // ── Internal ──────────────────────────────────────────────
-
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const url = this.baseURL + path;
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${this.apiKey}`,
-      'Content-Type': 'application/json',
-    };
-
-    const init: RequestInit = { method, headers };
-    if (body && method !== 'GET') {
-      init.body = JSON.stringify(body);
-    }
-
-    const res = await fetch(url, init);
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new FreeRangeNotifyError(res.status, text);
-    }
-
-    return res.json() as Promise<T>;
+    return connectSSE(this.baseURL, this.apiKey, userId, options);
   }
 }
+
+// Re-export everything
+export { FreeRangeNotifyError } from './errors';
+export { HttpClient } from './client';
+export { NotificationsClient } from './notifications';
+export { UsersClient } from './users';
+export { TemplatesClient } from './templates';
+export { WorkflowsClient } from './workflows';
+export { TopicsClient } from './topics';
+export { PresenceClient } from './presence';
+export { connectSSE } from './sse';
+export {
+  workflow,
+  emailStep, smsStep, pushStep, inAppStep, webhookStep, slackStep, discordStep,
+  delayStep, digestStep, condition, noop,
+  channelStep,
+  WorkflowBuilder, ChannelStepBuilder, DelayStepBuilder, DigestStepBuilder,
+  ConditionStepBuilder, NoopStepBuilder,
+} from './workflow_builder';
+export type { StepBuilder, ConditionOperator } from './workflow_builder';
+export * from './types';
 
 export default FreeRangeNotify;

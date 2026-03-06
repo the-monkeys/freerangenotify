@@ -9,18 +9,22 @@ import (
 type Channel string
 
 const (
-	ChannelPush    Channel = "push"
-	ChannelEmail   Channel = "email"
-	ChannelSMS     Channel = "sms"
-	ChannelWebhook Channel = "webhook"
-	ChannelInApp   Channel = "in_app"
-	ChannelSSE     Channel = "sse"
+	ChannelPush     Channel = "push"
+	ChannelEmail    Channel = "email"
+	ChannelSMS      Channel = "sms"
+	ChannelWebhook  Channel = "webhook"
+	ChannelInApp    Channel = "in_app"
+	ChannelSSE      Channel = "sse"
+	ChannelSlack    Channel = "slack"    // Phase 3
+	ChannelDiscord  Channel = "discord"  // Phase 3
+	ChannelWhatsApp Channel = "whatsapp" // Phase 3
 )
 
 // Valid checks if the channel is valid
 func (c Channel) Valid() bool {
 	switch c {
-	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp, ChannelSSE:
+	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp, ChannelSSE,
+		ChannelSlack, ChannelDiscord, ChannelWhatsApp:
 		return true
 	default:
 		return false
@@ -69,12 +73,14 @@ const (
 	StatusRead       Status = "read"
 	StatusFailed     Status = "failed"
 	StatusCancelled  Status = "cancelled"
+	StatusSnoozed    Status = "snoozed"  // Phase 5: deferred by user
+	StatusArchived   Status = "archived" // Phase 5: dismissed by user
 )
 
 // Valid checks if the status is valid
 func (s Status) Valid() bool {
 	switch s {
-	case StatusPending, StatusQueued, StatusProcessing, StatusSent, StatusDelivered, StatusRead, StatusFailed, StatusCancelled:
+	case StatusPending, StatusQueued, StatusProcessing, StatusSent, StatusDelivered, StatusRead, StatusFailed, StatusCancelled, StatusSnoozed, StatusArchived:
 		return true
 	default:
 		return false
@@ -88,13 +94,14 @@ func (s Status) String() string {
 
 // IsFinal returns true if this is a terminal status
 func (s Status) IsFinal() bool {
-	return s == StatusDelivered || s == StatusRead || s == StatusFailed || s == StatusCancelled
+	return s == StatusDelivered || s == StatusRead || s == StatusFailed || s == StatusCancelled || s == StatusArchived
 }
 
 // Notification represents a notification entity
 type Notification struct {
 	NotificationID       string                 `json:"notification_id" es:"notification_id"`
 	AppID                string                 `json:"app_id" es:"app_id"`
+	EnvironmentID        string                 `json:"environment_id,omitempty" es:"environment_id"`
 	UserID               string                 `json:"user_id" es:"user_id"`
 	TemplateID           string                 `json:"template_id,omitempty" es:"template_id"`
 	Channel              Channel                `json:"channel" es:"channel"`
@@ -111,6 +118,8 @@ type Notification struct {
 	ErrorMessage         string                 `json:"error_message,omitempty" es:"error_message"`
 	RetryCount           int                    `json:"retry_count" es:"retry_count"`
 	Recurrence           *Recurrence            `json:"recurrence,omitempty" es:"recurrence"`
+	SnoozedUntil         *time.Time             `json:"snoozed_until,omitempty" es:"snoozed_until"` // Phase 5
+	ArchivedAt           *time.Time             `json:"archived_at,omitempty" es:"archived_at"`     // Phase 5
 	CreatedAt            time.Time              `json:"created_at" es:"created_at"`
 	UpdatedAt            time.Time              `json:"updated_at" es:"updated_at"`
 	RenderedNotification *Content               `json:"rendered_notification,omitempty" es:"-"`
@@ -133,20 +142,21 @@ type Content struct {
 
 // NotificationFilter represents query filters for notifications
 type NotificationFilter struct {
-	AppID      string                 `json:"app_id,omitempty"`
-	UserID     string                 `json:"user_id,omitempty"`
-	Channel    Channel                `json:"channel,omitempty"`
-	Status     Status                 `json:"status,omitempty"`
-	Priority   Priority               `json:"priority,omitempty"`
-	TemplateID string                 `json:"template_id,omitempty"`
-	FromDate   *time.Time             `json:"from_date,omitempty"`
-	ToDate     *time.Time             `json:"to_date,omitempty"`
-	Category   string                 `json:"category,omitempty"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
-	Page       int                    `json:"page,omitempty"`
-	PageSize   int                    `json:"page_size,omitempty"`
-	SortBy     string                 `json:"sort_by,omitempty"`
-	SortOrder  string                 `json:"sort_order,omitempty"` // "asc" or "desc"
+	AppID         string                 `json:"app_id,omitempty"`
+	EnvironmentID string                 `json:"environment_id,omitempty"`
+	UserID        string                 `json:"user_id,omitempty"`
+	Channel       Channel                `json:"channel,omitempty"`
+	Status        Status                 `json:"status,omitempty"`
+	Priority      Priority               `json:"priority,omitempty"`
+	TemplateID    string                 `json:"template_id,omitempty"`
+	FromDate      *time.Time             `json:"from_date,omitempty"`
+	ToDate        *time.Time             `json:"to_date,omitempty"`
+	Category      string                 `json:"category,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	Page          int                    `json:"page,omitempty"`
+	PageSize      int                    `json:"page_size,omitempty"`
+	SortBy        string                 `json:"sort_by,omitempty"`
+	SortOrder     string                 `json:"sort_order,omitempty"` // "asc" or "desc"
 }
 
 // DefaultFilter returns a filter with default values
@@ -195,6 +205,11 @@ type Repository interface {
 	GetPending(ctx context.Context) ([]*Notification, error)
 	GetRetryable(ctx context.Context, maxRetries int) ([]*Notification, error)
 	IncrementRetryCount(ctx context.Context, id string, errorMessage string) error
+	// Phase 5: snooze, archive, mark-all-read
+	UpdateSnooze(ctx context.Context, id string, status Status, snoozedUntil *time.Time) error
+	BulkArchive(ctx context.Context, ids []string, archivedAt time.Time) error
+	MarkAllRead(ctx context.Context, userID, appID, category string) (int, error)
+	ListSnoozedDue(ctx context.Context, now time.Time) ([]*Notification, error)
 }
 
 // Service defines the business logic interface for notifications
@@ -213,19 +228,26 @@ type Service interface {
 	ListUnread(ctx context.Context, userID, appID string) ([]*Notification, error)
 	MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error
 	Broadcast(ctx context.Context, req BroadcastRequest) ([]*Notification, error)
+	// Phase 5: snooze, archive, mark-all-read
+	Snooze(ctx context.Context, notificationID, appID string, until time.Time) error
+	Unsnooze(ctx context.Context, notificationID, appID string) error
+	Archive(ctx context.Context, notificationIDs []string, appID, userID string) error
+	MarkAllRead(ctx context.Context, userID, appID, category string) error
+	ListSnoozedDue(ctx context.Context) ([]*Notification, error)
 }
 
 // BroadcastRequest represents a request to send a notification to all users of an application
 type BroadcastRequest struct {
-	AppID       string                 `json:"app_id" validate:"required"`
-	Channel     Channel                `json:"channel" validate:"required"`
-	Priority    Priority               `json:"priority" validate:"required"`
-	Title       string                 `json:"title,omitempty"`
-	Body        string                 `json:"body,omitempty"`
-	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id" validate:"required"`
-	Category    string                 `json:"category,omitempty"`
-	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
+	AppID         string                 `json:"app_id" validate:"required"`
+	EnvironmentID string                 `json:"environment_id,omitempty"`
+	Channel       Channel                `json:"channel" validate:"required"`
+	Priority      Priority               `json:"priority" validate:"required"`
+	Title         string                 `json:"title,omitempty"`
+	Body          string                 `json:"body,omitempty"`
+	Data          map[string]interface{} `json:"data,omitempty"`
+	TemplateID    string                 `json:"template_id" validate:"required"`
+	Category      string                 `json:"category,omitempty"`
+	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
 }
 
 // Validate validates the broadcast request
@@ -297,17 +319,19 @@ func (n *Notification) IsScheduled() bool {
 
 // SendRequest represents a request to send a notification
 type SendRequest struct {
-	AppID       string                 `json:"app_id" validate:"required"`
-	UserID      string                 `json:"user_id"` // Removed validate:"required"
-	Channel     Channel                `json:"channel"`  // Optional: inferred from template if empty
-	Priority    Priority               `json:"priority" validate:"required"`
-	Title       string                 `json:"title,omitempty"`
-	Body        string                 `json:"body,omitempty"`
-	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id" validate:"required"`
-	Category    string                 `json:"category,omitempty"`
-	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
-	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
+	AppID         string                 `json:"app_id" validate:"required"`
+	EnvironmentID string                 `json:"environment_id,omitempty"`
+	UserID        string                 `json:"user_id"` // Removed validate:"required"
+	Channel       Channel                `json:"channel"` // Optional: inferred from template if empty
+	Priority      Priority               `json:"priority" validate:"required"`
+	Title         string                 `json:"title,omitempty"`
+	Body          string                 `json:"body,omitempty"`
+	Data          map[string]interface{} `json:"data,omitempty"`
+	TemplateID    string                 `json:"template_id" validate:"required"`
+	Category      string                 `json:"category,omitempty"`
+	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
+	TopicID       string                 `json:"topic_id,omitempty"` // Phase 2: send to all subscribers of a topic
 }
 
 // Validate validates the send request
@@ -315,8 +339,8 @@ func (r *SendRequest) Validate() error {
 	if r.AppID == "" {
 		return ErrInvalidAppID
 	}
-	// Conditional UserID validation
-	if r.UserID == "" {
+	// Conditional UserID validation — TopicID can substitute for UserID
+	if r.UserID == "" && r.TopicID == "" {
 		if r.Channel != ChannelWebhook {
 			return ErrInvalidUserID
 		}
@@ -358,17 +382,18 @@ func (r *SendRequest) Validate() error {
 
 // BulkSendRequest represents a request to send notifications to multiple users
 type BulkSendRequest struct {
-	AppID       string                 `json:"app_id" validate:"required"`
-	UserIDs     []string               `json:"user_ids" validate:"required,min=1"`
-	Channel     Channel                `json:"channel" validate:"required"`
-	Priority    Priority               `json:"priority" validate:"required"`
-	Title       string                 `json:"title" validate:"required"`
-	Body        string                 `json:"body" validate:"required"`
-	Data        map[string]interface{} `json:"data,omitempty"`
-	TemplateID  string                 `json:"template_id,omitempty"`
-	Category    string                 `json:"category,omitempty"`
-	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
-	Recurrence  *Recurrence            `json:"recurrence,omitempty"`
+	AppID         string                 `json:"app_id" validate:"required"`
+	EnvironmentID string                 `json:"environment_id,omitempty"`
+	UserIDs       []string               `json:"user_ids" validate:"required,min=1"`
+	Channel       Channel                `json:"channel" validate:"required"`
+	Priority      Priority               `json:"priority" validate:"required"`
+	Title         string                 `json:"title" validate:"required"`
+	Body          string                 `json:"body" validate:"required"`
+	Data          map[string]interface{} `json:"data,omitempty"`
+	TemplateID    string                 `json:"template_id,omitempty"`
+	Category      string                 `json:"category,omitempty"`
+	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
 }
 
 // Validate validates the bulk send request

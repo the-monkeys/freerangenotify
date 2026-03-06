@@ -193,7 +193,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             </CardHeader>
             <CardContent>
                 {showAddForm && (
-                    <form onSubmit={handleUpdateUser} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                    <form onSubmit={handleUpdateUser} className="mb-8 bg-muted p-6 rounded border border-border space-y-4">
                         <h4 className="text-lg font-semibold mb-4">{editingUser ? 'Edit User' : 'Add New User'}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -205,10 +205,10 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
                                     placeholder="e.g. EMP_001 (Optional)"
                                     disabled={!!editingUser}
-                                    className={editingUser ? "bg-gray-100 cursor-not-allowed" : ""}
+                                    className={editingUser ? "bg-muted cursor-not-allowed" : ""}
                                 />
                                 {!editingUser && (
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-xs text-muted-foreground">
                                         Leave empty to auto-generate a UUID.
                                     </p>
                                 )}
@@ -315,7 +315,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     </div>
                                 </div>
 
-                                <div className="mt-4 border-t border-gray-200 pt-4">
+                                <div className="mt-4 border-t border-border pt-4">
                                     <div className="flex items-center space-x-2 mb-2">
                                         <Checkbox
                                             id="quiet_hours_enabled"
@@ -386,7 +386,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 )}
 
                 {users.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8 text-sm">No users found for this application.</p>
+                    <p className="text-muted-foreground text-center py-8 text-sm">No users found for this application.</p>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table>
@@ -407,7 +407,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                         <TableCell>
                                             <button
                                                 onClick={() => handleEditClick(user)}
-                                                className="text-blue-600 hover:underline font-semibold mr-4"
+                                                className="text-foreground hover:underline font-semibold mr-4"
                                             >
                                                 Edit
                                             </button>

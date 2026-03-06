@@ -4,10 +4,12 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
+	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -54,6 +56,10 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		Timezone:   req.Timezone,
 		Language:   req.Language,
 		WebhookURL: req.WebhookURL,
+	}
+
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		u.EnvironmentID = envID
 	}
 
 	if req.Preferences != nil {
@@ -190,6 +196,10 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 		Offset:   offset,
 	}
 
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		filter.EnvironmentID = envID
+	}
+
 	users, total, err := h.service.List(c.Context(), filter)
 	if err != nil {
 		return err
@@ -292,12 +302,15 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 	}
 
 	preferences := user.Preferences{
-		EmailEnabled: req.EmailEnabled,
-		PushEnabled:  req.PushEnabled,
-		SMSEnabled:   req.SMSEnabled,
-		DND:          req.DND,
-		Categories:   req.Categories,
-		DailyLimit:   req.DailyLimit,
+		EmailEnabled:    req.EmailEnabled,
+		PushEnabled:     req.PushEnabled,
+		SMSEnabled:      req.SMSEnabled,
+		SlackEnabled:    req.SlackEnabled,
+		DiscordEnabled:  req.DiscordEnabled,
+		WhatsAppEnabled: req.WhatsAppEnabled,
+		DND:             req.DND,
+		Categories:      req.Categories,
+		DailyLimit:      req.DailyLimit,
 	}
 
 	if req.QuietHours != nil {
@@ -388,5 +401,27 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 		Created: len(users),
 		Total:   len(req.Users),
 		Errors:  bulkErrors,
+	})
+}
+
+// ── Phase 5: Subscriber Hash ────────────────────────
+
+// GetSubscriberHash handles GET /v1/users/:id/subscriber-hash
+func (h *UserHandler) GetSubscriberHash(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	if userID == "" {
+		return errors.BadRequest("user_id is required")
+	}
+
+	app, ok := c.Locals("app").(*application.Application)
+	if !ok || app == nil {
+		return errors.Unauthorized("Application not authenticated")
+	}
+
+	hash := utils.GenerateSubscriberHash(userID, app.APIKey)
+
+	return c.JSON(fiber.Map{
+		"user_id":         userID,
+		"subscriber_hash": hash,
 	})
 }

@@ -1,10 +1,18 @@
 package handlers
 
 import (
+	"fmt"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/seed"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
@@ -15,14 +23,16 @@ import (
 var validateTemplate = validator.New()
 
 type TemplateHandler struct {
-	service *usecases.TemplateService
-	logger  *zap.Logger
+	service      *usecases.TemplateService
+	smtpProvider providers.Provider
+	logger       *zap.Logger
 }
 
-func NewTemplateHandler(service *usecases.TemplateService, logger *zap.Logger) *TemplateHandler {
+func NewTemplateHandler(service *usecases.TemplateService, smtpProvider providers.Provider, logger *zap.Logger) *TemplateHandler {
 	return &TemplateHandler{
-		service: service,
-		logger:  logger,
+		service:      service,
+		smtpProvider: smtpProvider,
+		logger:       logger,
 	}
 }
 
@@ -57,6 +67,10 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 		Metadata:      req.Metadata,
 		Locale:        req.Locale,
 		CreatedBy:     req.CreatedBy,
+	}
+
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		createReq.EnvironmentID = envID
 	}
 
 	tmpl, err := h.service.Create(c.Context(), createReq)
@@ -119,6 +133,10 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		Locale:  req.Locale,
 		Limit:   req.Limit,
 		Offset:  req.Offset,
+	}
+
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		filter.EnvironmentID = envID
 	}
 
 	if req.FromDate != "" {
@@ -389,10 +407,65 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 	return c.JSON(responses)
 }
 
+// GetTemplateVersion returns a single template at the specified version number.
+// GET /v1/templates/:app_id/:name/versions/:version?locale=en-US
+func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	name := c.Params("name")
+	versionStr := c.Params("version")
+
+	if name == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template name is required",
+			"message": "Please provide valid template name",
+		})
+	}
+
+	version, err := strconv.Atoi(versionStr)
+	if err != nil || version < 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid version number",
+			"message": "Version must be a positive integer",
+		})
+	}
+
+	locale := c.Query("locale", "en-US")
+
+	tmpl, err := h.service.GetByVersion(c.Context(), appID, name, locale, version)
+	if err != nil {
+		h.logger.Error("Failed to get template version",
+			zap.String("app_id", appID),
+			zap.String("name", name),
+			zap.Int("version", version),
+			zap.Error(err))
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Template version not found",
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(toTemplateResponse(tmpl))
+}
+
 // GetLibrary returns the pre-built template library.
+// Supports optional ?category= filter (transactional, newsletter, notification).
 func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
+	category := c.Query("category", "")
+
+	templates := seed.LibraryTemplates
+	if category != "" {
+		var filtered []template.Template
+		for _, t := range templates {
+			if cat, ok := t.Metadata["category"].(string); ok && cat == category {
+				filtered = append(filtered, t)
+			}
+		}
+		templates = filtered
+	}
+
 	return c.JSON(fiber.Map{
-		"templates": seed.LibraryTemplates,
+		"templates": templates,
+		"total":     len(templates),
 	})
 }
 
@@ -442,6 +515,347 @@ func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(toTemplateResponse(tmpl))
 }
 
+// RollbackTemplate creates a new version whose content is copied from a target version
+func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template ID is required",
+			"message": "Please provide a valid template ID",
+		})
+	}
+
+	var req dto.RollbackRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+	}
+
+	if req.Version < 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid version",
+			"message": "Version must be >= 1",
+		})
+	}
+
+	tmpl, err := h.service.Rollback(c.Context(), id, appID, req.Version, req.UpdatedBy)
+	if err != nil {
+		h.logger.Error("Failed to rollback template",
+			zap.String("id", id),
+			zap.Int("version", req.Version),
+			zap.Error(err))
+
+		if strings.Contains(err.Error(), "not found") {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":   "Not found",
+				"message": err.Error(),
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to rollback template",
+			"message": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(toTemplateResponse(tmpl))
+}
+
+// DiffTemplate compares two versions of a template and returns field-level changes
+func (h *TemplateHandler) DiffTemplate(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template ID is required",
+			"message": "Please provide a valid template ID",
+		})
+	}
+
+	fromStr := c.Query("from", "")
+	toStr := c.Query("to", "")
+	if fromStr == "" || toStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Missing query parameters",
+			"message": "Both 'from' and 'to' version numbers are required",
+		})
+	}
+
+	fromVersion, err := strconv.Atoi(fromStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid 'from' version",
+			"message": "Version must be an integer",
+		})
+	}
+	toVersion, err := strconv.Atoi(toStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid 'to' version",
+			"message": "Version must be an integer",
+		})
+	}
+
+	// Fetch the template to get name/locale for the diff
+	tmpl, err := h.service.GetByID(c.Context(), id, appID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Template not found",
+			"message": err.Error(),
+		})
+	}
+
+	diff, err := h.service.Diff(c.Context(), appID, tmpl.Name, tmpl.Locale, fromVersion, toVersion)
+	if err != nil {
+		h.logger.Error("Failed to diff template",
+			zap.String("id", id),
+			zap.Int("from", fromVersion),
+			zap.Int("to", toVersion),
+			zap.Error(err))
+
+		if strings.Contains(err.Error(), "not found") {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":   "Version not found",
+				"message": err.Error(),
+			})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to diff template",
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(diff)
+}
+
+// SendTest renders a template with sample data and sends a test email
+func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
+	if h.smtpProvider == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error":   "SMTP not configured",
+			"message": "SMTP provider must be enabled to send test emails",
+		})
+	}
+
+	appID := c.Locals("app_id").(string)
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template ID is required",
+			"message": "Please provide a valid template ID",
+		})
+	}
+
+	var req dto.SendTestRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+	}
+
+	if req.ToEmail == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "to_email is required",
+			"message": "Please provide an email address to send the test to",
+		})
+	}
+
+	tmpl, err := h.service.GetByID(c.Context(), id, appID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Template not found",
+			"message": err.Error(),
+		})
+	}
+
+	// Use provided sample data, or fall back to template's built-in sample data
+	sampleData := req.SampleData
+	if sampleData == nil {
+		if sd, ok := tmpl.Metadata["sample_data"].(map[string]interface{}); ok {
+			sampleData = sd
+		}
+	}
+	if sampleData == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "No sample data",
+			"message": "Provide sample_data in request body or use a template with built-in sample data",
+		})
+	}
+
+	rendered, err := h.service.Render(c.Context(), id, appID, sampleData)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to render template",
+			"message": err.Error(),
+		})
+	}
+
+	// Render subject line
+	subject := fmt.Sprintf("[TEST] %s", h.service.RenderSubject(tmpl.Subject, sampleData))
+
+	// Build a minimal notification + user for the SMTP provider
+	testNotif := &notification.Notification{
+		NotificationID: "test-" + id,
+		AppID:          appID,
+		Channel:        notification.ChannelEmail,
+		Content: notification.Content{
+			Title: subject,
+			Body:  rendered,
+		},
+	}
+	testUser := &user.User{
+		Email: req.ToEmail,
+	}
+
+	if _, err := h.smtpProvider.Send(c.Context(), testNotif, testUser); err != nil {
+		h.logger.Error("Failed to send test email",
+			zap.String("template_id", id),
+			zap.String("to", req.ToEmail),
+			zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to send test email",
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "sent",
+		"to":      req.ToEmail,
+		"subject": subject,
+	})
+}
+
+// ── Phase 6: Content Controls ──
+
+// GetControls returns a template's control definitions and current values.
+func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template ID is required",
+			"message": "Please provide a valid template ID",
+		})
+	}
+
+	tmpl, err := h.service.GetByID(c.Context(), id, appID)
+	if err != nil {
+		h.logger.Error("Failed to get template for controls", zap.String("id", id), zap.Error(err))
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Template not found",
+			"message": err.Error(),
+		})
+	}
+
+	controls := tmpl.Controls
+	if controls == nil {
+		controls = []template.TemplateControl{}
+	}
+	controlValues := tmpl.ControlValues
+	if controlValues == nil {
+		controlValues = template.ControlValues{}
+	}
+
+	return c.JSON(fiber.Map{
+		"controls":       controls,
+		"control_values": controlValues,
+	})
+}
+
+// UpdateControls validates and saves control values for a template.
+func (h *TemplateHandler) UpdateControls(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Template ID is required",
+			"message": "Please provide a valid template ID",
+		})
+	}
+
+	var values template.ControlValues
+	if err := c.BodyParser(&values); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+	}
+
+	tmpl, err := h.service.GetByID(c.Context(), id, appID)
+	if err != nil {
+		h.logger.Error("Failed to get template for control update", zap.String("id", id), zap.Error(err))
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Template not found",
+			"message": err.Error(),
+		})
+	}
+
+	// Validate values against control schema
+	if err := validateControlValues(tmpl.Controls, values); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Validation failed",
+			"message": err.Error(),
+		})
+	}
+
+	updateReq := &template.UpdateRequest{
+		ControlValues: values,
+	}
+	updated, err := h.service.Update(c.Context(), id, appID, updateReq)
+	if err != nil {
+		h.logger.Error("Failed to update template controls", zap.String("id", id), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to update controls",
+			"message": err.Error(),
+		})
+	}
+
+	return c.JSON(toTemplateResponse(updated))
+}
+
+// validateControlValues checks that the provided values match the control schema.
+func validateControlValues(controls []template.TemplateControl, values template.ControlValues) error {
+	for _, ctrl := range controls {
+		val, exists := values[ctrl.Key]
+		if ctrl.Required && !exists {
+			return fmt.Errorf("control '%s' is required", ctrl.Key)
+		}
+		if exists {
+			switch ctrl.Type {
+			case "url":
+				if s, ok := val.(string); ok && s != "" {
+					if _, err := url.Parse(s); err != nil {
+						return fmt.Errorf("control '%s' must be a valid URL", ctrl.Key)
+					}
+				}
+			case "color":
+				if s, ok := val.(string); ok && s != "" {
+					if matched, _ := regexp.MatchString(`^#[0-9A-Fa-f]{6}$`, s); !matched {
+						return fmt.Errorf("control '%s' must be a hex color (#RRGGBB)", ctrl.Key)
+					}
+				}
+			case "select":
+				if s, ok := val.(string); ok && len(ctrl.Options) > 0 {
+					found := false
+					for _, opt := range ctrl.Options {
+						if opt == s {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return fmt.Errorf("control '%s' must be one of: %v", ctrl.Key, ctrl.Options)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Helper function to convert template to response
 func toTemplateResponse(tmpl *template.Template) *dto.TemplateResponse {
 	return &dto.TemplateResponse{
@@ -455,6 +869,8 @@ func toTemplateResponse(tmpl *template.Template) *dto.TemplateResponse {
 		Body:          tmpl.Body,
 		Variables:     tmpl.Variables,
 		Metadata:      tmpl.Metadata,
+		Controls:      tmpl.Controls,
+		ControlValues: tmpl.ControlValues,
 		Version:       tmpl.Version,
 		Status:        tmpl.Status,
 		Locale:        tmpl.Locale,

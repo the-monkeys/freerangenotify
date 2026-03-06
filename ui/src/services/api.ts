@@ -24,6 +24,45 @@ import type {
   ProviderHealth,
   DLQItem,
   AnalyticsSummary,
+  Workflow,
+  CreateWorkflowRequest,
+  UpdateWorkflowRequest,
+  TriggerWorkflowRequest,
+  WorkflowExecution,
+  DigestRule,
+  CreateDigestRuleRequest,
+  UpdateDigestRuleRequest,
+  Topic,
+  CreateTopicRequest,
+  UpdateTopicRequest,
+  TopicSubscription,
+  TopicSubscribersRequest,
+  AppMembership,
+  InviteMemberRequest,
+  UpdateRoleRequest,
+  AuditLog,
+  AuditLogFilters,
+  Environment,
+  CreateEnvironmentRequest,
+  PromoteEnvironmentRequest,
+  CustomProvider,
+  RegisterProviderRequest,
+  PresenceCheckInRequest,
+  BatchNotificationRequest,
+  CancelBatchRequest,
+  MarkReadRequest,
+  MarkAllReadRequest,
+  BulkArchiveRequest,
+  SnoozeRequest,
+  UnreadCountResponse,
+  TemplateRollbackRequest,
+  TemplateDiffResponse,
+  TemplateTestRequest,
+  TemplateControlsResponse,
+  UpdateControlsRequest,
+  BulkCreateUsersRequest,
+  SubscriberHashResponse,
+  SystemStats,
 } from '../types';
 
 // Use environment variable for backend URL
@@ -234,6 +273,20 @@ export const usersAPI = {
     });
     return data.data;
   },
+
+  bulkCreate: async (apiKey: string, payload: BulkCreateUsersRequest) => {
+    const { data } = await api.post('/users/bulk', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  getSubscriberHash: async (apiKey: string, userId: string) => {
+    const { data } = await api.get<SubscriberHashResponse>(`/users/${userId}/subscriber-hash`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
 };
 
 // ============= Notification APIs =============
@@ -307,6 +360,68 @@ export const notificationsAPI = {
       headers: getAuthHeaders(apiKey)
     });
     return data;
+  },
+
+  // Batch
+  sendBatch: async (apiKey: string, payload: BatchNotificationRequest) => {
+    const { data } = await api.post('/notifications/batch', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  cancelBatch: async (apiKey: string, payload: CancelBatchRequest) => {
+    await api.delete('/notifications/batch', {
+      headers: getAuthHeaders(apiKey),
+      data: payload,
+    });
+  },
+
+  // Inbox operations
+  getUnreadCount: async (apiKey: string, userId: string) => {
+    const { data } = await api.get<UnreadCountResponse>(
+      `/notifications/unread/count?user_id=${userId}`,
+      { headers: getAuthHeaders(apiKey) }
+    );
+    return data;
+  },
+
+  listUnread: async (apiKey: string, userId: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<NotificationListResponse>(
+      `/notifications/unread?user_id=${userId}&limit=${limit}&offset=${offset}`,
+      { headers: getAuthHeaders(apiKey) }
+    );
+    return data;
+  },
+
+  markRead: async (apiKey: string, payload: MarkReadRequest) => {
+    await api.post('/notifications/read', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  markAllRead: async (apiKey: string, payload: MarkAllReadRequest) => {
+    await api.post('/notifications/read-all', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  bulkArchive: async (apiKey: string, payload: BulkArchiveRequest) => {
+    await api.patch('/notifications/bulk/archive', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  snooze: async (apiKey: string, id: string, payload: SnoozeRequest) => {
+    await api.post(`/notifications/${id}/snooze`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  unsnooze: async (apiKey: string, id: string) => {
+    await api.post(`/notifications/${id}/unsnooze`, {}, {
+      headers: getAuthHeaders(apiKey)
+    });
   },
 };
 
@@ -398,6 +513,50 @@ export const templatesAPI = {
     });
     return data;
   },
+
+  rollback: async (apiKey: string, id: string, payload: TemplateRollbackRequest) => {
+    const { data } = await api.post(`/templates/${id}/rollback`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  diff: async (apiKey: string, id: string, fromVersion: number, toVersion: number) => {
+    const { data } = await api.get<TemplateDiffResponse>(
+      `/templates/${id}/diff?from=${fromVersion}&to=${toVersion}`,
+      { headers: getAuthHeaders(apiKey) }
+    );
+    return data;
+  },
+
+  sendTest: async (apiKey: string, id: string, payload: TemplateTestRequest) => {
+    const { data } = await api.post(`/templates/${id}/test`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  getControls: async (apiKey: string, id: string) => {
+    const { data } = await api.get<TemplateControlsResponse>(`/templates/${id}/controls`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  updateControls: async (apiKey: string, id: string, payload: UpdateControlsRequest) => {
+    const { data } = await api.put(`/templates/${id}/controls`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  getVersion: async (apiKey: string, appId: string, templateName: string, version: number) => {
+    const { data } = await api.get<TemplateVersion>(
+      `/templates/${appId}/${templateName}/versions/${version}`,
+      { headers: getAuthHeaders(apiKey) }
+    );
+    return data;
+  },
 };
 
 // ============= Admin APIs =============
@@ -440,6 +599,339 @@ export const adminAPI = {
   getAnalyticsSummary: async (period = '7d') => {
     const { data } = await api.get<AnalyticsSummary>(`/admin/analytics/summary?period=${period}`);
     return data;
+  },
+
+  getSystemStats: async (): Promise<SystemStats> => {
+    const [summary1d, summary7d] = await Promise.all([
+      adminAPI.getAnalyticsSummary('1d'),
+      adminAPI.getAnalyticsSummary('7d'),
+    ]);
+    return {
+      total_apps: 0,
+      total_users: 0,
+      total_templates: 0,
+      total_workflows: 0,
+      notifications_today: summary1d.total_sent + summary1d.total_delivered + summary1d.total_read,
+      notifications_this_week: summary7d.total_sent + summary7d.total_delivered + summary7d.total_read,
+      success_rate: summary7d.success_rate,
+    };
+  },
+};
+
+// ============= Workflow APIs =============
+interface WorkflowListResponse {
+  workflows: Workflow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+interface ExecutionListResponse {
+  executions: WorkflowExecution[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const workflowsAPI = {
+  create: async (apiKey: string, payload: CreateWorkflowRequest) => {
+    const { data } = await api.post<Workflow>('/workflows/', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  list: async (apiKey: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<WorkflowListResponse>(`/workflows/?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  get: async (apiKey: string, id: string) => {
+    const { data } = await api.get<Workflow>(`/workflows/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  update: async (apiKey: string, id: string, payload: UpdateWorkflowRequest) => {
+    const { data } = await api.put<Workflow>(`/workflows/${id}`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  delete: async (apiKey: string, id: string) => {
+    await api.delete(`/workflows/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  trigger: async (apiKey: string, payload: TriggerWorkflowRequest) => {
+    const { data } = await api.post('/workflows/trigger', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  listExecutions: async (apiKey: string, limit = 20, offset = 0, workflowId?: string) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (workflowId) params.set('workflow_id', workflowId);
+    const { data } = await api.get<ExecutionListResponse>(`/workflows/executions?${params}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  getExecution: async (apiKey: string, id: string) => {
+    const { data } = await api.get<WorkflowExecution>(`/workflows/executions/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  cancelExecution: async (apiKey: string, id: string) => {
+    await api.post(`/workflows/executions/${id}/cancel`, {}, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+};
+
+// ============= Digest Rule APIs =============
+interface DigestRuleListResponse {
+  rules: DigestRule[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const digestRulesAPI = {
+  create: async (apiKey: string, payload: CreateDigestRuleRequest) => {
+    const { data } = await api.post<DigestRule>('/digest-rules/', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  list: async (apiKey: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<DigestRuleListResponse>(`/digest-rules/?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  get: async (apiKey: string, id: string) => {
+    const { data } = await api.get<DigestRule>(`/digest-rules/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  update: async (apiKey: string, id: string, payload: UpdateDigestRuleRequest) => {
+    const { data } = await api.put<DigestRule>(`/digest-rules/${id}`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  delete: async (apiKey: string, id: string) => {
+    await api.delete(`/digest-rules/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+};
+
+// ============= Topic APIs =============
+interface TopicListResponse {
+  topics: Topic[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+interface SubscriberListResponse {
+  subscribers: TopicSubscription[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const topicsAPI = {
+  create: async (apiKey: string, payload: CreateTopicRequest) => {
+    const { data } = await api.post<Topic>('/topics/', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  list: async (apiKey: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<TopicListResponse>(`/topics/?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  get: async (apiKey: string, id: string) => {
+    const { data } = await api.get<Topic>(`/topics/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  getByKey: async (apiKey: string, key: string) => {
+    const { data } = await api.get<Topic>(`/topics/key/${key}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  update: async (apiKey: string, id: string, payload: UpdateTopicRequest) => {
+    const { data } = await api.put<Topic>(`/topics/${id}`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  delete: async (apiKey: string, id: string) => {
+    await api.delete(`/topics/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  addSubscribers: async (apiKey: string, topicId: string, payload: TopicSubscribersRequest) => {
+    const { data } = await api.post(`/topics/${topicId}/subscribers`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  removeSubscribers: async (apiKey: string, topicId: string, payload: TopicSubscribersRequest) => {
+    await api.delete(`/topics/${topicId}/subscribers`, {
+      headers: getAuthHeaders(apiKey),
+      data: payload,
+    });
+  },
+
+  getSubscribers: async (apiKey: string, topicId: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<SubscriberListResponse>(
+      `/topics/${topicId}/subscribers?limit=${limit}&offset=${offset}`,
+      { headers: getAuthHeaders(apiKey) }
+    );
+    return data;
+  },
+};
+
+// ============= Team / RBAC APIs =============
+export const teamAPI = {
+  inviteMember: async (appId: string, payload: InviteMemberRequest) => {
+    const { data } = await api.post<AppMembership>(`/apps/${appId}/team/`, payload);
+    return data;
+  },
+
+  listMembers: async (appId: string) => {
+    const { data } = await api.get<{ members: AppMembership[] }>(`/apps/${appId}/team/`);
+    return data.members;
+  },
+
+  updateRole: async (appId: string, membershipId: string, payload: UpdateRoleRequest) => {
+    const { data } = await api.put<AppMembership>(`/apps/${appId}/team/${membershipId}`, payload);
+    return data;
+  },
+
+  removeMember: async (appId: string, membershipId: string) => {
+    await api.delete(`/apps/${appId}/team/${membershipId}`);
+  },
+};
+
+// ============= Audit Log APIs =============
+interface AuditLogListResponse {
+  logs: AuditLog[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const auditAPI = {
+  list: async (filters?: AuditLogFilters) => {
+    const params = new URLSearchParams();
+    if (filters?.app_id) params.set('app_id', filters.app_id);
+    if (filters?.actor_id) params.set('actor_id', filters.actor_id);
+    if (filters?.action) params.set('action', filters.action);
+    if (filters?.resource) params.set('resource', filters.resource);
+    if (filters?.from_date) params.set('from_date', filters.from_date);
+    if (filters?.to_date) params.set('to_date', filters.to_date);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+
+    const { data } = await api.get<AuditLogListResponse>(`/admin/audit/?${params}`);
+    return data;
+  },
+
+  get: async (id: string) => {
+    const { data } = await api.get<AuditLog>(`/admin/audit/${id}`);
+    return data;
+  },
+};
+
+// ============= Environment APIs =============
+export const environmentsAPI = {
+  create: async (appId: string, payload: CreateEnvironmentRequest) => {
+    const { data } = await api.post<Environment>(`/apps/${appId}/environments`, payload);
+    return data;
+  },
+
+  list: async (appId: string) => {
+    const { data } = await api.get<{ environments: Environment[] }>(`/apps/${appId}/environments`);
+    return data.environments;
+  },
+
+  get: async (appId: string, envId: string) => {
+    const { data } = await api.get<Environment>(`/apps/${appId}/environments/${envId}`);
+    return data;
+  },
+
+  delete: async (appId: string, envId: string) => {
+    await api.delete(`/apps/${appId}/environments/${envId}`);
+  },
+
+  promote: async (appId: string, payload: PromoteEnvironmentRequest) => {
+    const { data } = await api.post(`/apps/${appId}/environments/promote`, payload);
+    return data;
+  },
+};
+
+// ============= Custom Provider APIs =============
+export const providersAPI = {
+  register: async (appId: string, payload: RegisterProviderRequest) => {
+    const { data } = await api.post<CustomProvider>(`/apps/${appId}/providers`, payload);
+    return data;
+  },
+
+  list: async (appId: string) => {
+    const { data } = await api.get<{ providers: CustomProvider[] }>(`/apps/${appId}/providers`);
+    return data.providers;
+  },
+
+  remove: async (appId: string, providerId: string) => {
+    await api.delete(`/apps/${appId}/providers/${providerId}`);
+  },
+};
+
+// ============= Presence API =============
+export const presenceAPI = {
+  checkIn: async (apiKey: string, payload: PresenceCheckInRequest) => {
+    const { data } = await api.post('/presence/check-in', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+};
+
+// ============= Auth Extended APIs =============
+export const authExtendedAPI = {
+  changePassword: async (payload: { old_password: string; new_password: string }) => {
+    await api.post('/admin/change-password', payload);
   },
 };
 

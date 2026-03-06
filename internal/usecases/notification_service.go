@@ -11,6 +11,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
+	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -38,6 +39,13 @@ type NotificationService struct {
 	limiter          limiter.Limiter
 	appCache         map[string]*appCacheEntry
 	appCacheMu       sync.RWMutex
+	topicService     topic.Service // Phase 2: optional, set via SetTopicService
+}
+
+// SetTopicService injects the optional topic service for fan-out support.
+// Uses setter injection to avoid circular dependency (TopicService is optional).
+func (s *NotificationService) SetTopicService(ts topic.Service) {
+	s.topicService = ts
 }
 
 // NotificationServiceConfig holds configuration for the notification service
@@ -81,6 +89,12 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("channel", string(req.Channel)),
 		zap.String("priority", string(req.Priority)),
 		zap.Any("data", req.Data))
+
+	// ── Phase 2: Topic fan-out ──
+	// If TopicID is set, resolve subscribers and delegate to SendBulk.
+	if req.TopicID != "" {
+		return s.sendToTopic(ctx, req)
+	}
 
 	// 2.2: Resolve user_id if it's not a UUID (email/external ID → internal UUID)
 	if req.UserID != "" {
@@ -284,6 +298,50 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("channel", string(req.Channel)))
 
 	return notif, nil
+}
+
+// sendToTopic resolves topic subscribers and fans out via SendBulk.
+func (s *NotificationService) sendToTopic(ctx context.Context, req notification.SendRequest) (*notification.Notification, error) {
+	if s.topicService == nil {
+		return nil, fmt.Errorf("topics feature is not enabled")
+	}
+
+	userIDs, err := s.topicService.GetSubscriberUserIDs(ctx, req.TopicID, req.AppID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get topic subscribers: %w", err)
+	}
+	if len(userIDs) == 0 {
+		return nil, fmt.Errorf("topic has no subscribers")
+	}
+
+	s.logger.Info("Fanning out notification to topic subscribers",
+		zap.String("topic_id", req.TopicID),
+		zap.String("app_id", req.AppID),
+		zap.Int("subscriber_count", len(userIDs)))
+
+	bulkReq := notification.BulkSendRequest{
+		AppID:       req.AppID,
+		UserIDs:     userIDs,
+		Channel:     req.Channel,
+		Priority:    req.Priority,
+		Title:       req.Title,
+		Body:        req.Body,
+		Data:        req.Data,
+		TemplateID:  req.TemplateID,
+		Category:    req.Category,
+		ScheduledAt: req.ScheduledAt,
+	}
+
+	results, err := s.SendBulk(ctx, bulkReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the first notification as representative
+	if len(results) > 0 {
+		return results[0], nil
+	}
+	return nil, nil
 }
 
 // SendBulk sends notifications to multiple users
@@ -905,4 +963,78 @@ func (s *NotificationService) ListUnread(ctx context.Context, userID, appID stri
 		PageSize: 100, // Reasonable limit for unread
 	}
 	return s.notificationRepo.List(ctx, &filter)
+}
+
+// ── Phase 5: Snooze, Archive, Mark-All-Read ────────────────────────
+
+// Snooze defers a notification until the specified time.
+func (s *NotificationService) Snooze(ctx context.Context, notificationID, appID string, until time.Time) error {
+	notif, err := s.notificationRepo.GetByID(ctx, notificationID)
+	if err != nil {
+		return notification.ErrNotificationNotFound
+	}
+	if notif.AppID != appID {
+		return notification.ErrNotificationNotFound
+	}
+	if notif.Status.IsFinal() || notif.Status == notification.StatusSnoozed {
+		return notification.ErrCannotSnooze
+	}
+	if until.Before(time.Now()) {
+		return notification.ErrInvalidSnoozeDuration
+	}
+
+	return s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusSnoozed, &until)
+}
+
+// Unsnooze immediately removes snooze from a notification.
+func (s *NotificationService) Unsnooze(ctx context.Context, notificationID, appID string) error {
+	notif, err := s.notificationRepo.GetByID(ctx, notificationID)
+	if err != nil {
+		return notification.ErrNotificationNotFound
+	}
+	if notif.AppID != appID {
+		return notification.ErrNotificationNotFound
+	}
+	if notif.Status != notification.StatusSnoozed {
+		return notification.ErrCannotSnooze
+	}
+
+	return s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusSent, nil)
+}
+
+// Archive marks notifications as archived for a user.
+func (s *NotificationService) Archive(ctx context.Context, notificationIDs []string, appID, userID string) error {
+	// Verify ownership of all notifications
+	for _, id := range notificationIDs {
+		notif, err := s.notificationRepo.GetByID(ctx, id)
+		if err != nil {
+			s.logger.Warn("Archive: notification not found", zap.String("id", id), zap.Error(err))
+			return notification.ErrNotificationNotFound
+		}
+		if notif.AppID != appID || notif.UserID != userID {
+			return fmt.Errorf("notification %s does not belong to user %s", id, userID)
+		}
+		if notif.Status == notification.StatusArchived {
+			continue // already archived, skip
+		}
+	}
+	return s.notificationRepo.BulkArchive(ctx, notificationIDs, time.Now())
+}
+
+// MarkAllRead marks all unread notifications as read for a user.
+func (s *NotificationService) MarkAllRead(ctx context.Context, userID, appID, category string) error {
+	count, err := s.notificationRepo.MarkAllRead(ctx, userID, appID, category)
+	if err != nil {
+		return err
+	}
+	s.logger.Info("Marked all notifications as read",
+		zap.String("user_id", userID),
+		zap.String("app_id", appID),
+		zap.Int("count", count))
+	return nil
+}
+
+// ListSnoozedDue returns notifications whose snooze period has expired.
+func (s *NotificationService) ListSnoozedDue(ctx context.Context) ([]*notification.Notification, error) {
+	return s.notificationRepo.ListSnoozedDue(ctx, time.Now())
 }

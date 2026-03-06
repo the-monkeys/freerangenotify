@@ -13,6 +13,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -24,6 +25,7 @@ type SSEHandler struct {
 	userRepo     user.Repository
 	redisClient  *redis.Client
 	logger       *zap.Logger
+	hmacEnforced bool // Phase 1: when true, subscriberHash query param is required
 }
 
 // NewSSEHandler creates a new SSE handler.
@@ -43,6 +45,12 @@ func NewSSEHandler(
 		redisClient:  redisClient,
 		logger:       logger,
 	}
+}
+
+// SetHMACEnforced enables HMAC subscriber authentication for SSE connections.
+// Uses setter injection to maintain backward compatibility.
+func (h *SSEHandler) SetHMACEnforced(enforced bool) {
+	h.hmacEnforced = enforced
 }
 
 // Connect establishes an SSE connection for a user.
@@ -104,6 +112,21 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 		}
 		// If lookup fails, keep the original value — backward compatible with
 		// clients that use non-UUID custom user_ids as ES document IDs.
+	}
+
+	// ── 2c. Phase 1: HMAC subscriber authentication (feature-gated) ──
+	if h.hmacEnforced && token != "" {
+		subscriberHash := c.Query("subscriber_hash")
+		if subscriberHash == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "subscriber_hash query parameter is required when HMAC enforcement is enabled",
+			})
+		}
+		if !utils.ValidateSubscriberHash(userID, token, subscriberHash) {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid subscriber_hash",
+			})
+		}
 	}
 
 	h.logger.Info("SSE connection established",

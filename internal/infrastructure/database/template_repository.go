@@ -262,6 +262,14 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 		})
 	}
 
+	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {
+		must = append(must, map[string]interface{}{
+			"term": map[string]interface{}{
+				"environment_id": filter.EnvironmentID,
+			},
+		})
+	}
+
 	if filter.Channel != "" {
 		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{
@@ -510,4 +518,74 @@ func (r *TemplateRepository) CreateVersion(ctx context.Context, tmpl *template.T
 	}
 
 	return r.Create(ctx, tmpl)
+}
+
+// GetByVersion retrieves a specific version of a template
+func (r *TemplateRepository) GetByVersion(ctx context.Context, appID, name, locale string, version int) (*template.Template, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{
+						"term": map[string]interface{}{
+							"app_id": appID,
+						},
+					},
+					{
+						"term": map[string]interface{}{
+							"name": name,
+						},
+					},
+					{
+						"term": map[string]interface{}{
+							"locale": locale,
+						},
+					},
+					{
+						"term": map[string]interface{}{
+							"version": version,
+						},
+					},
+				},
+			},
+		},
+		"size": 1,
+	}
+
+	queryData, err := json.Marshal(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal query: %w", err)
+	}
+
+	req := esapi.SearchRequest{
+		Index: []string{r.index},
+		Body:  strings.NewReader(string(queryData)),
+	}
+
+	res, err := req.Do(ctx, r.es.Client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search template version: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return nil, fmt.Errorf("error searching template version: %s", res.String())
+	}
+
+	var result struct {
+		Hits struct {
+			Hits []struct {
+				Source template.Template `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode search result: %w", err)
+	}
+
+	if len(result.Hits.Hits) == 0 {
+		return nil, fmt.Errorf("template version %d not found", version)
+	}
+
+	return &result.Hits.Hits[0].Source, nil
 }

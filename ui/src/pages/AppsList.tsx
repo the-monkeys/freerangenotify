@@ -51,8 +51,8 @@ const AppsList: React.FC = () => {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">Applications</h1>
-          <p className="text-gray-500 mt-1 text-sm">Manage your notification applications and API keys</p>
+          <h1 className="text-xl sm:text-2xl font-semibold text-foreground">Applications</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Manage your notification applications and API keys</p>
         </div>
         <Button
           onClick={() => setShowForm(!showForm)}
@@ -63,7 +63,7 @@ const AppsList: React.FC = () => {
       </div>
 
       {showForm && (
-        <Card className="mb-6 border-t-2 border-t-blue-600">
+        <Card className="mb-6 border-t-2 border-t-border">
           <CardHeader>
             <CardTitle className="text-lg">Create New Application</CardTitle>
           </CardHeader>
@@ -111,21 +111,21 @@ const AppsList: React.FC = () => {
           {apps.map((app) => (
             <Card
               key={app.app_id}
-              className="cursor-pointer hover:shadow-md transition-shadow"
+              className="cursor-pointer hover:shadow-sm transition-shadow"
               onClick={() => navigate(`/apps/${app.app_id}`)}
             >
               <CardContent className="pt-6">
                 <div className="flex justify-between items-start mb-2">
-                  <h4 className="text-base font-semibold text-blue-600">{app.app_name}</h4>
-                  <Badge variant="outline" className="text-xs text-gray-400">ACTIVE</Badge>
+                  <h4 className="text-base font-semibold text-foreground">{app.app_name}</h4>
+                  <Badge variant="outline" className="text-xs text-muted-foreground">ACTIVE</Badge>
                 </div>
-                <p className="text-gray-500 text-sm mb-6 min-h-10">
+                <p className="text-muted-foreground text-sm mb-6 min-h-10">
                   {app.description || 'No description provided.'}
                 </p>
 
-                <div className="flex justify-between items-center border-t border-gray-200 pt-3">
-                  <span className="text-xs text-gray-400">ID: {app.app_id.substring(0, 8)}...</span>
-                  <span className="text-blue-600 font-semibold text-xs">Details &rarr;</span>
+                <div className="flex justify-between items-center border-t border-border pt-3">
+                  <span className="text-xs text-muted-foreground">ID: {app.app_id.substring(0, 8)}...</span>
+                  <span className="text-accent font-semibold text-xs">Details &rarr;</span>
                 </div>
               </CardContent>
             </Card>
@@ -134,7 +134,7 @@ const AppsList: React.FC = () => {
       )}
 
       {!loading && apps.length === 0 && (
-        <div className="text-center mt-20 text-gray-500">
+        <div className="text-center mt-20 text-muted-foreground">
           <div className="text-5xl mb-4">📦</div>
           <h2 className="text-xl font-semibold mb-2">No applications yet</h2>
           <p className="text-sm">Create your first application to get started.</p>

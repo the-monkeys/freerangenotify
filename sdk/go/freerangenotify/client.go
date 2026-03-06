@@ -1,13 +1,20 @@
 // Package freerangenotify provides a Go client for the FreeRangeNotify notification service.
 //
-// Usage:
+// It uses a sub-client pattern for resource-oriented access:
 //
-//	client := freerangenotify.New("your-api-key", freerangenotify.WithBaseURL("http://localhost:8080/v1"))
-//	result, err := client.Send(ctx, freerangenotify.SendParams{
-//	    To:       "user@example.com",
-//	    Template: "welcome_email",
-//	    Data:     map[string]interface{}{"name": "Alice"},
-//	})
+//	client := freerangenotify.New("frn_xxx", freerangenotify.WithBaseURL("http://localhost:8080/v1"))
+//
+//	// Resource-oriented sub-clients
+//	client.Notifications.Send(ctx, params)
+//	client.Users.Create(ctx, params)
+//	client.Templates.List(ctx, opts)
+//	client.Workflows.Trigger(ctx, params)
+//	client.Topics.AddSubscribers(ctx, topicID, userIDs)
+//	client.Presence.CheckIn(ctx, params)
+//
+//	// Backward-compatible convenience methods
+//	client.Send(ctx, params)       // delegates to client.Notifications.QuickSend
+//	client.Broadcast(ctx, params)  // delegates to client.Notifications.Broadcast
 package freerangenotify
 
 import (
@@ -17,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -25,19 +33,34 @@ type Client struct {
 	apiKey  string
 	baseURL string
 	http    *http.Client
+
+	// Sub-clients (resource-oriented)
+	Notifications *NotificationsClient
+	Users         *UsersClient
+	Templates     *TemplatesClient
+	Workflows     *WorkflowsClient
+	Topics        *TopicsClient
+	Presence      *PresenceClient
 }
 
 // Option configures the Client.
 type Option func(*Client)
 
 // WithBaseURL sets a custom API base URL.
-func WithBaseURL(url string) Option {
-	return func(c *Client) { c.baseURL = url }
-}
+func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = u } }
 
-// WithHTTPClient provides a custom http.Client (e.g. for timeouts or transport).
-func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) { c.http = hc }
+// WithHTTPClient provides a custom http.Client (e.g. for transports or TLS).
+func WithHTTPClient(hc *http.Client) Option { return func(c *Client) { c.http = hc } }
+
+// WithEnvironment sets an informational environment label.
+// The actual environment is determined server-side by the API key used.
+// Use a per-environment API key (e.g., frn_dev_xxx, frn_stg_xxx, frn_prod_xxx)
+// to scope all operations to that environment.
+func WithEnvironment(_ string) Option { return func(_ *Client) {} }
+
+// WithTimeout overrides the default HTTP request timeout.
+func WithTimeout(d time.Duration) Option {
+	return func(c *Client) { c.http.Timeout = d }
 }
 
 // New creates a FreeRangeNotify client with the given API key.
@@ -45,132 +68,47 @@ func New(apiKey string, opts ...Option) *Client {
 	c := &Client{
 		apiKey:  apiKey,
 		baseURL: "http://localhost:8080/v1",
-		http: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 	for _, opt := range opts {
 		opt(c)
 	}
+	c.Notifications = &NotificationsClient{client: c}
+	c.Users = &UsersClient{client: c}
+	c.Templates = &TemplatesClient{client: c}
+	c.Workflows = &WorkflowsClient{client: c}
+	c.Topics = &TopicsClient{client: c}
+	c.Presence = &PresenceClient{client: c}
 	return c
 }
 
-// SendParams holds the parameters for sending a notification via Quick-Send.
-type SendParams struct {
-	To          string                 `json:"to"`
-	Template    string                 `json:"template,omitempty"`
-	Subject     string                 `json:"subject,omitempty"`
-	Body        string                 `json:"body,omitempty"`
-	Data        map[string]interface{} `json:"data,omitempty"`
-	Channel     string                 `json:"channel,omitempty"`
-	Priority    string                 `json:"priority,omitempty"`
-	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
-}
+// ── Backward-compatible convenience methods ──────────────────
 
-// SendResult is the response from a send or quick-send operation.
-type SendResult struct {
-	NotificationID string `json:"notification_id"`
-	Status         string `json:"status"`
-	UserID         string `json:"user_id"`
-	Channel        string `json:"channel"`
-}
-
-// BroadcastParams holds the parameters for broadcasting a notification.
-type BroadcastParams struct {
-	Template string                 `json:"template_id"`
-	Data     map[string]interface{} `json:"data,omitempty"`
-	Channel  string                 `json:"channel,omitempty"`
-	Priority string                 `json:"priority,omitempty"`
-}
-
-// BroadcastResult is the response from a broadcast operation.
-type BroadcastResult struct {
-	TotalSent     int          `json:"total_sent"`
-	Notifications []SendResult `json:"notifications"`
-}
-
-// CreateUserParams holds the parameters for creating a user.
-type CreateUserParams struct {
-	Email      string `json:"email,omitempty"`
-	Phone      string `json:"phone,omitempty"`
-	Timezone   string `json:"timezone,omitempty"`
-	Language   string `json:"language,omitempty"`
-	ExternalID string `json:"external_id,omitempty"`
-}
-
-// UpdateUserParams holds the parameters for updating a user.
-type UpdateUserParams struct {
-	ExternalID string `json:"external_id,omitempty"`
-	Email      string `json:"email,omitempty"`
-	Phone      string `json:"phone,omitempty"`
-	Timezone   string `json:"timezone,omitempty"`
-	Language   string `json:"language,omitempty"`
-	WebhookURL string `json:"webhook_url,omitempty"`
-}
-
-// User is a FreeRangeNotify user profile.
-type User struct {
-	UserID     string `json:"user_id"`
-	ExternalID string `json:"external_id"`
-	Email      string `json:"email"`
-	Phone      string `json:"phone"`
-	Timezone   string `json:"timezone"`
-	Language   string `json:"language"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
-}
-
-// Send delivers a notification to a single recipient via Quick-Send.
+// Send delivers a notification via Quick-Send (delegates to Notifications.QuickSend).
 func (c *Client) Send(ctx context.Context, params SendParams) (*SendResult, error) {
-	var result SendResult
-	if err := c.do(ctx, http.MethodPost, "/quick-send", params, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return c.Notifications.QuickSend(ctx, params)
 }
 
-// Broadcast sends a notification to all users in the application.
+// Broadcast sends a notification to all users (delegates to Notifications.Broadcast).
 func (c *Client) Broadcast(ctx context.Context, params BroadcastParams) (*BroadcastResult, error) {
-	var result BroadcastResult
-	if err := c.do(ctx, http.MethodPost, "/notifications/broadcast", params, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return c.Notifications.Broadcast(ctx, params)
 }
 
-// CreateUser registers a new user for notification targeting.
+// CreateUser registers a new user (delegates to Users.Create).
 func (c *Client) CreateUser(ctx context.Context, params CreateUserParams) (*User, error) {
-	var user User
-	if err := c.do(ctx, http.MethodPost, "/users/", params, &user); err != nil {
-		return nil, err
-	}
-	return &user, nil
+	return c.Users.Create(ctx, params)
 }
 
-// UpdateUser updates an existing user (e.g. to change external_id after a username change).
+// UpdateUser updates an existing user (delegates to Users.Update).
 func (c *Client) UpdateUser(ctx context.Context, userID string, params UpdateUserParams) (*User, error) {
-	var user User
-	if err := c.do(ctx, http.MethodPut, "/users/"+userID, params, &user); err != nil {
-		return nil, err
-	}
-	return &user, nil
+	return c.Users.Update(ctx, userID, params)
 }
 
-// ── Internal ────────────────────────────────────────────────
-
-// APIError represents an error response from the FreeRangeNotify API.
-type APIError struct {
-	StatusCode int
-	Body       string
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("freerangenotify: API error %d: %s", e.StatusCode, e.Body)
-}
+// ── Internal HTTP Transport ─────────────────────────────────
 
 func (c *Client) do(ctx context.Context, method, path string, payload interface{}, out interface{}) error {
 	var body io.Reader
-	if payload != nil && method != http.MethodGet {
+	if payload != nil && method != http.MethodGet && method != http.MethodDelete {
 		data, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("freerangenotify: marshal request: %w", err)
@@ -202,6 +140,13 @@ func (c *Client) do(ctx context.Context, method, path string, payload interface{
 			return fmt.Errorf("freerangenotify: decode response: %w", err)
 		}
 	}
-
 	return nil
+}
+
+// doWithQuery is like do but appends query parameters to the path.
+func (c *Client) doWithQuery(ctx context.Context, method, path string, query url.Values, out interface{}) error {
+	if len(query) > 0 {
+		path = path + "?" + query.Encode()
+	}
+	return c.do(ctx, method, path, nil, out)
 }

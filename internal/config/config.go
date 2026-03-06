@@ -19,6 +19,26 @@ type Config struct {
 	Monitoring MonitoringConfig `mapstructure:"monitoring"`
 	Security   SecurityConfig   `mapstructure:"security"`
 	OIDC       OIDCConfig       `mapstructure:"oidc"`
+	Features   FeaturesConfig   `mapstructure:"features"`
+}
+
+// FeaturesConfig contains feature flags for Phase 1 features.
+// All default to false — when disabled, the system behaves identically to pre-Phase-1.
+type FeaturesConfig struct {
+	// Phase 1
+	WorkflowEnabled bool `mapstructure:"workflow_enabled" yaml:"workflow_enabled"`
+	DigestEnabled   bool `mapstructure:"digest_enabled" yaml:"digest_enabled"`
+	SSEHMACEnforced bool `mapstructure:"sse_hmac_enforced" yaml:"sse_hmac_enforced"`
+	// Phase 2
+	TopicsEnabled   bool `mapstructure:"topics_enabled" yaml:"topics_enabled"`
+	ThrottleEnabled bool `mapstructure:"throttle_enabled" yaml:"throttle_enabled"`
+	AuditEnabled    bool `mapstructure:"audit_enabled" yaml:"audit_enabled"`
+	RBACEnabled     bool `mapstructure:"rbac_enabled" yaml:"rbac_enabled"`
+	// Phase 4
+	TemplateVersioningEnabled bool `mapstructure:"template_versioning_enabled" yaml:"template_versioning_enabled"`
+	SnoozeEnabled             bool `mapstructure:"snooze_enabled" yaml:"snooze_enabled"`
+	// Phase 6
+	MultiEnvironmentEnabled bool `mapstructure:"multi_environment_enabled" yaml:"multi_environment_enabled"`
 }
 
 // AppConfig contains application-level configuration
@@ -78,6 +98,37 @@ type ProvidersConfig struct {
 	Twilio   TwilioConfig   `mapstructure:"twilio"`
 	SMTP     SMTPConfig     `mapstructure:"smtp"`
 	Webhook  WebhookConfig  `mapstructure:"webhook"`
+	// Phase 3
+	Slack    SlackProviderConfig    `mapstructure:"slack"`
+	Discord  DiscordProviderConfig  `mapstructure:"discord"`
+	WhatsApp WhatsAppProviderConfig `mapstructure:"whatsapp"`
+}
+
+// SlackProviderConfig contains Slack provider configuration (Phase 3)
+type SlackProviderConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	DefaultWebhookURL string `mapstructure:"default_webhook_url"`
+	BotToken          string `mapstructure:"bot_token"`
+	Timeout           int    `mapstructure:"timeout"`
+	MaxRetries        int    `mapstructure:"max_retries"`
+}
+
+// DiscordProviderConfig contains Discord provider configuration (Phase 3)
+type DiscordProviderConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	DefaultWebhookURL string `mapstructure:"default_webhook_url"`
+	Timeout           int    `mapstructure:"timeout"`
+	MaxRetries        int    `mapstructure:"max_retries"`
+}
+
+// WhatsAppProviderConfig contains WhatsApp provider configuration (Phase 3)
+type WhatsAppProviderConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	AccountSID string `mapstructure:"account_sid"`
+	AuthToken  string `mapstructure:"auth_token"`
+	FromNumber string `mapstructure:"from_number"`
+	Timeout    int    `mapstructure:"timeout"`
+	MaxRetries int    `mapstructure:"max_retries"`
 }
 
 // FCMConfig contains Firebase Cloud Messaging configuration
@@ -151,6 +202,7 @@ type SecurityConfig struct {
 	APIKeyHeader         string     `mapstructure:"api_key_header"`
 	RateLimit            int        `mapstructure:"rate_limit"`
 	RateLimitWindow      int        `mapstructure:"rate_limit_window"`
+	SubscriberHMAC       bool       `mapstructure:"subscriber_hmac"`
 	CORS                 CORSConfig `mapstructure:"cors"`
 }
 
@@ -223,6 +275,10 @@ func Load() (*Config, error) {
 	viper.SetDefault("providers.smtp.host", "")
 	viper.SetDefault("providers.smtp.port", 587)
 	viper.SetDefault("providers.sendgrid.api_key", "")
+
+	viper.SetDefault("features.workflow_enabled", false)
+	viper.SetDefault("features.digest_enabled", false)
+	viper.SetDefault("features.sse_hmac_enforced", false)
 
 	viper.SetDefault("oidc.enabled", false)
 	viper.SetDefault("oidc.issuer", "https://identity.monkeys.support")

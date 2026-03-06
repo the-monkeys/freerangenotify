@@ -15,7 +15,9 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/orchestrator"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
@@ -44,9 +46,22 @@ type NotificationProcessor struct {
 	logger          *zap.Logger
 	config          ProcessorConfig
 	metrics         *metrics.NotificationMetrics
+	digestManager   *orchestrator.DigestManager // Phase 1: optional digest support
+	throttle        *limiter.SubscriberThrottle // Phase 2: optional per-subscriber throttle
 
 	wg       sync.WaitGroup
 	stopChan chan struct{}
+}
+
+// SetDigestManager injects the optional digest manager (Phase 1).
+// Uses setter injection to maintain backward compatibility.
+func (p *NotificationProcessor) SetDigestManager(dm *orchestrator.DigestManager) {
+	p.digestManager = dm
+}
+
+// SetSubscriberThrottle injects the optional subscriber throttle (Phase 2).
+func (p *NotificationProcessor) SetSubscriberThrottle(t *limiter.SubscriberThrottle) {
+	p.throttle = t
 }
 
 // NewNotificationProcessor creates a new notification processor
@@ -119,6 +134,10 @@ func (p *NotificationProcessor) Start(ctx context.Context) error {
 		p.wg.Add(1)
 		go p.metricsUpdater(ctx)
 	}
+
+	// Phase 5: Start un-snooze loop
+	p.wg.Add(1)
+	go p.unsnoozeLoop(ctx)
 
 	return nil
 }
@@ -203,6 +222,24 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// ── Phase 1: Digest check (nil-guarded for backward compat) ──
+	if p.digestManager != nil {
+		rule, digestKeyValue := p.digestManager.MatchesDigestRule(ctx, notif)
+		if rule != nil {
+			// Notification matches a digest rule — accumulate and skip immediate delivery
+			if accErr := p.digestManager.Accumulate(ctx, notif, rule, digestKeyValue); accErr != nil {
+				logger.Error("Failed to accumulate digest, falling back to normal delivery",
+					zap.Error(accErr))
+			} else {
+				logger.Info("Notification accumulated for digest",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("digest_key", rule.DigestKey),
+					zap.String("window", rule.Window))
+				return
+			}
+		}
+	}
+
 	// Update status to processing
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusProcessing); err != nil {
 		logger.Error("Failed to update status to processing", zap.Error(err))
@@ -224,6 +261,21 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			logger.Info("Notification blocked by user preferences")
 			p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusCancelled)
 			return
+		}
+
+		// ── Phase 2: Per-subscriber throttle check (nil-guarded) ──
+		if p.throttle != nil {
+			throttleCfg := p.resolveThrottleConfig(ctx, usr, notif)
+			allowed, err := p.throttle.Allow(ctx, usr.UserID, string(notif.Channel), throttleCfg)
+			if err != nil {
+				logger.Warn("Throttle check error, allowing notification", zap.Error(err))
+			} else if !allowed {
+				logger.Info("Notification throttled for subscriber",
+					zap.String("user_id", usr.UserID),
+					zap.String("channel", string(notif.Channel)))
+				p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusCancelled)
+				return
+			}
 		}
 	} else if notif.Channel == notification.ChannelWebhook {
 		// Anonymous webhook, continue without user
@@ -258,6 +310,28 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		} else {
 			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
 			if tmpl != nil {
+				// Phase 6: Merge control defaults → saved values → payload
+				if len(tmpl.Controls) > 0 || len(tmpl.ControlValues) > 0 {
+					notif.Content.Data = p.mergeTemplateData(tmpl, notif.Content.Data)
+				}
+
+				// Phase 4: Auto-inject unsubscribe_url for newsletter-category templates
+				if tmpl.Metadata != nil {
+					if cat, ok := tmpl.Metadata["category"].(string); ok && cat == "newsletter" {
+						if notif.Content.Data == nil {
+							notif.Content.Data = make(map[string]interface{})
+						}
+						if _, exists := notif.Content.Data["unsubscribe_url"]; !exists {
+							notif.Content.Data["unsubscribe_url"] = fmt.Sprintf(
+								"https://notify.example.com/v1/unsubscribe?user=%s&app=%s",
+								notif.UserID, notif.AppID,
+							)
+							logger.Debug("Auto-injected unsubscribe_url for newsletter template",
+								zap.String("notification_id", notif.NotificationID))
+						}
+					}
+				}
+
 				// Render template content
 				title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
 				if err != nil {
@@ -430,6 +504,30 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
+		// Phase 3: If no built-in provider found, try custom providers on the app
+		if app != nil && len(app.Settings.CustomProviders) > 0 {
+			for _, cp := range app.Settings.CustomProviders {
+				if cp.Channel == string(notif.Channel) && cp.Active {
+					p.logger.Info("Routing to custom provider",
+						zap.String("notification_id", notif.NotificationID),
+						zap.String("provider", cp.Name),
+						zap.String("channel", cp.Channel))
+					customProvider := providers.NewCustomProvider(
+						cp.Name, cp.Channel, cp.WebhookURL, cp.SigningKey, cp.Headers, p.logger,
+					)
+					customResult, customErr := customProvider.Send(ctx, notif, usr)
+					if customErr == nil && customResult != nil && customResult.Success {
+						return nil
+					}
+					if customErr != nil {
+						p.logger.Warn("Custom provider failed",
+							zap.String("provider", cp.Name),
+							zap.Error(customErr))
+					}
+				}
+			}
+		}
+
 		p.logger.Error("Provider manager send failed",
 			zap.String("notification_id", notif.NotificationID),
 			zap.Error(err))
@@ -519,6 +617,20 @@ func (p *NotificationProcessor) checkUserPreferences(usr *user.User, notif *noti
 		if !utils.BoolValue(usr.Preferences.SMSEnabled) {
 			return false
 		}
+	// Phase 3: New channels default to enabled (opt-out model).
+	// nil means "enabled" — only block if explicitly set to false.
+	case notification.ChannelSlack:
+		if usr.Preferences.SlackEnabled != nil && !*usr.Preferences.SlackEnabled {
+			return false
+		}
+	case notification.ChannelDiscord:
+		if usr.Preferences.DiscordEnabled != nil && !*usr.Preferences.DiscordEnabled {
+			return false
+		}
+	case notification.ChannelWhatsApp:
+		if usr.Preferences.WhatsAppEnabled != nil && !*usr.Preferences.WhatsAppEnabled {
+			return false
+		}
 	}
 
 	// Check quiet hours (except for critical notifications)
@@ -529,6 +641,29 @@ func (p *NotificationProcessor) checkUserPreferences(usr *user.User, notif *noti
 	}
 
 	return true
+}
+
+// resolveThrottleConfig returns the effective ThrottleConfig for a user+channel.
+// User-level overrides take precedence; otherwise fall back to app-level defaults.
+func (p *NotificationProcessor) resolveThrottleConfig(ctx context.Context, usr *user.User, notif *notification.Notification) limiter.ThrottleConfig {
+	ch := string(notif.Channel)
+
+	// User-level override
+	if usr.Preferences.Throttle != nil {
+		if tc, ok := usr.Preferences.Throttle[ch]; ok {
+			return limiter.ThrottleConfig{MaxPerHour: tc.MaxPerHour, MaxPerDay: tc.MaxPerDay}
+		}
+	}
+
+	// App-level default
+	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+	if err == nil && app != nil && app.Settings.SubscriberThrottle != nil {
+		if ac, ok := app.Settings.SubscriberThrottle[ch]; ok {
+			return limiter.ThrottleConfig{MaxPerHour: ac.MaxPerHour, MaxPerDay: ac.MaxPerDay}
+		}
+	}
+
+	return limiter.ThrottleConfig{} // no throttle
 }
 
 func (p *NotificationProcessor) scheduler(ctx context.Context) {
@@ -783,4 +918,90 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 		zap.String("result", result))
 
 	return result, nil
+}
+
+// mergeTemplateData merges control defaults, saved control values, and user payload
+// into a single data map for template rendering. Priority (lowest to highest):
+//  1. Control defaults (from template control schema)
+//  2. Saved control values (editor overrides)
+//  3. User payload (API caller runtime overrides)
+func (p *NotificationProcessor) mergeTemplateData(tmpl *template.Template, payload map[string]interface{}) map[string]interface{} {
+	merged := make(map[string]interface{})
+
+	// 1. Apply control defaults
+	for _, ctrl := range tmpl.Controls {
+		if ctrl.Default != "" {
+			merged[ctrl.Key] = ctrl.Default
+		}
+	}
+
+	// 2. Apply saved control values (override defaults)
+	for k, v := range tmpl.ControlValues {
+		merged[k] = v
+	}
+
+	// 3. Apply user payload (highest priority)
+	for k, v := range payload {
+		merged[k] = v
+	}
+
+	return merged
+}
+
+// ── Phase 5: Un-snooze loop ─────────────────────────────────────
+
+// unsnoozeLoop periodically checks for snoozed notifications that are due
+// and transitions them back to sent so they reappear in the user's inbox.
+func (p *NotificationProcessor) unsnoozeLoop(ctx context.Context) {
+	defer p.wg.Done()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	p.logger.Info("Un-snooze loop started (30s interval)")
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("Un-snooze loop shutting down (context cancelled)")
+			return
+		case <-p.stopChan:
+			p.logger.Info("Un-snooze loop shutting down (stop signal)")
+			return
+		case <-ticker.C:
+			due, err := p.notifRepo.ListSnoozedDue(ctx, time.Now())
+			if err != nil {
+				p.logger.Error("Failed to fetch snoozed-due notifications", zap.Error(err))
+				continue
+			}
+			if len(due) == 0 {
+				continue
+			}
+
+			p.logger.Info("Un-snoozing notifications", zap.Int("count", len(due)))
+
+			for _, notif := range due {
+				if err := p.notifRepo.UpdateSnooze(ctx, notif.NotificationID, notification.StatusSent, nil); err != nil {
+					p.logger.Error("Failed to un-snooze notification",
+						zap.String("notification_id", notif.NotificationID),
+						zap.Error(err))
+					continue
+				}
+
+				// Publish to SSE via Redis pub/sub so browser clients see it resurface
+				if p.redisClient != nil {
+					event := map[string]string{
+						"notification_id": notif.NotificationID,
+						"channel":         string(notif.Channel),
+						"status":          string(notification.StatusSent),
+						"timestamp":       time.Now().Format(time.RFC3339),
+					}
+					data, _ := json.Marshal(event)
+					_ = p.redisClient.Publish(ctx, "notification:activity", string(data)).Err()
+				}
+
+				p.logger.Debug("Un-snoozed notification", zap.String("notification_id", notif.NotificationID))
+			}
+		}
+	}
 }

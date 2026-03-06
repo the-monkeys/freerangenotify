@@ -7,6 +7,7 @@ import (
 
 // NotificationMetrics holds all notification-related Prometheus metrics
 type NotificationMetrics struct {
+	// Core delivery metrics
 	SendTotal          *prometheus.CounterVec
 	QueueDepth         *prometheus.GaugeVec
 	ProcessingDuration *prometheus.HistogramVec
@@ -15,6 +16,18 @@ type NotificationMetrics struct {
 	DeliveryFailure    *prometheus.CounterVec
 	ProviderLatency    *prometheus.HistogramVec
 	QueueLatency       *prometheus.HistogramVec
+
+	// Phase 1: Workflow & Digest metrics
+	WorkflowExecutions      *prometheus.CounterVec
+	WorkflowStepDuration    *prometheus.HistogramVec
+	DigestEventsAccumulated *prometheus.CounterVec
+	DigestFlushes           *prometheus.CounterVec
+
+	// Phase 2: Topic, Throttle, Auth metrics
+	TopicFanout            *prometheus.CounterVec
+	NotificationsThrottled *prometheus.CounterVec
+	ProviderRequests       *prometheus.CounterVec
+	AuthDenied             *prometheus.CounterVec
 }
 
 // NewNotificationMetrics creates and registers all notification metrics
@@ -79,6 +92,67 @@ func NewNotificationMetrics() *NotificationMetrics {
 			},
 			[]string{"priority"},
 		),
+
+		// Phase 1: Workflow & Digest metrics
+		WorkflowExecutions: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_workflow_executions_total",
+				Help: "Total workflow executions by status (success, failure, skipped)",
+			},
+			[]string{"status"},
+		),
+		WorkflowStepDuration: promauto.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "frn_workflow_step_duration_seconds",
+				Help:    "Duration of individual workflow step execution",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"step_type"},
+		),
+		DigestEventsAccumulated: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_digest_events_accumulated_total",
+				Help: "Total events accumulated into digests",
+			},
+			[]string{"app_id"},
+		),
+		DigestFlushes: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_digest_flushes_total",
+				Help: "Total digest flush operations (scheduled and manual)",
+			},
+			[]string{"trigger"},
+		),
+
+		// Phase 2: Topic, Throttle, Auth metrics
+		TopicFanout: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_topic_fanout_total",
+				Help: "Total notifications fanned out via topics",
+			},
+			[]string{"topic"},
+		),
+		NotificationsThrottled: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_notifications_throttled_total",
+				Help: "Total notifications dropped or delayed by throttle",
+			},
+			[]string{"app_id"},
+		),
+		ProviderRequests: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_provider_requests_total",
+				Help: "Total outbound requests to delivery providers",
+			},
+			[]string{"provider", "status"},
+		),
+		AuthDenied: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "frn_auth_denied_total",
+				Help: "Total RBAC permission denials",
+			},
+			[]string{"permission"},
+		),
 	}
 }
 
@@ -120,4 +194,44 @@ func (m *NotificationMetrics) RecordProviderLatency(provider, channel string, du
 // RecordQueueLatency records time spent in queue
 func (m *NotificationMetrics) RecordQueueLatency(priority string, duration float64) {
 	m.QueueLatency.WithLabelValues(priority).Observe(duration)
+}
+
+// RecordWorkflowExecution increments the workflow execution counter
+func (m *NotificationMetrics) RecordWorkflowExecution(status string) {
+	m.WorkflowExecutions.WithLabelValues(status).Inc()
+}
+
+// RecordWorkflowStepDuration records the duration of a workflow step
+func (m *NotificationMetrics) RecordWorkflowStepDuration(stepType string, duration float64) {
+	m.WorkflowStepDuration.WithLabelValues(stepType).Observe(duration)
+}
+
+// RecordDigestEvent increments the digest event accumulation counter
+func (m *NotificationMetrics) RecordDigestEvent(appID string) {
+	m.DigestEventsAccumulated.WithLabelValues(appID).Inc()
+}
+
+// RecordDigestFlush increments the digest flush counter
+func (m *NotificationMetrics) RecordDigestFlush(trigger string) {
+	m.DigestFlushes.WithLabelValues(trigger).Inc()
+}
+
+// RecordTopicFanout records notifications fanned out via a topic
+func (m *NotificationMetrics) RecordTopicFanout(topic string) {
+	m.TopicFanout.WithLabelValues(topic).Inc()
+}
+
+// RecordThrottle increments the throttled notification counter
+func (m *NotificationMetrics) RecordThrottle(appID string) {
+	m.NotificationsThrottled.WithLabelValues(appID).Inc()
+}
+
+// RecordProviderRequest records an outbound provider request
+func (m *NotificationMetrics) RecordProviderRequest(provider, status string) {
+	m.ProviderRequests.WithLabelValues(provider, status).Inc()
+}
+
+// RecordAuthDenied increments the RBAC permission denial counter
+func (m *NotificationMetrics) RecordAuthDenied(permission string) {
+	m.AuthDenied.WithLabelValues(permission).Inc()
 }

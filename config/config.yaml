@@ -75,6 +75,27 @@ providers:
     timeout: 30
     max_retries: 3
 
+  # Phase 3
+  slack:
+    enabled: false
+    default_webhook_url: "${FREERANGE_PROVIDERS_SLACK_DEFAULT_WEBHOOK_URL:-}"
+    timeout: 10
+    max_retries: 3
+
+  discord:
+    enabled: false
+    default_webhook_url: "${FREERANGE_PROVIDERS_DISCORD_DEFAULT_WEBHOOK_URL:-}"
+    timeout: 10
+    max_retries: 3
+
+  whatsapp:
+    enabled: false
+    account_sid: "${FREERANGE_PROVIDERS_WHATSAPP_ACCOUNT_SID:-}"
+    auth_token: "${FREERANGE_PROVIDERS_WHATSAPP_AUTH_TOKEN:-}"
+    from_number: "${FREERANGE_PROVIDERS_WHATSAPP_FROM_NUMBER:-}"
+    timeout: 15
+    max_retries: 3
+
 monitoring:
   enabled: true
   port: 9090
@@ -107,3 +128,20 @@ security:
     exposed_headers: []
     allow_credentials: true
     max_age: 86400
+
+# Feature flags
+features:
+  # Phase 1
+  workflow_enabled: true
+  digest_enabled: true
+  sse_hmac_enforced: false
+  # Phase 2
+  topics_enabled: true
+  throttle_enabled: false
+  audit_enabled: true
+  rbac_enabled: false
+  # Phase 4
+  template_versioning_enabled: false
+  snooze_enabled: true
+  # Phase 6
+  multi_environment_enabled: false

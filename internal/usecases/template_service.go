@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -32,7 +33,10 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 	}
 
 	// Validate channel
-	validChannels := map[string]bool{"push": true, "email": true, "sms": true, "webhook": true, "in_app": true, "sse": true}
+	validChannels := map[string]bool{
+		"push": true, "email": true, "sms": true, "webhook": true,
+		"in_app": true, "sse": true, "slack": true, "discord": true, "whatsapp": true,
+	}
 	if !validChannels[req.Channel] {
 		return nil, fmt.Errorf("invalid channel: %s", req.Channel)
 	}
@@ -55,6 +59,7 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 
 	tmpl := &templateDomain.Template{
 		AppID:         req.AppID,
+		EnvironmentID: req.EnvironmentID,
 		Name:          req.Name,
 		Description:   req.Description,
 		Channel:       req.Channel,
@@ -110,7 +115,9 @@ func (s *TemplateService) GetByName(ctx context.Context, appID, name, locale str
 	return tmpl, nil
 }
 
-// Update updates an existing template
+// Update updates an existing template.
+// Content changes (body, subject, variables, metadata, description) create a new version.
+// Status-only changes remain in-place overwrites.
 func (s *TemplateService) Update(ctx context.Context, id, appID string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
 	// Get existing template
 	tmpl, err := s.repo.GetByID(ctx, id)
@@ -123,54 +130,81 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 		return nil, fmt.Errorf("template not found")
 	}
 
-	// Update fields if provided
+	// Status-only update — in-place, no new version
+	if req.Status != nil && *req.Status != "" {
+		hasContentChange := req.Body != nil || req.Subject != nil || req.Description != nil ||
+			req.Variables != nil || req.Metadata != nil || req.WebhookTarget != nil || req.Name != nil
+		if !hasContentChange {
+			validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
+			if !validStatuses[*req.Status] {
+				return nil, fmt.Errorf("invalid status: %s", *req.Status)
+			}
+			tmpl.Status = *req.Status
+			if req.UpdatedBy != "" {
+				tmpl.UpdatedBy = req.UpdatedBy
+			}
+			if err := s.repo.Update(ctx, tmpl); err != nil {
+				s.logger.Error("Failed to update template status", zap.String("id", id), zap.Error(err))
+				return nil, fmt.Errorf("failed to update template: %w", err)
+			}
+			s.logger.Info("Updated template status", zap.String("id", id), zap.String("status", *req.Status))
+			return tmpl, nil
+		}
+	}
+
+	// Content change — create a new version
+	updated := *tmpl
 	if req.Name != nil && *req.Name != "" {
-		tmpl.Name = *req.Name
+		updated.Name = *req.Name
 	}
 	if req.Description != nil && *req.Description != "" {
-		tmpl.Description = *req.Description
+		updated.Description = *req.Description
 	}
 	if req.WebhookTarget != nil {
-		tmpl.WebhookTarget = *req.WebhookTarget
+		updated.WebhookTarget = *req.WebhookTarget
 	}
 	if req.Subject != nil {
-		tmpl.Subject = *req.Subject
+		updated.Subject = *req.Subject
 	}
 	if req.Body != nil && *req.Body != "" {
-		tmpl.Body = *req.Body
+		updated.Body = *req.Body
 		// Auto-detect variables from new body if variables not explicitly overridden
 		if req.Variables == nil || len(*req.Variables) == 0 {
-			tmpl.Variables = extractVariables(tmpl.Body)
+			updated.Variables = extractVariables(updated.Body)
 		}
 		// Validate new body against variables
-		if err := s.validateTemplateVariables(tmpl.Body, tmpl.Variables); err != nil {
+		if err := s.validateTemplateVariables(updated.Body, updated.Variables); err != nil {
 			return nil, fmt.Errorf("template validation failed: %w", err)
 		}
 	}
 	if req.Variables != nil && len(*req.Variables) > 0 {
-		tmpl.Variables = *req.Variables
+		updated.Variables = *req.Variables
 	}
 	if req.Metadata != nil {
-		tmpl.Metadata = req.Metadata
+		updated.Metadata = req.Metadata
 	}
 	if req.Status != nil && *req.Status != "" {
 		validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
 		if !validStatuses[*req.Status] {
 			return nil, fmt.Errorf("invalid status: %s", *req.Status)
 		}
-		tmpl.Status = *req.Status
+		updated.Status = *req.Status
 	}
 	if req.UpdatedBy != "" {
-		tmpl.UpdatedBy = req.UpdatedBy
+		updated.UpdatedBy = req.UpdatedBy
+		updated.CreatedBy = req.UpdatedBy
 	}
 
-	if err := s.repo.Update(ctx, tmpl); err != nil {
-		s.logger.Error("Failed to update template", zap.String("id", id), zap.Error(err))
+	if err := s.repo.CreateVersion(ctx, &updated); err != nil {
+		s.logger.Error("Failed to create new version on update", zap.String("id", id), zap.Error(err))
 		return nil, fmt.Errorf("failed to update template: %w", err)
 	}
 
-	s.logger.Info("Updated template", zap.String("id", id))
-	return tmpl, nil
+	s.logger.Info("Updated template (new version created)",
+		zap.String("id", updated.ID),
+		zap.String("name", updated.Name),
+		zap.Int("version", updated.Version))
+	return &updated, nil
 }
 
 // Delete permanently removes a template from the datastore.
@@ -286,6 +320,134 @@ func (s *TemplateService) GetVersions(ctx context.Context, appID, name, locale s
 	}
 
 	return versions, nil
+}
+
+// GetByVersion retrieves a specific version of a template by its version number.
+func (s *TemplateService) GetByVersion(ctx context.Context, appID, name, locale string, version int) (*templateDomain.Template, error) {
+	if version < 1 {
+		return nil, fmt.Errorf("version must be >= 1")
+	}
+
+	tmpl, err := s.repo.GetByVersion(ctx, appID, name, locale, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get template version %d: %w", version, err)
+	}
+
+	return tmpl, nil
+}
+
+// Rollback creates a new version whose content is copied from the specified target version.
+// It never deletes history — the rollback result is a new version.
+func (s *TemplateService) Rollback(ctx context.Context, templateID, appID string, targetVersion int, updatedBy string) (*templateDomain.Template, error) {
+	current, err := s.repo.GetByID(ctx, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if current.AppID != appID {
+		return nil, fmt.Errorf("template not found")
+	}
+
+	target, err := s.repo.GetByVersion(ctx, current.AppID, current.Name, current.Locale, targetVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", targetVersion, err)
+	}
+
+	rollback := &templateDomain.Template{
+		AppID:         current.AppID,
+		Name:          current.Name,
+		Description:   target.Description,
+		Channel:       target.Channel,
+		WebhookTarget: target.WebhookTarget,
+		Subject:       target.Subject,
+		Body:          target.Body,
+		Variables:     target.Variables,
+		Metadata:      target.Metadata,
+		Locale:        current.Locale,
+		Status:        "active",
+		CreatedBy:     updatedBy,
+		UpdatedBy:     updatedBy,
+	}
+
+	if err := s.repo.CreateVersion(ctx, rollback); err != nil {
+		s.logger.Error("Failed to rollback template",
+			zap.String("template_id", templateID),
+			zap.Int("target_version", targetVersion),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to rollback template: %w", err)
+	}
+
+	s.logger.Info("Template rolled back",
+		zap.String("template_id", templateID),
+		zap.String("name", current.Name),
+		zap.Int("from_version", current.Version),
+		zap.Int("to_version", targetVersion),
+		zap.Int("new_version", rollback.Version))
+
+	return rollback, nil
+}
+
+// Diff compares two versions of a template and returns field-level changes.
+func (s *TemplateService) Diff(ctx context.Context, appID, name, locale string, fromVersion, toVersion int) (*templateDomain.TemplateDiff, error) {
+	from, err := s.repo.GetByVersion(ctx, appID, name, locale, fromVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", fromVersion, err)
+	}
+	to, err := s.repo.GetByVersion(ctx, appID, name, locale, toVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", toVersion, err)
+	}
+
+	if from.AppID != appID || to.AppID != appID {
+		return nil, fmt.Errorf("template not found")
+	}
+
+	diff := &templateDomain.TemplateDiff{
+		FromVersion: fromVersion,
+		ToVersion:   toVersion,
+	}
+
+	if from.Subject != to.Subject {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "subject", From: from.Subject, To: to.Subject})
+	}
+	if from.Body != to.Body {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "body", From: from.Body, To: to.Body})
+	}
+	if from.Description != to.Description {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "description", From: from.Description, To: to.Description})
+	}
+	if from.Channel != to.Channel {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "channel", From: from.Channel, To: to.Channel})
+	}
+	if from.WebhookTarget != to.WebhookTarget {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "webhook_target", From: from.WebhookTarget, To: to.WebhookTarget})
+	}
+	if !reflect.DeepEqual(from.Variables, to.Variables) {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "variables", From: from.Variables, To: to.Variables})
+	}
+	if !reflect.DeepEqual(from.Metadata, to.Metadata) {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "metadata", From: from.Metadata, To: to.Metadata})
+	}
+
+	if diff.Changes == nil {
+		diff.Changes = []templateDomain.FieldChange{}
+	}
+
+	s.logger.Info("Template diff computed",
+		zap.String("name", name),
+		zap.Int("from", fromVersion),
+		zap.Int("to", toVersion),
+		zap.Int("changes", len(diff.Changes)))
+
+	return diff, nil
+}
+
+// renderSubjectTemplate renders a subject line template with data.
+func (s *TemplateService) RenderSubject(subjectTmpl string, data map[string]interface{}) string {
+	rendered, err := s.renderTemplate(subjectTmpl, data)
+	if err != nil {
+		return subjectTmpl // Fallback to raw subject on error
+	}
+	return rendered
 }
 
 // extractVariables parses Go template variables ({{.varName}}) from body text.

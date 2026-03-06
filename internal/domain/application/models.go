@@ -22,17 +22,28 @@ type Application struct {
 
 // Settings represents application-specific settings
 type Settings struct {
-	RateLimit          int                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
-	RetryAttempts      int                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
-	DefaultTemplate    string              `json:"default_template" es:"default_template"` // default template ID
-	EmailConfig        *EmailConfig        `json:"email_config,omitempty" es:"email_config"`
-	DailyEmailLimit    int                 `json:"daily_email_limit" es:"daily_email_limit"`
-	EnableWebhooks     bool                `json:"enable_webhooks" es:"enable_webhooks"`   // webhook notifications
-	EnableAnalytics    bool                `json:"enable_analytics" es:"enable_analytics"` // analytics tracking
-	ValidationURL      string              `json:"validation_url,omitempty" es:"validation_url"`
-	ValidationConfig   *ValidationConfig   `json:"validation_config,omitempty" es:"validation_config"`
-	DefaultPreferences *DefaultPreferences `json:"default_preferences,omitempty" es:"default_preferences"`
-	ProviderFallbacks  []ProviderFallback  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
+	RateLimit          int                                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
+	RetryAttempts      int                                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
+	DefaultTemplate    string                              `json:"default_template" es:"default_template"` // default template ID
+	EmailConfig        *EmailConfig                        `json:"email_config,omitempty" es:"email_config"`
+	DailyEmailLimit    int                                 `json:"daily_email_limit" es:"daily_email_limit"`
+	EnableWebhooks     bool                                `json:"enable_webhooks" es:"enable_webhooks"`             // webhook notifications
+	EnableAnalytics    bool                                `json:"enable_analytics" es:"enable_analytics"`           // analytics tracking
+	Slack              *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                       // Phase 3
+	Discord            *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                   // Phase 3
+	CustomProviders    []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"` // Phase 3
+	ValidationURL      string                              `json:"validation_url,omitempty" es:"validation_url"`
+	ValidationConfig   *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
+	DefaultPreferences *DefaultPreferences                 `json:"default_preferences,omitempty" es:"default_preferences"`
+	ProviderFallbacks  []ProviderFallback                  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
+	SubscriberThrottle map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"` // App-wide per-channel subscriber throttle defaults (Phase 2)
+}
+
+// SubscriberThrottleConfig defines app-level default throttle limits
+// applied to every subscriber unless overridden at the user level.
+type SubscriberThrottleConfig struct {
+	MaxPerHour int `json:"max_per_hour" es:"max_per_hour"`
+	MaxPerDay  int `json:"max_per_day" es:"max_per_day"`
 }
 
 // ProviderFallback defines an ordered list of providers to try for a channel.
@@ -73,9 +84,36 @@ type ValidationConfig struct {
 
 // DefaultPreferences represents default notification preferences for the app
 type DefaultPreferences struct {
-	EmailEnabled *bool `json:"email_enabled" es:"email_enabled"`
-	PushEnabled  *bool `json:"push_enabled" es:"push_enabled"`
-	SMSEnabled   *bool `json:"sms_enabled" es:"sms_enabled"`
+	EmailEnabled    *bool `json:"email_enabled" es:"email_enabled"`
+	PushEnabled     *bool `json:"push_enabled" es:"push_enabled"`
+	SMSEnabled      *bool `json:"sms_enabled" es:"sms_enabled"`
+	SlackEnabled    *bool `json:"slack_enabled,omitempty" es:"slack_enabled"`       // Phase 3
+	DiscordEnabled  *bool `json:"discord_enabled,omitempty" es:"discord_enabled"`   // Phase 3
+	WhatsAppEnabled *bool `json:"whatsapp_enabled,omitempty" es:"whatsapp_enabled"` // Phase 3
+}
+
+// SlackAppConfig holds app-level Slack configuration (Phase 3)
+type SlackAppConfig struct {
+	WebhookURL string `json:"webhook_url,omitempty" es:"webhook_url"`
+	BotToken   string `json:"bot_token,omitempty" es:"bot_token"`
+}
+
+// DiscordAppConfig holds app-level Discord configuration (Phase 3)
+type DiscordAppConfig struct {
+	WebhookURL string `json:"webhook_url,omitempty" es:"webhook_url"`
+}
+
+// CustomProviderConfig defines a user-registered custom delivery channel (Phase 3).
+// Stored in app Settings.CustomProviders.
+type CustomProviderConfig struct {
+	ProviderID string            `json:"provider_id" es:"provider_id"`
+	Name       string            `json:"name" es:"name"`
+	Channel    string            `json:"channel" es:"channel"`
+	WebhookURL string            `json:"webhook_url" es:"webhook_url"`
+	Headers    map[string]string `json:"headers,omitempty" es:"headers"`
+	SigningKey string            `json:"signing_key" es:"signing_key"`
+	Active     bool              `json:"active" es:"active"`
+	CreatedAt  string            `json:"created_at,omitempty" es:"created_at"`
 }
 
 // ApplicationFilter represents query filters for applications

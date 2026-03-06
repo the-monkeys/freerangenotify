@@ -13,6 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Pagination } from './Pagination';
 import TemplateEditor from './TemplateEditor';
 import { SlidePanel } from './ui/slide-panel';
+import ConfirmDialog from './ConfirmDialog';
+import TemplateDiffViewer from './templates/TemplateDiffViewer';
+import TemplateTestPanel from './templates/TemplateTestPanel';
+import TemplateControlsPanel from './templates/TemplateControlsPanel';
+import SkeletonTable from './SkeletonTable';
 import { toast } from 'sonner';
 
 interface AppTemplatesProps {
@@ -60,6 +65,13 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [versions, setVersions] = useState<TemplateVersion[]>([]);
     const [versionsLoading, setVersionsLoading] = useState(false);
     const [savingVersion, setSavingVersion] = useState(false);
+
+    // Phase 3: Template advanced feature state
+    const [diffTemplate, setDiffTemplate] = useState<Template | null>(null);
+    const [testTemplate, setTestTemplate] = useState<Template | null>(null);
+    const [controlsTemplate, setControlsTemplate] = useState<Template | null>(null);
+    const [rollbackTarget, setRollbackTarget] = useState<{ template: Template; version: TemplateVersion } | null>(null);
+    const [rollbackLoading, setRollbackLoading] = useState(false);
 
     useEffect(() => {
         if (apiKey) {
@@ -295,21 +307,36 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
 
     const handleRestoreVersion = async (ver: TemplateVersion) => {
         if (!versionHistoryTemplate) return;
+        // Open confirmation dialog instead of directly restoring
+        setRollbackTarget({ template: versionHistoryTemplate, version: ver });
+    };
+
+    const handleConfirmRollback = async () => {
+        if (!rollbackTarget) return;
+        setRollbackLoading(true);
         try {
-            await templatesAPI.update(apiKey, versionHistoryTemplate.id, {
-                body: ver.body,
-                subject: ver.subject,
+            await templatesAPI.rollback(apiKey, rollbackTarget.template.id, {
+                target_version: rollbackTarget.version.version,
             });
-            toast.success(`Restored to version ${ver.version}`);
+            toast.success(`Rolled back to version ${rollbackTarget.version.version}`);
+            setRollbackTarget(null);
             setVersionHistoryTemplate(null);
             fetchTemplates();
-        } catch (error) {
-            console.error('Failed to restore version:', error);
-            toast.error('Failed to restore version');
+        } catch (error: any) {
+            const msg = error?.response?.data?.error || 'Rollback failed';
+            toast.error(msg);
+        } finally {
+            setRollbackLoading(false);
         }
     };
 
-    if (loading) return <div className="flex justify-center py-4">Loading templates...</div>;
+    const openDiffViewer = (tmpl: Template) => {
+        // Eagerly load versions for the diff viewer
+        fetchVersionHistory(tmpl);
+        setDiffTemplate(tmpl);
+    };
+
+    if (loading) return <SkeletonTable rows={4} columns={5} />;
 
     return (
         <Card>
@@ -333,10 +360,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                 </DialogHeader>
                                 <div className="space-y-3 mt-4">
                                     {libraryTemplates.length === 0 ? (
-                                        <p className="text-gray-500 text-center py-4">Loading...</p>
+                                        <p className="text-muted-foreground text-center py-4">Loading...</p>
                                     ) : (
                                         libraryTemplates.map(t => (
-                                            <Card key={t.name} className="bg-gray-50">
+                                            <Card key={t.name} className="bg-muted">
                                                 <CardContent className="flex justify-between items-center p-4">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
@@ -345,7 +372,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                         </div>
                                                         <p className="text-xs text-muted-foreground truncate">{t.description}</p>
                                                         {t.variables && t.variables.length > 0 && (
-                                                            <p className="text-xs text-gray-400 mt-1">
+                                                            <p className="text-xs text-muted-foreground mt-1">
                                                                 Variables: {t.variables.join(', ')}
                                                             </p>
                                                         )}
@@ -384,7 +411,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             </CardHeader>
             <CardContent>
                 {showAddForm && (
-                    <form onSubmit={handleCreateTemplate} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                    <form onSubmit={handleCreateTemplate} className="mb-8 bg-muted p-6 rounded border border-border space-y-4">
                         <h4 className="text-lg font-semibold mb-2">{editingTemplate ? 'Edit Template' : 'Create Template'}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -397,7 +424,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     required
                                     placeholder="e.g. welcome_email"
                                     disabled={!!editingTemplate}
-                                    className={editingTemplate ? 'bg-gray-100 cursor-not-allowed' : ''}
+                                    className={editingTemplate ? 'bg-muted cursor-not-allowed' : ''}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -438,7 +465,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-muted-foreground">
                                     Select a specific named webhook endpoint for this template.
                                 </p>
                             </div>
@@ -476,7 +503,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                 channel={formData.channel}
                                 placeholder="Hello {{.name}}, welcome!"
                             />
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                                 Use <code>{'{{.variable_name}}'}</code> syntax. Detected variables will enter the list below automatically.
                             </p>
                         </div>
@@ -519,46 +546,46 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 )}
 
                 {!templates || templates.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No templates found.</p>
+                    <p className="text-muted-foreground text-center py-8">No templates found.</p>
                 ) : (
                     <div className="space-y-6">
                         {templates.map((tmpl) => (
-                            <Card key={tmpl.id} className="bg-white border-gray-200">
+                            <Card key={tmpl.id} className="bg-card border-border">
                                 <CardContent className="pt-6">
                                     <div className="flex justify-between items-start mb-4">
                                         <div>
-                                            <h4 className="text-lg font-semibold text-blue-600 mb-1">{tmpl.name}</h4>
-                                            <p className="text-sm text-gray-500">{tmpl.description || 'No description'}</p>
+                                            <h4 className="text-lg font-semibold text-foreground mb-1">{tmpl.name}</h4>
+                                            <p className="text-sm text-muted-foreground">{tmpl.description || 'No description'}</p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="text-xs text-gray-500 h-6 px-2"
+                                                className="text-xs text-muted-foreground h-6 px-2"
                                                 onClick={() => fetchVersionHistory(tmpl)}
                                             >
                                                 v{tmpl.version} · History
                                             </Button>
-                                            <Badge variant="outline" className="text-xs uppercase bg-gray-50 text-blue-600 border-blue-600">
+                                            <Badge variant="outline" className="text-xs uppercase bg-muted text-foreground border-foreground">
                                                 {tmpl.channel}
                                             </Badge>
                                         </div>
                                     </div>
 
                                     {tmpl.channel === 'webhook' && (
-                                        <div className="mb-2 text-sm font-semibold text-blue-600">
-                                            Target: <span className="text-gray-900">{tmpl.webhook_target || 'Default'}</span>
+                                        <div className="mb-2 text-sm font-semibold text-foreground">
+                                            Target: <span className="text-foreground">{tmpl.webhook_target || 'Default'}</span>
                                         </div>
                                     )}
 
-                                    <div className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200 relative">
+                                    <div className="mb-4 bg-muted p-4 rounded border border-dashed border-border relative">
                                         <div className="flex justify-between items-center mb-2">
-                                            <div className="text-xs text-gray-500 font-semibold">TEMPLATE BODY</div>
+                                            <div className="text-xs text-muted-foreground font-semibold">TEMPLATE BODY</div>
                                             <Button
                                                 type="button"
                                                 variant="ghost"
                                                 size="sm"
-                                                className="text-[11px] h-6 px-2 text-blue-600 font-bold"
+                                                className="text-[11px] h-6 px-2 text-foreground font-bold"
                                                 onClick={() => {
                                                     setExpandedBodies(prev => ({
                                                         ...prev,
@@ -574,16 +601,16 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             overflow: 'hidden',
                                             transition: 'max-height 0.3s ease-in-out'
                                         }}>
-                                            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0 select-text">{tmpl.body}</pre>
+                                            <pre className="whitespace-pre-wrap font-mono text-sm text-foreground m-0 select-text">{tmpl.body}</pre>
                                         </div>
                                         {!expandedBodies[tmpl.id] && (
-                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none rounded-b" />
+                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted to-transparent pointer-events-none rounded-b" />
                                         )}
                                     </div>
 
                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
-                                        <div className="text-sm text-gray-500">
-                                            <strong className="text-gray-900">Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
+                                        <div className="text-sm text-muted-foreground">
+                                            <strong className="text-foreground">Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
                                         </div>
                                         <div className="flex gap-2">
                                             <Button
@@ -592,6 +619,27 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 size="sm"
                                             >
                                                 {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
+                                            </Button>
+                                            <Button
+                                                onClick={() => openDiffViewer(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Compare
+                                            </Button>
+                                            <Button
+                                                onClick={() => setTestTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Test
+                                            </Button>
+                                            <Button
+                                                onClick={() => setControlsTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Controls
                                             </Button>
                                             <Button
                                                 onClick={() => handleSaveVersion(tmpl)}
@@ -619,10 +667,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     </div>
 
                                     {activePreviews[tmpl.id] && (
-                                        <div className="mt-4 border-t border-gray-200 pt-4">
+                                        <div className="mt-4 border-t border-border pt-4">
                                             <div className="space-y-2">
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-xs text-gray-500 font-semibold">PREVIEW DATA (JSON)</div>
+                                                    <div className="text-xs text-muted-foreground font-semibold">PREVIEW DATA (JSON)</div>
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
@@ -702,16 +750,61 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                 title="Rendered Preview"
                             />
                         ) : (
-                            <div className="bg-gray-50 min-h-[200px] p-4 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900 whitespace-pre-wrap">
+                            <div className="bg-muted min-h-[200px] p-4 rounded border border-border overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
                                 {activePreviews[slidePreview.templateId].rendered}
                             </div>
                         )
                     ) : (
-                        <div className="flex items-center justify-center h-40 text-gray-400 italic">
+                        <div className="flex items-center justify-center h-40 text-muted-foreground italic">
                             No rendered output yet. Click "Render Preview" first.
                         </div>
                     )}
                 </SlidePanel>
+
+                {/* Template Diff Viewer */}
+                {diffTemplate && (
+                    <TemplateDiffViewer
+                        apiKey={apiKey}
+                        templateId={diffTemplate.id}
+                        templateName={diffTemplate.name}
+                        versions={versions}
+                        open={!!diffTemplate}
+                        onOpenChange={(open) => { if (!open) setDiffTemplate(null); }}
+                    />
+                )}
+
+                {/* Template Test Panel */}
+                {testTemplate && (
+                    <TemplateTestPanel
+                        apiKey={apiKey}
+                        template={testTemplate}
+                        open={!!testTemplate}
+                        onOpenChange={(open) => { if (!open) setTestTemplate(null); }}
+                    />
+                )}
+
+                {/* Template Controls Panel */}
+                {controlsTemplate && (
+                    <TemplateControlsPanel
+                        apiKey={apiKey}
+                        templateId={controlsTemplate.id}
+                        templateName={controlsTemplate.name}
+                        open={!!controlsTemplate}
+                        onOpenChange={(open) => { if (!open) setControlsTemplate(null); }}
+                    />
+                )}
+
+                {/* Rollback Confirmation Dialog */}
+                <ConfirmDialog
+                    open={!!rollbackTarget}
+                    onOpenChange={(open) => { if (!open) setRollbackTarget(null); }}
+                    title="Confirm Rollback"
+                    description={rollbackTarget ? `Roll back "${rollbackTarget.template.name}" to version ${rollbackTarget.version.version}? This will replace the current template content.` : ''}
+                    confirmLabel="Rollback"
+                    variant="destructive"
+                    loading={rollbackLoading}
+                    onConfirm={handleConfirmRollback}
+                />
 
                 {/* Version History Dialog */}
                 <Dialog open={!!versionHistoryTemplate} onOpenChange={(open) => { if (!open) setVersionHistoryTemplate(null); }}>
@@ -720,9 +813,9 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                             <DialogTitle>Version History: {versionHistoryTemplate?.name}</DialogTitle>
                         </DialogHeader>
                         {versionsLoading ? (
-                            <p className="text-gray-500 text-center py-4">Loading versions...</p>
+                            <p className="text-muted-foreground text-center py-4">Loading versions...</p>
                         ) : versions.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">No version history found.</p>
+                            <p className="text-muted-foreground text-center py-4">No version history found.</p>
                         ) : (
                             <Table>
                                 <TableHeader>
@@ -739,10 +832,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             <TableCell>
                                                 <Badge variant="outline" className="text-xs">v{v.version}</Badge>
                                             </TableCell>
-                                            <TableCell className="text-sm text-gray-500">
+                                            <TableCell className="text-sm text-muted-foreground">
                                                 {v.created_at ? new Date(v.created_at).toLocaleString() : '—'}
                                             </TableCell>
-                                            <TableCell className="text-sm text-gray-700 truncate max-w-[200px]">
+                                            <TableCell className="text-sm text-foreground truncate max-w-[200px]">
                                                 {v.subject || '—'}
                                             </TableCell>
                                             <TableCell>
@@ -755,7 +848,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                             <DialogHeader>
                                                                 <DialogTitle>Version {v.version} Preview</DialogTitle>
                                                             </DialogHeader>
-                                                            <div className="bg-gray-50 p-4 rounded border max-h-[400px] overflow-auto">
+                                                            <div className="bg-muted p-4 rounded border max-h-[400px] overflow-auto">
                                                                 <pre className="whitespace-pre-wrap text-sm font-mono">{v.body}</pre>
                                                             </div>
                                                         </DialogContent>
@@ -763,7 +856,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="text-xs text-blue-600"
+                                                        className="text-xs text-foreground"
                                                         onClick={() => handleRestoreVersion(v)}
                                                     >
                                                         Restore
