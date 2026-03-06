@@ -54,6 +54,7 @@ type AppConfig struct {
 type ServerConfig struct {
 	Host         string `mapstructure:"host"`
 	Port         int    `mapstructure:"port"`
+	PublicURL    string `mapstructure:"public_url"`
 	ReadTimeout  int    `mapstructure:"read_timeout"`
 	WriteTimeout int    `mapstructure:"write_timeout"`
 	IdleTimeout  int    `mapstructure:"idle_timeout"`
@@ -237,6 +238,7 @@ func Load() (*Config, error) {
 
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
+	viper.SetDefault("server.public_url", "")
 	viper.SetDefault("server.read_timeout", 30)
 	viper.SetDefault("server.write_timeout", 30)
 	viper.SetDefault("server.idle_timeout", 120)

@@ -94,7 +94,19 @@ api.interceptors.request.use(
   }
 );
 
-// Handle token refresh on 401
+// Handle token refresh on 401 (with deduplication to prevent concurrent refresh calls)
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -107,6 +119,18 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
       originalRequest._retry = true;
 
+      if (isRefreshing) {
+        // Another refresh is already in-flight — wait for it
+        return new Promise((resolve) => {
+          addRefreshSubscriber((newToken: string) => {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
@@ -118,16 +142,20 @@ api.interceptors.response.use(
           localStorage.setItem('refresh_token', data.refresh_token);
 
           originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+          onTokenRefreshed(data.access_token);
           return api(originalRequest);
         }
       } catch (refreshError) {
-        // Only redirect if we're in a browser environment
+        // Clear tokens and dispatch event for AuthProvider to handle
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        refreshSubscribers = [];
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          window.dispatchEvent(new Event('auth:logout'));
         }
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
 
@@ -184,8 +212,8 @@ export const applicationsAPI = {
   },
 
   updateSettings: async (id: string, settings: Record<string, any>) => {
-    const { data } = await api.put<ApiResponse<Record<string, any>>>(`/apps/${id}/settings`, settings);
-    return data.data;
+    const { data } = await api.put<{ success: boolean; message: string }>(`/apps/${id}/settings`, settings);
+    return data;
   },
 };
 
@@ -240,10 +268,10 @@ export const usersAPI = {
 
   // Device Management
   addDevice: async (apiKey: string, userId: string, payload: AddDeviceRequest) => {
-    const { data } = await api.post<ApiResponse<Device>>(`/users/${userId}/devices`, payload, {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/users/${userId}/devices`, payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data.data;
+    return data;
   },
 
   getDevices: async (apiKey: string, userId: string) => {
@@ -261,10 +289,10 @@ export const usersAPI = {
 
   // Preferences Management
   updatePreferences: async (apiKey: string, userId: string, preferences: any) => {
-    const { data } = await api.put<ApiResponse<any>>(`/users/${userId}/preferences`, preferences, {
+    const { data } = await api.put<{ success: boolean; message: string }>(`/users/${userId}/preferences`, preferences, {
       headers: getAuthHeaders(apiKey)
     });
-    return data.data;
+    return data;
   },
 
   getPreferences: async (apiKey: string, userId: string) => {
@@ -285,6 +313,18 @@ export const usersAPI = {
     const { data } = await api.get<SubscriberHashResponse>(`/users/${userId}/subscriber-hash`, {
       headers: getAuthHeaders(apiKey)
     });
+    return data;
+  },
+};
+
+// ============= SSE Token APIs =============
+export const sseAPI = {
+  createToken: async (apiKey: string, userId: string): Promise<{ sse_token: string; user_id: string; expires_in: number }> => {
+    const { data } = await api.post<{ sse_token: string; user_id: string; expires_in: number }>(
+      '/sse/tokens',
+      { user_id: userId },
+      { headers: getAuthHeaders(apiKey) }
+    );
     return data;
   },
 };
@@ -596,6 +636,17 @@ export const adminAPI = {
     return data;
   },
 
+  // SSE Playground
+  createSSEPlayground: async () => {
+    const { data } = await api.post<{ id: string; sse_url: string; expires_in: string }>('/admin/playground/sse');
+    return data;
+  },
+
+  sendSSETestMessage: async (id: string, payload?: { title?: string; body?: string; category?: string; data?: Record<string, unknown> }) => {
+    const { data } = await api.post<{ status: string; user_id: string }>(`/admin/playground/sse/${id}/send`, payload || {});
+    return data;
+  },
+
   getAnalyticsSummary: async (period = '7d') => {
     const { data } = await api.get<AnalyticsSummary>(`/admin/analytics/summary?period=${period}`);
     return data;
@@ -608,9 +659,9 @@ export const adminAPI = {
     ]);
     return {
       total_apps: 0,
-      total_users: 0,
-      total_templates: 0,
-      total_workflows: 0,
+      total_users: summary7d.total_users ?? 0,
+      total_templates: summary7d.total_templates ?? 0,
+      total_workflows: summary7d.total_workflows ?? 0,
       notifications_today: summary1d.total_sent + summary1d.total_delivered + summary1d.total_read,
       notifications_this_week: summary7d.total_sent + summary7d.total_delivered + summary7d.total_read,
       success_rate: summary7d.success_rate,
@@ -619,47 +670,34 @@ export const adminAPI = {
 };
 
 // ============= Workflow APIs =============
-interface WorkflowListResponse {
-  workflows: Workflow[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-interface ExecutionListResponse {
-  executions: WorkflowExecution[];
-  total: number;
-  limit: number;
-  offset: number;
-}
 
 export const workflowsAPI = {
   create: async (apiKey: string, payload: CreateWorkflowRequest) => {
-    const { data } = await api.post<Workflow>('/workflows/', payload, {
+    const { data } = await api.post<ApiResponse<Workflow>>('/workflows/', payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   list: async (apiKey: string, limit = 20, offset = 0) => {
-    const { data } = await api.get<WorkflowListResponse>(`/workflows/?limit=${limit}&offset=${offset}`, {
+    const { data } = await api.get<ApiResponse<Workflow[]> & { total: number }>(`/workflows/?limit=${limit}&offset=${offset}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return { workflows: data.data, total: data.total };
   },
 
   get: async (apiKey: string, id: string) => {
-    const { data } = await api.get<Workflow>(`/workflows/${id}`, {
+    const { data } = await api.get<ApiResponse<Workflow>>(`/workflows/${id}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   update: async (apiKey: string, id: string, payload: UpdateWorkflowRequest) => {
-    const { data } = await api.put<Workflow>(`/workflows/${id}`, payload, {
+    const { data } = await api.put<ApiResponse<Workflow>>(`/workflows/${id}`, payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   delete: async (apiKey: string, id: string) => {
@@ -669,26 +707,26 @@ export const workflowsAPI = {
   },
 
   trigger: async (apiKey: string, payload: TriggerWorkflowRequest) => {
-    const { data } = await api.post('/workflows/trigger', payload, {
+    const { data } = await api.post<ApiResponse<WorkflowExecution>>('/workflows/trigger', payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   listExecutions: async (apiKey: string, limit = 20, offset = 0, workflowId?: string) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (workflowId) params.set('workflow_id', workflowId);
-    const { data } = await api.get<ExecutionListResponse>(`/workflows/executions?${params}`, {
+    const { data } = await api.get<ApiResponse<WorkflowExecution[]> & { total: number }>(`/workflows/executions?${params}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return { executions: data.data, total: data.total };
   },
 
   getExecution: async (apiKey: string, id: string) => {
-    const { data } = await api.get<WorkflowExecution>(`/workflows/executions/${id}`, {
+    const { data } = await api.get<ApiResponse<WorkflowExecution>>(`/workflows/executions/${id}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   cancelExecution: async (apiKey: string, id: string) => {
@@ -699,40 +737,34 @@ export const workflowsAPI = {
 };
 
 // ============= Digest Rule APIs =============
-interface DigestRuleListResponse {
-  rules: DigestRule[];
-  total: number;
-  limit: number;
-  offset: number;
-}
 
 export const digestRulesAPI = {
   create: async (apiKey: string, payload: CreateDigestRuleRequest) => {
-    const { data } = await api.post<DigestRule>('/digest-rules/', payload, {
+    const { data } = await api.post<ApiResponse<DigestRule>>('/digest-rules/', payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   list: async (apiKey: string, limit = 20, offset = 0) => {
-    const { data } = await api.get<DigestRuleListResponse>(`/digest-rules/?limit=${limit}&offset=${offset}`, {
+    const { data } = await api.get<ApiResponse<DigestRule[]> & { total: number }>(`/digest-rules/?limit=${limit}&offset=${offset}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return { rules: data.data, total: data.total };
   },
 
   get: async (apiKey: string, id: string) => {
-    const { data } = await api.get<DigestRule>(`/digest-rules/${id}`, {
+    const { data } = await api.get<ApiResponse<DigestRule>>(`/digest-rules/${id}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   update: async (apiKey: string, id: string, payload: UpdateDigestRuleRequest) => {
-    const { data } = await api.put<DigestRule>(`/digest-rules/${id}`, payload, {
+    const { data } = await api.put<ApiResponse<DigestRule>>(`/digest-rules/${id}`, payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   delete: async (apiKey: string, id: string) => {
@@ -743,54 +775,41 @@ export const digestRulesAPI = {
 };
 
 // ============= Topic APIs =============
-interface TopicListResponse {
-  topics: Topic[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-interface SubscriberListResponse {
-  subscribers: TopicSubscription[];
-  total: number;
-  limit: number;
-  offset: number;
-}
 
 export const topicsAPI = {
   create: async (apiKey: string, payload: CreateTopicRequest) => {
-    const { data } = await api.post<Topic>('/topics/', payload, {
+    const { data } = await api.post<ApiResponse<Topic>>('/topics/', payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   list: async (apiKey: string, limit = 20, offset = 0) => {
-    const { data } = await api.get<TopicListResponse>(`/topics/?limit=${limit}&offset=${offset}`, {
+    const { data } = await api.get<ApiResponse<Topic[]> & { total: number }>(`/topics/?limit=${limit}&offset=${offset}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return { topics: data.data, total: data.total };
   },
 
   get: async (apiKey: string, id: string) => {
-    const { data } = await api.get<Topic>(`/topics/${id}`, {
+    const { data } = await api.get<ApiResponse<Topic>>(`/topics/${id}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   getByKey: async (apiKey: string, key: string) => {
-    const { data } = await api.get<Topic>(`/topics/key/${key}`, {
+    const { data } = await api.get<ApiResponse<Topic>>(`/topics/key/${key}`, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   update: async (apiKey: string, id: string, payload: UpdateTopicRequest) => {
-    const { data } = await api.put<Topic>(`/topics/${id}`, payload, {
+    const { data } = await api.put<ApiResponse<Topic>>(`/topics/${id}`, payload, {
       headers: getAuthHeaders(apiKey)
     });
-    return data;
+    return data.data;
   },
 
   delete: async (apiKey: string, id: string) => {
@@ -814,11 +833,11 @@ export const topicsAPI = {
   },
 
   getSubscribers: async (apiKey: string, topicId: string, limit = 20, offset = 0) => {
-    const { data } = await api.get<SubscriberListResponse>(
+    const { data } = await api.get<ApiResponse<TopicSubscription[]> & { total: number }>(
       `/topics/${topicId}/subscribers?limit=${limit}&offset=${offset}`,
       { headers: getAuthHeaders(apiKey) }
     );
-    return data;
+    return { subscribers: data.data, total: data.total };
   },
 };
 
@@ -845,11 +864,10 @@ export const teamAPI = {
 };
 
 // ============= Audit Log APIs =============
+// Backend returns { audit_logs: [...], count: N }
 interface AuditLogListResponse {
-  logs: AuditLog[];
-  total: number;
-  limit: number;
-  offset: number;
+  audit_logs: AuditLog[];
+  count: number;
 }
 
 export const auditAPI = {
@@ -877,18 +895,18 @@ export const auditAPI = {
 // ============= Environment APIs =============
 export const environmentsAPI = {
   create: async (appId: string, payload: CreateEnvironmentRequest) => {
-    const { data } = await api.post<Environment>(`/apps/${appId}/environments`, payload);
-    return data;
+    const { data } = await api.post<ApiResponse<Environment>>(`/apps/${appId}/environments`, payload);
+    return data.data;
   },
 
   list: async (appId: string) => {
-    const { data } = await api.get<{ environments: Environment[] }>(`/apps/${appId}/environments`);
-    return data.environments;
+    const { data } = await api.get<ApiResponse<Environment[]>>(`/apps/${appId}/environments`);
+    return data.data;
   },
 
   get: async (appId: string, envId: string) => {
-    const { data } = await api.get<Environment>(`/apps/${appId}/environments/${envId}`);
-    return data;
+    const { data } = await api.get<ApiResponse<Environment>>(`/apps/${appId}/environments/${envId}`);
+    return data.data;
   },
 
   delete: async (appId: string, envId: string) => {
@@ -896,21 +914,21 @@ export const environmentsAPI = {
   },
 
   promote: async (appId: string, payload: PromoteEnvironmentRequest) => {
-    const { data } = await api.post(`/apps/${appId}/environments/promote`, payload);
-    return data;
+    const { data } = await api.post<ApiResponse<any>>(`/apps/${appId}/environments/promote`, payload);
+    return data.data;
   },
 };
 
 // ============= Custom Provider APIs =============
 export const providersAPI = {
   register: async (appId: string, payload: RegisterProviderRequest) => {
-    const { data } = await api.post<CustomProvider>(`/apps/${appId}/providers`, payload);
-    return data;
+    const { data } = await api.post<ApiResponse<CustomProvider>>(`/apps/${appId}/providers`, payload);
+    return data.data;
   },
 
   list: async (appId: string) => {
-    const { data } = await api.get<{ providers: CustomProvider[] }>(`/apps/${appId}/providers`);
-    return data.providers;
+    const { data } = await api.get<ApiResponse<CustomProvider[]>>(`/apps/${appId}/providers`);
+    return data.data;
   },
 
   remove: async (appId: string, providerId: string) => {

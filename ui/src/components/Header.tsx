@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { Menu, X } from 'lucide-react';
+import { Menu, X, Bell, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 const Header: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { isAuthenticated, user, logout } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
+    const { theme, toggleTheme } = useTheme();
 
     const isActive = (path: string) => location.pathname === path;
 
@@ -26,7 +28,7 @@ const Header: React.FC = () => {
             <div className="px-4 sm:px-8 py-3 flex justify-between items-center">
                 <div className="flex items-center gap-4 sm:gap-6 min-w-0">
                     <Link to="/" className="text-lg font-semibold flex items-center gap-2.5 text-background no-underline hover:no-underline shrink-0">
-                        <span className="text-xl">🌐</span>
+                        <Bell className="h-5 w-5" />
                         <span>FreeRange <span className="font-normal opacity-90">Notify</span></span>
                     </Link>
                     <div className="hidden lg:block h-5 w-px bg-background/30"></div>
@@ -39,6 +41,15 @@ const Header: React.FC = () => {
                                         }`}
                                 >
                                     Home
+                                </Link>
+                            </li>
+                            <li>
+                                <Link
+                                    to="/docs"
+                                    className={`text-background font-normal text-sm px-3 py-1.5 rounded no-underline hover:bg-background/10 hover:no-underline ${location.pathname.startsWith('/docs') ? 'bg-background/20' : ''
+                                        }`}
+                                >
+                                    Docs
                                 </Link>
                             </li>
                             {isAuthenticated && (
@@ -68,6 +79,13 @@ const Header: React.FC = () => {
                 </div>
                 {/* Desktop auth buttons */}
                 <div className="hidden lg:flex items-center gap-4 shrink-0">
+                    <button
+                        onClick={toggleTheme}
+                        className="p-1.5 rounded-md text-background/70 hover:text-background hover:bg-background/10 transition-colors"
+                        aria-label="Toggle theme"
+                    >
+                        {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    </button>
                     {isAuthenticated ? (
                         <>
                             <div className="text-xs opacity-90 hidden xl:block">
@@ -127,6 +145,16 @@ const Header: React.FC = () => {
                                         }`}
                                 >
                                     Home
+                                </Link>
+                            </li>
+                            <li>
+                                <Link
+                                    to="/docs"
+                                    onClick={closeMobile}
+                                    className={`block text-background font-normal text-sm px-3 py-2 rounded no-underline hover:bg-background/10 hover:no-underline ${location.pathname.startsWith('/docs') ? 'bg-background/20' : ''
+                                        }`}
+                                >
+                                    Docs
                                 </Link>
                             </li>
                             {isAuthenticated && (

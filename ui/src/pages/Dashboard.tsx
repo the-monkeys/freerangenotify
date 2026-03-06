@@ -10,6 +10,7 @@ import { Skeleton } from '../components/ui/skeleton';
 import { toast } from 'sonner';
 import { ActivityFeed } from '../components/ActivityFeed';
 import WebhookPlayground from '../components/WebhookPlayground';
+import SSEPlayground from '../components/SSEPlayground';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
 import OverviewStats from '../components/dashboard/OverviewStats';
 import QueueDepthCards from '../components/dashboard/QueueDepthCards';
@@ -65,7 +66,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    const interval = setInterval(fetchStats, 15_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -217,9 +218,12 @@ const Dashboard: React.FC = () => {
 
           {/* ── Tools Tab ── */}
           {activeTab === 'tools' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <QuickTestPanel />
-              <WebhookPlayground />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <QuickTestPanel />
+                <WebhookPlayground />
+              </div>
+              <SSEPlayground />
             </div>
           )}
         </>

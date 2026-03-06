@@ -17,7 +17,9 @@ export default defineConfig(({ mode }) => {
       host: "0.0.0.0",
       proxy: {
         "/v1": {
-          target: env.VITE_API_BASE_URL || "http://localhost:8080",
+          // API_PROXY_TARGET is server-side only (not exposed to browser)
+          // Falls back to VITE_API_BASE_URL for local dev, then localhost
+          target: env.API_PROXY_TARGET || env.VITE_API_BASE_URL || "http://localhost:8080",
           changeOrigin: true,
           secure: false,
         },
@@ -27,5 +29,5 @@ export default defineConfig(({ mode }) => {
       outDir: "dist",
     },
   }
-  ;
+    ;
 });

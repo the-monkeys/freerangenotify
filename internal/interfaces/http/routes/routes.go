@@ -91,6 +91,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Phase 5: subscriber hash for SSE HMAC authentication
 	users.Get("/:id/subscriber-hash", c.UserHandler.GetSubscriberHash)
 
+	// SSE token endpoint (secure — generates short-lived tokens for SSE connections)
+	v1.Post("/sse/tokens", auth, c.SSEHandler.CreateToken)
+
 	// Presence management
 	presence := v1.Group("/presence")
 	presence.Use(auth)
@@ -238,17 +241,21 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 			c.ApplicationHandler.Delete)
 	}
 
-	// Queue management
-	queues := admin.Group("/queues")
+	// Queue management (JWT-protected)
+	queues := adminAuth.Group("/queues")
 	queues.Get("/stats", c.AdminHandler.GetQueueStats)
 	queues.Get("/dlq", c.AdminHandler.ListDLQ)
 	queues.Post("/dlq/replay", c.AdminHandler.ReplayDLQ)
 
-	// Provider health
-	admin.Get("/providers/health", c.AdminHandler.GetProviderHealth)
+	// Provider health (JWT-protected)
+	adminAuth.Get("/providers/health", c.AdminHandler.GetProviderHealth)
 
 	// Webhook playground
 	adminAuth.Post("/playground/webhook", c.PlaygroundHandler.CreatePlayground)
+
+	// SSE playground
+	adminAuth.Post("/playground/sse", c.PlaygroundHandler.CreateSSEPlayground)
+	adminAuth.Post("/playground/sse/:id/send", c.PlaygroundHandler.SendSSETestMessage)
 
 	// Analytics
 	adminAuth.Get("/analytics/summary", c.AnalyticsHandler.GetSummary)

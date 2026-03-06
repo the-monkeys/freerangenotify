@@ -256,6 +256,12 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 				"app_id": filter.AppID,
 			},
 		})
+	} else if len(filter.AppIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"app_id": filter.AppIDs,
+			},
+		})
 	}
 
 	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {

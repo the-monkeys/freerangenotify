@@ -18,7 +18,7 @@ vendor/
 go.work
 
 # Environment variables
-.env
+# .env
 .env.local
 .env.*.local
 ui/.env.example

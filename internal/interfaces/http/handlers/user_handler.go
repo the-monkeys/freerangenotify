@@ -30,6 +30,31 @@ func NewUserHandler(service usecases.UserService, v *validator.Validator, logger
 	}
 }
 
+// getAppID extracts the authenticated app_id from Fiber context.
+func (h *UserHandler) getAppID(c *fiber.Ctx) (string, error) {
+	appID, ok := c.Locals("app_id").(string)
+	if !ok || appID == "" {
+		return "", errors.Unauthorized("Application not authenticated")
+	}
+	return appID, nil
+}
+
+// verifyUserOwnership fetches the user and ensures it belongs to the caller's app.
+func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.User, error) {
+	appID, err := h.getAppID(c)
+	if err != nil {
+		return nil, err
+	}
+	u, err := h.service.GetByID(c.Context(), userID)
+	if err != nil {
+		return nil, err
+	}
+	if u.AppID != appID {
+		return nil, errors.NotFound("user", userID)
+	}
+	return u, nil
+}
+
 // Create handles POST /v1/users
 func (h *UserHandler) Create(c *fiber.Ctx) error {
 	var req dto.CreateUserRequest
@@ -83,7 +108,7 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 		return errors.BadRequest("user_id is required")
 	}
 
-	u, err := h.service.GetByID(c.Context(), userID)
+	u, err := h.verifyUserOwnership(c, userID)
 	if err != nil {
 		return err
 	}
@@ -110,8 +135,8 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
 	}
 
-	// Get existing user
-	u, err := h.service.GetByID(c.Context(), userID)
+	// Get existing user and verify ownership
+	u, err := h.verifyUserOwnership(c, userID)
 	if err != nil {
 		return err
 	}
@@ -154,6 +179,11 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
 		return errors.BadRequest("user_id is required")
+	}
+
+	// Verify ownership before deleting
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
 	}
 
 	if err := h.service.Delete(c.Context(), userID); err != nil {
@@ -228,6 +258,10 @@ func (h *UserHandler) AddDevice(c *fiber.Ctx) error {
 		return errors.BadRequest("user_id is required")
 	}
 
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
+	}
+
 	var req dto.AddDeviceRequest
 	if err := c.BodyParser(&req); err != nil {
 		return errors.BadRequest("Invalid request body")
@@ -261,6 +295,10 @@ func (h *UserHandler) RemoveDevice(c *fiber.Ctx) error {
 		return errors.BadRequest("user_id and device_id are required")
 	}
 
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
+	}
+
 	if err := h.service.RemoveDevice(c.Context(), userID, deviceID); err != nil {
 		return err
 	}
@@ -276,6 +314,10 @@ func (h *UserHandler) GetDevices(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
 		return errors.BadRequest("user_id is required")
+	}
+
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
 	}
 
 	devices, err := h.service.GetDevices(c.Context(), userID)
@@ -294,6 +336,10 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
 		return errors.BadRequest("user_id is required")
+	}
+
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
 	}
 
 	var req dto.UpdatePreferencesRequest
@@ -332,6 +378,10 @@ func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
 		return errors.BadRequest("user_id is required")
+	}
+
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
 	}
 
 	preferences, err := h.service.GetPreferences(c.Context(), userID)
@@ -411,6 +461,11 @@ func (h *UserHandler) GetSubscriberHash(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
 		return errors.BadRequest("user_id is required")
+	}
+
+	// Verify user belongs to this app before generating hash
+	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+		return err
 	}
 
 	app, ok := c.Locals("app").(*application.Application)

@@ -71,13 +71,14 @@ type Device struct {
 
 // UserFilter represents query filters for users
 type UserFilter struct {
-	AppID         string `json:"app_id,omitempty"`
-	EnvironmentID string `json:"environment_id,omitempty"`
-	Email         string `json:"email,omitempty"`
-	Timezone      string `json:"timezone,omitempty"`
-	Language      string `json:"language,omitempty"`
-	Limit         int    `json:"limit,omitempty"`
-	Offset        int    `json:"offset,omitempty"`
+	AppID         string   `json:"app_id,omitempty"`
+	AppIDs        []string `json:"app_ids,omitempty"`
+	EnvironmentID string   `json:"environment_id,omitempty"`
+	Email         string   `json:"email,omitempty"`
+	Timezone      string   `json:"timezone,omitempty"`
+	Language      string   `json:"language,omitempty"`
+	Limit         int      `json:"limit,omitempty"`
+	Offset        int      `json:"offset,omitempty"`
 }
 
 // Repository defines the interface for user data operations

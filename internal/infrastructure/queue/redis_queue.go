@@ -335,6 +335,60 @@ func (q *RedisQueue) ReplayDLQ(ctx context.Context, limit int) (int, error) {
 	return replayedCount, nil
 }
 
+// ReplayDLQForApps replays DLQ items, only re-enqueuing items belonging to the
+// specified app IDs. Items not owned by the caller are pushed back to the DLQ.
+func (q *RedisQueue) ReplayDLQForApps(ctx context.Context, limit int, allowedApps map[string]bool) (int, error) {
+	replayedCount := 0
+
+	// Process up to limit*3 items to find enough matching items
+	maxScan := limit * 3
+	if maxScan < 30 {
+		maxScan = 30
+	}
+
+	for i := 0; i < maxScan && replayedCount < limit; i++ {
+		data, err := q.client.RPop(ctx, QueueDeadLetter).Result()
+		if err != nil {
+			if err == redis.Nil {
+				break
+			}
+			return replayedCount, fmt.Errorf("failed to pop from DLQ: %w", err)
+		}
+
+		var dlqItem DLQItem
+		if err := json.Unmarshal([]byte(data), &dlqItem); err != nil {
+			q.logger.Error("Failed to unmarshal DLQ item for replay", zap.Error(err))
+			continue
+		}
+
+		// Check if this item belongs to one of the allowed apps
+		if dlqItem.AppID != "" && !allowedApps[dlqItem.AppID] {
+			// Not this admin's item — push it back to DLQ
+			if pushErr := q.client.LPush(ctx, QueueDeadLetter, data).Err(); pushErr != nil {
+				q.logger.Error("Failed to push back non-owned DLQ item", zap.Error(pushErr))
+			}
+			continue
+		}
+
+		dlqItem.NotificationQueueItem.EnqueuedAt = time.Now()
+
+		if err := q.Enqueue(ctx, dlqItem.NotificationQueueItem); err != nil {
+			q.logger.Error("Failed to re-enqueue item from DLQ",
+				zap.String("notification_id", dlqItem.NotificationID),
+				zap.Error(err))
+			continue
+		}
+
+		replayedCount++
+	}
+
+	if replayedCount > 0 {
+		q.logger.Info("Replayed items from DLQ (scoped)", zap.Int("count", replayedCount))
+	}
+
+	return replayedCount, nil
+}
+
 // EnqueueDeadLetter adds a notification to the dead letter queue
 func (q *RedisQueue) EnqueueDeadLetter(ctx context.Context, item NotificationQueueItem, reason string) error {
 	dlqItem := DLQItem{

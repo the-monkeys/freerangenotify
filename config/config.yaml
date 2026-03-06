@@ -8,6 +8,7 @@ app:
 server:
   host: "0.0.0.0"
   port: 8080
+  public_url: ""  # Set to your public-facing URL (e.g. https://notify.example.com). Falls back to http://localhost:8080
   read_timeout: 60
   write_timeout: 0  # 0 means no timeout (required for SSE)
   idle_timeout: 120

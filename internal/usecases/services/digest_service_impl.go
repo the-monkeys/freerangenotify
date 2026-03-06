@@ -90,6 +90,9 @@ func (s *digestService) Update(ctx context.Context, id, appID string, req *diges
 	if req.Name != nil {
 		rule.Name = *req.Name
 	}
+	if req.DigestKey != nil {
+		rule.DigestKey = *req.DigestKey
+	}
 	if req.Window != nil {
 		if _, err := time.ParseDuration(*req.Window); err != nil {
 			return nil, errors.BadRequest(fmt.Sprintf("invalid window duration '%s'", *req.Window))

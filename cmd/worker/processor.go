@@ -348,11 +348,6 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				notif.Content.Title = title
 				notif.Content.Body = body
 
-				if notif.Channel == notification.ChannelSSE {
-					notif.Content.Title = tmpl.Subject
-					notif.Content.Body = tmpl.Body
-				}
-
 				// Always populate RenderedNotification for client convenience (e.g. debugging or alternative display)
 				// This field is transient and won't be saved to DB/ES due to es:"-" tag
 				notif.RenderedNotification = &notification.Content{
@@ -391,27 +386,52 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				app, err := p.appRepo.GetByID(ctx, notif.AppID)
 				if err != nil {
 					logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
-				} else if app != nil && app.Webhooks != nil {
-					if url, ok := app.Webhooks[target]; ok {
-						if notif.Metadata == nil {
-							notif.Metadata = make(map[string]interface{})
+				} else if app != nil {
+					resolved := false
+
+					// 1. Try legacy app.Webhooks map first
+					if app.Webhooks != nil {
+						if url, ok := app.Webhooks[target]; ok {
+							if notif.Metadata == nil {
+								notif.Metadata = make(map[string]interface{})
+							}
+							if _, exists := notif.Metadata["webhook_url"]; !exists {
+								notif.Metadata["webhook_url"] = url
+								logger.Info("Resolved webhook target from application webhooks map",
+									zap.String("notification_id", notif.NotificationID),
+									zap.String("target_name", target),
+									zap.String("url", url))
+								resolved = true
+							}
 						}
-						// Only set if not already present (allow override)
-						if _, exists := notif.Metadata["webhook_url"]; !exists {
-							notif.Metadata["webhook_url"] = url
-							logger.Info("Resolved webhook target from application config",
-								zap.String("notification_id", notif.NotificationID),
-								zap.String("target_name", target),
-								zap.String("url", url))
+					}
+
+					// 2. Try custom providers (the current storage mechanism)
+					if !resolved {
+						for _, cp := range app.Settings.CustomProviders {
+							if cp.Name == target && cp.Channel == string(notification.ChannelWebhook) && cp.Active {
+								if notif.Metadata == nil {
+									notif.Metadata = make(map[string]interface{})
+								}
+								notif.Metadata["webhook_url"] = cp.WebhookURL
+								logger.Info("Resolved webhook target from custom provider",
+									zap.String("notification_id", notif.NotificationID),
+									zap.String("target_name", target),
+									zap.String("url", cp.WebhookURL))
+								resolved = true
+								break
+							}
 						}
-					} else {
-						logger.Error("Webhook target NOT FOUND in application webhooks map",
+					}
+
+					if !resolved {
+						logger.Error("Webhook target not found in application config or custom providers",
 							zap.String("notification_id", notif.NotificationID),
 							zap.String("target_name", target),
-							zap.Any("available_webhooks", app.Webhooks))
+							zap.Int("custom_providers_count", len(app.Settings.CustomProviders)))
 					}
 				} else {
-					logger.Error("Application has NO webhooks configured",
+					logger.Error("Application not found for webhook routing",
 						zap.String("notification_id", notif.NotificationID),
 						zap.String("app_id", notif.AppID))
 				}
@@ -523,6 +543,11 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 						p.logger.Warn("Custom provider failed",
 							zap.String("provider", cp.Name),
 							zap.Error(customErr))
+					} else if customResult != nil && !customResult.Success {
+						p.logger.Warn("Custom provider delivery unsuccessful",
+							zap.String("provider", cp.Name),
+							zap.String("error_type", customResult.ErrorType),
+							zap.Error(customResult.Error))
 					}
 				}
 			}
@@ -718,6 +743,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			for _, notif := range pending {
 				items = append(items, queue.NotificationQueueItem{
 					NotificationID: notif.NotificationID,
+					AppID:          notif.AppID,
 					Priority:       notif.Priority,
 					EnqueuedAt:     time.Now(),
 				})
@@ -771,17 +797,10 @@ func (p *NotificationProcessor) retryProcessor(ctx context.Context) {
 			}
 
 			if len(items) == 0 {
-				// Also try to replay a few DLQ items if nothing retryable is ready
-				replayed, replayErr := redisQueue.ReplayDLQ(ctx, 50)
-				if replayErr != nil {
-					p.logger.Error("Failed to replay DLQ items", zap.Error(replayErr))
-					continue
-				}
-
-				if replayed > 0 {
-					p.logger.Info("Replayed DLQ items", zap.Int("count", replayed))
-				}
-
+				// DLQ items are NOT auto-replayed — they stay in the DLQ
+				// until an admin manually triggers replay via the admin API.
+				// Auto-replay causes infinite loops when the underlying issue
+				// (e.g. unreachable webhook URL) is not fixed.
 				continue
 			}
 
@@ -882,6 +901,7 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 	// Enqueue in scheduled queue
 	queueItem := queue.NotificationQueueItem{
 		NotificationID: newNotif.NotificationID,
+		AppID:          newNotif.AppID,
 		Priority:       newNotif.Priority,
 		EnqueuedAt:     time.Now(),
 	}

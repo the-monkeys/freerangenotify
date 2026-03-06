@@ -33,7 +33,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
-import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2, Zap, Mail, Route, Users } from 'lucide-react';
 import { timeAgo } from '../../lib/utils';
 import { toast } from 'sonner';
 
@@ -118,8 +118,8 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
     };
 
     const handleSave = async () => {
-        if (!apiKey || !formName.trim() || !formKey.trim()) {
-            toast.error('Name and Digest Key are required');
+        if (!apiKey || !formName.trim() || !formKey.trim() || !formTemplateId) {
+            toast.error('Name, Digest Key, and Template are required');
             return;
         }
         setSaving(true);
@@ -206,16 +206,57 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
         <div className={embedded ? 'space-y-4' : 'p-6 max-w-6xl mx-auto space-y-6'}>
             {/* Header */}
             {!embedded && (
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Timer className="h-5 w-5 text-muted-foreground" />
-                        <h1 className="text-2xl font-semibold text-foreground">Digest Rules</h1>
+                <>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Timer className="h-5 w-5 text-muted-foreground" />
+                            <h1 className="text-2xl font-semibold text-foreground">Digest Rules</h1>
+                        </div>
+                        <Button onClick={openCreate}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            New Rule
+                        </Button>
                     </div>
-                    <Button onClick={openCreate}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Rule
-                    </Button>
-                </div>
+
+                    <div className="rounded-lg border bg-card p-5">
+                        <div className="flex items-start gap-4">
+                            <div className="rounded-lg bg-primary/10 p-3 shrink-0">
+                                <Timer className="h-6 w-6 text-primary" />
+                            </div>
+                            <div className="space-y-3">
+                                <div>
+                                    <h3 className="font-semibold text-base">How Digest Rules Work</h3>
+                                    <p className="text-muted-foreground text-sm mt-1">
+                                        Digest rules <strong>batch multiple notifications together</strong> and send them as a single consolidated message.
+                                        Instead of 20 separate emails, your users get one clean summary.
+                                    </p>
+                                </div>
+                                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                                    <div className="rounded-md border p-3 space-y-1">
+                                        <div className="font-medium flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-amber-500" /> Without Digest</div>
+                                        <p className="text-muted-foreground text-xs">20 events = 20 notifications sent instantly. That's noisy for users.</p>
+                                    </div>
+                                    <div className="rounded-md border p-3 space-y-1">
+                                        <div className="font-medium flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-blue-500" /> With Digest</div>
+                                        <p className="text-muted-foreground text-xs">20 events = 1 consolidated notification after the time window ends.</p>
+                                    </div>
+                                    <div className="rounded-md border p-3 space-y-1">
+                                        <div className="font-medium flex items-center gap-1.5"><Route className="h-3.5 w-3.5 text-green-500" /> Any Channel</div>
+                                        <p className="text-muted-foreground text-xs">Works with email, SMS, push, webhook, SSE, and in-app channels.</p>
+                                    </div>
+                                    <div className="rounded-md border p-3 space-y-1">
+                                        <div className="font-medium flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-violet-500" /> Per-User Batching</div>
+                                        <p className="text-muted-foreground text-xs">Each user gets their own digest. One rule applies to all users automatically.</p>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    <strong>How to use:</strong> Set a <code className="bg-muted px-1 rounded">digest_key</code> in your notification metadata.
+                                    Any notification with a matching key will be batched by the rule's time window and delivered using the linked template.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </>
             )}
 
             {embedded && (

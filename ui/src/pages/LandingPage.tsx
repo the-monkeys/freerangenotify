@@ -59,7 +59,7 @@ const LandingPage: React.FC = () => {
                             size="lg"
                             variant="outline"
                             className="border-2 border-background/30 text-background bg-transparent hover:bg-background/10 px-8 py-6 text-base font-medium"
-                            onClick={() => window.open('https://github.com/the-monkeys/freerangenotify', '_blank')}
+                            onClick={() => navigate('/docs')}
                         >
                             View Documentation
                         </Button>

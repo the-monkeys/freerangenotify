@@ -1,7 +1,8 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Menu, ChevronRight, LogOut } from 'lucide-react';
+import { Menu, ChevronRight, LogOut, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -40,6 +41,7 @@ function useBreadcrumb(): { label: string; segments: { label: string; path?: str
 const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const { theme, toggleTheme } = useTheme();
     const { segments } = useBreadcrumb();
 
     const handleLogout = async () => {
@@ -79,30 +81,39 @@ const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                 </nav>
             </div>
 
-            {/* Right: user dropdown */}
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <button className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted transition-colors">
-                        <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
-                            {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
+            {/* Right: theme toggle + user dropdown */}
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={toggleTheme}
+                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    aria-label="Toggle theme"
+                >
+                    {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                </button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted transition-colors">
+                            <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
+                                {(user?.full_name || user?.email || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <span className="hidden sm:inline text-sm text-muted-foreground">
+                                {user?.full_name || user?.email}
+                            </span>
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        <div className="px-2 py-1.5">
+                            <p className="text-sm font-medium text-foreground">{user?.full_name}</p>
+                            <p className="text-xs text-muted-foreground">{user?.email}</p>
                         </div>
-                        <span className="hidden sm:inline text-sm text-muted-foreground">
-                            {user?.full_name || user?.email}
-                        </span>
-                    </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                    <div className="px-2 py-1.5">
-                        <p className="text-sm font-medium text-foreground">{user?.full_name}</p>
-                        <p className="text-xs text-muted-foreground">{user?.email}</p>
-                    </div>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Logout
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                            <LogOut className="mr-2 h-4 w-4" />
+                            Logout
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
         </header>
     );
 };

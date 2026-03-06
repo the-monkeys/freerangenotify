@@ -143,6 +143,7 @@ type Content struct {
 // NotificationFilter represents query filters for notifications
 type NotificationFilter struct {
 	AppID         string                 `json:"app_id,omitempty"`
+	AppIDs        []string               `json:"app_ids,omitempty"`
 	EnvironmentID string                 `json:"environment_id,omitempty"`
 	UserID        string                 `json:"user_id,omitempty"`
 	Channel       Channel                `json:"channel,omitempty"`

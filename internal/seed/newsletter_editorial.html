@@ -396,7 +396,17 @@
                                                                 style="padding-left:10px;padding-right:10px;">
                                                                 <div
                                                                     style="font-family:'Merriwheater','Georgia',serif;font-size:0;line-height:1.4;text-align:left;">
-                                                                    {{.featured_tags}}
+                                                                    {{if .tag1}}<span
+                                                                        style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">{{.tag1}}
+                                                                        ↗</span>{{end}}{{if .tag2}}<span
+                                                                        style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">{{.tag2}}
+                                                                        ↗</span>{{end}}{{if .tag3}}<span
+                                                                        style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">{{.tag3}}
+                                                                        ↗</span>{{end}}{{if .tag4}}<span
+                                                                        style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">{{.tag4}}
+                                                                        ↗</span>{{end}}{{if .tag5}}<span
+                                                                        style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">{{.tag5}}
+                                                                        ↗</span>{{end}}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -1320,7 +1330,9 @@
                                                                     style="color:#555555;font-family:'Merriwheater','Georgia',serif;font-size:14px;line-height:1.2;text-align:left;mso-line-height-alt:17px;">
                                                                     <p style="margin: 0; word-break: break-word;"><span
                                                                             style="word-break: break-word; color: #000000;"><em><span
-                                                                                    style="word-break: break-word;">{{.address}}</span></em></span>
+                                                                                    style="word-break: break-word;">{{.address_line1}}<br>{{.address_line2}}{{if
+                                                                                    .address_email}}<br><br> Email:
+                                                                                    {{.address_email}}{{end}}</span></em></span>
                                                                     </p>
                                                                 </div>
                                                             </td>

@@ -49,13 +49,13 @@ const AuditLogsList: React.FC = () => {
     const fetcher = useCallback(() => auditAPI.list(activeFilters), [
         page, filterAction, filterResource, filterAppId, filterFrom, filterTo,
     ]);
-    const { data, loading } = useApiQuery<{ logs: AuditLog[]; total: number }>(
+    const { data, loading } = useApiQuery<{ audit_logs: AuditLog[]; count: number }>(
         fetcher,
         [page, filterAction, filterResource, filterAppId, filterFrom, filterTo],
     );
 
-    const logs = data?.logs || [];
-    const total = data?.total || 0;
+    const logs = data?.audit_logs || [];
+    const total = data?.count || 0;
 
     const handleApplyFilters = () => {
         setPage(1);

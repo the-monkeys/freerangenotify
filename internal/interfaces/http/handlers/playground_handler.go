@@ -8,13 +8,15 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"go.uber.org/zap"
 )
 
-// PlaygroundHandler handles webhook playground HTTP requests
+// PlaygroundHandler handles webhook and SSE playground HTTP requests
 type PlaygroundHandler struct {
 	redisClient *redis.Client
 	baseURL     string
+	broadcaster *sse.Broadcaster
 	logger      *zap.Logger
 }
 
@@ -25,6 +27,11 @@ func NewPlaygroundHandler(redisClient *redis.Client, baseURL string, logger *zap
 		baseURL:     baseURL,
 		logger:      logger,
 	}
+}
+
+// SetBroadcaster injects the SSE broadcaster (setter injection to avoid circular deps).
+func (h *PlaygroundHandler) SetBroadcaster(b *sse.Broadcaster) {
+	h.broadcaster = b
 }
 
 // CreatePlayground handles POST /v1/admin/playground/webhook
@@ -129,5 +136,108 @@ func (h *PlaygroundHandler) GetPayloads(c *fiber.Ctx) error {
 		"id":       playgroundID,
 		"payloads": payloads,
 		"count":    len(payloads),
+	})
+}
+
+// ──────────────────────────────────────────────────────────────────
+// SSE Playground
+// ──────────────────────────────────────────────────────────────────
+
+// CreateSSEPlayground handles POST /v1/admin/playground/sse
+// Generates a temporary user ID stored in Redis with 30-minute TTL.
+// Returns the SSE connection URL for the browser to connect to.
+func (h *PlaygroundHandler) CreateSSEPlayground(c *fiber.Ctx) error {
+	playgroundID := "sse-" + uuid.New().String()[:8]
+
+	key := "playground:sse:" + playgroundID
+	if err := h.redisClient.Set(c.Context(), key, "active", 30*time.Minute).Err(); err != nil {
+		h.logger.Error("Failed to create SSE playground", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to create SSE playground",
+		})
+	}
+
+	sseURL := fmt.Sprintf("%s/v1/sse?user_id=%s", h.baseURL, playgroundID)
+
+	h.logger.Info("SSE playground created",
+		zap.String("playground_id", playgroundID),
+		zap.String("sse_url", sseURL))
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"id":         playgroundID,
+		"sse_url":    sseURL,
+		"expires_in": "30m",
+	})
+}
+
+// SendSSETestMessage handles POST /v1/admin/playground/sse/:id/send
+// Publishes a test notification to the SSE broadcaster for the playground user.
+func (h *PlaygroundHandler) SendSSETestMessage(c *fiber.Ctx) error {
+	playgroundID := c.Params("id")
+	key := "playground:sse:" + playgroundID
+
+	// Check if SSE playground exists
+	exists, err := h.redisClient.Exists(c.Context(), key).Result()
+	if err != nil || exists == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "SSE playground not found or expired",
+		})
+	}
+
+	if h.broadcaster == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "SSE broadcaster not available",
+		})
+	}
+
+	// Parse optional body for custom message
+	var body struct {
+		Title    string                 `json:"title"`
+		Body     string                 `json:"body"`
+		Category string                 `json:"category"`
+		Data     map[string]interface{} `json:"data"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		// Use defaults if body parsing fails
+		body.Title = "Test Notification"
+		body.Body = "This is a test SSE notification from the playground."
+	}
+	if body.Title == "" {
+		body.Title = "Test Notification"
+	}
+	if body.Body == "" {
+		body.Body = "This is a test SSE notification from the playground."
+	}
+
+	// Build and publish the SSE message
+	msg := &sse.SSEMessage{
+		Type:   "notification",
+		UserID: playgroundID,
+		Data: map[string]interface{}{
+			"notification_id": uuid.New().String(),
+			"title":           body.Title,
+			"body":            body.Body,
+			"channel":         "sse",
+			"category":        body.Category,
+			"status":          "sent",
+			"data":            body.Data,
+			"created_at":      time.Now().Format(time.RFC3339),
+		},
+	}
+
+	if err := h.broadcaster.PublishMessage(msg); err != nil {
+		h.logger.Error("Failed to publish SSE test message", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Failed to publish message: " + err.Error(),
+		})
+	}
+
+	h.logger.Info("SSE test message sent",
+		zap.String("playground_id", playgroundID),
+		zap.String("title", body.Title))
+
+	return c.JSON(fiber.Map{
+		"status":  "sent",
+		"user_id": playgroundID,
 	})
 }

@@ -49,6 +49,7 @@ type Template struct {
 // Filter represents query filters for templates
 type Filter struct {
 	AppID         string     `json:"app_id,omitempty"`
+	AppIDs        []string   `json:"app_ids,omitempty"`
 	EnvironmentID string     `json:"environment_id,omitempty"`
 	Channel       string     `json:"channel,omitempty"`
 	Name          string     `json:"name,omitempty"`
@@ -67,6 +68,8 @@ type Repository interface {
 	GetByAppAndName(ctx context.Context, appID, name, locale string) (*Template, error)
 	Update(ctx context.Context, template *Template) error
 	List(ctx context.Context, filter Filter) ([]*Template, error)
+	Count(ctx context.Context) (int64, error)
+	CountByFilter(ctx context.Context, filter Filter) (int64, error)
 	Delete(ctx context.Context, id string) error
 	GetVersions(ctx context.Context, appID, name, locale string) ([]*Template, error)
 	GetByVersion(ctx context.Context, appID, name, locale string, version int) (*Template, error)

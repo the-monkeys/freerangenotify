@@ -283,6 +283,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.AdminHandler = handlers.NewAdminHandler(
 		container.Queue,
 		nil, // Provider manager is only available in worker process
+		repos.Application,
+		repos.Notification,
 		logger,
 	)
 	container.AuthHandler = handlers.NewAuthHandler(
@@ -319,16 +321,30 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 
 	// Playground handler
-	playgroundBaseURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	var playgroundBaseURL string
+	if cfg.Server.PublicURL != "" {
+		playgroundBaseURL = cfg.Server.PublicURL
+	} else {
+		host := cfg.Server.Host
+		if host == "0.0.0.0" || host == "" {
+			host = "localhost"
+		}
+		playgroundBaseURL = fmt.Sprintf("http://%s:%d", host, cfg.Server.Port)
+	}
 	container.PlaygroundHandler = handlers.NewPlaygroundHandler(
 		container.RedisClient,
 		playgroundBaseURL,
 		logger,
 	)
+	container.PlaygroundHandler.SetBroadcaster(container.SSEBroadcaster)
 
-	// Analytics handler
+	// Analytics handler (workflow repo wired below after feature-gate check)
 	container.AnalyticsHandler = handlers.NewAnalyticsHandler(
 		repos.Notification,
+		repos.User,
+		repos.Template,
+		nil, // workflow repo set below if enabled
+		repos.Application,
 		logger,
 	)
 
@@ -351,6 +367,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 				container.Validator,
 				logger,
 			)
+			// Wire workflow repo into analytics handler for dashboard counts
+			container.AnalyticsHandler.SetWorkflowRepo(wfRepo)
 			logger.Info("Workflow engine enabled")
 		}
 	}
@@ -390,7 +408,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	if cfg.Features.AuditEnabled {
 		auditRepo := repository.NewAuditRepository(dbManager.Client.GetClient(), logger)
 		container.AuditService = services.NewAuditService(auditRepo, logger)
-		container.AuditHandler = handlers.NewAuditHandler(container.AuditService, logger)
+		container.AuditHandler = handlers.NewAuditHandler(container.AuditService, repos.Application, logger)
 		logger.Info("Audit logging enabled")
 	}
 
@@ -398,7 +416,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	if cfg.Features.RBACEnabled {
 		container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
 		container.TeamService = services.NewTeamService(container.MembershipRepo, logger)
-		container.TeamHandler = handlers.NewTeamHandler(container.TeamService, logger)
+		container.TeamHandler = handlers.NewTeamHandler(container.TeamService, repos.Application, logger)
 		logger.Info("RBAC / Team management enabled")
 	}
 

@@ -346,7 +346,7 @@ func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 	// Get the original template to get its ID
 	locale := req.Locale
 	if locale == "" {
-		locale = "en-US"
+		locale = "en"
 	}
 
 	original, err := h.service.GetByName(c.Context(), appID, name, locale)
@@ -384,8 +384,8 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get locale from query params, default to en-US
-	locale := c.Query("locale", "en-US")
+	// Get locale from query params — if omitted, return versions for all locales
+	locale := c.Query("locale")
 
 	versions, err := h.service.GetVersions(c.Context(), appID, name, locale)
 	if err != nil {
@@ -429,7 +429,7 @@ func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
 		})
 	}
 
-	locale := c.Query("locale", "en-US")
+	locale := c.Query("locale")
 
 	tmpl, err := h.service.GetByVersion(c.Context(), appID, name, locale, version)
 	if err != nil {

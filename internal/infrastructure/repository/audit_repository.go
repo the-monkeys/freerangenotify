@@ -89,6 +89,11 @@ func (r *AuditRepository) buildQuery(filter audit.Filter) map[string]interface{}
 			"term": map[string]interface{}{"app_id": filter.AppID},
 		})
 	}
+	if len(filter.AppIDs) > 0 {
+		musts = append(musts, map[string]interface{}{
+			"terms": map[string]interface{}{"app_id": filter.AppIDs},
+		})
+	}
 	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {
 		musts = append(musts, map[string]interface{}{
 			"term": map[string]interface{}{"environment_id": filter.EnvironmentID},

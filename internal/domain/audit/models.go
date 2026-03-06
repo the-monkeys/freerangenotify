@@ -24,14 +24,15 @@ type AuditLog struct {
 
 // Filter represents query parameters for listing audit logs.
 type Filter struct {
-	AppID         string `json:"app_id,omitempty"`
-	EnvironmentID string `json:"environment_id,omitempty"`
-	ActorID       string `json:"actor_id,omitempty"`
-	Action        string `json:"action,omitempty"`
-	Resource      string `json:"resource,omitempty"`
-	ResourceID    string `json:"resource_id,omitempty"`
-	Limit         int    `json:"limit,omitempty"`
-	Offset        int    `json:"offset,omitempty"`
+	AppID         string   `json:"app_id,omitempty"`
+	AppIDs        []string `json:"app_ids,omitempty"` // Multi-tenancy: restrict to these apps
+	EnvironmentID string   `json:"environment_id,omitempty"`
+	ActorID       string   `json:"actor_id,omitempty"`
+	Action        string   `json:"action,omitempty"`
+	Resource      string   `json:"resource,omitempty"`
+	ResourceID    string   `json:"resource_id,omitempty"`
+	Limit         int      `json:"limit,omitempty"`
+	Offset        int      `json:"offset,omitempty"`
 }
 
 // DefaultFilter returns a filter with sensible defaults.

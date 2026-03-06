@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { applicationsAPI, templatesAPI, usersAPI } from '../services/api';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { applicationsAPI, providersAPI } from '../services/api';
 import type { Application, ApplicationSettings } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
@@ -10,7 +10,7 @@ import AppProviders from '../components/apps/AppProviders';
 import AppEnvironments from '../components/apps/AppEnvironments';
 import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
-import SetupWizard from '../components/SetupWizard';
+
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -20,23 +20,64 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, ArrowRight, Timer, Zap, Mail, Route } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
+
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration';
+
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'topics', 'team', 'providers', 'environments', 'settings', 'integration'];
+
+interface TabDef {
+    id: TabId;
+    label: string;
+    icon: React.ReactNode;
+}
+
+const TAB_GROUPS: { label: string; tabs: TabDef[] }[] = [
+    {
+        label: 'General',
+        tabs: [
+            { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
+            { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
+            { id: 'templates', label: 'Templates', icon: <FileText className="h-4 w-4" /> },
+            { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
+        ],
+    },
+    {
+        label: 'Configuration',
+        tabs: [
+            { id: 'digest-rules', label: 'Digest Rules', icon: <Layers className="h-4 w-4" /> },
+            { id: 'workflows', label: 'Workflows', icon: <Workflow className="h-4 w-4" /> },
+            { id: 'topics', label: 'Topics', icon: <MessageSquare className="h-4 w-4" /> },
+            { id: 'team', label: 'Team', icon: <UsersRound className="h-4 w-4" /> },
+            { id: 'providers', label: 'Providers', icon: <Plug className="h-4 w-4" /> },
+        ],
+    },
+    {
+        label: 'Advanced',
+        tabs: [
+            { id: 'environments', label: 'Environments', icon: <GitBranch className="h-4 w-4" /> },
+            { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+            { id: 'integration', label: 'Integration', icon: <Code className="h-4 w-4" /> },
+        ],
+    },
+];
+
+const ALL_TABS: TabDef[] = TAB_GROUPS.flatMap(g => g.tabs);
 
 const AppDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [app, setApp] = useState<Application | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration'>('overview');
 
-    const tabLabels: Record<string, string> = {
-        'digest-rules': 'Digest Rules',
-        'topics': 'Topics',
-        'team': 'Team',
-        'providers': 'Providers',
-        'environments': 'Environments',
-    };
+    const tabParam = searchParams.get('tab') as TabId | null;
+    const activeTab: TabId = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
+
+    const setActiveTab = useCallback((tab: TabId) => {
+        setSearchParams({ tab }, { replace: true });
+    }, [setSearchParams]);
 
     // Local state for editing
     const [appName, setAppName] = useState('');
@@ -44,12 +85,24 @@ const AppDetail: React.FC = () => {
     const [webhookUrl, setWebhookUrl] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
     const [webhooks, setWebhooks] = useState<Record<string, string>>({});
-    const [newWebhookName, setNewWebhookName] = useState('');
-    const [newWebhookUrl, setNewWebhookUrl] = useState('');
+
+    // Fetch webhook endpoints from registered providers
+    const fetchWebhookEndpoints = async () => {
+        if (!id) return;
+        try {
+            const providers = await providersAPI.list(id);
+            const webhookMap: Record<string, string> = {};
+            (providers || []).filter(p => p.channel === 'webhook' && p.active).forEach(p => {
+                webhookMap[p.name] = p.webhook_url;
+            });
+            setWebhooks(webhookMap);
+        } catch {
+            // Providers may not be available, keep empty
+        }
+    };
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [showWizard, setShowWizard] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
 
 
@@ -57,24 +110,7 @@ const AppDetail: React.FC = () => {
         if (id) fetchAppDetails();
     }, [id]);
 
-    // Detect new apps with no templates and no users → show setup wizard
-    useEffect(() => {
-        if (!app?.api_key) return;
-        const checkNewApp = async () => {
-            try {
-                const [tpls, users] = await Promise.all([
-                    templatesAPI.list(app.api_key).catch(() => ({ templates: [] })),
-                    usersAPI.list(app.api_key).catch(() => ({ users: [] })),
-                ]);
-                if ((!tpls.templates || tpls.templates.length === 0) && (!users.users || users.users.length === 0)) {
-                    setShowWizard(true);
-                }
-            } catch {
-                // ignore — wizard is optional
-            }
-        };
-        checkNewApp();
-    }, [app?.api_key]);
+
 
     const fetchAppDetails = async () => {
         setLoading(true);
@@ -85,8 +121,9 @@ const AppDetail: React.FC = () => {
             setAppName(appData.app_name);
             setDescription(appData.description || '');
             setWebhookUrl(appData.webhook_url || '');
-            setWebhooks(appData.webhooks || {});
             setSettings(appData.settings || {});
+            // Fetch webhook endpoints from providers
+            fetchWebhookEndpoints();
 
             // Persist for standalone pages
             localStorage.setItem('last_api_key', appData.api_key);
@@ -111,7 +148,6 @@ const AppDetail: React.FC = () => {
                 app_name: appName,
                 description: description,
                 webhook_url: webhookUrl,
-                webhooks: webhooks
             });
             setApp(updated);
             toast.success('Application updated successfully!');
@@ -167,35 +203,84 @@ const AppDetail: React.FC = () => {
                 </div>
             </div>
 
-            {showWizard ? (
-                <SetupWizard
-                    appId={app.app_id}
-                    apiKey={app.api_key}
-                    onComplete={() => {
-                        setShowWizard(false);
-                        fetchAppDetails();
-                    }}
-                />
-            ) : (<>
-                {/* Tabs */}
-                <div className="flex border-b border-border mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
-                    {(['overview', 'users', 'templates', 'notifications', 'digest-rules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration'] as const).map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b-2 ${activeTab === tab
-                                ? 'border-foreground text-foreground font-semibold'
-                                : 'border-transparent text-muted-foreground'
-                                } capitalize text-xs sm:text-sm hover:text-foreground transition-colors shrink-0 inline-flex items-center gap-1.5`}
-                        >
-                            {tabLabels[tab] || tab}
-                            {tab === 'notifications' && unreadCount > 0 && (
-                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4 inline-flex items-center justify-center">
-                                    {unreadCount > 99 ? '99+' : unreadCount}
-                                </Badge>
-                            )}
-                        </button>
-                    ))}
+            <>
+                {/* Tabs — mobile dropdown */}
+                <div className="md:hidden mb-6">
+                    <Select value={activeTab} onValueChange={(val) => {
+                        setActiveTab(val as TabId);
+                        if (val === 'notifications') fetchWebhookEndpoints();
+                    }}>
+                        <SelectTrigger className="w-full">
+                            <SelectValue>
+                                <span className="inline-flex items-center gap-2">
+                                    {ALL_TABS.find(t => t.id === activeTab)?.icon}
+                                    {ALL_TABS.find(t => t.id === activeTab)?.label}
+                                    {activeTab === 'notifications' && unreadCount > 0 && (
+                                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4">
+                                            {unreadCount > 99 ? '99+' : unreadCount}
+                                        </Badge>
+                                    )}
+                                </span>
+                            </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {TAB_GROUPS.map((group) => (
+                                <React.Fragment key={group.label}>
+                                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{group.label}</div>
+                                    {group.tabs.map((tab) => (
+                                        <SelectItem key={tab.id} value={tab.id}>
+                                            <span className="inline-flex items-center gap-2">
+                                                {tab.icon}
+                                                {tab.label}
+                                                {tab.id === 'notifications' && unreadCount > 0 && (
+                                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4">
+                                                        {unreadCount > 99 ? '99+' : unreadCount}
+                                                    </Badge>
+                                                )}
+                                            </span>
+                                        </SelectItem>
+                                    ))}
+                                </React.Fragment>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Tabs — desktop grouped */}
+                <div className="hidden md:block mb-6 sm:mb-8">
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-border">
+                        {TAB_GROUPS.map((group, gi) => (
+                            <div key={group.label} className="flex items-end">
+                                {gi > 0 && (
+                                    <div className="h-6 w-px bg-border mr-6 mb-2" />
+                                )}
+                                <div className="flex">
+                                    {group.tabs.map((tab) => (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => {
+                                                setActiveTab(tab.id);
+                                                if (tab.id === 'notifications') fetchWebhookEndpoints();
+                                            }}
+                                            className={`px-3 lg:px-4 py-2.5 border-b-2 -mb-px ${activeTab === tab.id
+                                                ? 'border-foreground text-foreground font-semibold'
+                                                : 'border-transparent text-muted-foreground'
+                                                } text-sm hover:text-foreground transition-colors inline-flex items-center gap-1.5`}
+                                        >
+                                            {tab.icon}
+                                            <span className="hidden lg:inline">{tab.label}</span>
+                                            <span className="lg:hidden">{tab.label}</span>
+                                            {tab.id === 'notifications' && unreadCount > 0 && (
+                                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4 inline-flex items-center justify-center">
+                                                    {unreadCount > 99 ? '99+' : unreadCount}
+                                                </Badge>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Overview Tab */}
@@ -225,102 +310,9 @@ const AppDetail: React.FC = () => {
                                         onChange={(e) => setDescription(e.target.value)}
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="webhookUrl">Webhook URL (Default)</Label>
-                                    <Input
-                                        id="webhookUrl"
-                                        type="url"
-                                        value={webhookUrl}
-                                        onChange={(e) => setWebhookUrl(e.target.value)}
-                                        placeholder="https://example.com/webhook"
-                                    />
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        The default webhook URL used if no named target is specified.
-                                    </p>
-                                </div>
-
-                                {/* Named Webhooks Section */}
-                                <div className="mt-8 pt-8 border-t border-border space-y-4">
-                                    <div>
-                                        <Label className="text-base text-foreground block mb-2">
-                                            Named Webhook Endpoints
-                                        </Label>
-                                        <p className="text-sm text-muted-foreground mb-6">
-                                            Define named webhook targets (e.g., 'slack', 'discord') that templates can use for routing.
-                                        </p>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <div className="space-y-2">
-                                            <Label htmlFor="newWebhookName" className="text-xs">Target Name</Label>
-                                            <Input
-                                                id="newWebhookName"
-                                                type="text"
-                                                className="text-sm"
-                                                value={newWebhookName}
-                                                onChange={(e) => setNewWebhookName(e.target.value)}
-                                                placeholder="e.g. slack"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="newWebhookUrl" className="text-xs">Webhook URL</Label>
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    id="newWebhookUrl"
-                                                    type="url"
-                                                    className="text-sm"
-                                                    value={newWebhookUrl}
-                                                    onChange={(e) => setNewWebhookUrl(e.target.value)}
-                                                    placeholder="https://hooks.slack.com/..."
-                                                />
-                                                <Button
-                                                    type="button"
-                                                    variant="secondary"
-                                                    onClick={() => {
-                                                        if (newWebhookName && newWebhookUrl) {
-                                                            setWebhooks({ ...webhooks, [newWebhookName]: newWebhookUrl });
-                                                            setNewWebhookName('');
-                                                            setNewWebhookUrl('');
-                                                        }
-                                                    }}
-                                                >
-                                                    Add
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-3">
-                                        {Object.entries(webhooks).map(([name, url]) => (
-                                            <div key={name} className="flex items-center justify-between p-3 bg-muted border border-border rounded">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-semibold text-sm text-foreground">{name}</div>
-                                                    <div className="text-xs text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap">{url}</div>
-                                                </div>
-                                                <Button
-                                                    type="button"
-                                                    variant="destructive"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        const newWebhooks = { ...webhooks };
-                                                        delete newWebhooks[name];
-                                                        setWebhooks(newWebhooks);
-                                                    }}
-                                                >
-                                                    Remove
-                                                </Button>
-                                            </div>
-                                        ))}
-                                        {Object.keys(webhooks).length === 0 && (
-                                            <p className="text-sm text-muted-foreground text-center italic py-4">
-                                                No named webhooks configured.
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
 
                                 <div className="flex justify-end mt-8">
-                                    <Button type="submit">Save Overview & Webhooks</Button>
+                                    <Button type="submit">Save Overview</Button>
                                 </div>
                             </form>
                         </CardContent>
@@ -821,12 +813,100 @@ const AppDetail: React.FC = () => {
 
                 {/* Digest Rules Tab */}
                 {activeTab === 'digest-rules' && app && (
-                    <DigestRulesList apiKey={app.api_key} embedded />
+                    <div className="space-y-6">
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="rounded-lg bg-primary/10 p-3 shrink-0">
+                                        <Timer className="h-6 w-6 text-primary" />
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <h3 className="font-semibold text-lg">What are Digest Rules?</h3>
+                                            <p className="text-muted-foreground text-sm mt-1">
+                                                Digest rules <strong>batch multiple notifications together</strong> instead of sending them one by one.
+                                                Think of it like a mailbox, instead of delivering every letter the moment it arrives,
+                                                you collect them and deliver once at a set interval.
+                                            </p>
+                                        </div>
+                                        <div className="grid sm:grid-cols-3 gap-3 text-sm">
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium flex items-center gap-1.5"><Zap className="h-3.5 w-3.5 text-amber-500" /> Without Digest</div>
+                                                <p className="text-muted-foreground text-xs">20 events = 20 separate emails sent instantly. That's noisy.</p>
+                                            </div>
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-blue-500" /> With Digest</div>
+                                                <p className="text-muted-foreground text-xs">20 events = 1 consolidated email sent after the time window ends.</p>
+                                            </div>
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium flex items-center gap-1.5"><Route className="h-3.5 w-3.5 text-green-500" /> How It Works</div>
+                                                <p className="text-muted-foreground text-xs">Set a <code className="bg-muted px-1 rounded">digest_key</code> in your notification metadata. Matching notifications are batched and sent after the window expires.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <DigestRulesList apiKey={app.api_key} embedded />
+                    </div>
                 )}
 
                 {/* Topics Tab */}
                 {activeTab === 'topics' && app && (
                     <TopicsList apiKey={app.api_key} embedded />
+                )}
+
+                {/* Workflows Tab */}
+                {activeTab === 'workflows' && app && (
+                    <div className="space-y-6">
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="flex items-start gap-4">
+                                    <div className="rounded-lg bg-primary/10 p-3 shrink-0">
+                                        <Workflow className="h-6 w-6 text-primary" />
+                                    </div>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <h3 className="font-semibold text-lg">What are Workflows?</h3>
+                                            <p className="text-muted-foreground text-sm mt-1">
+                                                Workflows are <strong>multi-step notification pipelines</strong> that go beyond simple one-time sends.
+                                                Instead of firing a single notification, you can build a sequence of steps — send an email,
+                                                wait 2 hours, check if it was read, then send a push notification as a follow-up.
+                                            </p>
+                                        </div>
+                                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium">Channel Step</div>
+                                                <p className="text-muted-foreground text-xs">Send via email, SMS, push, webhook, or SSE using a template.</p>
+                                            </div>
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium">Delay Step</div>
+                                                <p className="text-muted-foreground text-xs">Pause the workflow for a set duration (e.g. wait 1 hour before the next step).</p>
+                                            </div>
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium">Digest Step</div>
+                                                <p className="text-muted-foreground text-xs">Batch and aggregate events over a time window before sending.</p>
+                                            </div>
+                                            <div className="rounded-md border p-3 space-y-1">
+                                                <div className="font-medium">Condition Step</div>
+                                                <p className="text-muted-foreground text-xs">Branch logic — skip or route to different steps based on event data.</p>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => navigate('/workflows')}
+                                                className="gap-2"
+                                            >
+                                                Open Workflow Builder <ArrowRight className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
                 )}
 
                 {/* Team Tab */}
@@ -933,7 +1013,7 @@ const AppDetail: React.FC = () => {
                         </Card>
                     </div>
                 )}
-            </>)}
+            </>
         </div>
     );
 };

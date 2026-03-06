@@ -21,9 +21,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { timeAgo } from '../lib/utils';
+import { } from '../lib/utils';
 
 interface AppNotificationsProps {
     appId: string;
@@ -36,10 +36,7 @@ const createEmptyForm = (): NotificationRequest => ({
     user_id: '',
     channel: 'email',
     priority: 'normal',
-    title: '',
-    body: '',
     template_id: '',
-    webhook_url: '',
     data: {},
     scheduled_at: undefined,
     recurrence: undefined
@@ -96,13 +93,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const { notifications, users, templates, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey);
     const [showSendForm, setShowSendForm] = useState(false);
 
-    // Fetch unread count and report to parent
+    // Report notification count to parent (app-wide, derived from current list)
     useEffect(() => {
-        if (!apiKey || !onUnreadCount) return;
-        notificationsAPI.getUnreadCount(apiKey, '').then(res => {
-            onUnreadCount(res.count || 0);
-        }).catch(() => { /* ignore — endpoint may not support app-wide counts */ });
-    }, [apiKey, notifications]); // re-check after list refreshes
+        if (!onUnreadCount) return;
+        onUnreadCount(totalNotifications);
+    }, [totalNotifications, onUnreadCount]);
     const [formData, setFormData] = useState<NotificationRequest>(createEmptyForm());
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
@@ -223,15 +218,56 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         finally { setCancellingBatch(false); }
     };
 
+    // Recurrence presets → cron expressions
+    const recurrencePresets: { label: string; value: string; cron: string }[] = [
+        { label: 'Every hour', value: 'hourly', cron: '0 * * * *' },
+        { label: 'Every 6 hours', value: 'every_6h', cron: '0 */6 * * *' },
+        { label: 'Every 12 hours', value: 'every_12h', cron: '0 */12 * * *' },
+        { label: 'Daily', value: 'daily', cron: '0 9 * * *' },
+        { label: 'Weekly', value: 'weekly', cron: '0 9 * * 1' },
+        { label: 'Bi-weekly', value: 'biweekly', cron: '0 9 1,15 * *' },
+        { label: 'Monthly', value: 'monthly', cron: '0 9 1 * *' },
+    ];
+
+    // Schedule toggle states
+    const [quickScheduleEnabled, setQuickScheduleEnabled] = useState(false);
+    const [advScheduleEnabled, setAdvScheduleEnabled] = useState(false);
+    const [broadcastScheduleEnabled, setBroadcastScheduleEnabled] = useState(false);
+    const [advRecurrenceEnabled, setAdvRecurrenceEnabled] = useState(false);
+    const [advRecurrencePreset, setAdvRecurrencePreset] = useState('');
+
     // Quick-Send state
     const [quickTo, setQuickTo] = useState('');
     const [quickTemplateId, setQuickTemplateId] = useState('');
     const [quickData, setQuickData] = useState<Record<string, string>>({});
     const [quickSending, setQuickSending] = useState(false);
+    const [quickPriority, setQuickPriority] = useState<string>('normal');
+    const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
+
+    // Filtered templates by channel
+    const filteredTemplates = useMemo(() => (templates || []).filter(t => t.channel === formData.channel), [templates, formData.channel]);
 
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
     const quickVariables = quickSelectedTemplate?.variables || [];
+
+    // Advanced/Broadcast: detect variables from selected template
+    const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
+    const formVariables = formSelectedTemplate?.variables || [];
+
+    // Helper: get sample_data from template metadata
+    const getSampleData = (template: Template | undefined): Record<string, string> => {
+        if (!template?.metadata?.sample_data) return {};
+        const sd = template.metadata.sample_data;
+        const result: Record<string, string> = {};
+        for (const [k, v] of Object.entries(sd)) {
+            result[k] = String(v);
+        }
+        return result;
+    };
+
+    // State for collapsible variables section
+    const [varsExpanded, setVarsExpanded] = useState(true);
 
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
@@ -241,11 +277,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 to: quickTo,
                 template: quickSelectedTemplate?.name || quickTemplateId,
                 data: Object.keys(quickData).length > 0 ? quickData : undefined,
+                priority: quickPriority as any,
+                scheduled_at: quickScheduledAt ? new Date(quickScheduledAt).toISOString() : undefined,
             });
             toast.success('Notification sent!');
             setQuickTo('');
             setQuickTemplateId('');
             setQuickData({});
+            setQuickPriority('normal');
+            setQuickScheduledAt('');
+            setQuickScheduleEnabled(false);
             refresh();
         } catch (error: any) {
             const msg = error?.response?.data?.error || 'Quick-send failed';
@@ -275,9 +316,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             await notificationsAPI.broadcast(apiKey, {
                 channel: formData.channel,
                 priority: formData.priority,
-                title: formData.title,
-                body: formData.body,
-                template_id: formData.template_id || undefined,
+                template_id: formData.template_id,
                 data: customData,
                 scheduled_at: formData.scheduled_at
             });
@@ -310,30 +349,31 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 return;
             }
 
+            const payload: NotificationRequest = {
+                user_id: '',
+                channel: formData.channel,
+                priority: formData.priority,
+                template_id: formData.template_id || undefined,
+                data: customData,
+                scheduled_at: formData.scheduled_at,
+                recurrence: formData.recurrence,
+            };
+
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
-                // Multi-target sending: send separate requests for each target
                 const sendPromises = selectedTargets.map(target =>
-                    notificationsAPI.send(apiKey, {
-                        ...formData,
-                        webhook_target: target,
-                        data: customData
-                    })
+                    notificationsAPI.send(apiKey, { ...payload, webhook_target: target })
                 );
                 await Promise.all(sendPromises);
             } else if (userIds.length > 1) {
-                // Bulk send: use dedicated bulk endpoint for multiple users
                 await notificationsAPI.sendBulk(apiKey, {
                     user_ids: userIds,
-                    channel: formData.channel,
-                    priority: formData.priority,
-                    title: formData.title,
-                    body: formData.body,
-                    template_id: formData.template_id || undefined,
+                    channel: payload.channel,
+                    priority: payload.priority,
+                    template_id: payload.template_id,
                     data: customData,
                 });
             } else {
-                // Single send (default behavior)
-                await notificationsAPI.send(apiKey, { ...formData, user_id: userIds[0] || formData.user_id, data: customData });
+                await notificationsAPI.send(apiKey, { ...payload, user_id: userIds[0] || formData.user_id });
             }
 
             setShowSendForm(false);
@@ -343,9 +383,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setDataInput('');
             refresh();
             toast.success('Notification(s) sent successfully!');
-        } catch (error) {
-            console.error('Failed to send notification:', error);
-            toast.error('Failed to send notification');
+        } catch (error: any) {
+            const msg = error?.response?.data?.error || 'Failed to send notification';
+            console.error('Failed to send notification:', msg);
+            toast.error(msg);
         }
     };
 
@@ -417,7 +458,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="quickTemplate">Template</Label>
-                                        <Select value={quickTemplateId} onValueChange={setQuickTemplateId}>
+                                        <Select value={quickTemplateId} onValueChange={(value) => {
+                                            setQuickTemplateId(value);
+                                            // Pre-fill variables with sample_data
+                                            const selected = templates.find(t => t.id === value);
+                                            const sample = getSampleData(selected);
+                                            if (Object.keys(sample).length > 0) {
+                                                setQuickData(sample);
+                                            } else {
+                                                setQuickData({});
+                                            }
+                                        }}>
                                             <SelectTrigger>
                                                 <SelectValue placeholder="Select a template" />
                                             </SelectTrigger>
@@ -430,25 +481,93 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </div>
                                 </div>
                                 {quickVariables.length > 0 && (
-                                    <div className="space-y-3">
-                                        <Label className="text-sm font-semibold">Template Variables</Label>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {quickVariables.map(v => (
-                                                <div key={v} className="space-y-1">
-                                                    <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                    <Input
-                                                        value={quickData[v] || ''}
-                                                        onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
-                                                        placeholder={v}
-                                                    />
-                                                </div>
-                                            ))}
-                                        </div>
+                                    <div className="rounded-md border border-border bg-background">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                            onClick={() => setVarsExpanded(!varsExpanded)}
+                                        >
+                                            <span className="flex items-center gap-2">
+                                                Template Variables
+                                                <Badge variant="secondary" className="text-xs">{quickVariables.length}</Badge>
+                                                {quickSelectedTemplate?.metadata?.sample_data && (
+                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
+                                                )}
+                                            </span>
+                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                        </button>
+                                        {varsExpanded && (
+                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {quickVariables.map(v => {
+                                                    const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
+                                                    return (
+                                                        <div key={v} className="space-y-1">
+                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                            <Input
+                                                                value={quickData[v] || ''}
+                                                                onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
+                                                                placeholder={sampleVal ? String(sampleVal) : v}
+                                                                className={quickData[v] ? '' : 'text-muted-foreground'}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="quickPriority">Priority</Label>
+                                        <Select value={quickPriority} onValueChange={setQuickPriority}>
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="low">Low</SelectItem>
+                                                <SelectItem value="normal">Normal</SelectItem>
+                                                <SelectItem value="high">High</SelectItem>
+                                                <SelectItem value="critical">Critical</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                {/* Schedule toggle */}
+                                <div className="rounded-md border border-border">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                        onClick={() => {
+                                            const next = !quickScheduleEnabled;
+                                            setQuickScheduleEnabled(next);
+                                            if (!next) setQuickScheduledAt('');
+                                        }}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Clock className="h-4 w-4" />
+                                            Schedule for later
+                                        </span>
+                                        <div className={`w-9 h-5 rounded-full transition-colors ${quickScheduleEnabled ? 'bg-primary' : 'bg-muted-foreground/30'} relative`}>
+                                            <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${quickScheduleEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                        </div>
+                                    </button>
+                                    {quickScheduleEnabled && (
+                                        <div className="px-4 pb-4 pt-1 space-y-1">
+                                            <Input
+                                                id="quickScheduledAt"
+                                                type="datetime-local"
+                                                value={quickScheduledAt}
+                                                onChange={e => setQuickScheduledAt(e.target.value)}
+                                            />
+                                            <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="flex justify-end">
                                     <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
-                                        {quickSending ? 'Sending...' : 'Send Notification'}
+                                        {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
                             </div>
@@ -471,33 +590,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <p className="text-xs text-muted-foreground">Select notification recipients. These are users created in the Users tab.</p>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="template">Template (Optional)</Label>
-                                        <Select
-                                            value={formData.template_id || ''}
-                                            onValueChange={(value) => setFormData({ ...formData, template_id: value })}
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="No template (use manual content)" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {(templates || []).map(t => (
-                                                    <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <p className="text-xs text-muted-foreground">If selected, notification content is rendered from this template. Otherwise, provide title and body manually.</p>
-                                    </div>
-                                    <div className="space-y-2">
                                         <Label htmlFor="channel">Channel</Label>
                                         <Select
                                             value={formData.channel}
                                             onValueChange={(value) => {
                                                 const next = value as any;
+                                                // Clear template if it doesn't match the new channel
+                                                const currentTemplate = templates.find(t => t.id === formData.template_id);
+                                                const shouldClearTemplate = currentTemplate && currentTemplate.channel !== next;
                                                 setFormData({
                                                     ...formData,
                                                     channel: next,
-                                                    webhook_url: next === 'webhook' ? formData.webhook_url : ''
+                                                    template_id: shouldClearTemplate ? '' : formData.template_id,
                                                 });
+                                                if (shouldClearTemplate) setDataInput('');
                                                 if (next !== 'webhook') {
                                                     setSelectedTargets([]);
                                                 }
@@ -516,38 +622,64 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="template">Template</Label>
+                                        <Select
+                                            value={formData.template_id || ''}
+                                            onValueChange={(value) => {
+                                                setFormData({ ...formData, template_id: value });
+                                                // Pre-fill variables with sample_data from template metadata
+                                                const selected = templates.find(t => t.id === value);
+                                                const sample = getSampleData(selected);
+                                                if (Object.keys(sample).length > 0) {
+                                                    setDataInput(JSON.stringify(sample, null, 2));
+                                                } else {
+                                                    setDataInput('');
+                                                }
+                                            }}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select a template" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {filteredTemplates.length === 0 ? (
+                                                    <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
+                                                ) : (
+                                                    filteredTemplates.map(t => (
+                                                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        {filteredTemplates.length === 0 && (
+                                            <p className="text-xs text-amber-600">No templates found for the "{formData.channel}" channel. Create one in the Templates tab.</p>
+                                        )}
+                                    </div>
 
-                                    {/* Webhook Targets Selection - Multi-select */}
-                                    {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
-                                        <div className="space-y-2 md:col-span-2">
-                                            <Label>Webhook Targets (Select one or more)</Label>
-                                            <WebhookTargetSelect
-                                                targets={Object.keys(webhooks)}
-                                                value={selectedTargets}
-                                                onChange={setSelectedTargets}
-                                            />
-                                            <p className="text-xs text-muted-foreground">
-                                                If multiple targets are selected, a separate notification will be sent to each.
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {/* Webhook URL Override Field */}
+                                    {/* Webhook Targets Selection */}
                                     {formData.channel === 'webhook' && (
-                                        <div className="space-y-2 md:col-span-2">
-                                            <Label htmlFor="webhookUrl">Webhook URL Override (Optional)</Label>
-                                            <Input
-                                                id="webhookUrl"
-                                                type="url"
-                                                value={formData.webhook_url || ''}
-                                                onChange={(e) => setFormData({ ...formData, webhook_url: e.target.value })}
-                                                placeholder="https://discord.com/api/webhooks/..."
-                                                required={selectedUsers.length === 0 && selectedTargets.length === 0}
-                                            />
-                                            <p className="text-xs text-muted-foreground">
-                                                Use this to send to an ad-hoc URL not in the saved list.
-                                            </p>
-                                        </div>
+                                        webhooks && Object.keys(webhooks).length > 0 ? (
+                                            <div className="space-y-2 md:col-span-2">
+                                                <Label>Webhook Endpoints (Select one or more)</Label>
+                                                <WebhookTargetSelect
+                                                    targets={Object.keys(webhooks)}
+                                                    value={selectedTargets}
+                                                    onChange={setSelectedTargets}
+                                                />
+                                                <p className="text-xs text-muted-foreground">
+                                                    If multiple endpoints are selected, a separate notification will be sent to each.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="md:col-span-2 rounded-md border border-dashed border-border bg-muted/30 p-4 text-center">
+                                                <p className="text-sm text-muted-foreground">
+                                                    No webhook endpoints configured.
+                                                </p>
+                                                <p className="text-xs text-muted-foreground mt-1">
+                                                    Go to the <strong>Providers</strong> tab to add webhook endpoints, then come back here to send.
+                                                </p>
+                                            </div>
+                                        )
                                     )}
                                     <div className="space-y-2">
                                         <Label htmlFor="priority">Priority</Label>
@@ -568,112 +700,178 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="title">Title</Label>
-                                    <Input
-                                        id="title"
-                                        type="text"
-                                        value={formData.title}
-                                        onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                        required
-                                        placeholder="Notification title"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="body">Body / Manual Content</Label>
-                                    <Textarea
-                                        id="body"
-                                        value={formData.body}
-                                        onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                                        required={!formData.template_id}
-                                        placeholder={formData.template_id ? "Optional (overridden by template)" : "Visible unless overridden by template"}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="customData">Custom Data (JSON)</Label>
-                                    <Textarea
-                                        id="customData"
-                                        className="font-mono"
-                                        value={dataInput}
-                                        onChange={(e) => setDataInput(e.target.value)}
-                                        placeholder='{ "name": "John Doe" }'
-                                    />
-                                    <p className="text-xs text-muted-foreground">Variables for your template — e.g. {'{"user_name": "Alice"}'} maps to {'{{user_name}}'} in the template body.</p>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="scheduledAt">Schedule For</Label>
-                                    <Input
-                                        id="scheduledAt"
-                                        type="datetime-local"
-                                        value={formData.scheduled_at?.substring(0, 16) || ''}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
-                                        }}
-                                    />
-                                    <p className="text-xs text-muted-foreground">
-                                        Leave empty for immediate delivery.
-                                    </p>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <Label htmlFor="recurrenceCron">Recurrence Cron (e.g. 0 0 * * *)</Label>
-                                    <Input
-                                        id="recurrenceCron"
-                                        type="text"
-                                        value={formData.recurrence?.cron_expression || ''}
-                                        onChange={(e) => setFormData({
-                                            ...formData,
-                                            recurrence: e.target.value ? {
-                                                ...formData.recurrence || { cron_expression: '' },
-                                                cron_expression: e.target.value
-                                            } : undefined
-                                        })}
-                                        placeholder="Cron expression"
-                                    />
-                                </div>
-
-                                {formData.recurrence && (
-                                    <>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="recurrenceEnd">Ends At (Optional)</Label>
-                                            <Input
-                                                id="recurrenceEnd"
-                                                type="datetime-local"
-                                                value={formData.recurrence.end_date?.substring(0, 16) || ''}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    setFormData({
-                                                        ...formData,
-                                                        recurrence: {
-                                                            ...formData.recurrence!,
-                                                            end_date: val ? new Date(val).toISOString() : undefined
-                                                        }
-                                                    });
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label htmlFor="recurrenceCount">Max Occurrences (Optional)</Label>
-                                            <Input
-                                                id="recurrenceCount"
-                                                type="number"
-                                                value={formData.recurrence.count || ''}
-                                                onChange={(e) => setFormData({
-                                                    ...formData,
-                                                    recurrence: {
-                                                        ...formData.recurrence!,
-                                                        count: parseInt(e.target.value) || undefined
-                                                    }
+                                {formVariables.length > 0 && (
+                                    <div className="rounded-md border border-border bg-background">
+                                        <button
+                                            type="button"
+                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                            onClick={() => setVarsExpanded(!varsExpanded)}
+                                        >
+                                            <span className="flex items-center gap-2">
+                                                Template Variables
+                                                <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                {formSelectedTemplate?.metadata?.sample_data && (
+                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
+                                                )}
+                                            </span>
+                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                        </button>
+                                        {varsExpanded && (
+                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {formVariables.map(v => {
+                                                    const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
+                                                    const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
+                                                    return (
+                                                        <div key={v} className="space-y-1">
+                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                            <Input
+                                                                value={currentVal}
+                                                                onChange={e => {
+                                                                    const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                    parsed[v] = e.target.value;
+                                                                    setDataInput(JSON.stringify(parsed, null, 2));
+                                                                }}
+                                                                placeholder={sampleVal ? String(sampleVal) : v}
+                                                                className={currentVal ? '' : 'text-muted-foreground'}
+                                                            />
+                                                        </div>
+                                                    );
                                                 })}
-                                                placeholder="e.g. 10"
-                                            />
-                                        </div>
-                                    </>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
+
+                                {/* Schedule toggle */}
+                                <div className="rounded-md border border-border">
+                                    <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                        onClick={() => {
+                                            const next = !advScheduleEnabled;
+                                            setAdvScheduleEnabled(next);
+                                            if (!next) {
+                                                setFormData({ ...formData, scheduled_at: undefined, recurrence: undefined });
+                                                setAdvRecurrenceEnabled(false);
+                                                setAdvRecurrencePreset('');
+                                            }
+                                        }}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Clock className="h-4 w-4" />
+                                            Schedule for later
+                                        </span>
+                                        <div className={`w-9 h-5 rounded-full transition-colors ${advScheduleEnabled ? 'bg-primary' : 'bg-muted-foreground/30'} relative`}>
+                                            <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${advScheduleEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                        </div>
+                                    </button>
+                                    {advScheduleEnabled && (
+                                        <div className="px-4 pb-4 pt-1 space-y-4">
+                                            <div className="space-y-1">
+                                                <Label htmlFor="scheduledAt">Send at</Label>
+                                                <Input
+                                                    id="scheduledAt"
+                                                    type="datetime-local"
+                                                    value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                                    }}
+                                                />
+                                                <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                            </div>
+
+                                            {/* Recurrence toggle */}
+                                            <div className="rounded-md border border-border">
+                                                <button
+                                                    type="button"
+                                                    className="flex w-full items-center justify-between px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors"
+                                                    onClick={() => {
+                                                        const next = !advRecurrenceEnabled;
+                                                        setAdvRecurrenceEnabled(next);
+                                                        if (!next) {
+                                                            setFormData({ ...formData, recurrence: undefined });
+                                                            setAdvRecurrencePreset('');
+                                                        }
+                                                    }}
+                                                >
+                                                    <span className="text-sm">Repeat</span>
+                                                    <div className={`w-9 h-5 rounded-full transition-colors ${advRecurrenceEnabled ? 'bg-primary' : 'bg-muted-foreground/30'} relative`}>
+                                                        <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${advRecurrenceEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                                    </div>
+                                                </button>
+                                                {advRecurrenceEnabled && (
+                                                    <div className="px-3 pb-3 pt-1 space-y-3">
+                                                        <div className="space-y-2">
+                                                            <Label className="text-xs text-muted-foreground">Frequency</Label>
+                                                            <Select
+                                                                value={advRecurrencePreset}
+                                                                onValueChange={(val) => {
+                                                                    setAdvRecurrencePreset(val);
+                                                                    const preset = recurrencePresets.find(p => p.value === val);
+                                                                    if (preset) {
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            recurrence: {
+                                                                                ...formData.recurrence || { cron_expression: '' },
+                                                                                cron_expression: preset.cron,
+                                                                            }
+                                                                        });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <SelectTrigger>
+                                                                    <SelectValue placeholder="Select frequency" />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    {recurrencePresets.map(p => (
+                                                                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                                                                    ))}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="recurrenceEnd" className="text-xs text-muted-foreground">Ends at (optional)</Label>
+                                                                <Input
+                                                                    id="recurrenceEnd"
+                                                                    type="datetime-local"
+                                                                    value={formData.recurrence?.end_date?.substring(0, 16) || ''}
+                                                                    onChange={(e) => {
+                                                                        const val = e.target.value;
+                                                                        setFormData({
+                                                                            ...formData,
+                                                                            recurrence: {
+                                                                                ...formData.recurrence || { cron_expression: '' },
+                                                                                end_date: val ? new Date(val).toISOString() : undefined
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="recurrenceCount" className="text-xs text-muted-foreground">Max occurrences (optional)</Label>
+                                                                <Input
+                                                                    id="recurrenceCount"
+                                                                    type="number"
+                                                                    value={formData.recurrence?.count || ''}
+                                                                    onChange={(e) => setFormData({
+                                                                        ...formData,
+                                                                        recurrence: {
+                                                                            ...formData.recurrence || { cron_expression: '' },
+                                                                            count: parseInt(e.target.value) || undefined
+                                                                        }
+                                                                    })}
+                                                                    placeholder="e.g. 10"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="flex justify-end mt-6">
                                     <div className="flex gap-2">
                                         <Button
@@ -688,7 +886,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         >
                                             Reset
                                         </Button>
-                                        <Button type="submit">Send / Schedule Notification</Button>
+                                        <Button type="submit">{advScheduleEnabled && formData.scheduled_at ? 'Schedule Notification' : 'Send Notification'}</Button>
                                     </div>
                                 </div>
                             </form>
@@ -705,33 +903,19 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     <form onSubmit={handleBroadcastSubmit} className="space-y-4">
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div className="space-y-2">
-                                                <Label htmlFor="broadcastTemplate">Template (Optional)</Label>
-                                                <Select
-                                                    value={formData.template_id || 'none'}
-                                                    onValueChange={(val) => setFormData({ ...formData, template_id: val === 'none' ? undefined : val })}
-                                                >
-                                                    <SelectTrigger id="broadcastTemplate">
-                                                        <SelectValue placeholder="No template" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="none">No template (manual content)</SelectItem>
-                                                        {(templates || []).map(t => (
-                                                            <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="space-y-2">
                                                 <Label htmlFor="broadcastChannel">Channel</Label>
                                                 <Select
                                                     value={formData.channel}
                                                     onValueChange={(val) => {
                                                         const next = val as any;
+                                                        const currentTemplate = templates.find(t => t.id === formData.template_id);
+                                                        const shouldClearTemplate = currentTemplate && currentTemplate.channel !== next;
                                                         setFormData({
                                                             ...formData,
                                                             channel: next,
-                                                            webhook_url: next === 'webhook' ? formData.webhook_url : ''
+                                                            template_id: shouldClearTemplate ? '' : formData.template_id,
                                                         });
+                                                        if (shouldClearTemplate) setDataInput('');
                                                         if (next !== 'webhook') {
                                                             setSelectedTargets([]);
                                                         }
@@ -746,6 +930,35 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         <SelectItem value="sms">SMS</SelectItem>
                                                         <SelectItem value="in_app">In-App</SelectItem>
                                                         <SelectItem value="sse">SSE</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="broadcastTemplate">Template</Label>
+                                                <Select
+                                                    value={formData.template_id || ''}
+                                                    onValueChange={(val) => {
+                                                        setFormData({ ...formData, template_id: val });
+                                                        const selected = templates.find(t => t.id === val);
+                                                        const sample = getSampleData(selected);
+                                                        if (Object.keys(sample).length > 0) {
+                                                            setDataInput(JSON.stringify(sample, null, 2));
+                                                        } else {
+                                                            setDataInput('');
+                                                        }
+                                                    }}
+                                                >
+                                                    <SelectTrigger id="broadcastTemplate">
+                                                        <SelectValue placeholder="Select a template" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {filteredTemplates.length === 0 ? (
+                                                            <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
+                                                        ) : (
+                                                            filteredTemplates.map(t => (
+                                                                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                                            ))
+                                                        )}
                                                     </SelectContent>
                                                 </Select>
                                             </div>
@@ -768,54 +981,84 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <Label htmlFor="broadcastTitle">Title</Label>
-                                            <Input
-                                                id="broadcastTitle"
-                                                value={formData.title}
-                                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                                                required
-                                                placeholder="Broadcast title"
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label htmlFor="broadcastBody">Body / Manual Content</Label>
-                                            <Textarea
-                                                id="broadcastBody"
-                                                value={formData.body}
-                                                onChange={(e) => setFormData({ ...formData, body: e.target.value })}
-                                                required={!formData.template_id}
-                                                className="min-h-[100px]"
-                                                placeholder={formData.template_id ? "Optional (overridden by template)" : "Content"}
-                                            />
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <Label htmlFor="broadcastData">Custom Data (JSON)</Label>
-                                            <Textarea
-                                                id="broadcastData"
-                                                className="font-mono text-xs"
-                                                value={dataInput}
-                                                onChange={(e) => setDataInput(e.target.value)}
-                                                placeholder='{ "key": "value" }'
-                                            />
-                                        </div>
-
-                                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 pt-2">
-                                            <div className="space-y-1">
-                                                <Label htmlFor="broadcastScheduled">Scheduled Time (Optional)</Label>
-                                                <Input
-                                                    id="broadcastScheduled"
-                                                    type="datetime-local"
-                                                    className="w-auto text-sm"
-                                                    value={formData.scheduled_at?.substring(0, 16) || ''}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
-                                                    }}
-                                                />
+                                        {formVariables.length > 0 && (
+                                            <div className="rounded-md border border-border bg-background">
+                                                <button
+                                                    type="button"
+                                                    className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                                    onClick={() => setVarsExpanded(!varsExpanded)}
+                                                >
+                                                    <span className="flex items-center gap-2">
+                                                        Template Variables
+                                                        <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                        {formSelectedTemplate?.metadata?.sample_data && (
+                                                            <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
+                                                        )}
+                                                    </span>
+                                                    {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                </button>
+                                                {varsExpanded && (
+                                                    <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {formVariables.map(v => {
+                                                            const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
+                                                            const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
+                                                            return (
+                                                                <div key={v} className="space-y-1">
+                                                                    <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={e => {
+                                                                            const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                            parsed[v] = e.target.value;
+                                                                            setDataInput(JSON.stringify(parsed, null, 2));
+                                                                        }}
+                                                                        placeholder={sampleVal ? String(sampleVal) : v}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
+                                        )}
+
+                                        {/* Schedule toggle */}
+                                        <div className="rounded-md border border-border">
+                                            <button
+                                                type="button"
+                                                className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
+                                                onClick={() => {
+                                                    const next = !broadcastScheduleEnabled;
+                                                    setBroadcastScheduleEnabled(next);
+                                                    if (!next) setFormData({ ...formData, scheduled_at: undefined });
+                                                }}
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <Clock className="h-4 w-4" />
+                                                    Schedule for later
+                                                </span>
+                                                <div className={`w-9 h-5 rounded-full transition-colors ${broadcastScheduleEnabled ? 'bg-primary' : 'bg-muted-foreground/30'} relative`}>
+                                                    <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${broadcastScheduleEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                                </div>
+                                            </button>
+                                            {broadcastScheduleEnabled && (
+                                                <div className="px-4 pb-4 pt-1 space-y-1">
+                                                    <Input
+                                                        id="broadcastScheduled"
+                                                        type="datetime-local"
+                                                        value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                                        }}
+                                                    />
+                                                    <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex justify-end pt-2">
                                             <Button
                                                 type="submit"
                                                 className="bg-orange-600 hover:bg-orange-700 text-white"
@@ -947,6 +1190,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <TableHead className="hidden md:table-cell">ID</TableHead>
                                             <TableHead className="hidden lg:table-cell">User</TableHead>
                                             <TableHead>Title</TableHead>
+                                            <TableHead>Channel</TableHead>
                                             <TableHead>Status</TableHead>
                                             <TableHead className="hidden md:table-cell">Scheduled At</TableHead>
                                             <TableHead className="hidden md:table-cell">Sent At</TableHead>
@@ -974,6 +1218,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     }
                                                 </TableCell>
                                                 <TableCell className="text-foreground">{n.content?.title || '-'}</TableCell>
+                                                <TableCell>
+                                                    <Badge variant="outline" className="text-xs">
+                                                        {n.channel}
+                                                    </Badge>
+                                                </TableCell>
                                                 <TableCell>
                                                     <Badge
                                                         variant="outline"
@@ -1073,13 +1322,49 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 </div>
                                 <div>
                                     <Label className="text-xs text-muted-foreground">Created</Label>
-                                    <p className="text-sm">{detailNotif.created_at ? timeAgo(detailNotif.created_at) : '-'}</p>
+                                    <p className="text-sm">{detailNotif.created_at ? new Date(detailNotif.created_at).toLocaleString() : '-'}</p>
                                 </div>
+                                {detailNotif.sent_at && (
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Sent At</Label>
+                                        <p className="text-sm">{new Date(detailNotif.sent_at).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {detailNotif.delivered_at && (
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Delivered At</Label>
+                                        <p className="text-sm">{new Date(detailNotif.delivered_at).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {detailNotif.read_at && (
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Read At</Label>
+                                        <p className="text-sm">{new Date(detailNotif.read_at).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {detailNotif.failed_at && (
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Failed At</Label>
+                                        <p className="text-sm text-red-600">{new Date(detailNotif.failed_at).toLocaleString()}</p>
+                                    </div>
+                                )}
+                                {(detailNotif.retry_count ?? 0) > 0 && (
+                                    <div>
+                                        <Label className="text-xs text-muted-foreground">Retry Count</Label>
+                                        <p className="text-sm">{detailNotif.retry_count}</p>
+                                    </div>
+                                )}
                             </div>
-                            {detailNotif.status === 'snoozed' && (detailNotif as any).snoozed_until && (
+                            {detailNotif.error_message && (
+                                <div>
+                                    <Label className="text-xs text-muted-foreground">Error</Label>
+                                    <p className="text-sm text-red-600 bg-red-50 dark:bg-red-950/30 p-2 rounded font-mono">{detailNotif.error_message}</p>
+                                </div>
+                            )}
+                            {detailNotif.status === 'snoozed' && detailNotif.snoozed_until && (
                                 <div>
                                     <Label className="text-xs text-muted-foreground">Snoozed Until</Label>
-                                    <p className="text-sm text-purple-700">{new Date((detailNotif as any).snoozed_until).toLocaleString()}</p>
+                                    <p className="text-sm text-purple-700">{new Date(detailNotif.snoozed_until).toLocaleString()}</p>
                                 </div>
                             )}
                             {detailNotif.user_id && (
@@ -1300,6 +1585,7 @@ const UserMultiSelect: React.FC<{
                                             <Checkbox
                                                 checked={value.includes(u.user_id)}
                                                 onCheckedChange={() => toggleUser(u.user_id)}
+                                                className="border-muted-foreground data-[state=checked]:border-primary"
                                             />
                                         </div>
                                     ))}

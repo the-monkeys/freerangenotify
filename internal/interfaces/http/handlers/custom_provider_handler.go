@@ -62,10 +62,10 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 		return errors.BadRequest("invalid request body")
 	}
 
-	// Check for duplicate channel name
+	// Check for duplicate provider name (allow multiple providers per channel)
 	for _, cp := range app.Settings.CustomProviders {
-		if cp.Channel == req.Channel && cp.Active {
-			return errors.BadRequest("a custom provider for channel '" + req.Channel + "' already exists")
+		if cp.Name == req.Name && cp.Active {
+			return errors.BadRequest("a custom provider named '" + req.Name + "' already exists")
 		}
 	}
 

@@ -14,6 +14,8 @@ type Repository interface {
 	UpdateWorkflow(ctx context.Context, wf *Workflow) error
 	DeleteWorkflow(ctx context.Context, id string) error
 	ListWorkflows(ctx context.Context, appID, environmentID string, limit, offset int) ([]*Workflow, int64, error)
+	CountAll(ctx context.Context) (int64, error)
+	CountByAppIDs(ctx context.Context, appIDs []string) (int64, error)
 
 	// Execution CRUD
 	CreateExecution(ctx context.Context, exec *WorkflowExecution) error

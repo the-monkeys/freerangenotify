@@ -101,11 +101,15 @@ export default function Notifications() {
 
                 eventSource.onopen = () => {
                     console.log('SSE connection established');
-                    setSseStatus('connected');
                 };
 
-                eventSource.onmessage = (event) => {
-                    console.log('SSE message received (raw):', event.data);
+                eventSource.addEventListener('connected', (event) => {
+                    console.log('SSE connected event:', event.data);
+                    setSseStatus('connected');
+                });
+
+                eventSource.addEventListener('notification', (event) => {
+                    console.log('SSE notification received (raw):', event.data);
 
                     try {
                         // Parse the incoming data
@@ -242,8 +246,8 @@ export default function Notifications() {
                     )}
                     {/* Debug indicator for SSE connection status */}
                     <div className={`absolute -bottom-1 -right-1 size-2 rounded-full ${sseStatus === 'connected' ? 'bg-green-500' :
-                            sseStatus === 'connecting' ? 'bg-yellow-500' :
-                                'bg-red-500'
+                        sseStatus === 'connecting' ? 'bg-yellow-500' :
+                            'bg-red-500'
                         }`} title={`SSE: ${sseStatus}`} />
                 </Button>
             </PopoverTrigger>

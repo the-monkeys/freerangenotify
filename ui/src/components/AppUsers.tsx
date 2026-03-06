@@ -46,6 +46,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [formData, setFormData] = useState<CreateUserRequest>({
         email: '',
         phone: '',
+        external_id: '',
         timezone: 'UTC',
         language: 'en',
         preferences: {
@@ -85,6 +86,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             if (editingUser) {
                 // Update
                 const updatePayload: any = {
+                    external_id: formData.external_id,
                     email: formData.email,
                     phone: formData.phone,
                     timezone: formData.timezone,
@@ -101,6 +103,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             setFormData({
                 email: '',
                 phone: '',
+                external_id: '',
                 timezone: 'UTC',
                 language: 'en',
                 preferences: {
@@ -128,6 +131,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         setEditingUser(user.user_id);
         setFormData({
             user_id: user.user_id,
+            external_id: user.external_id || '',
             email: user.email,
             phone: user.phone || '',
             timezone: user.timezone || 'UTC',
@@ -169,6 +173,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 setFormData({
                                     email: '',
                                     phone: '',
+                                    external_id: '',
                                     timezone: 'UTC',
                                     language: 'en',
                                     preferences: {
@@ -212,6 +217,19 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                         Leave empty to auto-generate a UUID.
                                     </p>
                                 )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="external_id">External ID</Label>
+                                <Input
+                                    id="external_id"
+                                    type="text"
+                                    value={formData.external_id || ''}
+                                    onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
+                                    placeholder="e.g. platform_user_123 (Optional)"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Your platform's user identifier. Used for SSE connections and cross-system lookups.
+                                </p>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
@@ -325,8 +343,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                 preferences: {
                                                     ...formData.preferences,
                                                     quiet_hours: {
-                                                        ...formData.preferences?.quiet_hours,
-                                                        enabled: !!checked
+                                                        enabled: !!checked,
+                                                        start: formData.preferences?.quiet_hours?.start ?? '',
+                                                        end: formData.preferences?.quiet_hours?.end ?? '',
                                                     }
                                                 }
                                             })}
@@ -348,8 +367,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                         preferences: {
                                                             ...formData.preferences,
                                                             quiet_hours: {
-                                                                ...formData.preferences?.quiet_hours,
-                                                                start: e.target.value
+                                                                enabled: formData.preferences?.quiet_hours?.enabled ?? false,
+                                                                start: e.target.value,
+                                                                end: formData.preferences?.quiet_hours?.end ?? '',
                                                             }
                                                         }
                                                     })}
@@ -367,8 +387,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                         preferences: {
                                                             ...formData.preferences,
                                                             quiet_hours: {
-                                                                ...formData.preferences?.quiet_hours,
-                                                                end: e.target.value
+                                                                enabled: formData.preferences?.quiet_hours?.enabled ?? false,
+                                                                start: formData.preferences?.quiet_hours?.start ?? '',
+                                                                end: e.target.value,
                                                             }
                                                         }
                                                     })}
@@ -395,6 +416,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     <TableHead>Email</TableHead>
                                     <TableHead>Phone</TableHead>
                                     <TableHead>Language</TableHead>
+                                    <TableHead>Quiet Hours</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -404,6 +426,15 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                         <TableCell>{user.email || '-'}</TableCell>
                                         <TableCell>{user.phone || '-'}</TableCell>
                                         <TableCell>{user.language || 'en'}</TableCell>
+                                        <TableCell>
+                                            {user.preferences?.quiet_hours?.enabled ? (
+                                                <span className="text-xs text-amber-600 font-medium">
+                                                    {user.preferences.quiet_hours.start || '?'} – {user.preferences.quiet_hours.end || '?'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">Off</span>
+                                            )}
+                                        </TableCell>
                                         <TableCell>
                                             <button
                                                 onClick={() => handleEditClick(user)}

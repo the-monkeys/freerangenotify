@@ -71,7 +71,13 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	// Send notification
 	notif, err := h.service.Send(c.Context(), sendReq)
 	if err != nil {
-		h.logger.Error("Failed to send notification", zap.Error(err))
+		// Known business errors — log as Warn, not Error
+		if err == notification.ErrRateLimitExceeded || err == notification.ErrDNDEnabled ||
+			err == notification.ErrQuietHours || notification.IsValidationError(err) {
+			h.logger.Warn("Notification rejected", zap.Error(err))
+		} else {
+			h.logger.Error("Failed to send notification", zap.Error(err))
+		}
 
 		// Check if it's a validation error
 		if notification.IsValidationError(err) {
@@ -89,6 +95,13 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 
 		// Check for DND error
 		if err == notification.ErrDNDEnabled {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		// Check for quiet hours error
+		if err == notification.ErrQuietHours {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": err.Error(),
 			})

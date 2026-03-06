@@ -260,6 +260,12 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 				"app_id": filter.AppID,
 			},
 		})
+	} else if len(filter.AppIDs) > 0 {
+		must = append(must, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"app_id": filter.AppIDs,
+			},
+		})
 	}
 
 	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {
@@ -318,12 +324,13 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 		})
 	}
 
-	// Exclude archived templates by default unless a specific status filter is set
-	mustNot := []map[string]interface{}{}
+	// Default to only showing active templates (latest versions).
+	// CreateVersion marks previous versions as "inactive", so filtering
+	// by status=active returns only the latest version of each template.
 	if filter.Status == "" {
-		mustNot = append(mustNot, map[string]interface{}{
+		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{
-				"status": "archived",
+				"status": "active",
 			},
 		})
 	}
@@ -331,8 +338,7 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must":     must,
-				"must_not": mustNot,
+				"must": must,
 			},
 		},
 		"sort": []map[string]interface{}{
@@ -413,26 +419,32 @@ func (r *TemplateRepository) Delete(ctx context.Context, id string) error {
 
 // GetVersions retrieves all versions of a template
 func (r *TemplateRepository) GetVersions(ctx context.Context, appID, name, locale string) ([]*template.Template, error) {
+	must := []map[string]interface{}{
+		{
+			"term": map[string]interface{}{
+				"app_id": appID,
+			},
+		},
+		{
+			"term": map[string]interface{}{
+				"name": name,
+			},
+		},
+	}
+
+	// Only filter by locale if explicitly provided
+	if locale != "" {
+		must = append(must, map[string]interface{}{
+			"term": map[string]interface{}{
+				"locale": locale,
+			},
+		})
+	}
+
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"term": map[string]interface{}{
-							"app_id": appID,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"name": name,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"locale": locale,
-						},
-					},
-				},
+				"must": must,
 			},
 		},
 		"sort": []map[string]interface{}{
@@ -522,31 +534,37 @@ func (r *TemplateRepository) CreateVersion(ctx context.Context, tmpl *template.T
 
 // GetByVersion retrieves a specific version of a template
 func (r *TemplateRepository) GetByVersion(ctx context.Context, appID, name, locale string, version int) (*template.Template, error) {
+	must := []map[string]interface{}{
+		{
+			"term": map[string]interface{}{
+				"app_id": appID,
+			},
+		},
+		{
+			"term": map[string]interface{}{
+				"name": name,
+			},
+		},
+		{
+			"term": map[string]interface{}{
+				"version": version,
+			},
+		},
+	}
+
+	// Only filter by locale if explicitly provided
+	if locale != "" {
+		must = append(must, map[string]interface{}{
+			"term": map[string]interface{}{
+				"locale": locale,
+			},
+		})
+	}
+
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"term": map[string]interface{}{
-							"app_id": appID,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"name": name,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"locale": locale,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"version": version,
-						},
-					},
-				},
+				"must": must,
 			},
 		},
 		"size": 1,
@@ -588,4 +606,96 @@ func (r *TemplateRepository) GetByVersion(ctx context.Context, appID, name, loca
 	}
 
 	return &result.Hits.Hits[0].Source, nil
+}
+
+// Count returns the total number of active templates across all apps.
+func (r *TemplateRepository) Count(ctx context.Context) (int64, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{
+				"status": "active",
+			},
+		},
+	}
+
+	queryData, err := json.Marshal(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal count query: %w", err)
+	}
+
+	req := esapi.CountRequest{
+		Index: []string{r.index},
+		Body:  strings.NewReader(string(queryData)),
+	}
+
+	res, err := req.Do(ctx, r.es.Client)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count templates: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return 0, fmt.Errorf("error counting templates: %s", res.String())
+	}
+
+	var countResult struct {
+		Count int64 `json:"count"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&countResult); err != nil {
+		return 0, fmt.Errorf("failed to decode count result: %w", err)
+	}
+
+	return countResult.Count, nil
+}
+
+// CountByFilter returns the number of active templates matching the given filter.
+func (r *TemplateRepository) CountByFilter(ctx context.Context, filter template.Filter) (int64, error) {
+	must := []map[string]interface{}{
+		{"term": map[string]interface{}{"status": "active"}},
+	}
+
+	if filter.AppID != "" {
+		must = append(must, map[string]interface{}{
+			"term": map[string]interface{}{"app_id": filter.AppID},
+		})
+	} else if len(filter.AppIDs) > 0 {
+		must = append(must, map[string]interface{}{
+			"terms": map[string]interface{}{"app_id": filter.AppIDs},
+		})
+	}
+
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{"must": must},
+		},
+	}
+
+	queryData, err := json.Marshal(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal count query: %w", err)
+	}
+
+	req := esapi.CountRequest{
+		Index: []string{r.index},
+		Body:  strings.NewReader(string(queryData)),
+	}
+
+	res, err := req.Do(ctx, r.es.Client)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count templates: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return 0, fmt.Errorf("error counting templates: %s", res.String())
+	}
+
+	var countResult struct {
+		Count int64 `json:"count"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&countResult); err != nil {
+		return 0, fmt.Errorf("failed to decode count result: %w", err)
+	}
+
+	return countResult.Count, nil
 }

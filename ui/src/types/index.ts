@@ -122,6 +122,7 @@ export interface UpdateApplicationRequest {
 // ============= User Types =============
 export interface User {
     user_id: string;
+    external_id?: string;
     app_id: string;
     email: string;
     phone?: string;
@@ -144,7 +145,7 @@ export interface UserPreferences {
     email_enabled?: boolean;
     push_enabled?: boolean;
     sms_enabled?: boolean;
-    quiet_hours?: any;
+    quiet_hours?: { enabled: boolean; start: string; end: string; timezone?: string };
     dnd?: boolean;
     daily_limit?: number;
     categories?: Record<string, any>;
@@ -152,6 +153,7 @@ export interface UserPreferences {
 
 export interface CreateUserRequest {
     user_id?: string;
+    external_id?: string;
     email?: string;
     phone?: string;
     timezone?: string;
@@ -160,6 +162,7 @@ export interface CreateUserRequest {
 }
 
 export interface UpdateUserRequest {
+    external_id?: string;
     email?: string;
     phone?: string;
     timezone?: string;
@@ -194,8 +197,17 @@ export interface Notification {
         data?: Record<string, any>;
     };
     template_id?: string;
+    category?: string;
+    metadata?: Record<string, any>;
     scheduled_at?: string;
     sent_at?: string;
+    delivered_at?: string;
+    read_at?: string;
+    failed_at?: string;
+    error_message?: string;
+    retry_count?: number;
+    snoozed_until?: string;
+    archived_at?: string;
     created_at: string;
     updated_at: string;
     recurrence?: Recurrence;
@@ -205,8 +217,8 @@ export interface NotificationRequest {
     user_id: string;
     channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     priority: 'low' | 'normal' | 'high' | 'critical';
-    title: string;
-    body: string;
+    title?: string;
+    body?: string;
     data?: Record<string, any>;
     template_id?: string;
     webhook_url?: string;
@@ -219,8 +231,8 @@ export interface BulkNotificationRequest {
     user_ids: string[];
     channel: string;
     priority: string;
-    title: string;
-    body: string;
+    title?: string;
+    body?: string;
     data?: Record<string, any>;
     template_id?: string;
 }
@@ -228,8 +240,8 @@ export interface BulkNotificationRequest {
 export interface BroadcastNotificationRequest {
     channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
     priority: 'low' | 'normal' | 'high' | 'critical';
-    title: string;
-    body: string;
+    title?: string;
+    body?: string;
     data?: Record<string, any>;
     template_id?: string;
     scheduled_at?: string;
@@ -388,8 +400,13 @@ export interface AnalyticsSummary {
     total_failed: number;
     total_pending: number;
     total_read: number;
+    total_queued: number;
+    total_processing: number;
     total_all: number;
     success_rate: number;
+    total_users: number;
+    total_templates: number;
+    total_workflows: number;
     avg_latency_ms?: number;
     by_channel: ChannelAnalytics[];
     daily_breakdown: DailyStat[];

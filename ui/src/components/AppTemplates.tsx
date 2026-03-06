@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { templatesAPI } from '../services/api';
 import type { Template, CreateTemplateRequest, TemplateVersion } from '../types';
 import { Button } from './ui/button';
@@ -27,6 +28,7 @@ interface AppTemplatesProps {
 }
 
 const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) => {
+    const navigate = useNavigate();
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -52,11 +54,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     // Collapsed body state
     const [expandedBodies, setExpandedBodies] = useState<Record<string, boolean>>({});
 
-    // Library state
-    const [libraryTemplates, setLibraryTemplates] = useState<Template[]>([]);
-    const [libraryOpen, setLibraryOpen] = useState(false);
-    const [cloning, setCloning] = useState<string | null>(null);
-
     // Slide panel state for rendered output
     const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
 
@@ -78,13 +75,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             fetchTemplates();
         }
     }, [apiKey, page]);
-
-    // Eagerly load library templates for sample_data fallback in preview
-    useEffect(() => {
-        if (apiKey) {
-            fetchLibrary();
-        }
-    }, [apiKey]);
 
     const fetchTemplates = async () => {
         setLoading(true);
@@ -172,30 +162,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
-    const fetchLibrary = async () => {
-        try {
-            const res = await templatesAPI.getLibrary(apiKey);
-            setLibraryTemplates(res.templates || []);
-        } catch (error) {
-            console.error('Failed to fetch library:', error);
-            toast.error('Failed to load template library');
-        }
-    };
-
-    const handleCloneTemplate = async (name: string) => {
-        setCloning(name);
-        try {
-            await templatesAPI.cloneFromLibrary(apiKey, name);
-            toast.success(`Template "${name}" cloned successfully!`);
-            fetchTemplates();
-        } catch (error: any) {
-            const msg = error?.response?.data?.message || error?.message || 'Clone failed';
-            toast.error(msg);
-        } finally {
-            setCloning(null);
-        }
-    };
-
     const togglePreview = (tmplId: string) => {
         if (activePreviews[tmplId]) {
             const newPreviews = { ...activePreviews };
@@ -207,11 +173,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             if (tmpl?.metadata?.sample_data) {
                 defaultData = JSON.stringify(tmpl.metadata.sample_data, null, 2);
             } else if (tmpl?.name) {
-                // Fallback: look up sample_data from library template by name (for older clones missing metadata)
-                const libTmpl = libraryTemplates.find(lt => lt.name === tmpl.name);
-                if (libTmpl?.metadata?.sample_data) {
-                    defaultData = JSON.stringify(libTmpl.metadata.sample_data, null, 2);
-                } else if (tmpl.variables?.length) {
+                // Generate sample data from variables
+                if (tmpl.variables?.length) {
                     const generated: Record<string, string> = {};
                     for (const v of tmpl.variables) {
                         generated[v] = v;
@@ -344,55 +307,9 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <CardTitle>Notification Templates</CardTitle>
                     <div className="flex gap-2">
-                        <Dialog open={libraryOpen} onOpenChange={(open) => {
-                            setLibraryOpen(open);
-                            if (open) fetchLibrary();
-                        }}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline">Browse Library</Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                                <DialogHeader>
-                                    <DialogTitle>Template Library</DialogTitle>
-                                    <p className="text-sm text-muted-foreground">
-                                        Pre-built templates you can clone into your app. Customise after cloning.
-                                    </p>
-                                </DialogHeader>
-                                <div className="space-y-3 mt-4">
-                                    {libraryTemplates.length === 0 ? (
-                                        <p className="text-muted-foreground text-center py-4">Loading...</p>
-                                    ) : (
-                                        libraryTemplates.map(t => (
-                                            <Card key={t.name} className="bg-muted">
-                                                <CardContent className="flex justify-between items-center p-4">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <p className="font-medium text-sm">{t.name}</p>
-                                                            <Badge variant="outline" className="text-xs">{t.channel}</Badge>
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground truncate">{t.description}</p>
-                                                        {t.variables && t.variables.length > 0 && (
-                                                            <p className="text-xs text-muted-foreground mt-1">
-                                                                Variables: {t.variables.join(', ')}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="secondary"
-                                                        className="ml-3 shrink-0"
-                                                        disabled={cloning === t.name}
-                                                        onClick={() => handleCloneTemplate(t.name)}
-                                                    >
-                                                        {cloning === t.name ? 'Cloning...' : 'Clone'}
-                                                    </Button>
-                                                </CardContent>
-                                            </Card>
-                                        ))
-                                    )}
-                                </div>
-                            </DialogContent>
-                        </Dialog>
+                        <Button variant="outline" onClick={() => navigate(`/apps/${appId}/templates/library`)}>
+                            Browse Library
+                        </Button>
                         <Button
                             onClick={() => {
                                 if (showAddForm) {
@@ -452,14 +369,14 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                             <div className="space-y-2">
                                 <Label htmlFor="webhookTarget">Webhook Target</Label>
                                 <Select
-                                    value={formData.webhook_target || ''}
-                                    onValueChange={(value) => setFormData({ ...formData, webhook_target: value })}
+                                    value={formData.webhook_target || '__default__'}
+                                    onValueChange={(value) => setFormData({ ...formData, webhook_target: value === '__default__' ? '' : value })}
                                 >
                                     <SelectTrigger>
                                         <SelectValue placeholder="Default (Application Webhook URL)" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">Default (Application Webhook URL)</SelectItem>
+                                        <SelectItem value="__default__">Default (Application Webhook URL)</SelectItem>
                                         {Object.keys(webhooks).map(name => (
                                             <SelectItem key={name} value={name}>{name}</SelectItem>
                                         ))}

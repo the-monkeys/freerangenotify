@@ -39,7 +39,7 @@ export default function QuickTestPanel() {
         })();
     }, []);
 
-    // On app change → load users + templates
+    // On app change → fetch full app detail (list masks API keys) then load users + templates
     useEffect(() => {
         if (!selectedAppId) {
             setUsers([]);
@@ -50,25 +50,35 @@ export default function QuickTestPanel() {
             return;
         }
 
-        const app = apps.find(a => a.app_id === selectedAppId);
-        const apiKey = app?.api_key || '';
-        setSelectedApiKey(apiKey);
         setSelectedUserId('');
         setSelectedTemplateId('');
         setSelectedChannel('');
         setResult(null);
 
-        if (!apiKey) return;
-
         setLoadingDeps(true);
-        Promise.all([
-            usersAPI.list(apiKey, 1, 50).catch(() => ({ users: [] })),
-            templatesAPI.list(apiKey, 50, 0).catch(() => ({ templates: [] })),
-        ]).then(([usersRes, templatesRes]) => {
-            setUsers(usersRes.users || []);
-            setTemplates(templatesRes.templates || []);
-        }).finally(() => setLoadingDeps(false));
-    }, [selectedAppId, apps]);
+
+        // The list endpoint masks API keys (***xyz). Fetch full detail to get the real key.
+        applicationsAPI.get(selectedAppId)
+            .then((fullApp) => {
+                const apiKey = fullApp.api_key || '';
+                setSelectedApiKey(apiKey);
+                if (!apiKey) {
+                    setLoadingDeps(false);
+                    return;
+                }
+                return Promise.all([
+                    usersAPI.list(apiKey, 1, 50).catch(() => ({ users: [] })),
+                    templatesAPI.list(apiKey, 50, 0).catch(() => ({ templates: [] })),
+                ]).then(([usersRes, templatesRes]) => {
+                    setUsers(usersRes.users || []);
+                    setTemplates(templatesRes.templates || []);
+                });
+            })
+            .catch(() => {
+                setSelectedApiKey('');
+            })
+            .finally(() => setLoadingDeps(false));
+    }, [selectedAppId]);
 
     // On template change → pre-populate variables + channel
     useEffect(() => {

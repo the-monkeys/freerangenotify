@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen } from 'lucide-react';
+import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 import { Sheet, SheetContent } from './ui/sheet';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -31,6 +32,7 @@ const navItems: NavItem[] = [
 const SidebarNav: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const { theme, toggleTheme } = useTheme();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
     const handleLogout = async () => {
@@ -43,12 +45,12 @@ const SidebarNav: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
     return (
         <div className="flex flex-col h-full">
             {/* Logo */}
-            <div className="px-4 py-5 flex items-center gap-2.5 border-b border-sidebar-border">
+            <Link to="/" className="px-4 py-5 flex items-center gap-2.5 border-b border-sidebar-border no-underline hover:no-underline">
                 <Bell className="h-5 w-5 text-accent" />
                 <span className="text-sm font-semibold text-sidebar-foreground tracking-tight">
                     FreeRange <span className="font-normal text-muted-foreground">Notify</span>
                 </span>
-            </div>
+            </Link>
 
             {/* Navigation */}
             <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
@@ -82,8 +84,15 @@ const SidebarNav: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
                 ))}
             </nav>
 
-            {/* User section */}
-            <div className="border-t border-sidebar-border px-4 py-3">
+            {/* Theme toggle + User section */}
+            <div className="border-t border-sidebar-border px-4 py-3 space-y-2">
+                <button
+                    onClick={toggleTheme}
+                    className="flex items-center gap-3 w-full px-3 py-2 text-sm rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+                >
+                    {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                </button>
                 <UserMenu
                     user={{ full_name: user?.full_name, email: user?.email }}
                     onChangePassword={() => setChangePasswordOpen(true)}

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -53,9 +54,14 @@ func AuditMiddleware(auditService audit.Service, logger *zap.Logger) fiber.Handl
 			UserAgent:  c.Get("User-Agent"),
 		}
 
-		// Fire-and-forget: record asynchronously so the response is not delayed
+		// Fire-and-forget: record asynchronously so the response is not delayed.
+		// IMPORTANT: Do NOT pass c.Context() into the goroutine — Fiber/fasthttp
+		// recycles the RequestCtx after the handler returns. By the time the
+		// goroutine executes, the context is already pooled and its internals
+		// are nil, causing a nil-pointer panic in the Elasticsearch HTTP transport.
+		// Use context.Background() instead — audit logs don't need request-scoped values.
 		go func() {
-			if recordErr := auditService.Record(c.Context(), entry); recordErr != nil {
+			if recordErr := auditService.Record(context.Background(), entry); recordErr != nil {
 				logger.Warn("Failed to record audit log",
 					zap.String("action", action),
 					zap.String("resource", resource),

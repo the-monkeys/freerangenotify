@@ -179,7 +179,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 		// Check quiet hours
 		if utils.IsQuietHours(u) && req.Priority != notification.PriorityCritical {
-			return nil, fmt.Errorf("user is in quiet hours, only critical notifications allowed")
+			return nil, notification.ErrQuietHours
 		}
 
 		// Check daily limit
@@ -261,6 +261,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 		queueItem := queue.NotificationQueueItem{
 			NotificationID: notif.NotificationID,
+			AppID:          notif.AppID,
 			Priority:       notif.Priority,
 			EnqueuedAt:     time.Now(),
 		}
@@ -276,6 +277,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	// Enqueue for immediate processing
 	queueItem := queue.NotificationQueueItem{
 		NotificationID: notif.NotificationID,
+		AppID:          notif.AppID,
 		Priority:       notif.Priority,
 		EnqueuedAt:     time.Now(),
 	}
@@ -434,6 +436,7 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 		// Queue or schedule
 		queueItem := queue.NotificationQueueItem{
 			NotificationID: notif.NotificationID,
+			AppID:          notif.AppID,
 			Priority:       notif.Priority,
 			EnqueuedAt:     time.Now(),
 		}
@@ -716,6 +719,7 @@ func (s *NotificationService) Retry(ctx context.Context, notificationID, appID s
 	// Re-enqueue
 	queueItem := queue.NotificationQueueItem{
 		NotificationID: notif.NotificationID,
+		AppID:          notif.AppID,
 		Priority:       notif.Priority,
 		RetryCount:     notif.RetryCount + 1,
 		EnqueuedAt:     time.Now(),
@@ -763,6 +767,7 @@ func (s *NotificationService) FlushQueued(ctx context.Context, userID string) er
 	for _, notif := range notifications {
 		queueItem := queue.NotificationQueueItem{
 			NotificationID: notif.NotificationID,
+			AppID:          notif.AppID,
 			Priority:       notif.Priority,
 			RetryCount:     notif.RetryCount,
 			EnqueuedAt:     time.Now(),

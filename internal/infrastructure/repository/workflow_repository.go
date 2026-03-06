@@ -122,6 +122,28 @@ func (r *WorkflowRepository) ListWorkflows(ctx context.Context, appID, environme
 	return workflows, result.Total, nil
 }
 
+// CountAll returns the total number of workflows across all apps.
+func (r *WorkflowRepository) CountAll(ctx context.Context) (int64, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"match_all": map[string]interface{}{},
+		},
+	}
+	return r.workflows.Count(ctx, query)
+}
+
+// CountByAppIDs returns the count of workflows belonging to the specified apps.
+func (r *WorkflowRepository) CountByAppIDs(ctx context.Context, appIDs []string) (int64, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"terms": map[string]interface{}{
+				"app_id": appIDs,
+			},
+		},
+	}
+	return r.workflows.Count(ctx, query)
+}
+
 // --- Execution CRUD ---
 
 func (r *WorkflowRepository) CreateExecution(ctx context.Context, exec *workflow.WorkflowExecution) error {

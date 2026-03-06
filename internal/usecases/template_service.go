@@ -115,9 +115,9 @@ func (s *TemplateService) GetByName(ctx context.Context, appID, name, locale str
 	return tmpl, nil
 }
 
-// Update updates an existing template.
-// Content changes (body, subject, variables, metadata, description) create a new version.
-// Status-only changes remain in-place overwrites.
+// Update updates an existing template in-place.
+// The template ID remains stable across edits. Use CreateVersion explicitly
+// to snapshot the current state into a new version document.
 func (s *TemplateService) Update(ctx context.Context, id, appID string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
 	// Get existing template
 	tmpl, err := s.repo.GetByID(ctx, id)
@@ -130,81 +130,57 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 		return nil, fmt.Errorf("template not found")
 	}
 
-	// Status-only update — in-place, no new version
-	if req.Status != nil && *req.Status != "" {
-		hasContentChange := req.Body != nil || req.Subject != nil || req.Description != nil ||
-			req.Variables != nil || req.Metadata != nil || req.WebhookTarget != nil || req.Name != nil
-		if !hasContentChange {
-			validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
-			if !validStatuses[*req.Status] {
-				return nil, fmt.Errorf("invalid status: %s", *req.Status)
-			}
-			tmpl.Status = *req.Status
-			if req.UpdatedBy != "" {
-				tmpl.UpdatedBy = req.UpdatedBy
-			}
-			if err := s.repo.Update(ctx, tmpl); err != nil {
-				s.logger.Error("Failed to update template status", zap.String("id", id), zap.Error(err))
-				return nil, fmt.Errorf("failed to update template: %w", err)
-			}
-			s.logger.Info("Updated template status", zap.String("id", id), zap.String("status", *req.Status))
-			return tmpl, nil
-		}
-	}
-
-	// Content change — create a new version
-	updated := *tmpl
+	// Apply field updates
 	if req.Name != nil && *req.Name != "" {
-		updated.Name = *req.Name
+		tmpl.Name = *req.Name
 	}
 	if req.Description != nil && *req.Description != "" {
-		updated.Description = *req.Description
+		tmpl.Description = *req.Description
 	}
 	if req.WebhookTarget != nil {
-		updated.WebhookTarget = *req.WebhookTarget
+		tmpl.WebhookTarget = *req.WebhookTarget
 	}
 	if req.Subject != nil {
-		updated.Subject = *req.Subject
+		tmpl.Subject = *req.Subject
 	}
 	if req.Body != nil && *req.Body != "" {
-		updated.Body = *req.Body
+		tmpl.Body = *req.Body
 		// Auto-detect variables from new body if variables not explicitly overridden
 		if req.Variables == nil || len(*req.Variables) == 0 {
-			updated.Variables = extractVariables(updated.Body)
+			tmpl.Variables = extractVariables(tmpl.Body)
 		}
 		// Validate new body against variables
-		if err := s.validateTemplateVariables(updated.Body, updated.Variables); err != nil {
+		if err := s.validateTemplateVariables(tmpl.Body, tmpl.Variables); err != nil {
 			return nil, fmt.Errorf("template validation failed: %w", err)
 		}
 	}
 	if req.Variables != nil && len(*req.Variables) > 0 {
-		updated.Variables = *req.Variables
+		tmpl.Variables = *req.Variables
 	}
 	if req.Metadata != nil {
-		updated.Metadata = req.Metadata
+		tmpl.Metadata = req.Metadata
 	}
 	if req.Status != nil && *req.Status != "" {
 		validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
 		if !validStatuses[*req.Status] {
 			return nil, fmt.Errorf("invalid status: %s", *req.Status)
 		}
-		updated.Status = *req.Status
+		tmpl.Status = *req.Status
 	}
 	if req.UpdatedBy != "" {
-		updated.UpdatedBy = req.UpdatedBy
-		updated.CreatedBy = req.UpdatedBy
+		tmpl.UpdatedBy = req.UpdatedBy
 	}
 
-	if err := s.repo.CreateVersion(ctx, &updated); err != nil {
-		s.logger.Error("Failed to create new version on update", zap.String("id", id), zap.Error(err))
+	if err := s.repo.Update(ctx, tmpl); err != nil {
+		s.logger.Error("Failed to update template", zap.String("id", id), zap.Error(err))
 		return nil, fmt.Errorf("failed to update template: %w", err)
 	}
 
-	s.logger.Info("Updated template (new version created)",
-		zap.String("id", updated.ID),
-		zap.String("name", updated.Name),
-		zap.Int("version", updated.Version))
-	return &updated, nil
+	s.logger.Info("Updated template",
+		zap.String("id", tmpl.ID),
+		zap.String("name", tmpl.Name),
+		zap.Int("version", tmpl.Version))
+	return tmpl, nil
 }
 
 // Delete permanently removes a template from the datastore.
@@ -473,13 +449,23 @@ func extractVariables(body string) []string {
 
 // validateTemplateVariables validates that all variables used in the template body are defined
 func (s *TemplateService) validateTemplateVariables(body string, variables []string) error {
-	// Extract variables from template using {{variable}} pattern
+	// Go template action keywords that are not variable references
+	templateKeywords := map[string]bool{
+		"if": true, "else": true, "end": true, "range": true,
+		"with": true, "define": true, "template": true, "block": true,
+		"nil": true, "not": true, "and": true, "or": true,
+		"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+		"print": true, "printf": true, "println": true, "len": true,
+		"index": true, "call": true, "html": true, "js": true, "urlquery": true,
+	}
+
+	// Extract variables from template using {{.variable}} pattern
 	re := regexp.MustCompile(`\{\{\.?(\w+)\}\}`)
 	matches := re.FindAllStringSubmatch(body, -1)
 
 	usedVars := make(map[string]bool)
 	for _, match := range matches {
-		if len(match) > 1 {
+		if len(match) > 1 && !templateKeywords[match[1]] {
 			usedVars[match[1]] = true
 		}
 	}

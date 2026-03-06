@@ -54,6 +54,7 @@ type CreateRequest struct {
 // UpdateRequest is the input for updating a digest rule.
 type UpdateRequest struct {
 	Name       *string `json:"name,omitempty" validate:"omitempty,min=3,max=100"`
+	DigestKey  *string `json:"digest_key,omitempty" validate:"omitempty,min=1,max=100"`
 	Window     *string `json:"window,omitempty"`
 	Channel    *string `json:"channel,omitempty" validate:"omitempty,oneof=push email sms webhook in_app sse"`
 	TemplateID *string `json:"template_id,omitempty"`
