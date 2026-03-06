@@ -48,6 +48,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	u := &user.User{
 		UserID:     req.UserID,
 		AppID:      appID,
+		ExternalID: req.ExternalID,
 		Email:      req.Email,
 		Phone:      req.Phone,
 		Timezone:   req.Timezone,
@@ -110,6 +111,9 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	}
 
 	// Update fields
+	if req.ExternalID != "" {
+		u.ExternalID = req.ExternalID
+	}
 	if req.Email != "" {
 		u.Email = req.Email
 	}

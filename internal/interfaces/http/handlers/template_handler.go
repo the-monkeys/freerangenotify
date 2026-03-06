@@ -230,7 +230,7 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	return c.JSON(toTemplateResponse(tmpl))
 }
 
-// DeleteTemplate deletes a template (soft delete)
+// DeleteTemplate permanently removes a template.
 func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -423,6 +423,7 @@ func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 		Subject:     source.Subject,
 		Body:        source.Body,
 		Variables:   source.Variables,
+		Metadata:    source.Metadata,
 		Locale:      source.Locale,
 		CreatedBy:   "library:clone",
 	}

@@ -49,6 +49,15 @@ export interface CreateUserParams {
   external_id?: string;
 }
 
+export interface UpdateUserParams {
+  external_id?: string;
+  email?: string;
+  phone?: string;
+  timezone?: string;
+  language?: string;
+  webhook_url?: string;
+}
+
 export interface User {
   user_id: string;
   external_id: string;
@@ -58,6 +67,31 @@ export interface User {
   language: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SSENotification {
+  notification_id: string;
+  title: string;
+  body: string;
+  channel?: string;
+  category?: string;
+  status: string;
+  data?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface SSEConnectionOptions {
+  /** Called when a notification arrives via SSE. */
+  onNotification: (notification: SSENotification) => void;
+  /** Called when the SSE connection is established. */
+  onConnected?: () => void;
+  /** Called when the SSE connection encounters an error. */
+  onError?: (event: Event) => void;
+}
+
+export interface SSEConnection {
+  /** Close the SSE connection. */
+  close: () => void;
 }
 
 export interface FreeRangeNotifyOptions {
@@ -117,10 +151,68 @@ export class FreeRangeNotify {
   }
 
   /**
+   * Update an existing user (e.g. to change external_id after a username change).
+   */
+  async updateUser(userId: string, params: UpdateUserParams): Promise<User> {
+    return this.request<User>('PUT', `/users/${userId}`, params);
+  }
+
+  /**
    * List users in the application.
    */
   async listUsers(page = 1, pageSize = 20): Promise<{ users: User[]; total_count: number }> {
     return this.request('GET', `/users/?page=${page}&page_size=${pageSize}`);
+  }
+
+  /**
+   * Open a real-time SSE connection for a user.
+   *
+   * Uses named SSE events — the server sends `event: notification` with a flat JSON payload.
+   *
+   * `userId` can be the internal UUID or an `external_id`. When a token is provided,
+   * the server resolves `external_id` to the internal UUID automatically.
+   *
+   * ```ts
+   * const conn = client.connectSSE('user-uuid', {
+   *   onNotification: (n) => console.log(n.title, n.body),
+   *   onConnected: () => console.log('SSE connected'),
+   * });
+   * // Using external_id:
+   * const conn = client.connectSSE('my_platform_username', { ... });
+   * // later: conn.close();
+   * ```
+   */
+  connectSSE(userId: string, options: SSEConnectionOptions): SSEConnection {
+    if (!userId) throw new Error('userId is required for SSE');
+    if (!options.onNotification) throw new Error('onNotification callback is required');
+
+    // Build URL with user_id + optional token for auth. Strip /v1 suffix to get origin.
+    const origin = this.baseURL.replace(/\/v1$/, '');
+    let url = `${origin}/v1/sse?user_id=${encodeURIComponent(userId)}`;
+    url += `&token=${encodeURIComponent(this.apiKey)}`;
+
+    const es = new EventSource(url);
+
+    es.addEventListener('connected', () => {
+      options.onConnected?.();
+    });
+
+    es.addEventListener('notification', (event) => {
+      try {
+        const notif: SSENotification = JSON.parse((event as MessageEvent).data);
+        options.onNotification(notif);
+      } catch {
+        // ignore malformed
+      }
+    });
+
+    if (options.onError) {
+      es.onerror = options.onError;
+    }
+
+    return {
+      close: () => es.close(),
+    };
   }
 
   // ── Internal ──────────────────────────────────────────────

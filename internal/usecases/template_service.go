@@ -173,7 +173,7 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 	return tmpl, nil
 }
 
-// Delete deletes a template (soft delete)
+// Delete permanently removes a template from the datastore.
 func (s *TemplateService) Delete(ctx context.Context, id, appID string) error {
 	// Verify ownership before delete
 	tmpl, err := s.repo.GetByID(ctx, id)

@@ -310,10 +310,21 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 		})
 	}
 
+	// Exclude archived templates by default unless a specific status filter is set
+	mustNot := []map[string]interface{}{}
+	if filter.Status == "" {
+		mustNot = append(mustNot, map[string]interface{}{
+			"term": map[string]interface{}{
+				"status": "archived",
+			},
+		})
+	}
+
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
-				"must": must,
+				"must":     must,
+				"must_not": mustNot,
 			},
 		},
 		"sort": []map[string]interface{}{
@@ -370,18 +381,26 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 	return templates, nil
 }
 
-// Delete deletes a template (soft delete by setting status to archived)
+// Delete hard-deletes a template from Elasticsearch.
 func (r *TemplateRepository) Delete(ctx context.Context, id string) error {
-	// Soft delete - update status to archived
-	tmpl, err := r.GetByID(ctx, id)
-	if err != nil {
-		return err
+	req := esapi.DeleteRequest{
+		Index:      r.index,
+		DocumentID: id,
+		Refresh:    "true",
 	}
 
-	tmpl.Status = "archived"
-	tmpl.UpdatedAt = time.Now()
+	res, err := req.Do(ctx, r.es.Client)
+	if err != nil {
+		return fmt.Errorf("failed to delete template: %w", err)
+	}
+	defer res.Body.Close()
 
-	return r.Update(ctx, tmpl)
+	if res.IsError() {
+		return fmt.Errorf("error deleting template: %s", res.String())
+	}
+
+	r.logger.Info("Deleted template", zap.String("id", id))
+	return nil
 }
 
 // GetVersions retrieves all versions of a template

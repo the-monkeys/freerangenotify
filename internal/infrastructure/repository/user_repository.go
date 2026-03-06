@@ -82,6 +82,44 @@ func (r *UserRepository) GetByEmail(ctx context.Context, appID, email string) (*
 	return &u, nil
 }
 
+// GetByExternalID retrieves a user by external_id within an app
+func (r *UserRepository) GetByExternalID(ctx context.Context, appID, externalID string) (*user.User, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{
+						"term": map[string]interface{}{
+							"app_id": appID,
+						},
+					},
+					{
+						"term": map[string]interface{}{
+							"external_id": externalID,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	if result.Total == 0 {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	var u user.User
+	if err := mapToStruct(result.Hits[0], &u); err != nil {
+		return nil, fmt.Errorf("failed to map document to user: %w", err)
+	}
+
+	return &u, nil
+}
+
 // Update updates an existing user
 func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
 	u.UpdatedAt = time.Now()

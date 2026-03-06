@@ -1,6 +1,13 @@
 package seed
 
-import "github.com/the-monkeys/freerangenotify/internal/domain/template"
+import (
+	_ "embed"
+
+	"github.com/the-monkeys/freerangenotify/internal/domain/template"
+)
+
+//go:embed newsletter_editorial.html
+var newsletterEditorialHTML string
 
 // LibraryTemplates are pre-built templates users can clone into their apps.
 var LibraryTemplates = []template.Template{
@@ -282,6 +289,78 @@ var LibraryTemplates = []template.Template{
 			"story4_url", "story4_image", "story4_title", "story4_author", "story4_date", "story4_topic",
 			"story5_url", "story5_image", "story5_title", "story5_author", "story5_date", "story5_topic",
 			"unsubscribe_url",
+		},
+		Locale: "en",
+		Status: "active",
+	},
+	{
+		Name:        "newsletter_editorial",
+		Description: "Multi-section editorial newsletter with featured article, blog cards, events, sponsor section, and social footer — Beefree design",
+		Channel:     "email",
+		Subject:     "{{.headline}} — Newsletter",
+		Body:        newsletterEditorialHTML,
+		Variables: []string{
+			"headline",
+			"featured_title", "featured_tags", "featured_body_1",
+			"featured_image_url", "featured_url",
+			"author_name", "author_title", "author_image_url",
+			"blog_section_title",
+			"blog1_title", "blog1_description", "blog1_image_url", "blog1_url",
+			"blog2_title", "blog2_description", "blog2_image_url", "blog2_url",
+			"involvement_title", "involvement_subtitle", "involvement_url",
+			"events_title", "events_body", "events_image_url", "events_url",
+			"support_title", "support_body", "support_image_url", "support_url",
+			"sponsor_title", "sponsor_body", "sponsor_image_url",
+			"address", "image_URL", "logo_url",
+			"about_url", "blog_url",
+			"github_url", "discord_url", "telegram_url", "instagram_url",
+			"preheader_text",
+		},
+		Metadata: map[string]interface{}{
+			"sample_data": map[string]interface{}{
+				"preheader_text":       "Read our latest updates and articles from The Monkeys.",
+				"headline":             "THE MONKEYS WEEKLY",
+				"featured_title":       "GLOBAL API ECONOMY — STRATEGIC ARCHITECTURE, MONETIZATION DYNAMICS, AND THE EVOLUTION OF DIGITAL VALUE EXCHANGE",
+				"featured_tags":        `<span style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">Economy ↗</span><span style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">API ↗</span><span style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">Tech ↗</span><span style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">Business ↗</span><span style="display:inline-block;border:1px solid #d1d5db;border-radius:20px;padding:4px 14px;font-size:13px;color:#1f2937;font-family:'Merriwheater','Georgia',serif;margin:2px 4px 2px 0;">DigitalEconomy ↗</span>`,
+				"featured_body_1":      "The contemporary global economy is currently undergoing a structural transformation characterized by the transition from discrete, siloed business operations to a hyper-connected ecosystem of digital assets. At the center of this metamorphosis is the Application Programming Interface (API), a technical artifact that has successfully transcended its origins as a simple software integration tool to become the fundamental driver of digital commerce and boardroom-level strategy.",
+				"featured_image_url":   "https://monkeys.support/api/v1/files/post/hd10je/image.png",
+				"featured_url":         "https://monkeys.com.co/blog/hd10je",
+				"author_name":          "THE MONKEYS",
+				"author_title":         "Editorial Team",
+				"author_image_url":     "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/1736/b53509e8-c59f-4e9f-b9b6-de5afbaebf20.png",
+				"blog_section_title":   "READ OUR LATEST ARTICLES",
+				"blog1_title":          "INSTAGRAM CEO WANTS LABELS FOR REAL PHOTOS AND VIDEOS TO BEAT AI FAKES",
+				"blog1_description":    "Adam Mosseri has a smart idea to solve a big problem on social media. AI tools are getting very good at making fake photos and videos that look completely real.",
+				"blog1_image_url":      "https://monkeys.support/api/v1/files/post/u2potm/instagramredesign.webp",
+				"blog1_url":            "https://monkeys.com.co/blog/u2potm",
+				"blog2_title":          "SMALL, LOCAL ADVENTURES COULD BE THE KEY TO A LONGER AND BETTER LIFE",
+				"blog2_description":    "It is very easy to feel that real adventure always happens somewhere far away. But between the high costs and the unpredictable twists of daily life, such big trips happen very rarely.",
+				"blog2_image_url":      "https://monkeys.support/api/v1/files/post/7xh3m8/wellnessadventureday.webp",
+				"blog2_url":            "https://monkeys.com.co/blog/7xh3m8",
+				"involvement_title":    "GET INVOLVED",
+				"involvement_subtitle": "Join our events and community initiatives",
+				"involvement_url":      "https://monkeys.com.co/get-involved",
+				"events_title":         "UPCOMING EVENTS",
+				"events_body":          "Connect with our community through upcoming meetups, panel discussions, and live Q&A sessions. Great things happen when people come together.",
+				"events_image_url":     "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/1736/WED_events_colour.png",
+				"events_url":           "https://monkeys.com.co/events",
+				"support_title":        "SUPPORT OUR MISSION",
+				"support_body":         "Your contribution fuels independent journalism and community programs. Help us continue delivering stories that matter.",
+				"support_image_url":    "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/1736/WED_support.png",
+				"support_url":          "https://monkeys.com.co/support",
+				"sponsor_title":        "BECOME A SPONSOR AND GET 10% OFF YOUR ANNUAL MEMBERSHIP",
+				"sponsor_body":         "Partner with us to reach an engaged audience. Sponsors enjoy premium placement, brand visibility, and exclusive member benefits.",
+				"sponsor_image_url":    "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/1736/WED_sponsor.png",
+				"address":              "Muzaffarpur, Bihar<br>India<br><br> Email: admin@monkeys.com.co",
+				"image_URL":            "https://raw.githubusercontent.com/the-monkeys/the_monkeys/main/apps/the_monkeys/public/logo-brand.svg",
+				"logo_url":             "https://monkeys.com.co",
+				"about_url":            "https://monkeys.com.co/about",
+				"blog_url":             "https://monkeys.com.co",
+				"github_url":           "https://github.com/the-monkeys",
+				"discord_url":          "https://discord.com/invite/6fK9YuV8FV",
+				"telegram_url":         "https://t.me/monkeys_com_co",
+				"instagram_url":        "https://www.instagram.com/monkeys_com_co/",
+			},
 		},
 		Locale: "en",
 		Status: "active",

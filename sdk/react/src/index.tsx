@@ -13,10 +13,12 @@ export interface NotificationItem {
 }
 
 export interface NotificationBellProps {
-  /** Internal UUID of the user (NOT external_id). */
+  /** Internal UUID or external_id of the user. When a token is provided, the server resolves external_id to the internal UUID automatically. */
   userId: string;
   /** Base URL of the FreeRangeNotify API. Defaults to window.location.origin. */
   apiBaseURL?: string;
+  /** API key (frn_xxx) for authenticated SSE. Passed as ?token= query param. */
+  apiKey?: string;
   /** Called whenever a new notification arrives via SSE. */
   onNotification?: (notification: NotificationItem) => void;
   /** Max notifications to keep in the dropdown. Default: 50. */
@@ -139,11 +141,13 @@ const styles: Record<string, React.CSSProperties> = {
  * Usage:
  * ```tsx
  * <NotificationBell userId="uuid-from-user-creation" />
+ * <NotificationBell userId="uuid" apiKey="frn_xxx" apiBaseURL="https://notify.example.com" />
  * ```
  */
 export function NotificationBell({
   userId,
   apiBaseURL,
+  apiKey,
   onNotification,
   maxItems = 50,
   className,
@@ -161,7 +165,7 @@ export function NotificationBell({
   useEffect(() => {
     if (!userId || !baseURL) return;
 
-    const url = `${baseURL}/v1/sse?user_id=${encodeURIComponent(userId)}`;
+    const url = `${baseURL}/v1/sse?user_id=${encodeURIComponent(userId)}${apiKey ? `&token=${encodeURIComponent(apiKey)}` : ''}`;
     const es = new EventSource(url);
 
     es.addEventListener('connected', () => {
@@ -191,7 +195,7 @@ export function NotificationBell({
       es.close();
       setConnected(false);
     };
-  }, [userId, baseURL, maxItems, onNotification]);
+  }, [userId, baseURL, apiKey, maxItems, onNotification]);
 
   // Close dropdown on outside click
   useEffect(() => {

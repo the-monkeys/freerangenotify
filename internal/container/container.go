@@ -247,6 +247,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.SSEBroadcaster,
 		container.ApplicationService,
 		container.NotificationService,
+		repos.User,
 		container.RedisClient,
 		logger,
 	)

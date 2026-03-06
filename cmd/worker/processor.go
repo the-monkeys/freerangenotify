@@ -237,7 +237,20 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 
 	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
 	if notif.TemplateID != "" {
-		tmpl, err := p.templateRepo.GetByID(ctx, notif.TemplateID)
+		var tmpl *template.Template
+
+		// Try by UUID first; if that fails and it's not a valid UUID, resolve by name
+		if _, parseErr := uuid.Parse(notif.TemplateID); parseErr == nil {
+			tmpl, err = p.templateRepo.GetByID(ctx, notif.TemplateID)
+		} else {
+			// template_id is a name, not a UUID — resolve via app+name
+			tmpl, err = p.templateRepo.GetByAppAndName(ctx, notif.AppID, notif.TemplateID, "en")
+			if err != nil {
+				// Fallback: try with empty locale
+				tmpl, err = p.templateRepo.GetByAppAndName(ctx, notif.AppID, notif.TemplateID, "")
+			}
+		}
+
 		if err != nil {
 			logger.Warn("Failed to fetch template, continuing without template details",
 				zap.String("template_id", notif.TemplateID),

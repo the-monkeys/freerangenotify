@@ -721,8 +721,8 @@ func (s *NotificationService) FlushQueued(ctx context.Context, userID string) er
 	return nil
 }
 
-// resolveUserID converts an email or external identifier to an internal UUID.
-// If the identifier is already a valid UUID, it is returned as-is.
+// resolveUserID converts an email, external user_id, or internal UUID to an internal user ID.
+// Priority: UUID (passthrough) → email lookup → external_id lookup → user_id lookup (ES document ID).
 func (s *NotificationService) resolveUserID(ctx context.Context, appID, identifier string) (string, error) {
 	// If it parses as a UUID, use directly
 	if _, err := uuid.Parse(identifier); err == nil {
@@ -737,7 +737,19 @@ func (s *NotificationService) resolveUserID(ctx context.Context, appID, identifi
 		}
 	}
 
-	return "", fmt.Errorf("user %q not found; use a valid email address or internal UUID", identifier)
+	// Try external_id lookup
+	u, err := s.userRepo.GetByExternalID(ctx, appID, identifier)
+	if err == nil {
+		return u.UserID, nil
+	}
+
+	// Try direct lookup by user_id (external identifier stored as ES document ID)
+	u, err = s.userRepo.GetByID(ctx, identifier)
+	if err == nil && u.AppID == appID {
+		return u.UserID, nil
+	}
+
+	return "", fmt.Errorf("user %q not found; use a valid user_id, email address, external_id, or internal UUID", identifier)
 }
 
 // resolveTemplate resolves a template reference by name or UUID.

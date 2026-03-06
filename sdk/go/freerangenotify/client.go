@@ -77,7 +77,7 @@ type SendResult struct {
 
 // BroadcastParams holds the parameters for broadcasting a notification.
 type BroadcastParams struct {
-	Template string                 `json:"template"`
+	Template string                 `json:"template_id"`
 	Data     map[string]interface{} `json:"data,omitempty"`
 	Channel  string                 `json:"channel,omitempty"`
 	Priority string                 `json:"priority,omitempty"`
@@ -96,6 +96,16 @@ type CreateUserParams struct {
 	Timezone   string `json:"timezone,omitempty"`
 	Language   string `json:"language,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`
+}
+
+// UpdateUserParams holds the parameters for updating a user.
+type UpdateUserParams struct {
+	ExternalID string `json:"external_id,omitempty"`
+	Email      string `json:"email,omitempty"`
+	Phone      string `json:"phone,omitempty"`
+	Timezone   string `json:"timezone,omitempty"`
+	Language   string `json:"language,omitempty"`
+	WebhookURL string `json:"webhook_url,omitempty"`
 }
 
 // User is a FreeRangeNotify user profile.
@@ -132,6 +142,15 @@ func (c *Client) Broadcast(ctx context.Context, params BroadcastParams) (*Broadc
 func (c *Client) CreateUser(ctx context.Context, params CreateUserParams) (*User, error) {
 	var user User
 	if err := c.do(ctx, http.MethodPost, "/users/", params, &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateUser updates an existing user (e.g. to change external_id after a username change).
+func (c *Client) UpdateUser(ctx context.Context, userID string, params UpdateUserParams) (*User, error) {
+	var user User
+	if err := c.do(ctx, http.MethodPut, "/users/"+userID, params, &user); err != nil {
 		return nil, err
 	}
 	return &user, nil

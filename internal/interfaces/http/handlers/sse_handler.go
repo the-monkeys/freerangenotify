@@ -2,88 +2,117 @@ package handlers
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
-	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"go.uber.org/zap"
 )
 
-// SSEHandler handles Server-Sent Events
+// SSEHandler handles Server-Sent Events connections and streaming.
 type SSEHandler struct {
 	broadcaster  *sse.Broadcaster
 	appService   usecases.ApplicationService
 	notifService notification.Service
+	userRepo     user.Repository
 	redisClient  *redis.Client
 	logger       *zap.Logger
 }
 
-// NewSSEHandler creates a new SSE handler
-func NewSSEHandler(broadcaster *sse.Broadcaster, appService usecases.ApplicationService, notifService notification.Service, redisClient *redis.Client, logger *zap.Logger) *SSEHandler {
+// NewSSEHandler creates a new SSE handler.
+func NewSSEHandler(
+	broadcaster *sse.Broadcaster,
+	appService usecases.ApplicationService,
+	notifService notification.Service,
+	userRepo user.Repository,
+	redisClient *redis.Client,
+	logger *zap.Logger,
+) *SSEHandler {
 	return &SSEHandler{
 		broadcaster:  broadcaster,
 		appService:   appService,
 		notifService: notifService,
+		userRepo:     userRepo,
 		redisClient:  redisClient,
 		logger:       logger,
 	}
 }
 
-// Connect establishes an SSE connection for a user
+// Connect establishes an SSE connection for a user.
+//
+// Query params:
+//
+//	user_id (required) — the internal UUID or external_id of the user.
+//	token   (optional) — API key (frn_xxx) for authorization. Scopes the
+//	                      connection to the token's app.
+//	app_id  (optional) — explicit app ID. When used with token, must match.
+//
+// Minimal integration (no auth):
+//
+//	GET /v1/sse?user_id=user002
+//
+// Authorized integration:
+//
+//	GET /v1/sse?user_id=user002&token=frn_xxx
+//
+// External ID:
+//
+//	GET /v1/sse?user_id=my_platform_username&token=frn_xxx
 func (h *SSEHandler) Connect(c *fiber.Ctx) error {
-	// token := c.Query("token")
-	appID := c.Query("app_id")
 	userID := c.Query("user_id")
+	token := c.Query("token")
+	appID := c.Query("app_id")
 
-	// Validate App ID if provided
-	if appID != "" {
-		_, err := h.appService.GetByID(c.Context(), appID)
-		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid app_id"})
-		}
-	}
-
-	/* External validation disabled per user request
-	if token != "" && appID != "" {
-		app, err := h.appService.GetByID(c.Context(), appID)
-		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid app_id"})
-		}
-
-		// Support for Zero-Trust validation via Client's own API
-		if app.Settings.ValidationURL != "" {
-			externalID, err := h.validateExternal(token, app)
-			if err != nil {
-				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "external validation failed: " + err.Error()})
-			}
-			userID = externalID
-		} else {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "application has no validation_url configured"})
-		}
-	}
-	*/
-
+	// ── 1. user_id is always required ──
 	if userID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "user_id or valid token is required",
+			"error": "user_id query parameter is required",
 		})
 	}
 
-	h.logger.Info("SSE connection authenticated", zap.String("user_id", userID), zap.String("app_id", appID))
+	// ── 2. Authorize via API key token (optional) ──
+	if token != "" {
+		app, err := h.appService.ValidateAPIKey(c.Context(), token)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid token"})
+		}
+		if appID != "" && app.AppID != appID {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "token does not match app_id"})
+		}
+		appID = app.AppID
+	} else if appID != "" {
+		if _, err := h.appService.GetByID(c.Context(), appID); err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid app_id"})
+		}
+	}
 
-	// Re-enqueue any queued notifications for immediate delivery
+	// ── 2b. Resolve user_id: if not a UUID, try external_id lookup ──
+	if _, err := uuid.Parse(userID); err != nil && appID != "" && h.userRepo != nil {
+		u, lookupErr := h.userRepo.GetByExternalID(c.Context(), appID, userID)
+		if lookupErr == nil {
+			h.logger.Info("SSE: resolved external_id to internal user_id",
+				zap.String("external_id", userID),
+				zap.String("user_id", u.UserID))
+			userID = u.UserID
+		}
+		// If lookup fails, keep the original value — backward compatible with
+		// clients that use non-UUID custom user_ids as ES document IDs.
+	}
+
+	h.logger.Info("SSE connection established",
+		zap.String("user_id", userID),
+		zap.String("app_id", appID))
+
+	// ── 3. Flush any queued notifications for instant delivery ──
 	if h.notifService != nil {
 		go func() {
-			// Use background context as c.Context() might be cancelled or short-lived
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if err := h.notifService.FlushQueued(ctx, userID); err != nil {
@@ -92,136 +121,12 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 		}()
 	}
 
-	// Handle the SSE connection
+	// ── 4. Hand off to the broadcaster ──
 	return h.broadcaster.HandleSSE(c, userID)
 }
 
-func (h *SSEHandler) validateExternal(token string, app *application.Application) (string, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-	config := app.Settings.ValidationConfig
-
-	// Default configuration (backward compatibility)
-	method := "POST"
-	tokenKey := "token"
-	tokenPlacement := "body_json"
-
-	if config != nil {
-		if config.Method != "" {
-			method = config.Method
-		}
-		if config.TokenKey != "" {
-			tokenKey = config.TokenKey
-		}
-		if config.TokenPlacement != "" {
-			tokenPlacement = config.TokenPlacement
-		}
-	}
-
-	var req *http.Request
-	var err error
-	targetURL := app.Settings.ValidationURL
-
-	switch tokenPlacement {
-	case "body_json":
-		bodyMap := map[string]string{tokenKey: token}
-		if config == nil {
-			bodyMap["app_id"] = app.AppID
-		}
-		data, _ := json.Marshal(bodyMap)
-		req, err = http.NewRequest(method, targetURL, bytes.NewBuffer(data))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-
-	case "body_form":
-		// Simple form encoding
-		// We'll constructs the body manually or use url.Values but we need "net/url"
-		// To avoid adding imports if possible, let's use a simple string for single value
-		// But adding imports is safer. I'll stick to 'token=...' string for simplicity if imports are tricky,
-		// but I should add imports. I will handle imports in a separate block or assume I can add them here if ReplaceFile allows (it doesn't auto-add imports).
-		// I will have to add imports "strings" and "net/url" separately.
-		// For now, I'll use basic string construction for form since it's simple.
-		body := fmt.Sprintf("%s=%s", tokenKey, token)
-		req, err = http.NewRequest(method, targetURL, bytes.NewBufferString(body))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		}
-
-	case "query":
-		req, err = http.NewRequest(method, targetURL, nil)
-		if err == nil {
-			q := req.URL.Query()
-			q.Add(tokenKey, token)
-			req.URL.RawQuery = q.Encode()
-		}
-
-	case "header":
-		req, err = http.NewRequest(method, targetURL, nil)
-		if err == nil {
-			req.Header.Set(tokenKey, token)
-		}
-
-	case "cookie":
-		req, err = http.NewRequest(method, targetURL, nil)
-		if err == nil {
-			req.AddCookie(&http.Cookie{Name: tokenKey, Value: token})
-		}
-
-	default:
-		return "", fmt.Errorf("unsupported token placement: %s", tokenPlacement)
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Add static headers
-	if config != nil && config.StaticHeaders != nil {
-		for k, v := range config.StaticHeaders {
-			req.Header.Set(k, v)
-		}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to call validation URL: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("validation service returned status %d", resp.StatusCode)
-	}
-
-	// Decode response to map to support flexible fields
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode validation response: %w", err)
-	}
-
-	// Check explicit 'valid' field if present (optional)
-	if v, ok := result["valid"]; ok {
-		if boolVal, ok := v.(bool); ok && !boolVal {
-			return "", fmt.Errorf("token is invalid according to external service")
-		}
-	}
-
-	// Heuristic to find user ID
-	possibleKeys := []string{"user_id", "id", "sub", "uid", "account_id", "username"}
-	for _, k := range possibleKeys {
-		if v, ok := result[k]; ok {
-			if strVal, ok := v.(string); ok && strVal != "" {
-				return strVal, nil
-			}
-		}
-	}
-
-	// If legacy logic expected specific struct, we might fail here if we rely on new logic only.
-	// But assuming the external API returns SOMETHING identifiable.
-	return "", fmt.Errorf("could not find user identifier (user_id, id, sub, uid) in response")
-}
-
-// AdminActivityFeed streams real-time notification status events to admin dashboards via SSE.
-// It subscribes to the "notification:activity" Redis pub/sub channel and forwards events.
+// AdminActivityFeed streams real-time notification status events to admin
+// dashboards via SSE. Subscribes to "notification:activity" Redis pub/sub channel.
 func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 	if h.redisClient == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -235,7 +140,6 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 	c.Set("Access-Control-Allow-Origin", "*")
 	c.Set("Access-Control-Allow-Headers", "Cache-Control")
 
-	// Disable write deadline for long-lived stream
 	if c.Context().Conn() != nil {
 		_ = c.Context().Conn().SetWriteDeadline(time.Time{})
 	}
@@ -252,11 +156,10 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 
 		h.logger.Info("Admin activity feed SSE client connected")
 
-		// Send initial connection event
-		fmt.Fprintf(w, "data: {\"type\":\"connected\"}\n\n")
+		// Named event so clients can use addEventListener("connected", ...)
+		fmt.Fprintf(w, "event: connected\ndata: {}\n\n")
 		w.Flush()
 
-		// Heartbeat ticker to keep the connection alive
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
@@ -266,7 +169,7 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
-				fmt.Fprintf(w, "data: %s\n\n", msg.Payload)
+				fmt.Fprintf(w, "event: activity\ndata: %s\n\n", msg.Payload)
 				w.Flush()
 
 			case <-ticker.C:

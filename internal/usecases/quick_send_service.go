@@ -159,7 +159,19 @@ func (s *QuickSendService) resolveRecipient(ctx context.Context, appID, to strin
 		return newUser.UserID, nil
 	}
 
-	return "", fmt.Errorf("recipient %q not found; use an email address (auto-creates user) or internal UUID", to)
+	// Try external_id lookup
+	existing, err := s.userRepo.GetByExternalID(ctx, appID, to)
+	if err == nil && existing != nil && existing.AppID == appID {
+		return existing.UserID, nil
+	}
+
+	// Try direct lookup by user_id (external identifier stored as ES document ID)
+	existing, err = s.userRepo.GetByID(ctx, to)
+	if err == nil && existing != nil && existing.AppID == appID {
+		return existing.UserID, nil
+	}
+
+	return "", fmt.Errorf("recipient %q not found; use an email address (auto-creates user), user_id, external_id, or internal UUID", to)
 }
 
 // resolveTemplate resolves a template reference by name or UUID.

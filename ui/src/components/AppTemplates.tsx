@@ -67,6 +67,13 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     }, [apiKey, page]);
 
+    // Eagerly load library templates for sample_data fallback in preview
+    useEffect(() => {
+        if (apiKey) {
+            fetchLibrary();
+        }
+    }, [apiKey]);
+
     const fetchTemplates = async () => {
         setLoading(true);
         try {
@@ -183,9 +190,32 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             delete newPreviews[tmplId];
             setActivePreviews(newPreviews);
         } else {
+            const tmpl = templates.find(t => t.id === tmplId);
+            let defaultData = '{}';
+            if (tmpl?.metadata?.sample_data) {
+                defaultData = JSON.stringify(tmpl.metadata.sample_data, null, 2);
+            } else if (tmpl?.name) {
+                // Fallback: look up sample_data from library template by name (for older clones missing metadata)
+                const libTmpl = libraryTemplates.find(lt => lt.name === tmpl.name);
+                if (libTmpl?.metadata?.sample_data) {
+                    defaultData = JSON.stringify(libTmpl.metadata.sample_data, null, 2);
+                } else if (tmpl.variables?.length) {
+                    const generated: Record<string, string> = {};
+                    for (const v of tmpl.variables) {
+                        generated[v] = v;
+                    }
+                    defaultData = JSON.stringify(generated, null, 2);
+                }
+            } else if (tmpl?.variables?.length) {
+                const generated: Record<string, string> = {};
+                for (const v of tmpl.variables) {
+                    generated[v] = v;
+                }
+                defaultData = JSON.stringify(generated, null, 2);
+            }
             setActivePreviews({
                 ...activePreviews,
-                [tmplId]: { data: '{}', rendered: '', loading: false }
+                [tmplId]: { data: defaultData, rendered: '', loading: false }
             });
         }
     };
