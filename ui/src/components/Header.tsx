@@ -58,7 +58,7 @@ const Header: React.FC = () => {
                                             className={`text-white font-normal text-sm px-3 py-1.5 rounded no-underline hover:bg-white/10 hover:no-underline ${isActive('/dashboard') ? 'bg-white/20' : ''
                                                 }`}
                                         >
-                                            System Status
+                                            Dashboard
                                         </Link>
                                     </li>
                                 </>
@@ -148,7 +148,7 @@ const Header: React.FC = () => {
                                             className={`block text-white font-normal text-sm px-3 py-2 rounded no-underline hover:bg-white/10 hover:no-underline ${isActive('/dashboard') ? 'bg-white/20' : ''
                                                 }`}
                                         >
-                                            System Status
+                                            Dashboard
                                         </Link>
                                     </li>
                                 </>

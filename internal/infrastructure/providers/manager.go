@@ -188,6 +188,95 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 	return result, nil
 }
 
+// SendWithFallback tries an ordered list of providers for a channel,
+// falling back to the next provider if the current one fails.
+func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Notification, usr *user.User, providerNames []string) (*Result, error) {
+	startTime := time.Now()
+
+	// Smart Delivery: dynamic routing (same as Send)
+	if m.presenceRepo != nil && usr != nil {
+		available, dynamicURL, err := m.presenceRepo.IsAvailable(ctx, usr.UserID)
+		if err == nil && available && dynamicURL != "" {
+			m.logger.Info("Smart Delivery: Overriding static webhook with dynamic URL (fallback path)",
+				zap.String("user_id", usr.UserID),
+				zap.String("dynamic_url", dynamicURL))
+			userCopy := *usr
+			userCopy.WebhookURL = dynamicURL
+			usr = &userCopy
+		}
+	}
+
+	var lastErr error
+	for i, providerName := range providerNames {
+		key := fmt.Sprintf("%s-%s", providerName, notif.Channel)
+
+		m.mu.RLock()
+		provider, ok := m.namedProviders[key]
+		breaker := m.breakers[key]
+		m.mu.RUnlock()
+
+		if !ok {
+			m.logger.Warn("Fallback provider not registered, skipping",
+				zap.String("provider", providerName),
+				zap.String("channel", string(notif.Channel)))
+			continue
+		}
+
+		if !provider.IsHealthy(ctx) {
+			m.logger.Warn("Fallback provider unhealthy, skipping",
+				zap.String("provider", providerName),
+				zap.Int("attempt", i+1))
+			continue
+		}
+
+		var result *Result
+		var err error
+
+		if breaker != nil {
+			err = breaker.Execute(func() error {
+				var sendErr error
+				result, sendErr = provider.Send(ctx, notif, usr)
+				return sendErr
+			})
+		} else {
+			result, err = provider.Send(ctx, notif, usr)
+		}
+
+		// Record metrics
+		if m.metrics != nil {
+			latency := time.Since(startTime).Seconds()
+			m.metrics.RecordProviderLatency(providerName, string(notif.Channel), latency)
+			if result != nil && result.Success {
+				m.metrics.RecordDeliverySuccess(string(notif.Channel), providerName)
+			} else if result != nil {
+				m.metrics.RecordDeliveryFailure(string(notif.Channel), providerName, result.ErrorType)
+			}
+		}
+
+		if err == nil && result != nil && result.Success {
+			if i > 0 {
+				m.logger.Info("Delivery succeeded via fallback provider",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("provider", providerName),
+					zap.Int("attempt", i+1))
+			}
+			return result, nil
+		}
+
+		lastErr = err
+		if result != nil && result.Error != nil {
+			lastErr = result.Error
+		}
+		m.logger.Warn("Fallback provider failed, trying next",
+			zap.String("notification_id", notif.NotificationID),
+			zap.String("provider", providerName),
+			zap.Int("attempt", i+1),
+			zap.Error(lastErr))
+	}
+
+	return NewErrorResult(fmt.Errorf("all %d fallback providers failed: %w", len(providerNames), lastErr), ErrorTypeProviderAPI), fmt.Errorf("all fallback providers failed: %w", lastErr)
+}
+
 // Close closes all registered providers
 func (m *Manager) Close() error {
 	m.mu.Lock()
@@ -220,6 +309,36 @@ func (m *Manager) IsHealthy(ctx context.Context) map[string]bool {
 	}
 
 	return health
+}
+
+// ProviderHealth represents the health status of a single provider.
+type ProviderHealth struct {
+	Name         string `json:"name"`
+	Channel      string `json:"channel"`
+	Healthy      bool   `json:"healthy"`
+	BreakerState string `json:"breaker_state"` // closed, open, half-open
+}
+
+// HealthStatus returns per-channel health including circuit breaker state.
+func (m *Manager) HealthStatus() map[string]ProviderHealth {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[string]ProviderHealth)
+	for channel, provider := range m.providers {
+		breakerKey := fmt.Sprintf("%s-%s", provider.GetName(), channel)
+		breakerState := "closed"
+		if b, ok := m.breakers[breakerKey]; ok {
+			breakerState = string(b.GetState())
+		}
+		result[string(channel)] = ProviderHealth{
+			Name:         provider.GetName(),
+			Channel:      string(channel),
+			Healthy:      provider.IsHealthy(context.Background()),
+			BreakerState: breakerState,
+		}
+	}
+	return result
 }
 
 // GetSupportedChannels returns all channels that have providers registered

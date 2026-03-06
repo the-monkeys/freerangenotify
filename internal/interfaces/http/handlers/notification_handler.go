@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"fmt"
 	"text/template"
 
 	"github.com/gofiber/fiber/v2"
@@ -41,14 +40,11 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	// Get app ID from context (set by API key middleware)
 	appID := c.Locals("app_id").(string)
 
-	// Debug: Log the raw request body
 	body := c.Body()
-	fmt.Printf("DEBUG: Raw request body: %s, app_id: %s\n", string(body), appID)
 	h.logger.Debug("Raw request body", zap.String("body", string(body)), zap.String("app_id", appID))
 
 	var req dto.SendNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
-		fmt.Printf("DEBUG: BodyParser error: %v\n", err)
 		h.logger.Error("Failed to parse notification request body",
 			zap.Error(err),
 			zap.String("body", string(body)),

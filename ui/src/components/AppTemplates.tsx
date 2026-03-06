@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { templatesAPI } from '../services/api';
-import type { Template, CreateTemplateRequest } from '../types';
+import type { Template, CreateTemplateRequest, TemplateVersion } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -8,6 +8,11 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Pagination } from './Pagination';
+import TemplateEditor from './TemplateEditor';
+import { SlidePanel } from './ui/slide-panel';
 import { toast } from 'sonner';
 
 interface AppTemplatesProps {
@@ -20,6 +25,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
+    const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(20);
+    const [totalCount, setTotalCount] = useState(0);
     const [formData, setFormData] = useState<CreateTemplateRequest>({
         app_id: appId,
         name: '',
@@ -38,17 +47,40 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     // Collapsed body state
     const [expandedBodies, setExpandedBodies] = useState<Record<string, boolean>>({});
 
+    // Library state
+    const [libraryTemplates, setLibraryTemplates] = useState<Template[]>([]);
+    const [libraryOpen, setLibraryOpen] = useState(false);
+    const [cloning, setCloning] = useState<string | null>(null);
+
+    // Slide panel state for rendered output
+    const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
+
+    // Version history state
+    const [versionHistoryTemplate, setVersionHistoryTemplate] = useState<Template | null>(null);
+    const [versions, setVersions] = useState<TemplateVersion[]>([]);
+    const [versionsLoading, setVersionsLoading] = useState(false);
+    const [savingVersion, setSavingVersion] = useState(false);
+
     useEffect(() => {
         if (apiKey) {
             fetchTemplates();
+        }
+    }, [apiKey, page]);
+
+    // Eagerly load library templates for sample_data fallback in preview
+    useEffect(() => {
+        if (apiKey) {
+            fetchLibrary();
         }
     }, [apiKey]);
 
     const fetchTemplates = async () => {
         setLoading(true);
         try {
-            const data = await templatesAPI.list(apiKey);
-            setTemplates(data || []);
+            const offset = (page - 1) * pageSize;
+            const result = await templatesAPI.list(apiKey, pageSize, offset);
+            setTemplates(result.templates || []);
+            setTotalCount(result.total || 0);
         } catch (error) {
             console.error('Failed to fetch templates:', error);
         } finally {
@@ -56,27 +88,59 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
+    const resetForm = () => {
+        setFormData({
+            app_id: appId,
+            name: '',
+            channel: 'email',
+            webhook_target: '',
+            subject: '',
+            body: '',
+            description: '',
+            variables: []
+        });
+        setEditingTemplate(null);
+        setVarInput('');
+    };
+
     const handleCreateTemplate = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await templatesAPI.create(apiKey, { ...formData, app_id: appId });
+            if (editingTemplate) {
+                await templatesAPI.update(apiKey, editingTemplate.id, {
+                    description: formData.description,
+                    webhook_target: formData.webhook_target,
+                    subject: formData.subject,
+                    body: formData.body,
+                    variables: formData.variables,
+                });
+                toast.success('Template updated successfully!');
+            } else {
+                await templatesAPI.create(apiKey, { ...formData, app_id: appId });
+                toast.success('Template created successfully!');
+            }
             setShowAddForm(false);
-            setFormData({
-                app_id: appId,
-                name: '',
-                channel: 'email',
-                webhook_target: '',
-                subject: '',
-                body: '',
-                description: '',
-                variables: []
-            });
+            resetForm();
             fetchTemplates();
-            toast.success('Template created successfully!');
         } catch (error) {
-            console.error('Failed to create template:', error);
-            toast.error('Failed to create template');
+            console.error('Failed to save template:', error);
+            toast.error(editingTemplate ? 'Failed to update template' : 'Failed to create template');
         }
+    };
+
+    const handleEditTemplate = (tmpl: Template) => {
+        setEditingTemplate(tmpl);
+        setFormData({
+            app_id: appId,
+            name: tmpl.name,
+            channel: tmpl.channel as any,
+            webhook_target: tmpl.webhook_target || '',
+            subject: tmpl.subject || '',
+            body: tmpl.body,
+            description: tmpl.description || '',
+            variables: tmpl.variables || [],
+        });
+        setShowAddForm(true);
     };
 
     const handleAddVariable = () => {
@@ -96,15 +160,62 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
+    const fetchLibrary = async () => {
+        try {
+            const res = await templatesAPI.getLibrary(apiKey);
+            setLibraryTemplates(res.templates || []);
+        } catch (error) {
+            console.error('Failed to fetch library:', error);
+            toast.error('Failed to load template library');
+        }
+    };
+
+    const handleCloneTemplate = async (name: string) => {
+        setCloning(name);
+        try {
+            await templatesAPI.cloneFromLibrary(apiKey, name);
+            toast.success(`Template "${name}" cloned successfully!`);
+            fetchTemplates();
+        } catch (error: any) {
+            const msg = error?.response?.data?.message || error?.message || 'Clone failed';
+            toast.error(msg);
+        } finally {
+            setCloning(null);
+        }
+    };
+
     const togglePreview = (tmplId: string) => {
         if (activePreviews[tmplId]) {
             const newPreviews = { ...activePreviews };
             delete newPreviews[tmplId];
             setActivePreviews(newPreviews);
         } else {
+            const tmpl = templates.find(t => t.id === tmplId);
+            let defaultData = '{}';
+            if (tmpl?.metadata?.sample_data) {
+                defaultData = JSON.stringify(tmpl.metadata.sample_data, null, 2);
+            } else if (tmpl?.name) {
+                // Fallback: look up sample_data from library template by name (for older clones missing metadata)
+                const libTmpl = libraryTemplates.find(lt => lt.name === tmpl.name);
+                if (libTmpl?.metadata?.sample_data) {
+                    defaultData = JSON.stringify(libTmpl.metadata.sample_data, null, 2);
+                } else if (tmpl.variables?.length) {
+                    const generated: Record<string, string> = {};
+                    for (const v of tmpl.variables) {
+                        generated[v] = v;
+                    }
+                    defaultData = JSON.stringify(generated, null, 2);
+                }
+            } else if (tmpl?.variables?.length) {
+                const generated: Record<string, string> = {};
+                for (const v of tmpl.variables) {
+                    generated[v] = v;
+                }
+                defaultData = JSON.stringify(generated, null, 2);
+            }
             setActivePreviews({
                 ...activePreviews,
-                [tmplId]: { data: '{}', rendered: '', loading: false }
+                [tmplId]: { data: defaultData, rendered: '', loading: false }
             });
         }
     };
@@ -132,6 +243,11 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 ...activePreviews,
                 [tmplId]: { ...preview, rendered: resp.rendered_body, loading: false }
             });
+            // Auto-open the slide panel with the rendered output
+            const tmpl = templates.find(t => t.id === tmplId);
+            if (tmpl) {
+                setSlidePreview({ templateId: tmplId, templateName: tmpl.name, channel: tmpl.channel });
+            }
         } catch (error) {
             console.error('Failed to render preview:', error);
             toast.error('Failed to render preview');
@@ -142,6 +258,57 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
+    const fetchVersionHistory = async (tmpl: Template) => {
+        setVersionHistoryTemplate(tmpl);
+        setVersionsLoading(true);
+        try {
+            const data = await templatesAPI.getVersions(apiKey, appId, tmpl.name);
+            setVersions(Array.isArray(data) ? data : (data as any)?.templates || []);
+        } catch (error) {
+            console.error('Failed to fetch versions:', error);
+            toast.error('Failed to load version history');
+            setVersions([]);
+        } finally {
+            setVersionsLoading(false);
+        }
+    };
+
+    const handleSaveVersion = async (tmpl: Template) => {
+        setSavingVersion(true);
+        try {
+            await templatesAPI.createVersion(apiKey, appId, tmpl.name, {
+                body: tmpl.body,
+                subject: tmpl.subject,
+                description: tmpl.description,
+                variables: tmpl.variables,
+            });
+            toast.success(`Version saved for "${tmpl.name}"`);
+            // Refresh templates to get the updated version number
+            fetchTemplates();
+        } catch (error: any) {
+            const msg = error?.response?.data?.error || 'Failed to save version';
+            toast.error(msg);
+        } finally {
+            setSavingVersion(false);
+        }
+    };
+
+    const handleRestoreVersion = async (ver: TemplateVersion) => {
+        if (!versionHistoryTemplate) return;
+        try {
+            await templatesAPI.update(apiKey, versionHistoryTemplate.id, {
+                body: ver.body,
+                subject: ver.subject,
+            });
+            toast.success(`Restored to version ${ver.version}`);
+            setVersionHistoryTemplate(null);
+            fetchTemplates();
+        } catch (error) {
+            console.error('Failed to restore version:', error);
+            toast.error('Failed to restore version');
+        }
+    };
+
     if (loading) return <div className="flex justify-center py-4">Loading templates...</div>;
 
     return (
@@ -149,16 +316,76 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <CardTitle>Notification Templates</CardTitle>
-                    <Button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                    >
-                        {showAddForm ? 'Cancel' : 'Create Template'}
-                    </Button>
+                    <div className="flex gap-2">
+                        <Dialog open={libraryOpen} onOpenChange={(open) => {
+                            setLibraryOpen(open);
+                            if (open) fetchLibrary();
+                        }}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline">Browse Library</Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                                <DialogHeader>
+                                    <DialogTitle>Template Library</DialogTitle>
+                                    <p className="text-sm text-muted-foreground">
+                                        Pre-built templates you can clone into your app. Customise after cloning.
+                                    </p>
+                                </DialogHeader>
+                                <div className="space-y-3 mt-4">
+                                    {libraryTemplates.length === 0 ? (
+                                        <p className="text-gray-500 text-center py-4">Loading...</p>
+                                    ) : (
+                                        libraryTemplates.map(t => (
+                                            <Card key={t.name} className="bg-gray-50">
+                                                <CardContent className="flex justify-between items-center p-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <p className="font-medium text-sm">{t.name}</p>
+                                                            <Badge variant="outline" className="text-xs">{t.channel}</Badge>
+                                                        </div>
+                                                        <p className="text-xs text-muted-foreground truncate">{t.description}</p>
+                                                        {t.variables && t.variables.length > 0 && (
+                                                            <p className="text-xs text-gray-400 mt-1">
+                                                                Variables: {t.variables.join(', ')}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="secondary"
+                                                        className="ml-3 shrink-0"
+                                                        disabled={cloning === t.name}
+                                                        onClick={() => handleCloneTemplate(t.name)}
+                                                    >
+                                                        {cloning === t.name ? 'Cloning...' : 'Clone'}
+                                                    </Button>
+                                                </CardContent>
+                                            </Card>
+                                        ))
+                                    )}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                        <Button
+                            onClick={() => {
+                                if (showAddForm) {
+                                    setShowAddForm(false);
+                                    resetForm();
+                                } else {
+                                    resetForm();
+                                    setShowAddForm(true);
+                                }
+                            }}
+                        >
+                            {showAddForm ? 'Cancel' : 'Create Template'}
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
                 {showAddForm && (
                     <form onSubmit={handleCreateTemplate} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                        <h4 className="text-lg font-semibold mb-2">{editingTemplate ? 'Edit Template' : 'Create Template'}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="templateName">Template Name</Label>
@@ -169,6 +396,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                     required
                                     placeholder="e.g. welcome_email"
+                                    disabled={!!editingTemplate}
+                                    className={editingTemplate ? 'bg-gray-100 cursor-not-allowed' : ''}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -176,6 +405,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                 <Select
                                     value={formData.channel}
                                     onValueChange={(value) => setFormData({ ...formData, channel: value as any })}
+                                    disabled={!!editingTemplate}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
@@ -225,30 +455,25 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="body">Body / Content</Label>
-                            <Textarea
-                                id="body"
-                                className="min-h-[150px] font-mono"
-                                value={formData.body}
-                                onChange={(e) => {
-                                    // Simple regex to auto-detect variables like {{.var_name}}
-                                    const newBody = e.target.value;
+                            <TemplateEditor
+                                content={formData.body}
+                                onChange={(newBody) => {
+                                    // Auto-detect variables like {{.var_name}}
                                     const regex = /{{\s*\.?(\w+)\s*}}/g;
                                     const matches = new Set<string>();
                                     let match;
                                     while ((match = regex.exec(newBody)) !== null) {
                                         if (match[1]) matches.add(match[1]);
                                     }
-                                    // Combine custom added vars with auto-detected ones
                                     const currentVars = new Set(formData.variables || []);
                                     for (const m of matches) currentVars.add(m);
-
                                     setFormData({
                                         ...formData,
                                         body: newBody,
                                         variables: Array.from(currentVars)
                                     });
                                 }}
-                                required
+                                channel={formData.channel}
                                 placeholder="Hello {{.name}}, welcome!"
                             />
                             <p className="text-xs text-gray-500">
@@ -288,7 +513,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                             </div>
                         </div>
                         <div className="flex justify-end mt-6">
-                            <Button type="submit">Create Template</Button>
+                            <Button type="submit">{editingTemplate ? 'Update Template' : 'Create Template'}</Button>
                         </div>
                     </form>
                 )}
@@ -305,9 +530,19 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             <h4 className="text-lg font-semibold text-blue-600 mb-1">{tmpl.name}</h4>
                                             <p className="text-sm text-gray-500">{tmpl.description || 'No description'}</p>
                                         </div>
-                                        <Badge variant="outline" className="text-xs uppercase bg-gray-50 text-blue-600 border-blue-600">
-                                            {tmpl.channel}
-                                        </Badge>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-xs text-gray-500 h-6 px-2"
+                                                onClick={() => fetchVersionHistory(tmpl)}
+                                            >
+                                                v{tmpl.version} · History
+                                            </Button>
+                                            <Badge variant="outline" className="text-xs uppercase bg-gray-50 text-blue-600 border-blue-600">
+                                                {tmpl.channel}
+                                            </Badge>
+                                        </div>
                                     </div>
 
                                     {tmpl.channel === 'webhook' && (
@@ -316,28 +551,30 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         </div>
                                     )}
 
-                                    <div
-                                        className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200 cursor-pointer relative group transition-colors hover:bg-gray-100"
-                                        onClick={() => {
-                                            setExpandedBodies(prev => ({
-                                                ...prev,
-                                                [tmpl.id]: !prev[tmpl.id]
-                                            }));
-                                        }}
-                                        title="Click to expand/collapse"
-                                    >
+                                    <div className="mb-4 bg-gray-50 p-4 rounded border border-dashed border-gray-200 relative">
                                         <div className="flex justify-between items-center mb-2">
                                             <div className="text-xs text-gray-500 font-semibold">TEMPLATE BODY</div>
-                                            <div className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                                                {expandedBodies[tmpl.id] ? 'COLLAPSE' : 'EXPAND'}
-                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-[11px] h-6 px-2 text-blue-600 font-bold"
+                                                onClick={() => {
+                                                    setExpandedBodies(prev => ({
+                                                        ...prev,
+                                                        [tmpl.id]: !prev[tmpl.id]
+                                                    }));
+                                                }}
+                                            >
+                                                {expandedBodies[tmpl.id] ? '▲ Collapse' : '▼ Expand'}
+                                            </Button>
                                         </div>
                                         <div style={{
                                             maxHeight: expandedBodies[tmpl.id] ? 'none' : '60px',
                                             overflow: 'hidden',
                                             transition: 'max-height 0.3s ease-in-out'
                                         }}>
-                                            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0">{tmpl.body}</pre>
+                                            <pre className="whitespace-pre-wrap font-mono text-sm text-gray-900 m-0 select-text">{tmpl.body}</pre>
                                         </div>
                                         {!expandedBodies[tmpl.id] && (
                                             <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-50 to-transparent pointer-events-none rounded-b" />
@@ -357,6 +594,21 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
                                             </Button>
                                             <Button
+                                                onClick={() => handleSaveVersion(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={savingVersion}
+                                            >
+                                                {savingVersion ? 'Saving...' : 'Save Version'}
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleEditTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                            >
+                                                Edit
+                                            </Button>
+                                            <Button
                                                 onClick={() => handleDeleteTemplate(tmpl.id)}
                                                 variant="destructive"
                                                 size="sm"
@@ -368,31 +620,55 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
 
                                     {activePreviews[tmpl.id] && (
                                         <div className="mt-4 border-t border-gray-200 pt-4">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <div className="text-xs text-gray-500 font-semibold mb-2">PREVIEW DATA (JSON)</div>
-                                                    <Textarea
-                                                        className="h-[100px] font-mono text-xs"
-                                                        value={activePreviews[tmpl.id].data}
-                                                        onChange={(e) => setActivePreviews({
-                                                            ...activePreviews,
-                                                            [tmpl.id]: { ...activePreviews[tmpl.id], data: e.target.value }
-                                                        })}
-                                                        placeholder='{"name": "Jack"}'
-                                                    />
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="text-xs text-gray-500 font-semibold">PREVIEW DATA (JSON)</div>
                                                     <Button
-                                                        className="w-full text-xs"
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-xs h-6 px-2"
+                                                        onClick={() => {
+                                                            try {
+                                                                const formatted = JSON.stringify(JSON.parse(activePreviews[tmpl.id].data), null, 2);
+                                                                setActivePreviews({
+                                                                    ...activePreviews,
+                                                                    [tmpl.id]: { ...activePreviews[tmpl.id], data: formatted }
+                                                                });
+                                                            } catch {
+                                                                // Invalid JSON — leave as-is
+                                                            }
+                                                        }}
+                                                    >
+                                                        Format JSON
+                                                    </Button>
+                                                </div>
+                                                <Textarea
+                                                    className="h-[120px] font-mono text-xs"
+                                                    value={activePreviews[tmpl.id].data}
+                                                    onChange={(e) => setActivePreviews({
+                                                        ...activePreviews,
+                                                        [tmpl.id]: { ...activePreviews[tmpl.id], data: e.target.value }
+                                                    })}
+                                                    placeholder='{"name": "Jack"}'
+                                                />
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        className="flex-1 text-xs"
                                                         onClick={() => handleRenderPreview(tmpl.id)}
                                                         disabled={activePreviews[tmpl.id].loading}
                                                     >
                                                         {activePreviews[tmpl.id].loading ? 'Rendering...' : 'Render Preview'}
                                                     </Button>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <div className="text-xs text-gray-500 font-semibold mb-2">RENDERED OUTPUT</div>
-                                                    <div className="bg-gray-50 h-[100px] p-3 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900">
-                                                        {activePreviews[tmpl.id].rendered || <span className="text-gray-400 italic">Click Render to see output...</span>}
-                                                    </div>
+                                                    {activePreviews[tmpl.id].rendered && (
+                                                        <Button
+                                                            variant="outline"
+                                                            className="text-xs"
+                                                            onClick={() => setSlidePreview({ templateId: tmpl.id, templateName: tmpl.name, channel: tmpl.channel })}
+                                                        >
+                                                            View Output →
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -402,6 +678,105 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         ))}
                     </div>
                 )}
+
+                <Pagination
+                    currentPage={page}
+                    totalItems={totalCount}
+                    pageSize={pageSize}
+                    onPageChange={setPage}
+                />
+
+                {/* Rendered Output Slide Panel */}
+                <SlidePanel
+                    open={!!slidePreview}
+                    onClose={() => setSlidePreview(null)}
+                    title={slidePreview ? `Rendered: ${slidePreview.templateName}` : 'Preview'}
+                >
+                    {slidePreview && activePreviews[slidePreview.templateId]?.rendered ? (
+                        slidePreview.channel === 'email' ? (
+                            <iframe
+                                srcDoc={activePreviews[slidePreview.templateId].rendered}
+                                sandbox=""
+                                className="w-full border rounded bg-white"
+                                style={{ height: 'calc(100vh - 120px)' }}
+                                title="Rendered Preview"
+                            />
+                        ) : (
+                            <div className="bg-gray-50 min-h-[200px] p-4 rounded border border-gray-200 overflow-y-auto text-sm text-gray-900 whitespace-pre-wrap">
+                                {activePreviews[slidePreview.templateId].rendered}
+                            </div>
+                        )
+                    ) : (
+                        <div className="flex items-center justify-center h-40 text-gray-400 italic">
+                            No rendered output yet. Click "Render Preview" first.
+                        </div>
+                    )}
+                </SlidePanel>
+
+                {/* Version History Dialog */}
+                <Dialog open={!!versionHistoryTemplate} onOpenChange={(open) => { if (!open) setVersionHistoryTemplate(null); }}>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle>Version History: {versionHistoryTemplate?.name}</DialogTitle>
+                        </DialogHeader>
+                        {versionsLoading ? (
+                            <p className="text-gray-500 text-center py-4">Loading versions...</p>
+                        ) : versions.length === 0 ? (
+                            <p className="text-gray-500 text-center py-4">No version history found.</p>
+                        ) : (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Version</TableHead>
+                                        <TableHead>Created At</TableHead>
+                                        <TableHead>Subject</TableHead>
+                                        <TableHead>Actions</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {versions.map(v => (
+                                        <TableRow key={v.id}>
+                                            <TableCell>
+                                                <Badge variant="outline" className="text-xs">v{v.version}</Badge>
+                                            </TableCell>
+                                            <TableCell className="text-sm text-gray-500">
+                                                {v.created_at ? new Date(v.created_at).toLocaleString() : '—'}
+                                            </TableCell>
+                                            <TableCell className="text-sm text-gray-700 truncate max-w-[200px]">
+                                                {v.subject || '—'}
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex gap-2">
+                                                    <Dialog>
+                                                        <DialogTrigger asChild>
+                                                            <Button variant="ghost" size="sm" className="text-xs">Preview</Button>
+                                                        </DialogTrigger>
+                                                        <DialogContent className="max-w-xl">
+                                                            <DialogHeader>
+                                                                <DialogTitle>Version {v.version} Preview</DialogTitle>
+                                                            </DialogHeader>
+                                                            <div className="bg-gray-50 p-4 rounded border max-h-[400px] overflow-auto">
+                                                                <pre className="whitespace-pre-wrap text-sm font-mono">{v.body}</pre>
+                                                            </div>
+                                                        </DialogContent>
+                                                    </Dialog>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-xs text-blue-600"
+                                                        onClick={() => handleRestoreVersion(v)}
+                                                    >
+                                                        Restore
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                    </DialogContent>
+                </Dialog>
             </CardContent>
         </Card>
     );

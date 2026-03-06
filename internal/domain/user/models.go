@@ -9,6 +9,7 @@ import (
 type User struct {
 	UserID      string      `json:"user_id" es:"user_id"`
 	AppID       string      `json:"app_id" es:"app_id"`
+	ExternalID  string      `json:"external_id,omitempty" es:"external_id"`
 	Email       string      `json:"email,omitempty" es:"email"`
 	Phone       string      `json:"phone,omitempty" es:"phone"`
 	Timezone    string      `json:"timezone,omitempty" es:"timezone"`
@@ -67,7 +68,7 @@ type UserFilter struct {
 type Repository interface {
 	Create(ctx context.Context, user *User) error
 	GetByID(ctx context.Context, id string) (*User, error)
-
+	GetByExternalID(ctx context.Context, appID, externalID string) (*User, error)
 	GetByEmail(ctx context.Context, appID, email string) (*User, error)
 	Update(ctx context.Context, user *User) error
 	List(ctx context.Context, filter UserFilter) ([]*User, error)
@@ -94,6 +95,7 @@ type Service interface {
 // CreateRequest represents a request to create a user
 type CreateRequest struct {
 	AppID       string      `json:"app_id" validate:"required"`
+	ExternalID  string      `json:"external_id,omitempty"`
 	Email       string      `json:"email,omitempty" validate:"omitempty,email"`
 	Phone       string      `json:"phone,omitempty"`
 	Timezone    string      `json:"timezone,omitempty"`
@@ -104,6 +106,7 @@ type CreateRequest struct {
 
 // UpdateRequest represents a request to update a user
 type UpdateRequest struct {
+	ExternalID  *string      `json:"external_id,omitempty"`
 	Email       *string      `json:"email,omitempty" validate:"omitempty,email"`
 	Phone       *string      `json:"phone,omitempty"`
 	Timezone    *string      `json:"timezone,omitempty"`

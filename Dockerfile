@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Build stage
 FROM golang:1.24-alpine AS builder
 
@@ -7,18 +9,30 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Set working directory
 WORKDIR /app
 
-# Copy go mod files
+# Copy go mod files first (for better layer caching)
 COPY go.mod go.sum ./
 
-# Download dependencies with parallel downloads
-RUN go mod download
+# Download dependencies with a persistent cache mount so modules
+# are shared across rebuilds and survive layer invalidation.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-w -s' -o server ./cmd/server
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-w -s' -o worker ./cmd/worker
+# Build binaries with optimizations for production.
+# Cache mounts persist the Go module and build caches across builds —
+# shared packages are compiled once and reused on subsequent builds.
+# GOMAXPROCS=4 prevents OOM from unbounded parallel compilation.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
+    -ldflags='-w -s' -o server ./cmd/server
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
+    -ldflags='-w -s' -o worker ./cmd/worker
 
 # Final stage
 FROM alpine:latest

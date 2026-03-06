@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/seed"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
@@ -229,7 +230,7 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	return c.JSON(toTemplateResponse(tmpl))
 }
 
-// DeleteTemplate deletes a template (soft delete)
+// DeleteTemplate permanently removes a template.
 func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -386,6 +387,59 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(responses)
+}
+
+// GetLibrary returns the pre-built template library.
+func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"templates": seed.LibraryTemplates,
+	})
+}
+
+// CloneFromLibrary clones a library template into the user's app.
+func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	name := c.Params("name")
+
+	var source *template.Template
+	for i := range seed.LibraryTemplates {
+		if seed.LibraryTemplates[i].Name == name {
+			source = &seed.LibraryTemplates[i]
+			break
+		}
+	}
+	if source == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error":   "Library template not found",
+			"message": "No library template with name: " + name,
+		})
+	}
+
+	createReq := &template.CreateRequest{
+		AppID:       appID,
+		Name:        source.Name,
+		Description: source.Description,
+		Channel:     source.Channel,
+		Subject:     source.Subject,
+		Body:        source.Body,
+		Variables:   source.Variables,
+		Metadata:    source.Metadata,
+		Locale:      source.Locale,
+		CreatedBy:   "library:clone",
+	}
+
+	tmpl, err := h.service.Create(c.Context(), createReq)
+	if err != nil {
+		h.logger.Error("Failed to clone library template",
+			zap.String("name", name),
+			zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error":   "Failed to clone template",
+			"message": err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(toTemplateResponse(tmpl))
 }
 
 // Helper function to convert template to response

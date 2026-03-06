@@ -61,7 +61,6 @@ dist/
 tmp/
 
 # Docker
-.dockerignore
 docker-compose.override.yml
 
 # Local development files

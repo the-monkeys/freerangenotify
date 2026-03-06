@@ -4,21 +4,24 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"go.uber.org/zap"
 )
 
 // AdminHandler handles administrative HTTP requests
 type AdminHandler struct {
-	queue  queue.Queue
-	logger *zap.Logger
+	queue           queue.Queue
+	providerManager *providers.Manager
+	logger          *zap.Logger
 }
 
 // NewAdminHandler creates a new AdminHandler
-func NewAdminHandler(q queue.Queue, logger *zap.Logger) *AdminHandler {
+func NewAdminHandler(q queue.Queue, pm *providers.Manager, logger *zap.Logger) *AdminHandler {
 	return &AdminHandler{
-		queue:  q,
-		logger: logger,
+		queue:           q,
+		providerManager: pm,
+		logger:          logger,
 	}
 }
 
@@ -73,5 +76,20 @@ func (h *AdminHandler) ReplayDLQ(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"replayed_count": count,
+	})
+}
+
+// GetProviderHealth handles GET /v1/admin/providers/health
+func (h *AdminHandler) GetProviderHealth(c *fiber.Ctx) error {
+	if h.providerManager == nil {
+		return c.JSON(fiber.Map{
+			"providers": fiber.Map{},
+			"message":   "Provider manager not available (API server only)",
+		})
+	}
+
+	health := h.providerManager.HealthStatus()
+	return c.JSON(fiber.Map{
+		"providers": health,
 	})
 }

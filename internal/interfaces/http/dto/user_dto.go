@@ -5,6 +5,7 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/user"
 // CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
 	UserID      string            `json:"user_id" validate:"omitempty"`
+	ExternalID  string            `json:"external_id" validate:"omitempty"`
 	Email       string            `json:"email" validate:"omitempty,email"`
 	Phone       string            `json:"phone" validate:"omitempty"`
 	Timezone    string            `json:"timezone" validate:"omitempty"`
@@ -15,6 +16,7 @@ type CreateUserRequest struct {
 
 // UpdateUserRequest represents a request to update a user
 type UpdateUserRequest struct {
+	ExternalID  string            `json:"external_id" validate:"omitempty"`
 	Email       string            `json:"email" validate:"omitempty,email"`
 	Phone       string            `json:"phone" validate:"omitempty"`
 	Timezone    string            `json:"timezone" validate:"omitempty"`
@@ -44,6 +46,7 @@ type UpdatePreferencesRequest struct {
 type UserResponse struct {
 	UserID      string           `json:"user_id"`
 	AppID       string           `json:"app_id"`
+	ExternalID  string           `json:"external_id,omitempty"`
 	Email       string           `json:"email,omitempty"`
 	Phone       string           `json:"phone,omitempty"`
 	Timezone    string           `json:"timezone,omitempty"`
@@ -76,6 +79,7 @@ func ToUserResponse(u *user.User) UserResponse {
 	return UserResponse{
 		UserID:      u.UserID,
 		AppID:       u.AppID,
+		ExternalID:  u.ExternalID,
 		Email:       u.Email,
 		Phone:       u.Phone,
 		Timezone:    u.Timezone,
@@ -86,4 +90,23 @@ func ToUserResponse(u *user.User) UserResponse {
 		CreatedAt:   u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:   u.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+}
+
+// BulkCreateUserRequest represents a request to create multiple users at once.
+type BulkCreateUserRequest struct {
+	Users []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
+}
+
+// BulkCreateUserResponse is the response for bulk user creation.
+type BulkCreateUserResponse struct {
+	Created int             `json:"created"`
+	Total   int             `json:"total"`
+	Errors  []BulkUserError `json:"errors,omitempty"`
+}
+
+// BulkUserError describes a single failure in a bulk user creation.
+type BulkUserError struct {
+	Index   int    `json:"index"`
+	Email   string `json:"email,omitempty"`
+	Message string `json:"message"`
 }

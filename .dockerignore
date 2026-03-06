@@ -1,0 +1,70 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+documents/
+
+*.md
+README.md
+CHANGELOG.md
+
+# Tests
+tests/
+*_test.go
+test-*.ps1
+scripts/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+main.exe
+server.exe
+worker.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Dependencies (for Go, we copy go.mod/go.sum separately)
+vendor/
+
+# UI/Frontend & SDKs (not needed for Go build)
+ui/
+sdk/
+test-sse-client/
+examples/
+node_modules/
+
+# Tools & local files
+tools/
+local/
+
+# Deployments & Infrastructure
+deployments/
+docker-compose*.yml
+Dockerfile*
+Makefile
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db

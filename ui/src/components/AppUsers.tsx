@@ -7,7 +7,29 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Pagination } from './Pagination';
 import { toast } from 'sonner';
+
+const TIMEZONES = [
+    'UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
+    'America/Los_Angeles', 'America/Toronto', 'Europe/London',
+    'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai',
+    'Asia/Kolkata', 'Asia/Dubai', 'Australia/Sydney', 'Pacific/Auckland',
+];
+
+const LANGUAGES = [
+    { code: 'en', label: 'English' },
+    { code: 'es', label: 'Spanish' },
+    { code: 'fr', label: 'French' },
+    { code: 'de', label: 'German' },
+    { code: 'pt', label: 'Portuguese' },
+    { code: 'zh', label: 'Chinese' },
+    { code: 'ja', label: 'Japanese' },
+    { code: 'ko', label: 'Korean' },
+    { code: 'ar', label: 'Arabic' },
+    { code: 'hi', label: 'Hindi' },
+];
 
 interface AppUsersProps {
     apiKey: string;
@@ -18,8 +40,12 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingUser, setEditingUser] = useState<string | null>(null);
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(20);
+    const [totalCount, setTotalCount] = useState(0);
     const [formData, setFormData] = useState<CreateUserRequest>({
         email: '',
+        phone: '',
         timezone: 'UTC',
         language: 'en',
         preferences: {
@@ -38,13 +64,14 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
 
     useEffect(() => {
         fetchUsers();
-    }, [apiKey]);
+    }, [apiKey, page]);
 
     const fetchUsers = async () => {
         setLoading(true);
         try {
-            const data = await usersAPI.list(apiKey);
-            setUsers(data);
+            const result = await usersAPI.list(apiKey, page, pageSize);
+            setUsers(result.users);
+            setTotalCount(result.total_count);
         } catch (error) {
             console.error('Failed to fetch users:', error);
         } finally {
@@ -59,6 +86,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 // Update
                 const updatePayload: any = {
                     email: formData.email,
+                    phone: formData.phone,
                     timezone: formData.timezone,
                     language: formData.language,
                     preferences: formData.preferences,
@@ -72,6 +100,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             setShowAddForm(false);
             setFormData({
                 email: '',
+                phone: '',
                 timezone: 'UTC',
                 language: 'en',
                 preferences: {
@@ -100,6 +129,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         setFormData({
             user_id: user.user_id,
             email: user.email,
+            phone: user.phone || '',
             timezone: user.timezone || 'UTC',
             language: user.language || 'en',
             preferences: {
@@ -138,6 +168,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 setEditingUser(null);
                                 setFormData({
                                     email: '',
+                                    phone: '',
                                     timezone: 'UTC',
                                     language: 'en',
                                     preferences: {
@@ -193,24 +224,46 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="language">Language</Label>
+                                <Label htmlFor="phone">Phone Number</Label>
                                 <Input
-                                    id="language"
-                                    type="text"
-                                    value={formData.language || ''}
-                                    onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                                    placeholder="en"
+                                    id="phone"
+                                    type="tel"
+                                    value={formData.phone || ''}
+                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                    placeholder="+1 555 0100"
                                 />
                             </div>
                             <div className="space-y-2">
+                                <Label htmlFor="language">Language</Label>
+                                <Select
+                                    value={formData.language || 'en'}
+                                    onValueChange={(v) => setFormData({ ...formData, language: v })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {LANGUAGES.map(l => (
+                                            <SelectItem key={l.code} value={l.code}>{l.label} ({l.code})</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="space-y-2">
                                 <Label htmlFor="timezone">Timezone</Label>
-                                <Input
-                                    id="timezone"
-                                    type="text"
-                                    value={formData.timezone || ''}
-                                    onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-                                    placeholder="UTC"
-                                />
+                                <Select
+                                    value={formData.timezone || 'UTC'}
+                                    onValueChange={(v) => setFormData({ ...formData, timezone: v })}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {TIMEZONES.map(tz => (
+                                            <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             <div className="col-span-full space-y-3">
@@ -340,6 +393,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Email</TableHead>
+                                    <TableHead>Phone</TableHead>
                                     <TableHead>Language</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
@@ -348,6 +402,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 {users.map((user) => (
                                     <TableRow key={user.user_id}>
                                         <TableCell>{user.email || '-'}</TableCell>
+                                        <TableCell>{user.phone || '-'}</TableCell>
                                         <TableCell>{user.language || 'en'}</TableCell>
                                         <TableCell>
                                             <button
@@ -369,6 +424,12 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                         </Table>
                     </div>
                 )}
+                <Pagination
+                    currentPage={page}
+                    totalItems={totalCount}
+                    pageSize={pageSize}
+                    onPageChange={setPage}
+                />
             </CardContent>
         </Card>
     );

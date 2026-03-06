@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { applicationsAPI } from '../services/api';
+import { applicationsAPI, templatesAPI, usersAPI } from '../services/api';
 import type { Application, ApplicationSettings } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
+import SetupWizard from '../components/SetupWizard';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -34,11 +35,31 @@ const AppDetail: React.FC = () => {
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [showWizard, setShowWizard] = useState(false);
 
 
     useEffect(() => {
         if (id) fetchAppDetails();
     }, [id]);
+
+    // Detect new apps with no templates and no users → show setup wizard
+    useEffect(() => {
+        if (!app?.api_key) return;
+        const checkNewApp = async () => {
+            try {
+                const [tpls, users] = await Promise.all([
+                    templatesAPI.list(app.api_key).catch(() => ({ templates: [] })),
+                    usersAPI.list(app.api_key).catch(() => ({ users: [] })),
+                ]);
+                if ((!tpls.templates || tpls.templates.length === 0) && (!users.users || users.users.length === 0)) {
+                    setShowWizard(true);
+                }
+            } catch {
+                // ignore — wizard is optional
+            }
+        };
+        checkNewApp();
+    }, [app?.api_key]);
 
     const fetchAppDetails = async () => {
         setLoading(true);
@@ -127,6 +148,16 @@ const AppDetail: React.FC = () => {
                 </div>
             </div>
 
+            {showWizard ? (
+                <SetupWizard
+                    appId={app.app_id}
+                    apiKey={app.api_key}
+                    onComplete={() => {
+                        setShowWizard(false);
+                        fetchAppDetails();
+                    }}
+                />
+            ) : (<>
             {/* Tabs */}
             <div className="flex border-b border-gray-200 mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
                 {(['overview', 'users', 'templates', 'notifications', 'settings', 'integration'] as const).map((tab) => (
@@ -845,6 +876,7 @@ const AppDetail: React.FC = () => {
                     </Card>
                 </div>
             )}
+            </>)}
         </div>
     );
 };

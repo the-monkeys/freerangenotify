@@ -299,7 +299,7 @@ func (n *Notification) IsScheduled() bool {
 type SendRequest struct {
 	AppID       string                 `json:"app_id" validate:"required"`
 	UserID      string                 `json:"user_id"` // Removed validate:"required"
-	Channel     Channel                `json:"channel" validate:"required"`
+	Channel     Channel                `json:"channel"`  // Optional: inferred from template if empty
 	Priority    Priority               `json:"priority" validate:"required"`
 	Title       string                 `json:"title,omitempty"`
 	Body        string                 `json:"body,omitempty"`
@@ -317,14 +317,6 @@ func (r *SendRequest) Validate() error {
 	}
 	// Conditional UserID validation
 	if r.UserID == "" {
-		// DEBUG PRINT
-		// fmt.Printf("DEBUG VALIDATE: UserID='%s', Channel='%s', Data=%v\n", r.UserID, r.Channel, r.Data)
-		// We need to import "fmt" if we use it, causing import error if not present.
-		// models.go imports "context" and "time".
-		// Better to not break build.
-		// Use logger? Models doesn't have logger.
-		// Let's rely on logic inspection again.
-
 		if r.Channel != ChannelWebhook {
 			return ErrInvalidUserID
 		}
@@ -341,11 +333,15 @@ func (r *SendRequest) Validate() error {
 		}
 
 		if !hasURL && !hasTarget && r.TemplateID == "" {
-			return ErrInvalidUserID // Needs UserID or Webhook URL or Webhook Target or Template to resolve it
+			return ErrInvalidUserID
 		}
 	}
 
-	if !r.Channel.Valid() {
+	// Channel is optional when TemplateID is present (inferred from template in service layer)
+	if r.Channel != "" && !r.Channel.Valid() {
+		return ErrInvalidChannel
+	}
+	if r.Channel == "" && r.TemplateID == "" {
 		return ErrInvalidChannel
 	}
 	if !r.Priority.Valid() {
