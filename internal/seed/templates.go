@@ -311,7 +311,7 @@ var LibraryTemplates = []template.Template{
 			"events_title", "events_body", "events_image_url", "events_url",
 			"support_title", "support_body", "support_image_url", "support_url",
 			"sponsor_title", "sponsor_body", "sponsor_image_url",
-			"address", "image_URL", "logo_url",
+			"address",
 			"about_url", "blog_url",
 			"github_url", "discord_url", "telegram_url", "instagram_url",
 			"preheader_text",
@@ -352,8 +352,7 @@ var LibraryTemplates = []template.Template{
 				"sponsor_body":         "Partner with us to reach an engaged audience. Sponsors enjoy premium placement, brand visibility, and exclusive member benefits.",
 				"sponsor_image_url":    "https://d1oco4z2z1fhwp.cloudfront.net/templates/default/1736/WED_sponsor.png",
 				"address":              "Muzaffarpur, Bihar<br>India<br><br> Email: admin@monkeys.com.co",
-				"image_URL":            "https://raw.githubusercontent.com/the-monkeys/the_monkeys/main/apps/the_monkeys/public/logo-brand.svg",
-				"logo_url":             "https://monkeys.com.co",
+
 				"about_url":            "https://monkeys.com.co/about",
 				"blog_url":             "https://monkeys.com.co",
 				"github_url":           "https://github.com/the-monkeys",

@@ -126,3 +126,10 @@ main
 # Local planning documents
 PHASE2_IMPLEMENTATION_PLAN.md
 local/*
+
+# Production deploy folder — contains .env with secrets
+deploy/
+
+# Scratch files
+abc.json
+ui/a.json
