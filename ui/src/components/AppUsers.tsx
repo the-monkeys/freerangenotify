@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
+import { extractErrorMessage } from '../lib/utils';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -123,7 +124,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             toast.success(editingUser ? 'User updated successfully!' : 'User created successfully!');
         } catch (error) {
             console.error('Failed to save user:', error);
-            toast.error('Failed to save user');
+            toast.error(extractErrorMessage(error, 'Failed to save user'));
         }
     };
 
@@ -160,6 +161,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             fetchUsers();
         } catch (error) {
             console.error('Failed to delete user:', error);
+            toast.error(extractErrorMessage(error, 'Failed to delete user'));
         }
     };
 

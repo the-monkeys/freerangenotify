@@ -80,6 +80,9 @@ func (e *AppError) IsRetryable() bool {
 
 // GetHTTPStatus returns the appropriate HTTP status code
 func (e *AppError) GetHTTPStatus() int {
+	if e.Code == string(ErrCodeForbidden) {
+		return 403
+	}
 	switch e.Category {
 	case CategoryValidation:
 		return 400

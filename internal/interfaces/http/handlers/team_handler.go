@@ -20,9 +20,12 @@ func NewTeamHandler(service auth.TeamService, appRepo application.Repository, lo
 	return &TeamHandler{service: service, appRepo: appRepo, logger: logger}
 }
 
-// verifyAppOwnership checks the JWT user owns the app referenced by :app_id.
-func (h *TeamHandler) verifyAppOwnership(c *fiber.Ctx) (string, string, error) {
-	appID := c.Params("app_id")
+// extractTeamContext reads and validates the app_id and user_id from the
+// request context. Permission checks are handled by the RequirePermission
+// middleware on the route group, so the handler trusts that the caller has
+// the PermManageMembers permission by the time it runs.
+func (h *TeamHandler) extractTeamContext(c *fiber.Ctx) (appID, userID string, err error) {
+	appID = c.Params("app_id")
 	if appID == "" {
 		return "", "", errors.BadRequest("app_id is required")
 	}
@@ -32,21 +35,13 @@ func (h *TeamHandler) verifyAppOwnership(c *fiber.Ctx) (string, string, error) {
 		return "", "", errors.Unauthorized("authentication required")
 	}
 
-	app, err := h.appRepo.GetByID(c.Context(), appID)
-	if err != nil {
-		return "", "", errors.NotFound("application", appID)
-	}
-	if app.AdminUserID != userID {
-		return "", "", errors.Forbidden("you do not own this application")
-	}
-
 	return appID, userID, nil
 }
 
 // InviteMember adds a new member to the application.
 // POST /v1/apps/:app_id/team
 func (h *TeamHandler) InviteMember(c *fiber.Ctx) error {
-	appID, userID, err := h.verifyAppOwnership(c)
+	appID, userID, err := h.extractTeamContext(c)
 	if err != nil {
 		return err
 	}
@@ -56,7 +51,15 @@ func (h *TeamHandler) InviteMember(c *fiber.Ctx) error {
 		return errors.BadRequest("invalid request body")
 	}
 
-	membership, err := h.service.InviteMember(c.Context(), appID, &req, userID)
+	// Fetch the app to get the name for the invitation email
+	appName := appID
+	if h.appRepo != nil {
+		if app, aErr := h.appRepo.GetByID(c.Context(), appID); aErr == nil {
+			appName = app.AppName
+		}
+	}
+
+	membership, err := h.service.InviteMember(c.Context(), appID, &req, userID, appName)
 	if err != nil {
 		return errors.BadRequest(err.Error())
 	}
@@ -67,7 +70,7 @@ func (h *TeamHandler) InviteMember(c *fiber.Ctx) error {
 // ListMembers returns all members of an application.
 // GET /v1/apps/:app_id/team
 func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
-	appID, _, err := h.verifyAppOwnership(c)
+	appID, _, err := h.extractTeamContext(c)
 	if err != nil {
 		return err
 	}
@@ -86,7 +89,7 @@ func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
 // UpdateRole changes a member's role.
 // PUT /v1/apps/:app_id/team/:membership_id
 func (h *TeamHandler) UpdateRole(c *fiber.Ctx) error {
-	appID, _, err := h.verifyAppOwnership(c)
+	appID, _, err := h.extractTeamContext(c)
 	if err != nil {
 		return err
 	}
@@ -112,7 +115,7 @@ func (h *TeamHandler) UpdateRole(c *fiber.Ctx) error {
 // RemoveMember removes a member from the application.
 // DELETE /v1/apps/:app_id/team/:membership_id
 func (h *TeamHandler) RemoveMember(c *fiber.Ctx) error {
-	appID, _, err := h.verifyAppOwnership(c)
+	appID, _, err := h.extractTeamContext(c)
 	if err != nil {
 		return err
 	}

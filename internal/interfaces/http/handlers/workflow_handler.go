@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
@@ -14,7 +15,10 @@ type WorkflowHandler struct {
 	service   workflow.Service
 	validator *validator.Validator
 	logger    *zap.Logger
+	linkRepo  resourcelink.Repository
 }
+
+func (h *WorkflowHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 // NewWorkflowHandler creates a new workflow handler.
 func NewWorkflowHandler(service workflow.Service, v *validator.Validator, logger *zap.Logger) *WorkflowHandler {
@@ -72,6 +76,18 @@ func (h *WorkflowHandler) List(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	// Merge linked workflows from other apps
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeWorkflow)
+		for _, srcAppID := range linkedAppIDs {
+			linked, linkedTotal, lErr := h.service.List(c.Context(), srcAppID, envID, limit, 0)
+			if lErr == nil {
+				workflows = append(workflows, linked...)
+				total += linkedTotal
+			}
+		}
 	}
 
 	return c.JSON(fiber.Map{

@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
@@ -14,7 +15,10 @@ type TopicHandler struct {
 	service   topic.Service
 	validator *validator.Validator
 	logger    *zap.Logger
+	linkRepo  resourcelink.Repository
 }
+
+func (h *TopicHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 // NewTopicHandler creates a new topic handler.
 func NewTopicHandler(service topic.Service, v *validator.Validator, logger *zap.Logger) *TopicHandler {
@@ -72,6 +76,17 @@ func (h *TopicHandler) List(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeTopic)
+		for _, srcAppID := range linkedAppIDs {
+			linked, linkedTotal, lErr := h.service.List(c.Context(), srcAppID, envID, limit, 0)
+			if lErr == nil {
+				topics = append(topics, linked...)
+				total += linkedTotal
+			}
+		}
 	}
 
 	return c.JSON(fiber.Map{

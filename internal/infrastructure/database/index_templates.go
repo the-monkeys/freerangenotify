@@ -851,6 +851,41 @@ func (it *IndexTemplates) GetEnvironmentsTemplate() map[string]interface{} {
 	}
 }
 
+// GetResourceLinksTemplate returns the Elasticsearch mapping for app_resource_links index.
+func (it *IndexTemplates) GetResourceLinksTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"link_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"target_app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"source_app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource_type": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"linked_by": map[string]interface{}{
+					"type": "keyword",
+				},
+				"linked_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
 // GetAppMembershipsTemplate returns the Elasticsearch mapping for app_memberships index.
 func (it *IndexTemplates) GetAppMembershipsTemplate() map[string]interface{} {
 	return map[string]interface{}{

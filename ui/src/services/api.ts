@@ -215,12 +215,37 @@ export const applicationsAPI = {
     const { data } = await api.put<{ success: boolean; message: string }>(`/apps/${id}/settings`, settings);
     return data;
   },
+
+  importResources: async (targetAppId: string, sourceAppId: string, resources: string[]) => {
+    const { data } = await api.post<ApiResponse<{ linked: Record<string, number>; skipped: Record<string, number> }>>(`/apps/${targetAppId}/import`, {
+      source_app_id: sourceAppId,
+      resources,
+    });
+    return data.data;
+  },
+
+  listLinks: async (appId: string, resourceType?: string) => {
+    const params = resourceType ? `?resource_type=${resourceType}` : '';
+    const { data } = await api.get<ApiResponse<{ links: any[]; total_count: number }>>(`/apps/${appId}/links${params}`);
+    return data.data;
+  },
+
+  removeLink: async (appId: string, linkId: string) => {
+    await api.delete(`/apps/${appId}/links/${linkId}`);
+  },
+
+  removeAllLinks: async (appId: string) => {
+    await api.delete(`/apps/${appId}/links`);
+  },
 };
 
-// Helper to get auth headers
+// Helper to get auth headers — sends app API key via X-API-Key so the JWT
+// in the Authorization header (added by the axios interceptor) is preserved.
+// This allows the backend to identify both the app AND the dashboard user,
+// enabling RBAC enforcement on API-key-protected routes.
 const getAuthHeaders = (apiKey?: string) => {
   if (!apiKey) return {};
-  return { 'Authorization': `Bearer ${apiKey}` };
+  return { 'X-API-Key': apiKey };
 };
 
 // ============= User APIs =============

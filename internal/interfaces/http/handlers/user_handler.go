@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
@@ -19,6 +20,7 @@ type UserHandler struct {
 	service   usecases.UserService
 	validator *validator.Validator
 	logger    *zap.Logger
+	linkRepo  resourcelink.Repository
 }
 
 // NewUserHandler creates a new UserHandler
@@ -29,6 +31,8 @@ func NewUserHandler(service usecases.UserService, v *validator.Validator, logger
 		logger:    logger,
 	}
 }
+
+func (h *UserHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 // getAppID extracts the authenticated app_id from Fiber context.
 func (h *UserHandler) getAppID(c *fiber.Ctx) (string, error) {
@@ -228,6 +232,15 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 
 	if envID, ok := c.Locals("environment_id").(string); ok {
 		filter.EnvironmentID = envID
+	}
+
+	// Include linked users from other apps (cross-app resource linking)
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeUser)
+		if len(linkedAppIDs) > 0 {
+			filter.AppIDs = append([]string{appID}, linkedAppIDs...)
+			filter.AppID = ""
+		}
 	}
 
 	users, total, err := h.service.List(c.Context(), filter)

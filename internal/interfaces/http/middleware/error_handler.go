@@ -39,13 +39,13 @@ func ErrorHandler(logger *zap.Logger) fiber.ErrorHandler {
 					zap.String("path", c.Path()),
 					zap.String("method", c.Method()),
 				)
-			} else {
-				logger.Warn("Client error",
-					zap.String("code", appErr.Code),
-					zap.String("message", appErr.Message),
-					zap.String("path", c.Path()),
-					zap.String("method", c.Method()),
-				)
+		} else {
+			logger.Debug("Client error",
+				zap.String("code", appErr.Code),
+				zap.String("message", appErr.Message),
+				zap.String("path", c.Path()),
+				zap.String("method", c.Method()),
+			)
 			}
 		} else if fiberErr, ok := err.(*fiber.Error); ok {
 			// Handle Fiber errors

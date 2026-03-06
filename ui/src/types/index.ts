@@ -4,6 +4,7 @@ export interface Application {
     app_name: string;
     description?: string;
     api_key: string;
+    admin_user_id?: string;
     webhook_url?: string;
     webhooks?: Record<string, string>;
     settings?: ApplicationSettings;

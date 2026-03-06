@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -14,7 +15,10 @@ type DigestHandler struct {
 	service   digest.Service
 	validator *validator.Validator
 	logger    *zap.Logger
+	linkRepo  resourcelink.Repository
 }
+
+func (h *DigestHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 // NewDigestHandler creates a new digest handler.
 func NewDigestHandler(service digest.Service, v *validator.Validator, logger *zap.Logger) *DigestHandler {
@@ -72,6 +76,17 @@ func (h *DigestHandler) List(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
+	}
+
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeDigest)
+		for _, srcAppID := range linkedAppIDs {
+			linked, linkedTotal, lErr := h.service.List(c.Context(), srcAppID, envID, limit, 0)
+			if lErr == nil {
+				rules = append(rules, linked...)
+				total += linkedTotal
+			}
+		}
 	}
 
 	return c.JSON(fiber.Map{

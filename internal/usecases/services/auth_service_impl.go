@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -107,6 +108,17 @@ func (s *authService) Register(ctx context.Context, req *auth.RegisterRequest) (
 		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
 			s.logger.Warn("Failed to claim pending memberships on register",
 				zap.String("email", user.Email), zap.Error(err))
+		} else {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H2-claim-on-register",
+				"internal/usecases/services/auth_service_impl.go:Register",
+				"claimed pending memberships on register",
+				map[string]any{
+					"user_id": user.UserID,
+					"email":   user.Email,
+				},
+			)
 		}
 	}
 
@@ -162,6 +174,17 @@ func (s *authService) Login(ctx context.Context, req *auth.LoginRequest) (*auth.
 		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
 			s.logger.Warn("Failed to claim pending memberships on login",
 				zap.String("email", user.Email), zap.Error(err))
+		} else {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H3-claim-on-login",
+				"internal/usecases/services/auth_service_impl.go:Login",
+				"claimed pending memberships on login",
+				map[string]any{
+					"user_id": user.UserID,
+					"email":   user.Email,
+				},
+			)
 		}
 	}
 
@@ -665,6 +688,17 @@ func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.A
 		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
 			s.logger.Warn("Failed to claim pending memberships on SSO login",
 				zap.String("email", user.Email), zap.Error(err))
+		} else {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H4-claim-on-sso",
+				"internal/usecases/services/auth_service_impl.go:SSOLogin",
+				"claimed pending memberships on SSO login",
+				map[string]any{
+					"user_id": user.UserID,
+					"email":   user.Email,
+				},
+			)
 		}
 	}
 

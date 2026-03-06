@@ -20,6 +20,7 @@ import TemplateTestPanel from './templates/TemplateTestPanel';
 import TemplateControlsPanel from './templates/TemplateControlsPanel';
 import SkeletonTable from './SkeletonTable';
 import { toast } from 'sonner';
+import { extractErrorMessage } from '../lib/utils';
 
 interface AppTemplatesProps {
     appId: string;
@@ -126,7 +127,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             fetchTemplates();
         } catch (error) {
             console.error('Failed to save template:', error);
-            toast.error(editingTemplate ? 'Failed to update template' : 'Failed to create template');
+            toast.error(extractErrorMessage(error, editingTemplate ? 'Failed to update template' : 'Failed to create template'));
         }
     };
 

@@ -62,6 +62,9 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 
 		// Phase 6 additions
 		"environments": im.templates.GetEnvironmentsTemplate,
+
+		// Cross-app resource linking
+		"app_resource_links": im.templates.GetResourceLinksTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
@@ -31,6 +32,32 @@ func NewApplicationHandler(service usecases.ApplicationService, membershipRepo a
 		validator:      v,
 		logger:         logger,
 	}
+}
+
+// authorizeAppAccess checks whether the authenticated user has access to the
+// specified application and returns the app along with the user's resolved role.
+// The app owner always gets RoleOwner. Team members get their membership role.
+// When RBAC is disabled (membershipRepo is nil), only the owner has access.
+func (h *ApplicationHandler) authorizeAppAccess(c *fiber.Ctx, appID, userID string) (*application.Application, auth.Role, error) {
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if app.AdminUserID == userID {
+		c.Locals("role", auth.RoleOwner)
+		return app, auth.RoleOwner, nil
+	}
+
+	if h.membershipRepo != nil {
+		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
+		if mErr == nil && membership != nil {
+			c.Locals("role", membership.Role)
+			return app, membership.Role, nil
+		}
+	}
+
+	return nil, "", errors.Forbidden("You do not have access to this application")
 }
 
 // Create handles POST /v1/apps
@@ -73,9 +100,8 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 	})
 }
 
-// GetByID handles GET /v1/apps/:id
+// GetByID handles GET /v1/apps/:id — any team member can view
 func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -86,21 +112,12 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	app, err := h.service.GetByID(c.Context(), appID)
+	app, _, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
 
-	// Verify ownership
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
-	}
-
 	response := dto.ToApplicationResponse(app)
-	// Masking removed to allow management from dashboard
-	// if len(response.APIKey) > 8 {
-	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -108,9 +125,8 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	})
 }
 
-// Update handles PUT /v1/apps/:id
+// Update handles PUT /v1/apps/:id — requires admin or owner role
 func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -130,18 +146,14 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
 	}
 
-	// Get existing application
-	app, err := h.service.GetByID(c.Context(), appID)
+	app, role, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-
-	// Verify ownership
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to update the application")
 	}
 
-	// Update fields
 	if req.AppName != "" {
 		app.AppName = req.AppName
 	}
@@ -163,10 +175,6 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
-	// Masking removed
-	// if len(response.APIKey) > 8 {
-	// 	response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-	// }
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -174,9 +182,8 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	})
 }
 
-// Delete handles DELETE /v1/apps/:id
+// Delete handles DELETE /v1/apps/:id — owner only
 func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -187,13 +194,12 @@ func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	// Verify ownership
-	app, err := h.service.GetByID(c.Context(), appID)
+	_, role, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
+	if role != auth.RoleOwner {
+		return errors.Forbidden("only the application owner can delete the application")
 	}
 
 	if err := h.service.Delete(c.Context(), appID); err != nil {
@@ -244,6 +250,16 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	if h.membershipRepo != nil && h.appRepo != nil {
 		memberships, mErr := h.membershipRepo.ListByUser(c.Context(), userID)
 		if mErr == nil && len(memberships) > 0 {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H5-app-list-memberships",
+				"internal/interfaces/http/handlers/application_handler.go:List",
+				"resolved memberships for app list",
+				map[string]any{
+					"user_id":          userID,
+					"membership_count": len(memberships),
+				},
+			)
 			// Build a set of owned app IDs to avoid duplicates
 			ownedIDs := make(map[string]struct{}, len(apps))
 			for _, a := range apps {
@@ -261,6 +277,17 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 				apps = append(apps, memberApp)
 				total++
 			}
+		} else if mErr != nil {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H5-app-list-memberships",
+				"internal/interfaces/http/handlers/application_handler.go:List",
+				"failed to resolve memberships for app list",
+				map[string]any{
+					"user_id": userID,
+					"error":   mErr.Error(),
+				},
+			)
 		}
 	}
 
@@ -285,9 +312,8 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	})
 }
 
-// RegenerateAPIKey handles POST /v1/apps/:id/regenerate-key
+// RegenerateAPIKey handles POST /v1/apps/:id/regenerate-key — owner only
 func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -298,13 +324,12 @@ func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	// Verify ownership
-	app, err := h.service.GetByID(c.Context(), appID)
+	_, role, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
+	if role != auth.RoleOwner {
+		return errors.Forbidden("only the application owner can regenerate the API key")
 	}
 
 	newAPIKey, err := h.service.RegenerateAPIKey(c.Context(), appID)
@@ -321,9 +346,8 @@ func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
 	})
 }
 
-// UpdateSettings handles PUT /v1/apps/:id/settings
+// UpdateSettings handles PUT /v1/apps/:id/settings — requires admin or owner role
 func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -334,13 +358,12 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	// Verify ownership
-	app, err := h.service.GetByID(c.Context(), appID)
+	_, role, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to update settings")
 	}
 
 	var req dto.UpdateSettingsRequest
@@ -412,9 +435,8 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	})
 }
 
-// GetSettings handles GET /v1/apps/:id/settings
+// GetSettings handles GET /v1/apps/:id/settings — any team member can view
 func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
-	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("User not authenticated")
@@ -425,13 +447,8 @@ func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	// Verify ownership
-	app, err := h.service.GetByID(c.Context(), appID)
-	if err != nil {
+	if _, _, err := h.authorizeAppAccess(c, appID, userID); err != nil {
 		return err
-	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("You do not have access to this application")
 	}
 
 	settings, err := h.service.GetSettings(c.Context(), appID)

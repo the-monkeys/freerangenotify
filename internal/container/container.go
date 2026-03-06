@@ -14,6 +14,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -107,6 +108,10 @@ type Container struct {
 
 	// Custom Providers (Phase 3)
 	CustomProviderHandler *handlers.CustomProviderHandler
+
+	// Cross-App Resource Linking
+	ResourceLinkRepo resourcelink.Repository
+	ImportHandler    *handlers.ImportHandler
 
 	// Multi-Environment (Phase 6 — feature-gated)
 	EnvironmentService environment.Service
@@ -259,6 +264,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.Validator,
 		logger,
 	)
+	// LinkRepo wired after import handler init (below)
 	container.NotificationHandler = handlers.NewNotificationHandler(
 		container.NotificationService,
 		logger,
@@ -360,6 +366,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// ── Phase 3: Custom Provider Handler ──
 	container.CustomProviderHandler = handlers.NewCustomProviderHandler(
 		container.ApplicationService,
+		container.MembershipRepo,
 		logger,
 	)
 
@@ -444,6 +451,38 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		logger.Info("Multi-Environment feature enabled")
+	}
+
+	// ── Cross-App Resource Linking (after all feature-gated services) ──
+	container.ResourceLinkRepo = repository.NewResourceLinkRepository(dbManager.Client.GetClient(), logger)
+	container.UserHandler.SetLinkRepo(container.ResourceLinkRepo)
+	container.TemplateHandler.SetLinkRepo(container.ResourceLinkRepo)
+	if container.WorkflowHandler != nil {
+		container.WorkflowHandler.SetLinkRepo(container.ResourceLinkRepo)
+	}
+	if container.DigestHandler != nil {
+		container.DigestHandler.SetLinkRepo(container.ResourceLinkRepo)
+	}
+	if container.TopicHandler != nil {
+		container.TopicHandler.SetLinkRepo(container.ResourceLinkRepo)
+	}
+	container.ImportHandler = handlers.NewImportHandler(
+		container.ResourceLinkRepo,
+		container.ApplicationService,
+		container.MembershipRepo,
+		repos.Application,
+		repos.User,
+		logger,
+	)
+	container.ImportHandler.SetTemplateService(container.TemplateService)
+	if container.WorkflowService != nil {
+		container.ImportHandler.SetWorkflowService(container.WorkflowService)
+	}
+	if container.DigestService != nil {
+		container.ImportHandler.SetDigestService(container.DigestService)
+	}
+	if container.TopicService != nil {
+		container.ImportHandler.SetTopicService(container.TopicService)
 	}
 
 	return container, nil

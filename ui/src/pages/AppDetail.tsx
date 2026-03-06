@@ -8,6 +8,7 @@ import AppNotifications from '../components/AppNotifications';
 import AppTeam from '../components/apps/AppTeam';
 import AppProviders from '../components/apps/AppProviders';
 import AppEnvironments from '../components/apps/AppEnvironments';
+import AppImport from '../components/apps/AppImport';
 import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
 
@@ -20,12 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, ArrowRight, Timer, Zap, Mail, Route } from 'lucide-react';
+import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, ArrowRight, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration';
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
 
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'topics', 'team', 'providers', 'environments', 'settings', 'integration'];
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import'];
 
 interface TabDef {
     id: TabId;
@@ -51,6 +52,7 @@ const TAB_GROUPS: { label: string; tabs: TabDef[] }[] = [
             { id: 'topics', label: 'Topics', icon: <MessageSquare className="h-4 w-4" /> },
             { id: 'team', label: 'Team', icon: <UsersRound className="h-4 w-4" /> },
             { id: 'providers', label: 'Providers', icon: <Plug className="h-4 w-4" /> },
+            { id: 'import', label: 'Import', icon: <Link2 className="h-4 w-4" /> },
         ],
     },
     {
@@ -917,6 +919,11 @@ const AppDetail: React.FC = () => {
                 {/* Providers Tab */}
                 {activeTab === 'providers' && app && (
                     <AppProviders appId={app.app_id} />
+                )}
+
+                {/* Import Tab */}
+                {activeTab === 'import' && app && (
+                    <AppImport appId={app.app_id} appName={app.app_name} />
                 )}
 
                 {/* Environments Tab */}

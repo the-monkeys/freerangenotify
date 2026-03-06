@@ -179,6 +179,10 @@ These flags gate subsystems in the container and routing layers.
     - Guards against duplicate users by email (race-safe create).
   - `teamService`:
     - Invitation flow: invites by email + role, resolves to user ID if the user already exists.
+    - **Sends invitation email via SMTP** after creating the membership (best-effort, non-blocking).
+      - Two variants: **existing user** gets "Log in to accept" CTA; **new user** gets "Create your account" CTA.
+      - Email includes the app name, assigned role, and a human-readable role description.
+      - When a new user registers/logs in, `ClaimByEmail` converts their email-placeholder membership to a real user ID.
     - Prevents duplicate memberships, protects the last owner from demotion/removal.
     - Lists memberships and fetches membership for a (app,user) pair.
   - Notification, workflow, digest, topics, environment, analytics, etc. live in `internal/usecases` and `internal/usecases/services`; they orchestrate repositories, queues, metrics, and providers.
@@ -187,12 +191,21 @@ These flags gate subsystems in the container and routing layers.
 
 - `ApplicationHandler` (`internal/interfaces/http/handlers/application_handler.go`):
   - Uses `ApplicationService` + `MembershipRepository` + `application.Repository` + validator + logger.
-  - Endpoints:
-    - `Create`: creates app tied to current admin user, returns full API key once.
-    - `GetByID`, `Update`, `Delete`, `List`: all enforce owner-based authorization using `user_id` from JWT.
-    - `RegenerateAPIKey`: rotates API key and returns new value.
-    - `UpdateSettings` / `GetSettings`: manage per-app operational settings (rate limits, default templates, analytics, email config, default preferences, etc.), with partial update semantics.
-  - Integrates with RBAC middleware for team-based access on certain routes.
+  - **`authorizeAppAccess(c, appID, userID)`** — central helper that resolves access and role:
+    - Returns `(app, RoleOwner, nil)` if user is the app's `AdminUserID`.
+    - Returns `(app, membership.Role, nil)` if user has an `AppMembership` (RBAC enabled).
+    - Returns `Forbidden` error otherwise.
+    - Stashes resolved `role` in `c.Locals("role")` for downstream use.
+  - Endpoints with role-based guards:
+    - `Create`: any authenticated admin; new app's `AdminUserID` is set to caller.
+    - `GetByID`: any team member (viewer+). Non-owners see masked API key.
+    - `List`: shows owned apps + apps where user has a membership.
+    - `Update`: admin or owner only.
+    - `Delete`: owner only.
+    - `RegenerateAPIKey`: owner only.
+    - `UpdateSettings`: admin or owner only.
+    - `GetSettings`: any team member (viewer+).
+  - API key masking: owners see full key; all other roles see `***` + last 8 chars.
 
 ### Frontend architecture (`ui/`)
 
@@ -273,8 +286,11 @@ These flags gate subsystems in the container and routing layers.
     - API key auth for tenant-facing endpoints (users, notifications, templates, workflows, etc.).
     - JWT admin auth for dashboard-facing endpoints (`/v1/admin`, `/v1/apps`, analytics, queues, audit, team).
 - **RBAC**
-  - Role/permission system scoped per-app; implemented via `AppMembership`, `MembershipRepository`, `TeamService`, and `RequirePermission` middleware.
-  - Feature flag controlled; if disabled, all authenticated admin users effectively have full app access.
+  - Role/permission system scoped per-app; implemented via `AppMembership`, `MembershipRepository`, `TeamService`.
+  - **Handler-level enforcement** via `authorizeAppAccess()` in `ApplicationHandler` — resolves ownership or membership and returns the user's role. Each endpoint applies role-based guards (viewer+ for reads, admin+ for writes, owner-only for destructive ops).
+  - **Middleware-level enforcement** via `RequirePermission` for audit log routes (`PermViewAudit`) and team management routes (`PermManageMembers`).
+  - Feature flag controlled (`rbac_enabled`); when disabled, `membershipRepo` is nil and only app owners have access.
+  - API key visibility is masked for non-owner roles.
 - **JWT**
   - Access/refresh token pair, refresh tokens persisted to ES and revocable per token or per user.
   - Password reset and change flows revoke existing tokens for safety.

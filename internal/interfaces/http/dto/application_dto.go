@@ -46,6 +46,7 @@ type ApplicationResponse struct {
 	AppName           string               `json:"app_name"`
 	Description       string               `json:"description"`
 	APIKey            string               `json:"api_key"`
+	AdminUserID       string               `json:"admin_user_id"`
 	WebhookURL        string               `json:"webhook_url,omitempty"`
 	Webhooks          map[string]string    `json:"webhooks,omitempty"`
 	Settings          application.Settings `json:"settings"`
@@ -75,6 +76,7 @@ func ToApplicationResponse(app *application.Application) ApplicationResponse {
 		AppName:           app.AppName,
 		Description:       app.Description,
 		APIKey:            app.APIKey,
+		AdminUserID:       app.AdminUserID,
 		WebhookURL:        app.WebhookURL,
 		Webhooks:          app.Webhooks,
 		Settings:          app.Settings,

@@ -20,6 +20,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	_ "github.com/the-monkeys/freerangenotify/docs" // Swagger docs
 )
@@ -46,7 +47,7 @@ import (
 
 func main() {
 	// Initialize logger
-	zapLogger, _ := zap.NewDevelopment()
+	zapLogger, _ := zap.NewDevelopment(zap.AddStacktrace(zapcore.ErrorLevel))
 	defer zapLogger.Sync()
 
 	// Load configuration

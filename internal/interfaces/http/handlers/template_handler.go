@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
@@ -26,7 +27,10 @@ type TemplateHandler struct {
 	service      *usecases.TemplateService
 	smtpProvider providers.Provider
 	logger       *zap.Logger
+	linkRepo     resourcelink.Repository
 }
+
+func (h *TemplateHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 func NewTemplateHandler(service *usecases.TemplateService, smtpProvider providers.Provider, logger *zap.Logger) *TemplateHandler {
 	return &TemplateHandler{
@@ -125,8 +129,9 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		})
 	}
 
+	appID := c.Locals("app_id").(string)
 	filter := template.Filter{
-		AppID:   c.Locals("app_id").(string), // Enforce AppID from context
+		AppID:   appID,
 		Name:    req.Name,
 		Channel: req.Channel,
 		Status:  req.Status,
@@ -137,6 +142,15 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 	if envID, ok := c.Locals("environment_id").(string); ok {
 		filter.EnvironmentID = envID
+	}
+
+	// Include linked templates from other apps
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeTemplate)
+		if len(linkedAppIDs) > 0 {
+			filter.AppIDs = append([]string{appID}, linkedAppIDs...)
+			filter.AppID = ""
+		}
 	}
 
 	if req.FromDate != "" {
