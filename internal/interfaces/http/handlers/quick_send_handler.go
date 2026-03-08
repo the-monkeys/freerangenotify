@@ -36,6 +36,10 @@ func (h *QuickSendHandler) Send(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		req.EnvironmentID = envID
+	}
+
 	result, err := h.service.Send(c.Context(), appID, &req)
 	if err != nil {
 		h.logger.Error("Quick-send failed", zap.String("app_id", appID), zap.Error(err))

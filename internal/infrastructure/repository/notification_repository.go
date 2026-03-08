@@ -265,6 +265,20 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 				"app_id": filter.AppID,
 			},
 		})
+	} else if len(filter.AppIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"app_id": filter.AppIDs,
+			},
+		})
+	}
+
+	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"environment_id": filter.EnvironmentID,
+			},
+		})
 	}
 
 	if filter.UserID != "" {
@@ -362,4 +376,128 @@ func (r *NotificationRepository) Count(ctx context.Context, filter *notification
 	delete(query, "sort")
 
 	return r.BaseRepository.Count(ctx, query)
+}
+
+// ── Phase 5: Snooze, Archive, Mark-All-Read ────────────────────────
+
+// UpdateSnooze updates a notification's status and snoozed_until field.
+func (r *NotificationRepository) UpdateSnooze(ctx context.Context, id string, status notification.Status, snoozedUntil *time.Time) error {
+	updateDoc := map[string]interface{}{
+		"status":     status,
+		"updated_at": time.Now(),
+	}
+	if snoozedUntil != nil {
+		updateDoc["snoozed_until"] = *snoozedUntil
+	} else {
+		updateDoc["snoozed_until"] = nil
+	}
+	return r.BaseRepository.Update(ctx, id, updateDoc)
+}
+
+// BulkArchive sets multiple notifications to archived status.
+func (r *NotificationRepository) BulkArchive(ctx context.Context, ids []string, archivedAt time.Time) error {
+	updateDoc := map[string]interface{}{
+		"status":      notification.StatusArchived,
+		"archived_at": archivedAt,
+		"updated_at":  time.Now(),
+	}
+	documents := make(map[string]interface{})
+	for _, id := range ids {
+		documents[id] = updateDoc
+	}
+	return r.BaseRepository.BulkUpdate(ctx, documents)
+}
+
+// MarkAllRead marks all unread (sent/delivered) notifications as read for a user.
+// If category is non-empty, only notifications matching that category are updated.
+// Returns the number of notifications updated.
+func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID, appID, category string) (int, error) {
+	// Build a search to find all unread notifications
+	filters := []map[string]interface{}{
+		{"term": map[string]interface{}{"user_id": userID}},
+		{"term": map[string]interface{}{"app_id": appID}},
+		{"terms": map[string]interface{}{"status": []string{
+			string(notification.StatusSent),
+			string(notification.StatusDelivered),
+		}}},
+	}
+	if category != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{"category": category},
+		})
+	}
+
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{"filter": filters},
+		},
+		"size": 500,
+	}
+
+	results, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("search unread notifications: %w", err)
+	}
+
+	if len(results.Hits) == 0 {
+		return 0, nil
+	}
+
+	now := time.Now()
+	updateDoc := map[string]interface{}{
+		"status":     notification.StatusRead,
+		"read_at":    now,
+		"updated_at": now,
+	}
+	documents := make(map[string]interface{})
+	for _, doc := range results.Hits {
+		if id, ok := doc["notification_id"].(string); ok && id != "" {
+			documents[id] = updateDoc
+		}
+	}
+
+	if len(documents) == 0 {
+		return 0, nil
+	}
+
+	if err := r.BaseRepository.BulkUpdate(ctx, documents); err != nil {
+		return 0, err
+	}
+	return len(documents), nil
+}
+
+// ListSnoozedDue returns notifications whose snooze period has expired.
+func (r *NotificationRepository) ListSnoozedDue(ctx context.Context, now time.Time) ([]*notification.Notification, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"filter": []map[string]interface{}{
+					{"term": map[string]interface{}{"status": string(notification.StatusSnoozed)}},
+					{"range": map[string]interface{}{
+						"snoozed_until": map[string]interface{}{"lte": now.Format(time.RFC3339)},
+					}},
+				},
+			},
+		},
+		"size": 100,
+		"sort": []map[string]interface{}{
+			{"snoozed_until": map[string]interface{}{"order": "asc"}},
+		},
+	}
+
+	results, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("search snoozed due: %w", err)
+	}
+
+	var notifications []*notification.Notification
+	for _, doc := range results.Hits {
+		var n notification.Notification
+		if err := mapToStruct(doc, &n); err != nil {
+			r.logger.Warn("Failed to map snoozed notification", zap.Error(err))
+			continue
+		}
+		notifications = append(notifications, &n)
+	}
+	return notifications, nil
 }

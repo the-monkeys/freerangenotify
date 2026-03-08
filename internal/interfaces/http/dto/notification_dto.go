@@ -222,3 +222,23 @@ func (r *BatchSendNotificationRequest) ToBatchSendRequest(appID string) []notifi
 type BatchCancelRequest struct {
 	NotificationIDs []string `json:"notification_ids" validate:"required,min=1"`
 }
+
+// ── Phase 5: Snooze, Archive, Mark-All-Read ────────────────────────
+
+// SnoozeRequest represents a request to snooze a notification.
+type SnoozeRequest struct {
+	Duration string     `json:"duration,omitempty"` // e.g. "2h", "30m", "1d"
+	Until    *time.Time `json:"until,omitempty"`
+}
+
+// BulkArchiveRequest represents a request to archive notifications.
+type BulkArchiveRequest struct {
+	NotificationIDs []string `json:"notification_ids" validate:"required,min=1,max=100"`
+	UserID          string   `json:"user_id" validate:"required"`
+}
+
+// MarkAllReadRequest represents a request to mark all unread as read.
+type MarkAllReadRequest struct {
+	UserID   string `json:"user_id" validate:"required"`
+	Category string `json:"category,omitempty"`
+}

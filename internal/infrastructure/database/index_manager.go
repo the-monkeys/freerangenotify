@@ -48,6 +48,20 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		"auth_users":            im.templates.GetAuthUsersTemplate,
 		"password_reset_tokens": im.templates.GetPasswordResetTokensTemplate,
 		"refresh_tokens":        im.templates.GetRefreshTokensTemplate,
+
+		// Phase 1 additions (additive only — existing indices untouched)
+		"workflows":           im.templates.GetWorkflowsTemplate,
+		"workflow_executions": im.templates.GetWorkflowExecutionsTemplate,
+		"digest_rules":        im.templates.GetDigestRulesTemplate,
+
+		// Phase 2 additions
+		"topics":              im.templates.GetTopicsTemplate,
+		"topic_subscriptions": im.templates.GetTopicSubscriptionsTemplate,
+		"audit_logs":          im.templates.GetAuditLogsTemplate,
+		"app_memberships":     im.templates.GetAppMembershipsTemplate,
+
+		// Phase 6 additions
+		"environments": im.templates.GetEnvironmentsTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

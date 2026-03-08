@@ -6,11 +6,15 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
-import { Spinner } from '../components/ui/spinner';
+import { Skeleton } from '../components/ui/skeleton';
 import { toast } from 'sonner';
 import { ActivityFeed } from '../components/ActivityFeed';
 import WebhookPlayground from '../components/WebhookPlayground';
+import SSEPlayground from '../components/SSEPlayground';
 import AnalyticsDashboard from '../components/AnalyticsDashboard';
+import OverviewStats from '../components/dashboard/OverviewStats';
+import QueueDepthCards from '../components/dashboard/QueueDepthCards';
+import QuickTestPanel from '../components/dashboard/QuickTestPanel';
 
 type DashboardTab = 'overview' | 'analytics' | 'activity' | 'tools';
 
@@ -46,10 +50,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleReplayDLQ = async () => {
+  const handleReplayDLQ = async (limit?: number) => {
     setReplaying(true);
     try {
-      const result = await adminAPI.replayDLQ(50);
+      const result = await adminAPI.replayDLQ(limit ?? 50);
       toast.success(`Replayed ${result.replayed_count} items`);
       await fetchStats();
     } catch (error) {
@@ -62,7 +66,7 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchStats();
-    const interval = setInterval(fetchStats, 5000);
+    const interval = setInterval(fetchStats, 15_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -70,8 +74,8 @@ const Dashboard: React.FC = () => {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 text-sm mt-1">System overview, analytics, activity &amp; tools</p>
+          <h1 className="text-xl sm:text-2xl font-semibold text-foreground">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">System overview, analytics, activity &amp; tools</p>
         </div>
         <Button asChild>
           <Link to="/apps">
@@ -81,16 +85,15 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 mb-6 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
+      <div className="flex border-b border-border mb-6 overflow-x-auto whitespace-nowrap -mx-4 sm:mx-0 px-4 sm:px-0 scrollbar-hide">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className={`px-4 sm:px-5 py-2.5 sm:py-3 border-b-2 text-sm font-medium transition-colors shrink-0 ${
-              activeTab === key
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-blue-600'
-            }`}
+            className={`px-4 sm:px-5 py-2.5 sm:py-3 border-b-2 text-sm font-medium transition-colors shrink-0 ${activeTab === key
+              ? 'border-foreground text-foreground'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
           >
             {label}
           </button>
@@ -98,37 +101,41 @@ const Dashboard: React.FC = () => {
       </div>
 
       {loading && Object.keys(stats).length === 0 ? (
-        <div className="flex justify-center items-center py-12">
-          <Spinner />
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}><CardContent className="pt-5 pb-4 space-y-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-16" />
+              </CardContent></Card>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i}><CardContent className="pt-5 pb-4 space-y-3">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-10 w-full" />
+              </CardContent></Card>
+            ))}
+          </div>
         </div>
       ) : (
         <>
           {/* ── Overview Tab ── */}
           {activeTab === 'overview' && (
             <>
-              {/* Queue Stats Cards */}
-              <h3 className="text-lg font-semibold mb-4">Message Queues</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                {Object.entries(stats).map(([queue, count]) => (
-                  <Card key={queue}>
-                    <CardContent className="pt-6">
-                      <h4 className="text-xs text-gray-500 uppercase mb-2 tracking-wider">
-                        {queue.replace('frn:queue:', '').toUpperCase()}
-                      </h4>
-                      <div className="flex justify-between items-end">
-                        <span className={`text-3xl font-bold ${count > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
-                          {count}
-                        </span>
-                        <span className="text-xs text-gray-400">messages</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+              <OverviewStats />
+
+              <QueueDepthCards
+                stats={stats}
+                dlqItems={dlqItems}
+                onReplay={(limit) => handleReplayDLQ(limit)}
+                replaying={replaying}
+              />
 
               {/* Provider Health */}
               {Object.keys(providers).length > 0 && (
-                <Card className="mb-8">
+                <Card className="mt-6">
                   <CardHeader>
                     <CardTitle>Provider Health</CardTitle>
                   </CardHeader>
@@ -141,6 +148,8 @@ const Dashboard: React.FC = () => {
                             <TableHead>Channel</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Circuit Breaker</TableHead>
+                            <TableHead>Latency</TableHead>
+                            <TableHead>Last Error</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -163,6 +172,29 @@ const Dashboard: React.FC = () => {
                                   {p.breaker_state}
                                 </Badge>
                               </TableCell>
+                              <TableCell>
+                                {p.latency_ms != null ? (
+                                  <span className={`text-sm font-mono ${p.latency_ms < 100 ? 'text-green-600' :
+                                    p.latency_ms < 500 ? 'text-yellow-600' : 'text-red-600'
+                                    }`}>
+                                    {p.latency_ms}ms
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {p.last_error ? (
+                                  <span
+                                    className="text-red-600 text-xs cursor-help"
+                                    title={p.last_error}
+                                  >
+                                    {p.last_error.length > 60 ? `${p.last_error.substring(0, 60)}...` : p.last_error}
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -171,69 +203,6 @@ const Dashboard: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
-
-              {/* DLQ Section */}
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                    <CardTitle className="text-red-600">Dead Letter Queue (DLQ)</CardTitle>
-                    <div className="flex items-center gap-3">
-                      <Badge
-                        variant={dlqItems.length > 0 ? "destructive" : "outline"}
-                        className={dlqItems.length > 0 ? "bg-red-100 text-red-700 border-red-300" : "bg-green-100 text-green-700 border-green-300"}
-                      >
-                        {dlqItems.length} items
-                      </Badge>
-                      {dlqItems.length > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={replaying}
-                          onClick={handleReplayDLQ}
-                        >
-                          {replaying ? 'Replaying...' : 'Replay All'}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {dlqItems.length === 0 ? (
-                    <p className="text-gray-500 italic text-sm">No failed messages in DLQ.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Notification ID</TableHead>
-                            <TableHead>Priority</TableHead>
-                            <TableHead>Reason</TableHead>
-                            <TableHead>Failed At</TableHead>
-                            <TableHead>Retries</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {dlqItems.map((item, idx) => (
-                            <TableRow key={idx}>
-                              <TableCell className="font-mono text-xs text-gray-500">
-                                {(item.notification_id || 'N/A').substring(0, 12)}...
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">{item.priority || 'normal'}</Badge>
-                              </TableCell>
-                              <TableCell className="text-red-600 text-sm">{item.reason}</TableCell>
-                              <TableCell className="text-gray-900 text-sm">
-                                {item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}
-                              </TableCell>
-                              <TableCell className="text-gray-500">{item.retry_count ?? '-'}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
             </>
           )}
 
@@ -249,7 +218,13 @@ const Dashboard: React.FC = () => {
 
           {/* ── Tools Tab ── */}
           {activeTab === 'tools' && (
-            <WebhookPlayground />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <QuickTestPanel />
+                <WebhookPlayground />
+              </div>
+              <SSEPlayground />
+            </div>
           )}
         </>
       )}

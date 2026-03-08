@@ -122,3 +122,93 @@ type Service interface {
 	// SSO
 	SSOLogin(ctx context.Context, email, name string) (*AuthResponse, error)
 }
+
+// ─── Phase 2: RBAC Types ───────────────────────────────────────────────
+
+// Role represents a named role within an application.
+type Role string
+
+const (
+	RoleOwner  Role = "owner"
+	RoleAdmin  Role = "admin"
+	RoleEditor Role = "editor"
+	RoleViewer Role = "viewer"
+)
+
+// Permission represents a granular permission within an application.
+type Permission string
+
+const (
+	PermManageApp         Permission = "manage_app"
+	PermManageMembers     Permission = "manage_members"
+	PermManageTemplates   Permission = "manage_templates"
+	PermSendNotifications Permission = "send_notifications"
+	PermViewLogs          Permission = "view_logs"
+	PermViewAudit         Permission = "view_audit"
+)
+
+// RolePermissions maps each role to its set of permissions.
+// Roles are cumulative — higher roles inherit lower-role permissions.
+var RolePermissions = map[Role][]Permission{
+	RoleOwner:  {PermManageApp, PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit},
+	RoleAdmin:  {PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit},
+	RoleEditor: {PermManageTemplates, PermSendNotifications, PermViewLogs},
+	RoleViewer: {PermViewLogs},
+}
+
+// HasPermission returns true if the given role grants the specified permission.
+func HasPermission(role Role, perm Permission) bool {
+	perms, ok := RolePermissions[role]
+	if !ok {
+		return false
+	}
+	for _, p := range perms {
+		if p == perm {
+			return true
+		}
+	}
+	return false
+}
+
+// AppMembership links a user to an application with a specific role.
+type AppMembership struct {
+	MembershipID string    `json:"membership_id" es:"membership_id"`
+	AppID        string    `json:"app_id" es:"app_id"`
+	UserID       string    `json:"user_id" es:"user_id"`
+	UserEmail    string    `json:"user_email" es:"user_email"`
+	Role         Role      `json:"role" es:"role"`
+	InvitedBy    string    `json:"invited_by" es:"invited_by"`
+	CreatedAt    time.Time `json:"created_at" es:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" es:"updated_at"`
+}
+
+// InviteMemberRequest represents a request to invite a member to an app.
+type InviteMemberRequest struct {
+	Email string `json:"email" validate:"required,email"`
+	Role  Role   `json:"role" validate:"required"`
+}
+
+// UpdateMemberRoleRequest represents a request to change a member's role.
+type UpdateMemberRoleRequest struct {
+	Role Role `json:"role" validate:"required"`
+}
+
+// MembershipRepository defines data access for app memberships.
+type MembershipRepository interface {
+	Create(ctx context.Context, m *AppMembership) error
+	GetByID(ctx context.Context, id string) (*AppMembership, error)
+	GetByAppAndUser(ctx context.Context, appID, userID string) (*AppMembership, error)
+	ListByApp(ctx context.Context, appID string) ([]*AppMembership, error)
+	ListByUser(ctx context.Context, userID string) ([]*AppMembership, error)
+	Update(ctx context.Context, m *AppMembership) error
+	Delete(ctx context.Context, id string) error
+}
+
+// TeamService defines the business logic interface for team/membership management.
+type TeamService interface {
+	InviteMember(ctx context.Context, appID string, req *InviteMemberRequest, inviterID string) (*AppMembership, error)
+	UpdateRole(ctx context.Context, appID, membershipID string, req *UpdateMemberRoleRequest) (*AppMembership, error)
+	RemoveMember(ctx context.Context, appID, membershipID string) error
+	ListMembers(ctx context.Context, appID string) ([]*AppMembership, error)
+	GetMembership(ctx context.Context, appID, userID string) (*AppMembership, error)
+}

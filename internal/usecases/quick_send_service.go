@@ -85,13 +85,14 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 
 	// 5. Build send request and delegate
 	sendReq := notification.SendRequest{
-		AppID:       appID,
-		UserID:      userID,
-		Channel:     channel,
-		Priority:    priority,
-		TemplateID:  templateID,
-		Data:        req.Data,
-		ScheduledAt: req.ScheduledAt,
+		AppID:         appID,
+		EnvironmentID: req.EnvironmentID,
+		UserID:        userID,
+		Channel:       channel,
+		Priority:      priority,
+		TemplateID:    templateID,
+		Data:          req.Data,
+		ScheduledAt:   req.ScheduledAt,
 	}
 
 	// Pass webhook URL through Data if provided

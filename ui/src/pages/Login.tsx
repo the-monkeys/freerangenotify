@@ -32,96 +32,94 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-blue-500 to-indigo-600 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
-          <CardDescription className="text-center">
-            Sign in to your FreeRangeNotify account
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+    <Card className="bg-card border border-border">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl font-bold text-center">Welcome Back</CardTitle>
+        <CardDescription className="text-center">
+          Sign in to your FreeRangeNotify account
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
               <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
-                autoComplete="email"
+                minLength={8}
+                autoComplete="current-password"
+                className="pr-10"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  autoComplete="current-password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <Link
-                to="/forgot-password"
-                className="text-sm text-blue-600 hover:text-blue-700 underline"
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                Forgot password?
-              </Link>
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign In'}
-            </Button>
-
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="bg-white px-2 text-gray-500 rounded text-xs">Or continue with</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"
-              onClick={() => {
-                // Determine API base URL
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/v1';
-                window.location.href = `${apiUrl}/auth/sso/login`;
-              }}
+          </div>
+          <div className="flex items-center justify-between">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-muted-foreground hover:text-foreground underline"
             >
-              <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = 'https://monkeys.support/favicon.ico'; }} />
-              Log in with Monkeys Identity
-            </Button>
-          </form>
-          <div className="mt-6 text-center text-sm">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-blue-600 hover:text-blue-700 underline font-medium">
-              Sign up
+              Forgot password?
             </Link>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign In'}
+          </Button>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="bg-card px-2 text-muted-foreground rounded text-xs">Or continue with</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-border text-foreground hover:bg-muted flex items-center justify-center gap-2"
+            onClick={() => {
+              // Determine API base URL
+              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/v1';
+              window.location.href = `${apiUrl}/auth/sso/login`;
+            }}
+          >
+            <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = 'https://monkeys.support/favicon.ico'; }} />
+            Log in with Monkeys Identity
+          </Button>
+        </form>
+        <div className="mt-6 text-center text-sm">
+          Don't have an account?{' '}
+          <Link to="/register" className="text-muted-foreground hover:text-foreground underline font-medium">
+            Sign up
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

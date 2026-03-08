@@ -1,50 +1,110 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500&display=swap');
 
-/* Global styles for FreeRangeNotify - Azure Theme */
+/* ─── Monkeys Neutral Theme ─── */
+/* Primary UI: neutral grayscale. Accent (coral #FF5542) used ONLY on:
+   - Primary <Button> fill
+   - Active sidebar indicator
+   - Destructive badge hover
+   Never on backgrounds, cards, headers, or borders. */
+
 :root {
-  --azure-blue: #0078d4;
-  --azure-dark-blue: #005a9e;
-  --azure-bg: #f3f3f3;
-  --azure-white: #ffffff;
-  --azure-text: #323130;
-  --azure-gray-text: #605e5c;
-  --azure-border: #edebe9;
-  --azure-hover: #f3f2f1;
-  --azure-font: 'Segoe UI', 'West European', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif;
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Core palette */
+  --background: #FAFAFA;
+  --foreground: #121212;
+  --card: #FFFFFF;
+  --card-foreground: #121212;
+  --popover: #FFFFFF;
+  --popover-foreground: #121212;
+
+  /* Buttons & interactive */
+  --primary: #121212;
+  --primary-foreground: #FAFAFA;
+  --secondary: #F0F0F0;
+  --secondary-foreground: #121212;
+  --muted: #F0F0F0;
+  --muted-foreground: #6B7280;
+  --accent: #FF5542;
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+
+  /* Borders & inputs */
+  --border: #E5E5E5;
+  --input: #E5E5E5;
+  --ring: #121212;
+
+  /* Semantic */
+  --success: #16A34A;
+  --warning: #F59E0B;
+
+  /* Chart colors */
+  --chart-1: #121212;
+  --chart-2: #6B7280;
+  --chart-3: #9CA3AF;
+  --chart-4: #D1D5DB;
+  --chart-5: #FF5542;
+
+  /* Sidebar */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #121212;
+  --sidebar-primary: #121212;
+  --sidebar-primary-foreground: #FAFAFA;
+  --sidebar-accent: #F0F0F0;
+  --sidebar-accent-foreground: #121212;
+  --sidebar-border: #E5E5E5;
+  --sidebar-ring: #121212;
+
+  /* Layout */
+  --radius: 0.5rem;
+  /* 8px */
+
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Dark mode */
+.dark {
+  --background: #121212;
+  --foreground: #F5F5F5;
+  --card: #1E1E1E;
+  --card-foreground: #F5F5F5;
+  --popover: #1E1E1E;
+  --popover-foreground: #F5F5F5;
+
+  --primary: #F5F5F5;
+  --primary-foreground: #121212;
+  --secondary: #2C2C2C;
+  --secondary-foreground: #F5F5F5;
+  --muted: #2C2C2C;
+  --muted-foreground: #9CA3AF;
+  --accent: #FF5542;
+  --accent-foreground: #FFFFFF;
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #3F3F3F;
+  --input: #3F3F3F;
+  --ring: #F5F5F5;
+
+  --success: #22C55E;
+  --warning: #FBBF24;
+
+  --chart-1: #F5F5F5;
+  --chart-2: #9CA3AF;
+  --chart-3: #6B7280;
+  --chart-4: #4B5563;
+  --chart-5: #FF5542;
+
+  --sidebar: #1E1E1E;
+  --sidebar-foreground: #F5F5F5;
+  --sidebar-primary: #F5F5F5;
+  --sidebar-primary-foreground: #121212;
+  --sidebar-accent: #2C2C2C;
+  --sidebar-accent-foreground: #F5F5F5;
+  --sidebar-border: #3F3F3F;
+  --sidebar-ring: #F5F5F5;
 }
 
 @theme inline {
@@ -70,9 +130,12 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -94,8 +157,8 @@
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 font-sans antialiased;
-    font-family: 'Ubuntu', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
   }
 
   #root {
@@ -108,15 +171,32 @@
   h4,
   h5,
   h6 {
-    @apply m-0 font-semibold text-gray-900;
+    @apply m-0 font-semibold text-foreground;
   }
 
+  /* Heading scale */
+  h1 {
+    @apply text-[1.75rem] font-semibold tracking-tight;
+  }
+
+  /* 28px */
+  h2 {
+    @apply text-[1.25rem] font-semibold tracking-[-0.01em];
+  }
+
+  /* 20px */
+  h3 {
+    @apply text-base font-medium;
+  }
+
+  /* 16px */
+
   a {
-    @apply no-underline text-blue-600 transition-colors duration-100;
+    @apply no-underline text-foreground transition-colors duration-100;
   }
 
   a:hover {
-    @apply text-blue-700 underline;
+    @apply text-foreground/80;
   }
 
   ul {
@@ -129,6 +209,11 @@
 
   button:disabled {
     @apply opacity-60 cursor-not-allowed;
+  }
+
+  /* Utility: monospace text (API keys, IDs, code) */
+  .font-mono {
+    font-family: var(--font-mono);
   }
 }
 

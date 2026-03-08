@@ -28,6 +28,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
+  // Listen for forced logout from API interceptor (avoids hard page reload)
+  useEffect(() => {
+    const handleForcedLogout = () => {
+      setUser(null);
+    };
+    window.addEventListener('auth:logout', handleForcedLogout);
+    return () => window.removeEventListener('auth:logout', handleForcedLogout);
+  }, []);
+
   const fetchCurrentUser = useCallback(async () => {
     try {
       const response = await api.get('/admin/me');

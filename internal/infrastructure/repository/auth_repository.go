@@ -481,11 +481,13 @@ func (r *authRepository) RevokeRefreshToken(ctx context.Context, tokenID string)
 		return fmt.Errorf("failed to marshal token revocation: %w", err)
 	}
 
+	retryOnConflict := 3
 	req := esapi.UpdateRequest{
-		Index:      refreshTokensIndex,
-		DocumentID: tokenID,
-		Body:       bytesReader(data),
-		Refresh:    "true",
+		Index:           refreshTokensIndex,
+		DocumentID:      tokenID,
+		Body:            bytesReader(data),
+		Refresh:         "true",
+		RetryOnConflict: &retryOnConflict,
 	}
 
 	res, err := req.Do(ctx, r.client)

@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -32,7 +33,10 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 	}
 
 	// Validate channel
-	validChannels := map[string]bool{"push": true, "email": true, "sms": true, "webhook": true, "in_app": true, "sse": true}
+	validChannels := map[string]bool{
+		"push": true, "email": true, "sms": true, "webhook": true,
+		"in_app": true, "sse": true, "slack": true, "discord": true, "whatsapp": true,
+	}
 	if !validChannels[req.Channel] {
 		return nil, fmt.Errorf("invalid channel: %s", req.Channel)
 	}
@@ -55,6 +59,7 @@ func (s *TemplateService) Create(ctx context.Context, req *templateDomain.Create
 
 	tmpl := &templateDomain.Template{
 		AppID:         req.AppID,
+		EnvironmentID: req.EnvironmentID,
 		Name:          req.Name,
 		Description:   req.Description,
 		Channel:       req.Channel,
@@ -110,7 +115,9 @@ func (s *TemplateService) GetByName(ctx context.Context, appID, name, locale str
 	return tmpl, nil
 }
 
-// Update updates an existing template
+// Update updates an existing template in-place.
+// The template ID remains stable across edits. Use CreateVersion explicitly
+// to snapshot the current state into a new version document.
 func (s *TemplateService) Update(ctx context.Context, id, appID string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
 	// Get existing template
 	tmpl, err := s.repo.GetByID(ctx, id)
@@ -123,7 +130,7 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 		return nil, fmt.Errorf("template not found")
 	}
 
-	// Update fields if provided
+	// Apply field updates
 	if req.Name != nil && *req.Name != "" {
 		tmpl.Name = *req.Name
 	}
@@ -169,7 +176,10 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 		return nil, fmt.Errorf("failed to update template: %w", err)
 	}
 
-	s.logger.Info("Updated template", zap.String("id", id))
+	s.logger.Info("Updated template",
+		zap.String("id", tmpl.ID),
+		zap.String("name", tmpl.Name),
+		zap.Int("version", tmpl.Version))
 	return tmpl, nil
 }
 
@@ -288,6 +298,134 @@ func (s *TemplateService) GetVersions(ctx context.Context, appID, name, locale s
 	return versions, nil
 }
 
+// GetByVersion retrieves a specific version of a template by its version number.
+func (s *TemplateService) GetByVersion(ctx context.Context, appID, name, locale string, version int) (*templateDomain.Template, error) {
+	if version < 1 {
+		return nil, fmt.Errorf("version must be >= 1")
+	}
+
+	tmpl, err := s.repo.GetByVersion(ctx, appID, name, locale, version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get template version %d: %w", version, err)
+	}
+
+	return tmpl, nil
+}
+
+// Rollback creates a new version whose content is copied from the specified target version.
+// It never deletes history — the rollback result is a new version.
+func (s *TemplateService) Rollback(ctx context.Context, templateID, appID string, targetVersion int, updatedBy string) (*templateDomain.Template, error) {
+	current, err := s.repo.GetByID(ctx, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("template not found: %w", err)
+	}
+	if current.AppID != appID {
+		return nil, fmt.Errorf("template not found")
+	}
+
+	target, err := s.repo.GetByVersion(ctx, current.AppID, current.Name, current.Locale, targetVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", targetVersion, err)
+	}
+
+	rollback := &templateDomain.Template{
+		AppID:         current.AppID,
+		Name:          current.Name,
+		Description:   target.Description,
+		Channel:       target.Channel,
+		WebhookTarget: target.WebhookTarget,
+		Subject:       target.Subject,
+		Body:          target.Body,
+		Variables:     target.Variables,
+		Metadata:      target.Metadata,
+		Locale:        current.Locale,
+		Status:        "active",
+		CreatedBy:     updatedBy,
+		UpdatedBy:     updatedBy,
+	}
+
+	if err := s.repo.CreateVersion(ctx, rollback); err != nil {
+		s.logger.Error("Failed to rollback template",
+			zap.String("template_id", templateID),
+			zap.Int("target_version", targetVersion),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to rollback template: %w", err)
+	}
+
+	s.logger.Info("Template rolled back",
+		zap.String("template_id", templateID),
+		zap.String("name", current.Name),
+		zap.Int("from_version", current.Version),
+		zap.Int("to_version", targetVersion),
+		zap.Int("new_version", rollback.Version))
+
+	return rollback, nil
+}
+
+// Diff compares two versions of a template and returns field-level changes.
+func (s *TemplateService) Diff(ctx context.Context, appID, name, locale string, fromVersion, toVersion int) (*templateDomain.TemplateDiff, error) {
+	from, err := s.repo.GetByVersion(ctx, appID, name, locale, fromVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", fromVersion, err)
+	}
+	to, err := s.repo.GetByVersion(ctx, appID, name, locale, toVersion)
+	if err != nil {
+		return nil, fmt.Errorf("version %d not found: %w", toVersion, err)
+	}
+
+	if from.AppID != appID || to.AppID != appID {
+		return nil, fmt.Errorf("template not found")
+	}
+
+	diff := &templateDomain.TemplateDiff{
+		FromVersion: fromVersion,
+		ToVersion:   toVersion,
+	}
+
+	if from.Subject != to.Subject {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "subject", From: from.Subject, To: to.Subject})
+	}
+	if from.Body != to.Body {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "body", From: from.Body, To: to.Body})
+	}
+	if from.Description != to.Description {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "description", From: from.Description, To: to.Description})
+	}
+	if from.Channel != to.Channel {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "channel", From: from.Channel, To: to.Channel})
+	}
+	if from.WebhookTarget != to.WebhookTarget {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "webhook_target", From: from.WebhookTarget, To: to.WebhookTarget})
+	}
+	if !reflect.DeepEqual(from.Variables, to.Variables) {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "variables", From: from.Variables, To: to.Variables})
+	}
+	if !reflect.DeepEqual(from.Metadata, to.Metadata) {
+		diff.Changes = append(diff.Changes, templateDomain.FieldChange{Field: "metadata", From: from.Metadata, To: to.Metadata})
+	}
+
+	if diff.Changes == nil {
+		diff.Changes = []templateDomain.FieldChange{}
+	}
+
+	s.logger.Info("Template diff computed",
+		zap.String("name", name),
+		zap.Int("from", fromVersion),
+		zap.Int("to", toVersion),
+		zap.Int("changes", len(diff.Changes)))
+
+	return diff, nil
+}
+
+// renderSubjectTemplate renders a subject line template with data.
+func (s *TemplateService) RenderSubject(subjectTmpl string, data map[string]interface{}) string {
+	rendered, err := s.renderTemplate(subjectTmpl, data)
+	if err != nil {
+		return subjectTmpl // Fallback to raw subject on error
+	}
+	return rendered
+}
+
 // extractVariables parses Go template variables ({{.varName}}) from body text.
 // Returns a deduplicated, sorted slice of variable names.
 func extractVariables(body string) []string {
@@ -311,13 +449,23 @@ func extractVariables(body string) []string {
 
 // validateTemplateVariables validates that all variables used in the template body are defined
 func (s *TemplateService) validateTemplateVariables(body string, variables []string) error {
-	// Extract variables from template using {{variable}} pattern
+	// Go template action keywords that are not variable references
+	templateKeywords := map[string]bool{
+		"if": true, "else": true, "end": true, "range": true,
+		"with": true, "define": true, "template": true, "block": true,
+		"nil": true, "not": true, "and": true, "or": true,
+		"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+		"print": true, "printf": true, "println": true, "len": true,
+		"index": true, "call": true, "html": true, "js": true, "urlquery": true,
+	}
+
+	// Extract variables from template using {{.variable}} pattern
 	re := regexp.MustCompile(`\{\{\.?(\w+)\}\}`)
 	matches := re.FindAllStringSubmatch(body, -1)
 
 	usedVars := make(map[string]bool)
 	for _, match := range matches {
-		if len(match) > 1 {
+		if len(match) > 1 && !templateKeywords[match[1]] {
 			usedVars[match[1]] = true
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 )
 
 // CreateTemplateRequest represents a request to create a new template
@@ -11,7 +12,7 @@ type CreateTemplateRequest struct {
 	AppID         string                 `json:"app_id" validate:"required"`
 	Name          string                 `json:"name" validate:"required,min=3,max=100"`
 	Description   string                 `json:"description"`
-	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse slack discord whatsapp"`
 	WebhookTarget string                 `json:"webhook_target,omitempty"`
 	Subject       string                 `json:"subject"`
 	Body          string                 `json:"body" validate:"required"`
@@ -36,29 +37,31 @@ type UpdateTemplateRequest struct {
 
 // TemplateResponse represents a template in API responses
 type TemplateResponse struct {
-	ID            string                 `json:"id"`
-	AppID         string                 `json:"app_id"`
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description"`
-	Channel       string                 `json:"channel"`
-	WebhookTarget string                 `json:"webhook_target,omitempty"`
-	Subject       string                 `json:"subject"`
-	Body          string                 `json:"body"`
-	Variables     []string               `json:"variables"`
-	Metadata      map[string]interface{} `json:"metadata"`
-	Version       int                    `json:"version"`
-	Status        string                 `json:"status"`
-	Locale        string                 `json:"locale"`
-	CreatedBy     string                 `json:"created_by"`
-	UpdatedBy     string                 `json:"updated_by"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+	ID            string                     `json:"id"`
+	AppID         string                     `json:"app_id"`
+	Name          string                     `json:"name"`
+	Description   string                     `json:"description"`
+	Channel       string                     `json:"channel"`
+	WebhookTarget string                     `json:"webhook_target,omitempty"`
+	Subject       string                     `json:"subject"`
+	Body          string                     `json:"body"`
+	Variables     []string                   `json:"variables"`
+	Metadata      map[string]interface{}     `json:"metadata"`
+	Controls      []template.TemplateControl `json:"controls,omitempty"`
+	ControlValues template.ControlValues     `json:"control_values,omitempty"`
+	Version       int                        `json:"version"`
+	Status        string                     `json:"status"`
+	Locale        string                     `json:"locale"`
+	CreatedBy     string                     `json:"created_by"`
+	UpdatedBy     string                     `json:"updated_by"`
+	CreatedAt     time.Time                  `json:"created_at"`
+	UpdatedAt     time.Time                  `json:"updated_at"`
 } // @name TemplateResponse
 
 // ListTemplatesRequest represents query parameters for listing templates
 type ListTemplatesRequest struct {
 	AppID    string `query:"app_id"`
-	Channel  string `query:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
+	Channel  string `query:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse slack discord whatsapp"`
 	Name     string `query:"name"`
 	Status   string `query:"status" validate:"omitempty,oneof=active inactive archived"`
 	Locale   string `query:"locale"`
@@ -96,6 +99,18 @@ type CreateVersionRequest struct {
 	Locale      string                 `json:"locale" validate:"omitempty,min=2,max=10"`
 	CreatedBy   string                 `json:"created_by"`
 } // @name CreateVersionRequest
+
+// RollbackRequest represents a request to rollback a template to a specific version
+type RollbackRequest struct {
+	Version   int    `json:"version" validate:"required,min=1"`
+	UpdatedBy string `json:"updated_by"`
+} // @name RollbackRequest
+
+// SendTestRequest represents a request to send a test email for a template
+type SendTestRequest struct {
+	ToEmail    string                 `json:"to_email" validate:"required,email"`
+	SampleData map[string]interface{} `json:"sample_data"`
+} // @name SendTestRequest
 
 // Helper functions to convert between domain and DTO
 

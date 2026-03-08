@@ -19,6 +19,7 @@ go.work
 
 # Environment variables
 .env
+ui/.env
 .env.local
 .env.*.local
 ui/.env.example
@@ -133,3 +134,4 @@ deploy/
 # Scratch files
 abc.json
 ui/a.json
+cmd/newsletter-broadcaster/*

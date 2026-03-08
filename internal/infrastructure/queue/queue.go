@@ -10,6 +10,7 @@ import (
 // NotificationQueueItem represents an item in the notification queue
 type NotificationQueueItem struct {
 	NotificationID string                `json:"notification_id"`
+	AppID          string                `json:"app_id,omitempty"`
 	Priority       notification.Priority `json:"priority"`
 	RetryCount     int                   `json:"retry_count"`
 	EnqueuedAt     time.Time             `json:"enqueued_at"`
@@ -48,6 +49,9 @@ type Queue interface {
 
 	// ReplayDLQ moves items from DLQ back to their original priority queues
 	ReplayDLQ(ctx context.Context, limit int) (int, error)
+
+	// ReplayDLQForApps replays DLQ items only for the specified app IDs
+	ReplayDLQForApps(ctx context.Context, limit int, allowedApps map[string]bool) (int, error)
 
 	// EnqueueScheduled adds a notification to the scheduled queue (delayed)
 	EnqueueScheduled(ctx context.Context, item NotificationQueueItem, scheduledAt time.Time) error

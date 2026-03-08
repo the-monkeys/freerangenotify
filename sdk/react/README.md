@@ -1,52 +1,190 @@
 # @freerangenotify/react
 
-Drop-in React notification bell component for **FreeRangeNotify** using Server-Sent Events (SSE).
+Drop-in React components and headless hooks for **FreeRangeNotify**.
+
+Provides a context-based architecture with `FreeRangeProvider`, pre-built UI components (`NotificationBell`, `Preferences`), and headless hooks for custom UIs.
 
 ## Installation
 
 ```bash
-npm install @freerangenotify/react
+npm install @freerangenotify/react @freerangenotify/sdk
 ```
 
 ## Quick Start
 
 ```tsx
-import { NotificationBell } from '@freerangenotify/react';
+import { FreeRangeProvider, NotificationBell, Preferences } from '@freerangenotify/react';
 
 function App() {
   return (
-    <NotificationBell
-      userId="user-uuid-from-creation"     // Internal UUID (NOT external_id)
-      apiBaseURL="http://localhost:8080"     // Optional — defaults to window.location.origin
-      onNotification={(n) => console.log('New notification:', n)}
-    />
+    <FreeRangeProvider apiKey="frn_xxx" userId="user-uuid" apiBaseURL="http://localhost:8080/v1">
+      <NotificationBell />
+      <Preferences />
+    </FreeRangeProvider>
   );
 }
 ```
 
-## Props
+## FreeRangeProvider
+
+Wraps children with a React context containing the initialized JS SDK client.
+
+```tsx
+<FreeRangeProvider
+  apiKey="frn_xxx"              // Required
+  userId="user-internal-uuid"   // Required — internal UUID from user creation
+  apiBaseURL="http://localhost:8080/v1"  // Optional
+  subscriberHash="hmac-hash"    // Optional — for authenticated SSE
+>
+  {children}
+</FreeRangeProvider>
+```
+
+| Prop | Type | Required | Description |
+|------|------|----------|-------------|
+| `apiKey` | `string` | yes | Application API key (frn_xxx). |
+| `userId` | `string` | yes | Internal UUID of the authenticated user. |
+| `apiBaseURL` | `string` | no | API base URL. Default: `http://localhost:8080/v1`. |
+| `subscriberHash` | `string` | no | HMAC hash for authenticated SSE. |
+
+## Components
+
+### NotificationBell
+
+Notification bell with real-time SSE, category tabs, mark-read, archive, and snooze.
+
+```tsx
+<NotificationBell
+  tabs={[
+    { label: 'All', category: '' },
+    { label: 'Alerts', category: 'alert' },
+    { label: 'Updates', category: 'update' },
+  ]}
+  theme="light"
+  onNotification={(n) => console.log(n)}
+/>
+```
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `userId` | `string` | **required** | Internal UUID of the user (returned from `POST /v1/users/`). |
-| `apiBaseURL` | `string` | `window.location.origin` | Base URL of the FreeRangeNotify API server. |
-| `onNotification` | `(notification) => void` | — | Callback fired on each incoming SSE notification. |
-| `maxItems` | `number` | `50` | Maximum notifications to keep in the dropdown list. |
-| `className` | `string` | — | Custom CSS class applied to the root container. |
-| `bellIcon` | `ReactNode` | `🔔` | Custom icon/element to replace the default bell emoji. |
+| `maxItems` | `number` | `50` | Max notifications in the dropdown. |
+| `className` | `string` | — | Custom CSS class for root container. |
+| `bellIcon` | `ReactNode` | `🔔` | Custom bell icon element. |
+| `tabs` | `NotificationBellTab[]` | All/Alerts/Updates | Category filter tabs. |
+| `onNotification` | `(SSENotification) => void` | — | Callback on new SSE notification. |
+| `theme` | `'light' \| 'dark'` | `'light'` | Visual theme. |
+| `pageSize` | `number` | `20` | Page size for pagination. |
 
-## How It Works
+### Preferences
 
-1. The component opens an `EventSource` connection to `/v1/sse?user_id={userId}`.
-2. Incoming `notification` events are parsed and displayed in a dropdown.
-3. An unread badge appears on the bell icon.
-4. The connection indicator (green/red dot) shows real-time connectivity status.
+Channel toggles, quiet hours, and Do Not Disturb management.
+
+```tsx
+<Preferences
+  theme="dark"
+  onSave={(prefs) => console.log('Saved:', prefs)}
+/>
+```
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `theme` | `'light' \| 'dark'` | `'light'` | Visual theme. |
+| `onSave` | `(Preferences) => void` | — | Callback after save. |
+| `className` | `string` | — | Custom CSS class. |
+
+### ChannelToggle
+
+Individual channel toggle switch (used internally by Preferences, also exported).
+
+```tsx
+<ChannelToggle label="Email" enabled={true} onChange={(v) => setEnabled(v)} />
+```
+
+### QuietHoursEditor
+
+Time range picker for quiet hours configuration.
+
+```tsx
+<QuietHoursEditor value={{ start: '22:00', end: '08:00' }} onChange={setQuietHours} />
+```
+
+## Headless Hooks
+
+For building custom UIs without the pre-built components.
+
+### useNotifications
+
+```tsx
+const {
+  notifications,   // NotificationResponse[]
+  loading,          // boolean
+  unreadCount,      // number
+  markRead,         // (ids: string[]) => Promise<void>
+  markAllRead,      // () => Promise<void>
+  archive,          // (ids: string[]) => Promise<void>
+  snooze,           // (id: string, duration: string) => Promise<void>
+  loadMore,         // () => Promise<void>
+  hasMore,          // boolean
+  refresh,          // () => Promise<void>
+} = useNotifications({ category: 'alert', pageSize: 20, unreadOnly: false });
+```
+
+### usePreferences
+
+```tsx
+const {
+  preferences,  // Preferences | null
+  loading,      // boolean
+  update,       // (prefs: Partial<Preferences>) => Promise<void>
+} = usePreferences();
+```
+
+### useSSE
+
+```tsx
+const {
+  connected,          // boolean
+  lastNotification,   // SSENotification | null
+} = useSSE({
+  onNotification: (n) => console.log(n),
+});
+```
+
+### useUnreadCount
+
+```tsx
+const { count, loading, refresh } = useUnreadCount();
+```
+
+### useFreeRange
+
+Low-level context access — returns the SDK client and user info.
+
+```tsx
+const { client, userId, subscriberHash } = useFreeRange();
+await client.notifications.send({ ... });
+```
+
+## File Structure
+
+```
+sdk/react/src/
+├── index.tsx                         # Re-exports all components and hooks
+├── FreeRangeProvider.tsx              # Context provider
+├── NotificationBell.tsx              # Bell with tabs, actions, SSE
+├── Preferences.tsx                   # Channel toggles, quiet hours
+├── hooks.ts                          # Headless hooks
+└── components/
+    ├── ChannelToggle.tsx             # Toggle switch
+    └── QuietHoursEditor.tsx          # Quiet hours time picker
+```
 
 ## Important Notes
 
 - The `userId` must be the **internal UUID** returned by the FreeRangeNotify API when creating a user, NOT an `external_id` or email.
-- Send notifications using `channel: "sse"` for them to appear via this component.
-- The component **does not** require any CSS framework — all styles are inline.
+- All components must be wrapped in a `<FreeRangeProvider>`.
+- Send notifications using `channel: "sse"` for real-time delivery to the bell.
+- Components use inline styles — no CSS framework required.
 
 ## License
 

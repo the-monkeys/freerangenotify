@@ -18,8 +18,12 @@ var (
 	ErrInvalidScheduleTime   = errors.New("invalid schedule time")
 	ErrRateLimitExceeded     = errors.New("user exceeded daily notification limit")
 	ErrDNDEnabled            = errors.New("user has Do Not Disturb enabled")
+	ErrQuietHours            = errors.New("user is in quiet hours, only critical notifications allowed")
 	ErrTemplateRequired      = errors.New("template_id is required")
 	ErrTemplateNotFound      = errors.New("template not found")
+	ErrCannotSnooze          = errors.New("notification cannot be snoozed")
+	ErrCannotArchive         = errors.New("notification cannot be archived")
+	ErrInvalidSnoozeDuration = errors.New("invalid snooze duration")
 )
 
 // IsValidationError checks if an error is a validation error

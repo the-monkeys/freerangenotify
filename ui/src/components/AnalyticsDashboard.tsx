@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import ChannelBreakdownChart from './dashboard/ChannelBreakdownChart';
 
 const CHANNEL_COLORS: Record<string, string> = {
     email: 'bg-blue-100 text-blue-700',
@@ -52,7 +53,7 @@ export default function AnalyticsDashboard() {
                 <div className="flex justify-between items-center">
                     <CardTitle>Notification Analytics</CardTitle>
                     <Select value={period} onValueChange={setPeriod}>
-                        <SelectTrigger className="w-[120px]">
+                        <SelectTrigger className="w-[120px]" aria-label="Select time period">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -66,7 +67,7 @@ export default function AnalyticsDashboard() {
             </CardHeader>
             <CardContent className="space-y-6">
                 {/* Stat Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     <StatCard label="Total Sent" value={summary.total_sent + summary.total_delivered + summary.total_read} color="blue" />
                     <StatCard label="Delivered" value={summary.total_delivered} color="green" />
                     <StatCard label="Failed" value={summary.total_failed} color="red" />
@@ -74,6 +75,20 @@ export default function AnalyticsDashboard() {
                         label="Success Rate"
                         value={`${summary.success_rate.toFixed(1)}%`}
                         color={summary.success_rate >= 90 ? 'green' : summary.success_rate >= 70 ? 'yellow' : 'red'}
+                    />
+                    <StatCard
+                        label="Delivery Rate"
+                        value={
+                            summary.total_sent > 0
+                                ? `${((summary.total_delivered / (summary.total_sent + summary.total_delivered + summary.total_read)) * 100).toFixed(1)}%`
+                                : '—'
+                        }
+                        color={summary.total_sent > 0 && (summary.total_delivered / (summary.total_sent + summary.total_delivered + summary.total_read)) >= 0.9 ? 'green' : 'yellow'}
+                    />
+                    <StatCard
+                        label="Avg Latency"
+                        value={summary.avg_latency_ms != null ? `${summary.avg_latency_ms}ms` : '—'}
+                        color="blue"
                     />
                 </div>
 
@@ -109,10 +124,23 @@ export default function AnalyticsDashboard() {
                     </div>
                 )}
 
-                {/* Channel Breakdown */}
+                {/* Channel Breakdown Chart */}
                 {summary.by_channel && summary.by_channel.length > 0 && (
-                    <div>
-                        <h4 className="text-sm font-semibold mb-3">By Channel</h4>
+                    <div className="space-y-4">
+                        <ChannelBreakdownChart
+                            channels={summary.by_channel}
+                            totalSent={summary.total_sent + summary.total_delivered + summary.total_read}
+                        />
+                    </div>
+                )}
+
+                {/* Channel Breakdown Detail Table (collapsible) */}
+                {summary.by_channel && summary.by_channel.length > 0 && (
+                    <details className="group">
+                        <summary className="text-sm font-semibold mb-3 cursor-pointer select-none flex items-center gap-1">
+                            <span className="transition-transform group-open:rotate-90">▶</span>
+                            Channel Detail Table
+                        </summary>
                         <Table>
                             <TableHeader>
                                 <TableRow>
@@ -145,7 +173,7 @@ export default function AnalyticsDashboard() {
                                 ))}
                             </TableBody>
                         </Table>
-                    </div>
+                    </details>
                 )}
 
                 {/* Additional Stats */}

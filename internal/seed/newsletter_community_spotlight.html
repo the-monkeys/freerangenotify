@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+    xmlns:o="urn:schemas-microsoft-com:office:office">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no">
+    <title>Community Spotlight</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:AllowPNG/>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        body,
+        table,
+        td,
+        a {
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+
+        table,
+        td {
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+
+        img {
+            -ms-interpolation-mode: bicubic;
+            border: 0;
+            height: auto;
+            line-height: 100%;
+            outline: none;
+            text-decoration: none;
+        }
+
+        body {
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            background-color: #fefce8;
+        }
+
+        a[x-apple-data-detectors] {
+            color: inherit !important;
+            text-decoration: none !important;
+            font-size: inherit !important;
+            font-family: inherit !important;
+            font-weight: inherit !important;
+            line-height: inherit !important;
+        }
+
+        @media only screen and (max-width: 660px) {
+            .email-container {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            .fluid {
+                max-width: 100% !important;
+                height: auto !important;
+            }
+
+            .stack-column,
+            .stack-column-center {
+                display: block !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            .stack-column-center {
+                text-align: center !important;
+            }
+
+            .center-on-narrow {
+                text-align: center !important;
+                display: block !important;
+                margin-left: auto !important;
+                margin-right: auto !important;
+                float: none !important;
+            }
+
+            table.center-on-narrow {
+                display: inline-block !important;
+            }
+
+            .stat-column {
+                display: block !important;
+                width: 100% !important;
+                padding: 10px 0 !important;
+            }
+
+            .achievement-card {
+                display: block !important;
+                width: 100% !important;
+                margin-bottom: 12px !important;
+            }
+        }
+    </style>
+</head>
+
+<body style="margin:0; padding:0; background-color:#fefce8; font-family:'Segoe UI', Arial, Helvetica, sans-serif;">
+
+    <!-- Preheader -->
+    <span
+        style="display:none !important; visibility:hidden; mso-hide:all; font-size:1px; color:#fefce8; line-height:1px; max-height:0px; max-width:0px; opacity:0; overflow:hidden;">
+        {{.preheader_text}}
+    </span>
+
+    <!-- Full-width wrapper -->
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+        style="background-color:#fefce8;">
+        <tr>
+            <td align="center" valign="top" style="padding: 20px 10px;">
+
+                <!--[if mso]>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="640" align="center">
+                <tr>
+                <td>
+                <![endif]-->
+
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                    style="max-width:640px; margin:0 auto;" class="email-container">
+
+                    <!-- ====== HEADER ====== -->
+                    <tr>
+                        <td
+                            style="background-color:#fffbeb; border-bottom:3px solid #f59e0b; padding:36px 40px 28px 40px; text-align:center;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center" style="padding-bottom:10px;">
+                                        <span
+                                            style="display:inline-block; width:40px; height:40px; background-color:#f59e0b; border-radius:50%; line-height:40px; text-align:center; font-size:20px; color:#1c1917;">&#9733;</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:26px; font-weight:700; color:#1c1917; line-height:1.3; padding-bottom:6px;">
+                                        {{.community_name}}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:14px; font-weight:600; color:#f59e0b; letter-spacing:2px; text-transform:uppercase; padding-bottom:6px;">
+                                        Community Spotlight
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:13px; color:#78716c; line-height:1.4;">
+                                        {{.issue_date}}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== SPOTLIGHT MEMBER CARD ====== -->
+                    <tr>
+                        <td style="padding:28px 20px 0 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#ffffff; border-radius:8px; border-top:4px solid #f59e0b; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                <tr>
+                                    <td style="padding:32px 30px 24px 30px; text-align:center;">
+                                        <!-- Avatar -->
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td align="center" style="padding-bottom:18px;">
+                                                    <!--[if mso]>
+                                                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" style="width:90px;height:90px;" arcsize="50%" fillcolor="#f5f5f4" stroke="false">
+                                                    <v:fill type="frame" src="{{.member_avatar}}" />
+                                                    </v:roundrect>
+                                                    <![endif]-->
+                                                    <!--[if !mso]><!-->
+                                                    <img src="{{.member_avatar}}" alt="Member Avatar" width="90"
+                                                        height="90"
+                                                        style="width:90px; height:90px; border-radius:50%; object-fit:cover; display:block; margin:0 auto; border:3px solid #fef3c7;">
+                                                    <!--<![endif]-->
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:22px; font-weight:700; color:#1c1917; line-height:1.3; padding-bottom:4px;">
+                                                    {{.member_name}}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:14px; font-weight:500; color:#f59e0b; line-height:1.4; padding-bottom:14px;">
+                                                    {{.member_role}}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; color:#44403c; line-height:1.6; padding-bottom:20px;">
+                                                    {{.member_bio}}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center">
+                                                    <a href="{{.member_profile_url}}"
+                                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:14px; font-weight:600; color:#f59e0b; text-decoration:none;">
+                                                        View Profile &#8594;
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== MEMBER QUOTE ====== -->
+                    <tr>
+                        <td style="padding:20px 20px 0 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#ffffff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                <tr>
+                                    <td style="padding:28px 32px;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:Georgia, 'Times New Roman', serif; font-size:52px; color:#f59e0b; line-height:1; padding-bottom:8px;">
+                                                    &#8220;
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:Georgia, 'Times New Roman', serif; font-size:16px; font-style:italic; color:#44403c; line-height:1.7; padding:0 10px;">
+                                                    {{.member_quote}}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td align="center" style="padding-top:14px;">
+                                                    <span
+                                                        style="display:inline-block; width:40px; height:2px; background-color:#f59e0b;"></span>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== ACHIEVEMENTS SECTION ====== -->
+                    <tr>
+                        <td style="padding:28px 20px 0 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:20px; font-weight:700; color:#1c1917; line-height:1.3; padding-bottom:18px;">
+                                        Recent Achievements
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Achievement 1 -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="margin-bottom:12px;" class="achievement-card">
+                                <tr>
+                                    <td
+                                        style="background-color:#ffffff; border-radius:8px; padding:20px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td width="44" valign="top" style="padding-right:14px;">
+                                                    <span
+                                                        style="display:inline-block; width:40px; height:40px; background-color:#fef3c7; border-radius:8px; text-align:center; line-height:40px; font-size:20px;">
+                                                        {{.achievement1_icon}}
+                                                    </span>
+                                                </td>
+                                                <td valign="top">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#1c1917; line-height:1.3; padding-bottom:4px;">
+                                                                {{.achievement1_title}}
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:13px; color:#78716c; line-height:1.5;">
+                                                                {{.achievement1_desc}}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Achievement 2 -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="margin-bottom:12px;" class="achievement-card">
+                                <tr>
+                                    <td
+                                        style="background-color:#ffffff; border-radius:8px; padding:20px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td width="44" valign="top" style="padding-right:14px;">
+                                                    <span
+                                                        style="display:inline-block; width:40px; height:40px; background-color:#fef3c7; border-radius:8px; text-align:center; line-height:40px; font-size:20px;">
+                                                        {{.achievement2_icon}}
+                                                    </span>
+                                                </td>
+                                                <td valign="top">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#1c1917; line-height:1.3; padding-bottom:4px;">
+                                                                {{.achievement2_title}}
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:13px; color:#78716c; line-height:1.5;">
+                                                                {{.achievement2_desc}}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Achievement 3 -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                class="achievement-card">
+                                <tr>
+                                    <td
+                                        style="background-color:#ffffff; border-radius:8px; padding:20px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td width="44" valign="top" style="padding-right:14px;">
+                                                    <span
+                                                        style="display:inline-block; width:40px; height:40px; background-color:#fef3c7; border-radius:8px; text-align:center; line-height:40px; font-size:20px;">
+                                                        {{.achievement3_icon}}
+                                                    </span>
+                                                </td>
+                                                <td valign="top">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:600; color:#1c1917; line-height:1.3; padding-bottom:4px;">
+                                                                {{.achievement3_title}}
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:13px; color:#78716c; line-height:1.5;">
+                                                                {{.achievement3_desc}}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== COMMUNITY NUMBERS ====== -->
+                    <tr>
+                        <td style="padding:28px 20px 0 20px;">
+                            <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" style="width:600px;height:auto;v-text-anchor:middle;" arcsize="4%" fillcolor="#f59e0b" stroke="false">
+                            <v:fill type="gradient" color="#f59e0b" color2="#ea580c" angle="90" />
+                            <w:anchorlock/>
+                            <center>
+                            <![endif]-->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background:linear-gradient(135deg, #f59e0b 0%, #ea580c 100%); border-radius:8px;">
+                                <tr>
+                                    <td style="padding:30px 20px;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:18px; font-weight:700; color:#ffffff; line-height:1.3; padding-bottom:22px;">
+                                                    Community Numbers
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <!--[if mso]>
+                                                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                                    <tr>
+                                                    <td width="33%" valign="top" align="center">
+                                                    <![endif]-->
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td width="33%" align="center" valign="top"
+                                                                class="stat-column" style="padding:4px 8px;">
+                                                                <table role="presentation" cellspacing="0"
+                                                                    cellpadding="0" border="0">
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:30px; font-weight:800; color:#ffffff; line-height:1.2;">
+                                                                            {{.community_stat1_number}}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; font-weight:500; color:rgba(255,255,255,0.85); line-height:1.4; padding-top:4px; text-transform:uppercase; letter-spacing:1px;">
+                                                                            {{.community_stat1_label}}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <!--[if mso]>
+                                                            </td>
+                                                            <td width="33%" valign="top" align="center">
+                                                            <![endif]-->
+                                                            <td width="33%" align="center" valign="top"
+                                                                class="stat-column" style="padding:4px 8px;">
+                                                                <table role="presentation" cellspacing="0"
+                                                                    cellpadding="0" border="0">
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:30px; font-weight:800; color:#ffffff; line-height:1.2;">
+                                                                            {{.community_stat2_number}}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; font-weight:500; color:rgba(255,255,255,0.85); line-height:1.4; padding-top:4px; text-transform:uppercase; letter-spacing:1px;">
+                                                                            {{.community_stat2_label}}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <!--[if mso]>
+                                                            </td>
+                                                            <td width="33%" valign="top" align="center">
+                                                            <![endif]-->
+                                                            <td width="33%" align="center" valign="top"
+                                                                class="stat-column" style="padding:4px 8px;">
+                                                                <table role="presentation" cellspacing="0"
+                                                                    cellpadding="0" border="0">
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:30px; font-weight:800; color:#ffffff; line-height:1.2;">
+                                                                            {{.community_stat3_number}}
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr>
+                                                                        <td align="center"
+                                                                            style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; font-weight:500; color:rgba(255,255,255,0.85); line-height:1.4; padding-top:4px; text-transform:uppercase; letter-spacing:1px;">
+                                                                            {{.community_stat3_label}}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <!--[if mso]>
+                                                            </td>
+                                                            </tr>
+                                                            </table>
+                                                            <![endif]-->
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                            <!--[if mso]>
+                            </center>
+                            </v:roundrect>
+                            <![endif]-->
+                        </td>
+                    </tr>
+
+                    <!-- ====== UPCOMING SECTION ====== -->
+                    <tr>
+                        <td style="padding:28px 20px 0 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%"
+                                style="background-color:#ffffff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
+                                <tr>
+                                    <td style="padding:28px 28px 24px 28px;">
+                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0"
+                                            width="100%">
+                                            <tr>
+                                                <td align="center"
+                                                    style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:20px; font-weight:700; color:#1c1917; line-height:1.3; padding-bottom:20px;">
+                                                    What's Coming
+                                                </td>
+                                            </tr>
+
+                                            <!-- Upcoming Item 1 -->
+                                            <tr>
+                                                <td style="padding-bottom:16px;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td width="auto" valign="middle"
+                                                                style="padding-right:14px;">
+                                                                <table role="presentation" cellspacing="0"
+                                                                    cellpadding="0" border="0">
+                                                                    <tr>
+                                                                        <td
+                                                                            style="background-color:#fef3c7; border-radius:6px; padding:6px 12px; font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; font-weight:600; color:#92400e; white-space:nowrap;">
+                                                                            {{.upcoming1_date}}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <td valign="middle"
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:500; color:#1c1917; line-height:1.4;">
+                                                                {{.upcoming1_title}}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+
+                                            <!-- Divider -->
+                                            <tr>
+                                                <td style="padding-bottom:16px;">
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td
+                                                                style="border-top:1px solid #f5f5f4; font-size:0; line-height:0;">
+                                                                &nbsp;</td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+
+                                            <!-- Upcoming Item 2 -->
+                                            <tr>
+                                                <td>
+                                                    <table role="presentation" cellspacing="0" cellpadding="0"
+                                                        border="0" width="100%">
+                                                        <tr>
+                                                            <td width="auto" valign="middle"
+                                                                style="padding-right:14px;">
+                                                                <table role="presentation" cellspacing="0"
+                                                                    cellpadding="0" border="0">
+                                                                    <tr>
+                                                                        <td
+                                                                            style="background-color:#fef3c7; border-radius:6px; padding:6px 12px; font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; font-weight:600; color:#92400e; white-space:nowrap;">
+                                                                            {{.upcoming2_date}}
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <td valign="middle"
+                                                                style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:500; color:#1c1917; line-height:1.4;">
+                                                                {{.upcoming2_title}}
+                                                            </td>
+                                                        </tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== JOIN CTA ====== -->
+                    <tr>
+                        <td style="padding:28px 20px 0 20px;" align="center">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                                <tr>
+                                    <td>
+                                        <!--[if mso]>
+                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{.join_url}}" style="height:48px;v-text-anchor:middle;width:220px;" arcsize="25%" fillcolor="#f59e0b" stroke="false">
+                                        <w:anchorlock/>
+                                        <center style="color:#1c1917;font-family:'Segoe UI',Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;">{{.join_text}}</center>
+                                        </v:roundrect>
+                                        <![endif]-->
+                                        <!--[if !mso]><!-->
+                                        <a href="{{.join_url}}"
+                                            style="display:inline-block; background-color:#f59e0b; color:#1c1917; font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:15px; font-weight:700; text-decoration:none; padding:14px 36px; border-radius:8px; text-align:center; mso-hide:all;">
+                                            {{.join_text}}
+                                        </a>
+                                        <!--<![endif]-->
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- ====== FOOTER ====== -->
+                    <tr>
+                        <td style="padding:32px 20px 10px 20px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="border-top:1px solid #e7e5e4;"></td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 20px 40px 20px; text-align:center;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; color:#a8a29e; line-height:1.6; padding-bottom:8px;">
+                                        Powered by <strong style="color:#78716c;">FreeRangeNotify</strong>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center"
+                                        style="font-family:'Segoe UI', Arial, Helvetica, sans-serif; font-size:12px; line-height:1.6;">
+                                        <a href="{{.unsubscribe_url}}"
+                                            style="color:#a8a29e; text-decoration:underline;">Unsubscribe</a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                </table>
+
+                <!--[if mso]>
+                </td>
+                </tr>
+                </table>
+                <![endif]-->
+
+            </td>
+        </tr>
+    </table>
+
+</body>
+
+</html>

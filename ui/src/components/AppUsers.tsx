@@ -46,6 +46,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [formData, setFormData] = useState<CreateUserRequest>({
         email: '',
         phone: '',
+        external_id: '',
         timezone: 'UTC',
         language: 'en',
         preferences: {
@@ -85,6 +86,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             if (editingUser) {
                 // Update
                 const updatePayload: any = {
+                    external_id: formData.external_id,
                     email: formData.email,
                     phone: formData.phone,
                     timezone: formData.timezone,
@@ -101,6 +103,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             setFormData({
                 email: '',
                 phone: '',
+                external_id: '',
                 timezone: 'UTC',
                 language: 'en',
                 preferences: {
@@ -128,6 +131,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         setEditingUser(user.user_id);
         setFormData({
             user_id: user.user_id,
+            external_id: user.external_id || '',
             email: user.email,
             phone: user.phone || '',
             timezone: user.timezone || 'UTC',
@@ -169,6 +173,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 setFormData({
                                     email: '',
                                     phone: '',
+                                    external_id: '',
                                     timezone: 'UTC',
                                     language: 'en',
                                     preferences: {
@@ -193,7 +198,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             </CardHeader>
             <CardContent>
                 {showAddForm && (
-                    <form onSubmit={handleUpdateUser} className="mb-8 bg-gray-50 p-6 rounded border border-gray-200 space-y-4">
+                    <form onSubmit={handleUpdateUser} className="mb-8 bg-muted p-6 rounded border border-border space-y-4">
                         <h4 className="text-lg font-semibold mb-4">{editingUser ? 'Edit User' : 'Add New User'}</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
@@ -205,13 +210,26 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
                                     placeholder="e.g. EMP_001 (Optional)"
                                     disabled={!!editingUser}
-                                    className={editingUser ? "bg-gray-100 cursor-not-allowed" : ""}
+                                    className={editingUser ? "bg-muted cursor-not-allowed" : ""}
                                 />
                                 {!editingUser && (
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-xs text-muted-foreground">
                                         Leave empty to auto-generate a UUID.
                                     </p>
                                 )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="external_id">External ID</Label>
+                                <Input
+                                    id="external_id"
+                                    type="text"
+                                    value={formData.external_id || ''}
+                                    onChange={(e) => setFormData({ ...formData, external_id: e.target.value })}
+                                    placeholder="e.g. platform_user_123 (Optional)"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Your platform's user identifier. Used for SSE connections and cross-system lookups.
+                                </p>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
@@ -315,7 +333,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     </div>
                                 </div>
 
-                                <div className="mt-4 border-t border-gray-200 pt-4">
+                                <div className="mt-4 border-t border-border pt-4">
                                     <div className="flex items-center space-x-2 mb-2">
                                         <Checkbox
                                             id="quiet_hours_enabled"
@@ -325,8 +343,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                 preferences: {
                                                     ...formData.preferences,
                                                     quiet_hours: {
-                                                        ...formData.preferences?.quiet_hours,
-                                                        enabled: !!checked
+                                                        enabled: !!checked,
+                                                        start: formData.preferences?.quiet_hours?.start ?? '',
+                                                        end: formData.preferences?.quiet_hours?.end ?? '',
                                                     }
                                                 }
                                             })}
@@ -348,8 +367,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                         preferences: {
                                                             ...formData.preferences,
                                                             quiet_hours: {
-                                                                ...formData.preferences?.quiet_hours,
-                                                                start: e.target.value
+                                                                enabled: formData.preferences?.quiet_hours?.enabled ?? false,
+                                                                start: e.target.value,
+                                                                end: formData.preferences?.quiet_hours?.end ?? '',
                                                             }
                                                         }
                                                     })}
@@ -367,8 +387,9 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                         preferences: {
                                                             ...formData.preferences,
                                                             quiet_hours: {
-                                                                ...formData.preferences?.quiet_hours,
-                                                                end: e.target.value
+                                                                enabled: formData.preferences?.quiet_hours?.enabled ?? false,
+                                                                start: formData.preferences?.quiet_hours?.start ?? '',
+                                                                end: e.target.value,
                                                             }
                                                         }
                                                     })}
@@ -386,7 +407,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 )}
 
                 {users.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8 text-sm">No users found for this application.</p>
+                    <p className="text-muted-foreground text-center py-8 text-sm">No users found for this application.</p>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table>
@@ -395,6 +416,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     <TableHead>Email</TableHead>
                                     <TableHead>Phone</TableHead>
                                     <TableHead>Language</TableHead>
+                                    <TableHead>Quiet Hours</TableHead>
                                     <TableHead>Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -405,9 +427,18 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                         <TableCell>{user.phone || '-'}</TableCell>
                                         <TableCell>{user.language || 'en'}</TableCell>
                                         <TableCell>
+                                            {user.preferences?.quiet_hours?.enabled ? (
+                                                <span className="text-xs text-amber-600 font-medium">
+                                                    {user.preferences.quiet_hours.start || '?'} – {user.preferences.quiet_hours.end || '?'}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">Off</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
                                             <button
                                                 onClick={() => handleEditClick(user)}
-                                                className="text-blue-600 hover:underline font-semibold mr-4"
+                                                className="text-foreground hover:underline font-semibold mr-4"
                                             >
                                                 Edit
                                             </button>

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"text/template"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
@@ -63,11 +64,20 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 
 	// Convert to domain request
 	sendReq := req.ToSendRequest(appID)
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		sendReq.EnvironmentID = envID
+	}
 
 	// Send notification
 	notif, err := h.service.Send(c.Context(), sendReq)
 	if err != nil {
-		h.logger.Error("Failed to send notification", zap.Error(err))
+		// Known business errors — log as Warn, not Error
+		if err == notification.ErrRateLimitExceeded || err == notification.ErrDNDEnabled ||
+			err == notification.ErrQuietHours || notification.IsValidationError(err) {
+			h.logger.Warn("Notification rejected", zap.Error(err))
+		} else {
+			h.logger.Error("Failed to send notification", zap.Error(err))
+		}
 
 		// Check if it's a validation error
 		if notification.IsValidationError(err) {
@@ -85,6 +95,13 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 
 		// Check for DND error
 		if err == notification.ErrDNDEnabled {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		// Check for quiet hours error
+		if err == notification.ErrQuietHours {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": err.Error(),
 			})
@@ -125,6 +142,9 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 
 	// Convert to domain request
 	bulkReq := req.ToBulkSendRequest(appID)
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		bulkReq.EnvironmentID = envID
+	}
 
 	// Send bulk notifications
 	notifications, err := h.service.SendBulk(c.Context(), bulkReq)
@@ -174,6 +194,11 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 
 	// Convert to domain request
 	batchReq := req.ToBatchSendRequest(appID)
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		for i := range batchReq {
+			batchReq[i].EnvironmentID = envID
+		}
+	}
 
 	// Send batch notifications
 	notifications, err := h.service.SendBatch(c.Context(), batchReq)
@@ -224,6 +249,9 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 
 	// Convert to domain request
 	broadcastReq := req.ToBroadcastRequest(appID)
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		broadcastReq.EnvironmentID = envID
+	}
 
 	// Send broadcast notifications
 	notifications, err := h.service.Broadcast(c.Context(), broadcastReq)
@@ -265,6 +293,9 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 	// Build filter from query params
 	filter := notification.DefaultFilter()
 	filter.AppID = appID
+	if envID, ok := c.Locals("environment_id").(string); ok {
+		filter.EnvironmentID = envID
+	}
 
 	if userID := c.Query("user_id"); userID != "" {
 		filter.UserID = userID
@@ -570,4 +601,95 @@ func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"message": "notifications marked as read"})
+}
+
+// ── Phase 5: Snooze, Unsnooze, BulkArchive, MarkAllRead ────────────
+
+// Snooze handles POST /v1/notifications/:id/snooze
+func (h *NotificationHandler) Snooze(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	notificationID := c.Params("id")
+
+	var req dto.SnoozeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	var until time.Time
+	if req.Until != nil {
+		until = *req.Until
+	} else if req.Duration != "" {
+		d, err := time.ParseDuration(req.Duration)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid duration: " + err.Error()})
+		}
+		until = time.Now().Add(d)
+	} else {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "either duration or until is required"})
+	}
+
+	if err := h.service.Snooze(c.Context(), notificationID, appID, until); err != nil {
+		h.logger.Error("Failed to snooze notification", zap.Error(err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "notification snoozed", "snoozed_until": until})
+}
+
+// Unsnooze handles POST /v1/notifications/:id/unsnooze
+func (h *NotificationHandler) Unsnooze(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+	notificationID := c.Params("id")
+
+	if err := h.service.Unsnooze(c.Context(), notificationID, appID); err != nil {
+		h.logger.Error("Failed to unsnooze notification", zap.Error(err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "notification unsnoozed"})
+}
+
+// BulkArchive handles PATCH /v1/notifications/bulk/archive
+func (h *NotificationHandler) BulkArchive(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.BulkArchiveRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if req.UserID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+	if len(req.NotificationIDs) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "notification_ids is required"})
+	}
+
+	if err := h.service.Archive(c.Context(), req.NotificationIDs, appID, req.UserID); err != nil {
+		h.logger.Error("Failed to archive notifications", zap.Error(err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "notifications archived", "count": len(req.NotificationIDs)})
+}
+
+// MarkAllRead handles POST /v1/notifications/read-all
+func (h *NotificationHandler) MarkAllRead(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.MarkAllReadRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	if req.UserID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	if err := h.service.MarkAllRead(c.Context(), req.UserID, appID, req.Category); err != nil {
+		h.logger.Error("Failed to mark all as read", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "all notifications marked as read"})
 }
