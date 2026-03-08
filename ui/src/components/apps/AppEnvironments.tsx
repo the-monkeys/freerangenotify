@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { environmentsAPI } from '../../services/api';
 import type { Environment, EnvironmentName } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
+import { extractErrorMessage } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
@@ -68,7 +69,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
                 setApiKeyDialog({ key: result.api_key, name: newEnvName });
             }
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to create environment');
+            toast.error(extractErrorMessage(err, 'Failed to create environment'));
         } finally {
             setCreating(false);
         }
@@ -83,7 +84,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
             setRemoveConfirm(null);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to delete environment');
+            toast.error(extractErrorMessage(err, 'Failed to delete environment'));
         } finally {
             setRemoveLoading(false);
         }
@@ -108,7 +109,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
             setPromoteResources(['templates']);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Promotion failed');
+            toast.error(extractErrorMessage(err, 'Promotion failed'));
         } finally {
             setPromoting(false);
         }

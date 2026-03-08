@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { providersAPI } from '../../services/api';
 import type { CustomProvider } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
+import { extractErrorMessage } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
@@ -81,7 +82,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
                 setSigningKeyDialog({ key: result.signing_key, name: name.trim() });
             }
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to register provider');
+            toast.error(extractErrorMessage(err, 'Failed to register provider'));
         } finally {
             setRegistering(false);
         }
@@ -96,7 +97,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
             setRemoveConfirm(null);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to remove provider');
+            toast.error(extractErrorMessage(err, 'Failed to remove provider'));
         } finally {
             setRemoveLoading(false);
         }

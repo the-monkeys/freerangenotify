@@ -234,10 +234,10 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// If RBAC is disabled, the routes above remain unguarded (any authenticated admin user).
 	if c.MembershipRepo != nil {
 		apps.Put("/:id/settings", extractAppIDFromParam("id"),
-			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.Logger),
+			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.AppRepo, c.Logger),
 			c.ApplicationHandler.UpdateSettings)
 		apps.Delete("/:id", extractAppIDFromParam("id"),
-			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.Logger),
+			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.AppRepo, c.Logger),
 			c.ApplicationHandler.Delete)
 	}
 
@@ -268,7 +268,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		auditGroup := admin.Group("/audit")
 		auditGroup.Use(jwtAuth)
 		if c.MembershipRepo != nil {
-			auditGroup.Use(middleware.RequirePermission(auth.PermViewAudit, c.MembershipRepo, c.Logger))
+			auditGroup.Use(middleware.RequirePermission(auth.PermViewAudit, c.MembershipRepo, c.AppRepo, c.Logger))
 		}
 		auditGroup.Get("/", c.AuditHandler.List)
 		auditGroup.Get("/:id", c.AuditHandler.Get)
@@ -280,7 +280,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		team.Use(jwtAuth)
 		if c.MembershipRepo != nil {
 			team.Use(extractAppIDFromParam("app_id"),
-				middleware.RequirePermission(auth.PermManageMembers, c.MembershipRepo, c.Logger))
+				middleware.RequirePermission(auth.PermManageMembers, c.MembershipRepo, c.AppRepo, c.Logger))
 		}
 		team.Post("/", c.TeamHandler.InviteMember)
 		team.Get("/", c.TeamHandler.ListMembers)

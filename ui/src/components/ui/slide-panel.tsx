@@ -40,7 +40,7 @@ const SlidePanel: React.FC<SlidePanelProps> = ({ open, onClose, title, children 
             {/* Panel */}
             <div
                 className={`
-                    fixed top-0 right-0 z-50 h-full bg-white shadow-2xl
+                    fixed top-0 right-0 z-50 h-full bg-background shadow-2xl
                     flex flex-col
                     w-full sm:w-3/4 lg:w-[55%]
                     transition-transform duration-300 ease-in-out
@@ -48,13 +48,13 @@ const SlidePanel: React.FC<SlidePanelProps> = ({ open, onClose, title, children 
                 `}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
-                    <h3 className="text-base font-semibold text-gray-900 truncate">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+                    <h3 className="text-base font-semibold text-foreground truncate">
                         {title || 'Preview'}
                     </h3>
                     <button
                         onClick={onClose}
-                        className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                         aria-label="Close panel"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"

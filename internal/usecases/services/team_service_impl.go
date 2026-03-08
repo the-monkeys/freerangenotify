@@ -9,13 +9,14 @@ import (
 )
 
 type teamService struct {
-	repo   auth.MembershipRepository
-	logger *zap.Logger
+	repo     auth.MembershipRepository
+	authRepo auth.Repository
+	logger   *zap.Logger
 }
 
 // NewTeamService creates a new auth.TeamService.
-func NewTeamService(repo auth.MembershipRepository, logger *zap.Logger) auth.TeamService {
-	return &teamService{repo: repo, logger: logger}
+func NewTeamService(repo auth.MembershipRepository, authRepo auth.Repository, logger *zap.Logger) auth.TeamService {
+	return &teamService{repo: repo, authRepo: authRepo, logger: logger}
 }
 
 func (s *teamService) InviteMember(ctx context.Context, appID string, req *auth.InviteMemberRequest, inviterID string) (*auth.AppMembership, error) {
@@ -24,16 +25,23 @@ func (s *teamService) InviteMember(ctx context.Context, appID string, req *auth.
 		return nil, fmt.Errorf("invalid role: %s", req.Role)
 	}
 
-	// Prevent duplicate membership (email is used as user_id for invite flow;
-	// a future enhancement can resolve this to an actual admin user ID).
-	existing, err := s.repo.GetByAppAndUser(ctx, appID, req.Email)
+	// Resolve email to actual user ID if the user already has an account
+	memberUserID := req.Email // fallback for users who haven't registered yet
+	if s.authRepo != nil {
+		if existingUser, err := s.authRepo.GetUserByEmail(ctx, req.Email); err == nil && existingUser != nil {
+			memberUserID = existingUser.UserID
+		}
+	}
+
+	// Prevent duplicate membership
+	existing, err := s.repo.GetByAppAndUser(ctx, appID, memberUserID)
 	if err == nil && existing != nil {
 		return nil, fmt.Errorf("user %s is already a member of this application", req.Email)
 	}
 
 	membership := &auth.AppMembership{
 		AppID:     appID,
-		UserID:    req.Email, // Email acts as user identifier until account linking
+		UserID:    memberUserID,
 		UserEmail: req.Email,
 		Role:      req.Role,
 		InvitedBy: inviterID,

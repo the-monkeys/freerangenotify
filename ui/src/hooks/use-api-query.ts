@@ -23,8 +23,9 @@ export function useApiQuery<T>(
             const result = await fetcher();
             setData(result);
         } catch (err: any) {
+            const raw = err?.response?.data?.error;
             const message =
-                err?.response?.data?.error ||
+                (typeof raw === 'string' ? raw : raw?.message) ||
                 err?.response?.data?.message ||
                 err?.message ||
                 'An unexpected error occurred';

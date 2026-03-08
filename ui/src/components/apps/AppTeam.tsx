@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { teamAPI } from '../../services/api';
 import type { AppMembership, TeamRole } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
+import { extractErrorMessage } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
@@ -38,7 +39,7 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
     const [removeLoading, setRemoveLoading] = useState(false);
 
     const fetcher = useCallback(() => teamAPI.listMembers(appId), [appId]);
-    const { data: members, loading, refetch } = useApiQuery<AppMembership[]>(fetcher, [appId]);
+    const { data: members, loading, error, refetch } = useApiQuery<AppMembership[]>(fetcher, [appId]);
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -52,7 +53,7 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
             setInviteRole('viewer' as Exclude<TeamRole, 'owner'>);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to invite member');
+            toast.error(extractErrorMessage(err, 'Failed to invite member'));
         } finally {
             setInviting(false);
         }
@@ -64,7 +65,7 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
             toast.success(`Updated ${membership.user_email} to ${newRole}`);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to update role');
+            toast.error(extractErrorMessage(err, 'Failed to update role'));
         }
     };
 
@@ -77,7 +78,7 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
             setRemoveConfirm(null);
             refetch();
         } catch (err: any) {
-            toast.error(err?.response?.data?.error || 'Failed to remove member');
+            toast.error(extractErrorMessage(err, 'Failed to remove member'));
         } finally {
             setRemoveLoading(false);
         }
@@ -100,6 +101,11 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
             <CardContent>
                 {loading ? (
                     <SkeletonTable columns={4} />
+                ) : error ? (
+                    <div className="text-center py-8">
+                        <p className="text-sm text-destructive">{error}</p>
+                        <Button variant="outline" size="sm" className="mt-2" onClick={refetch}>Retry</Button>
+                    </div>
                 ) : !members || members.length === 0 ? (
                     <EmptyState
                         title="No team members"

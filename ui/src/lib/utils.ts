@@ -25,3 +25,12 @@ export function formatDuration(startStr?: string, endStr?: string): string {
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
 }
+
+/** Extract a human-readable error message from an Axios error. */
+export function extractErrorMessage(err: any, fallback = 'An unexpected error occurred'): string {
+  const raw = err?.response?.data?.error;
+  return (typeof raw === 'string' ? raw : raw?.message) ||
+    err?.response?.data?.message ||
+    err?.message ||
+    fallback;
+}

@@ -55,8 +55,9 @@ type CategoryPreference struct {
 
 // QuietHours represents user's do-not-disturb hours
 type QuietHours struct {
-	Start string `json:"start" es:"start"` // Format: "HH:MM"
-	End   string `json:"end" es:"end"`     // Format: "HH:MM"
+	Enabled bool   `json:"enabled" es:"enabled"`
+	Start   string `json:"start" es:"start"` // Format: "HH:MM"
+	End     string `json:"end" es:"end"`     // Format: "HH:MM"
 }
 
 // Device represents a user's device for push notifications

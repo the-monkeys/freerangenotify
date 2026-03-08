@@ -102,10 +102,18 @@ func (p *WebhookProvider) Send(ctx context.Context, notif *notification.Notifica
 		zap.String("template_id", notif.TemplateID),
 		zap.String("url", targetURL))
 
-	// Prepare Payload
-	// Restricted payload as per requirements (only content)
-	webhookPayload := map[string]interface{}{
-		"content": notif.Content,
+	// Prepare Payload using the structured WebhookPayload
+	webhookPayload := WebhookPayload{
+		ID:         notif.NotificationID,
+		AppID:      notif.AppID,
+		UserID:     notif.UserID,
+		Channel:    string(notif.Channel),
+		Priority:   string(notif.Priority),
+		Status:     string(notif.Status),
+		TemplateID: notif.TemplateID,
+		Content:    notif.Content,
+		Metadata:   notif.Metadata,
+		CreatedAt:  notif.CreatedAt,
 	}
 
 	payload, err := json.Marshal(webhookPayload)
