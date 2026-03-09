@@ -51,6 +51,20 @@ const parseCustomData = (raw: string) => {
     }
 };
 
+// Format YYYY-MM-DD → "10 Feb 2026" for template display
+function formatDateForTemplate(isoDate: string): string {
+    if (!isoDate || isoDate.length < 10) return isoDate;
+    const d = new Date(isoDate.slice(0, 10));
+    return isNaN(d.getTime()) ? isoDate : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+// Parse "10 Feb 2026" or similar → YYYY-MM-DD for input type="date"
+function toISODateOnly(val: string): string {
+    if (!val) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+
 const useNotificationData = (apiKey: string) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -500,15 +514,26 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                                                 {quickVariables.map(v => {
                                                     const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
+                                                    const isDateVar = v.toLowerCase() === 'date';
+                                                    const currentVal = quickData[v] || '';
                                                     return (
                                                         <div key={v} className="space-y-1">
                                                             <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            <Input
-                                                                value={quickData[v] || ''}
-                                                                onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
-                                                                placeholder={sampleVal ? String(sampleVal) : v}
-                                                                className={quickData[v] ? '' : 'text-muted-foreground'}
-                                                            />
+                                                            {isDateVar ? (
+                                                                <Input
+                                                                    type="date"
+                                                                    value={toISODateOnly(currentVal)}
+                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: formatDateForTemplate(e.target.value) }))}
+                                                                    className={currentVal ? '' : 'text-muted-foreground'}
+                                                                />
+                                                            ) : (
+                                                                <Input
+                                                                    value={currentVal}
+                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
+                                                                    placeholder={sampleVal ? String(sampleVal) : v}
+                                                                    className={currentVal ? '' : 'text-muted-foreground'}
+                                                                />
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -721,19 +746,33 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 {formVariables.map(v => {
                                                     const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
                                                     const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
+                                                    const isDateVar = v.toLowerCase() === 'date';
                                                     return (
                                                         <div key={v} className="space-y-1">
                                                             <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            <Input
-                                                                value={currentVal}
-                                                                onChange={e => {
-                                                                    const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                    parsed[v] = e.target.value;
-                                                                    setDataInput(JSON.stringify(parsed, null, 2));
-                                                                }}
-                                                                placeholder={sampleVal ? String(sampleVal) : v}
-                                                                className={currentVal ? '' : 'text-muted-foreground'}
-                                                            />
+                                                            {isDateVar ? (
+                                                                <Input
+                                                                    type="date"
+                                                                    value={toISODateOnly(currentVal)}
+                                                                    onChange={e => {
+                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                        parsed[v] = formatDateForTemplate(e.target.value);
+                                                                        setDataInput(JSON.stringify(parsed, null, 2));
+                                                                    }}
+                                                                    className={currentVal ? '' : 'text-muted-foreground'}
+                                                                />
+                                                            ) : (
+                                                                <Input
+                                                                    value={currentVal}
+                                                                    onChange={e => {
+                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                        parsed[v] = e.target.value;
+                                                                        setDataInput(JSON.stringify(parsed, null, 2));
+                                                                    }}
+                                                                    placeholder={sampleVal ? String(sampleVal) : v}
+                                                                    className={currentVal ? '' : 'text-muted-foreground'}
+                                                                />
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
@@ -1002,19 +1041,33 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         {formVariables.map(v => {
                                                             const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
                                                             const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
+                                                            const isDateVar = v.toLowerCase() === 'date';
                                                             return (
                                                                 <div key={v} className="space-y-1">
                                                                     <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                                    <Input
-                                                                        value={currentVal}
-                                                                        onChange={e => {
-                                                                            const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                            parsed[v] = e.target.value;
-                                                                            setDataInput(JSON.stringify(parsed, null, 2));
-                                                                        }}
-                                                                        placeholder={sampleVal ? String(sampleVal) : v}
-                                                                        className={currentVal ? '' : 'text-muted-foreground'}
-                                                                    />
+                                                                    {isDateVar ? (
+                                                                        <Input
+                                                                            type="date"
+                                                                            value={toISODateOnly(currentVal)}
+                                                                            onChange={e => {
+                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                                parsed[v] = formatDateForTemplate(e.target.value);
+                                                                                setDataInput(JSON.stringify(parsed, null, 2));
+                                                                            }}
+                                                                            className={currentVal ? '' : 'text-muted-foreground'}
+                                                                        />
+                                                                    ) : (
+                                                                        <Input
+                                                                            value={currentVal}
+                                                                            onChange={e => {
+                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
+                                                                                parsed[v] = e.target.value;
+                                                                                setDataInput(JSON.stringify(parsed, null, 2));
+                                                                            }}
+                                                                            placeholder={sampleVal ? String(sampleVal) : v}
+                                                                            className={currentVal ? '' : 'text-muted-foreground'}
+                                                                        />
+                                                                    )}
                                                                 </div>
                                                             );
                                                         })}
