@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
 import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { } from '../lib/utils';
+import { extractErrorMessage } from '../lib/utils';
 
 interface AppNotificationsProps {
     appId: string;
@@ -148,7 +148,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success(`${selectedIds.size} notification(s) marked as read`);
             setSelectedIds(new Set());
             refresh();
-        } catch { toast.error('Failed to mark as read'); } finally { setBulkActing(false); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to mark as read')); } finally { setBulkActing(false); }
     };
 
     const handleBulkArchive = async () => {
@@ -159,7 +159,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success(`${selectedIds.size} notification(s) archived`);
             setSelectedIds(new Set());
             refresh();
-        } catch { toast.error('Failed to archive'); } finally { setBulkActing(false); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to archive')); } finally { setBulkActing(false); }
     };
 
     const handleSnooze = async (notifId: string, hours: number) => {
@@ -168,7 +168,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             await notificationsAPI.snooze(apiKey, notifId, { until });
             toast.success(`Snoozed for ${hours}h`);
             refresh();
-        } catch { toast.error('Failed to snooze'); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to snooze')); }
     };
 
     const handleUnsnooze = async (notifId: string) => {
@@ -176,11 +176,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             await notificationsAPI.unsnooze(apiKey, notifId);
             toast.success('Notification unsnoozed');
             refresh();
-        } catch { toast.error('Failed to unsnooze'); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to unsnooze')); }
     };
 
     const handleMarkAllRead = async () => {
-        // Mark all read requires a user_id. Use the first selected user or prompt.
         const firstUserId = notifications[0]?.user_id;
         if (!firstUserId) {
             toast.error('No notifications with a user to mark as read');
@@ -192,7 +191,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success('All notifications marked as read');
             setSelectedIds(new Set());
             refresh();
-        } catch { toast.error('Failed to mark all as read'); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to mark all as read')); }
         finally { setBulkActing(false); }
     };
 
@@ -215,7 +214,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setShowBatchSend(false);
             setBatchJson('{\n  "notifications": [\n    { "user_id": "", "template_id": "", "channel": "email", "title": "", "body": "" }\n  ]\n}');
             refresh();
-        } catch (err: any) { toast.error(err.message || 'Batch send failed'); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Batch send failed')); }
         finally { setBatchSending(false); }
     };
 
@@ -228,7 +227,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setShowCancelBatch(false);
             setCancelBatchId('');
             refresh();
-        } catch (err: any) { toast.error(err.message || 'Failed to cancel batch'); }
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to cancel batch')); }
         finally { setCancellingBatch(false); }
     };
 
@@ -302,9 +301,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduledAt('');
             setQuickScheduleEnabled(false);
             refresh();
-        } catch (error: any) {
-            const msg = error?.response?.data?.error || 'Quick-send failed';
-            toast.error(msg);
+        } catch (error) {
+            toast.error(extractErrorMessage(error, 'Quick-send failed'));
         } finally {
             setQuickSending(false);
         }
@@ -341,7 +339,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success('Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
-            toast.error('Failed to broadcast notification');
+            toast.error(extractErrorMessage(error, 'Failed to broadcast notification'));
         } finally {
             setIsSubmitting(false);
         }
@@ -397,10 +395,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setDataInput('');
             refresh();
             toast.success('Notification(s) sent successfully!');
-        } catch (error: any) {
-            const msg = error?.response?.data?.error || 'Failed to send notification';
-            console.error('Failed to send notification:', msg);
-            toast.error(msg);
+        } catch (error) {
+            console.error('Failed to send notification:', error);
+            toast.error(extractErrorMessage(error, 'Failed to send notification'));
         }
     };
 

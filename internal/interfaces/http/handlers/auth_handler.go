@@ -39,8 +39,8 @@ func NewAuthHandler(authService auth.Service, validator *validator.Validator, lo
 // @Produce json
 // @Param request body dto.RegisterRequest true "Registration details"
 // @Success 201 {object} dto.AuthResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/register [post]
 func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	var req dto.RegisterRequest
@@ -87,9 +87,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.LoginRequest true "Login credentials"
 // @Success 200 {object} dto.AuthResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 401 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/login [post]
 func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	var req dto.LoginRequest
@@ -135,9 +135,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.RefreshTokenRequest true "Refresh token"
 // @Success 200 {object} dto.TokenPairResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 401 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 	var req dto.RefreshTokenRequest
@@ -167,8 +167,8 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 // @Tags Auth
 // @Security BearerAuth
 // @Success 200 {object} dto.MessageResponse
-// @Failure 401 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/logout [post]
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
@@ -190,8 +190,8 @@ func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.ForgotPasswordRequest true "Email address"
 // @Success 200 {object} dto.MessageResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/forgot-password [post]
 func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 	var req dto.ForgotPasswordRequest
@@ -224,8 +224,8 @@ func (h *AuthHandler) ForgotPassword(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.ResetPasswordRequest true "Reset token and new password"
 // @Success 200 {object} dto.MessageResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/reset-password [post]
 func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 	var req dto.ResetPasswordRequest
@@ -260,9 +260,9 @@ func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.ChangePasswordRequest true "Old and new password"
 // @Success 200 {object} dto.MessageResponse
-// @Failure 400 {object} errors.APIError
-// @Failure 401 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/change-password [post]
 func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
@@ -297,8 +297,8 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 // @Security BearerAuth
 // @Produce json
 // @Success 200 {object} dto.UserResponse
-// @Failure 401 {object} errors.APIError
-// @Failure 500 {object} errors.APIError
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/me [get]
 func (h *AuthHandler) GetCurrentUser(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)

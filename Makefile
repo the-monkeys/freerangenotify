@@ -28,6 +28,7 @@ build:
 	go build -o bin/receiver ./cmd/receiver
 	go build -o bin/sse_receiver ./cmd/sse_receiver
 	go build -o bin/migrate ./cmd/migrate
+	go build -o bin/frn ./cmd/frn
 
 # Run the application locally
 run:

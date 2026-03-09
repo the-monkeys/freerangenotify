@@ -19,7 +19,7 @@ type WorkflowRepository struct {
 // NewWorkflowRepository creates a new workflow repository.
 func NewWorkflowRepository(client *elasticsearch.Client, logger *zap.Logger) workflow.Repository {
 	return &WorkflowRepository{
-		workflows:  NewBaseRepository(client, "workflows", logger),
+		workflows:  NewBaseRepository(client, "workflows", logger, RefreshWaitFor),
 		executions: NewBaseRepository(client, "workflow_executions", logger),
 	}
 }

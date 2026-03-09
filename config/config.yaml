@@ -97,6 +97,15 @@ providers:
     timeout: 15
     max_retries: 3
 
+  # AWS SES (Phase C)
+  ses:
+    enabled: false
+    region: "${FREERANGE_PROVIDERS_SES_REGION:-us-east-1}"
+    access_key_id: "${FREERANGE_PROVIDERS_SES_ACCESS_KEY_ID:-}"
+    secret_access_key: "${FREERANGE_PROVIDERS_SES_SECRET_ACCESS_KEY:-}"
+    from_email: "${FREERANGE_PROVIDERS_SES_FROM_EMAIL:-}"
+    from_name: "${FREERANGE_PROVIDERS_SES_FROM_NAME:-FreeRangeNotify}"
+
 monitoring:
   enabled: true
   port: 9090

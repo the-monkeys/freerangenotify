@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
+
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
@@ -13,6 +16,7 @@ type QuickSendHandler struct {
 	service   *usecases.QuickSendService
 	validator *validator.Validator
 	logger    *zap.Logger
+	idemp     *idempotency.Store
 }
 
 // NewQuickSendHandler creates a new QuickSendHandler.
@@ -20,11 +24,39 @@ func NewQuickSendHandler(service *usecases.QuickSendService, v *validator.Valida
 	return &QuickSendHandler{service: service, validator: v, logger: logger}
 }
 
+// SetIdempotencyStore injects the idempotency store for Idempotency-Key support.
+func (h *QuickSendHandler) SetIdempotencyStore(store *idempotency.Store) {
+	h.idemp = store
+}
+
 // Send handles POST /v1/quick-send
+// @Summary Quick send a notification
+// @Description Send a notification using a simplified one-step payload (auto-creates user if needed)
+// @Tags Quick Send
+// @Accept json
+// @Produce json
+// @Param body body dto.QuickSendRequest true "Quick send request"
+// @Success 202 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/quick-send [post]
 func (h *QuickSendHandler) Send(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "application not authenticated"})
+	}
+
+	// Idempotency: return cached response if key present and we've seen it before
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			cached, err := h.idemp.Get(c.Context(), appID, key)
+			if err == nil && cached != nil {
+				return c.Status(cached.Status).Send(cached.Body)
+			}
+		}
 	}
 
 	var req dto.QuickSendRequest
@@ -44,6 +76,15 @@ func (h *QuickSendHandler) Send(c *fiber.Ctx) error {
 	if err != nil {
 		h.logger.Error("Quick-send failed", zap.String("app_id", appID), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Idempotency: cache success response for replay
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			bodyBytes, _ := json.Marshal(result)
+			_ = h.idemp.Set(c.Context(), appID, key, fiber.StatusAccepted, bodyBytes)
+		}
 	}
 
 	return c.Status(fiber.StatusAccepted).JSON(result)

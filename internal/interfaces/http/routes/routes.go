@@ -63,16 +63,35 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 
 // setupProtectedRoutes configures routes that require API key authentication
 func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
-	// Create common middleware — with optional environment service for multi-env support
+	// Create common middleware — with optional auth service for dashboard JWT extraction
 	var authOpts []middleware.APIKeyAuthOption
 	if c.EnvironmentService != nil {
 		authOpts = append(authOpts, middleware.WithEnvironmentService(c.EnvironmentService))
 	}
-	auth := middleware.APIKeyAuth(c.ApplicationService, c.Logger, authOpts...)
+	if c.AuthService != nil {
+		authOpts = append(authOpts, middleware.WithAuthService(c.AuthService))
+	}
+	apiAuth := middleware.APIKeyAuth(c.ApplicationService, c.Logger, authOpts...)
+
+	// DashboardRBAC restricts viewers to read-only when they access API-key
+	// routes through the dashboard (JWT + X-API-Key). Pure SDK calls (API key
+	// only) are unaffected.
+	var rbac fiber.Handler
+	if c.MembershipRepo != nil {
+		rbac = middleware.DashboardRBAC(c.MembershipRepo, c.AppRepo, c.Logger)
+	}
+
+	// applyAuth adds the API key middleware and optional RBAC to a route group
+	applyAuth := func(group fiber.Router) {
+		group.Use(apiAuth)
+		if rbac != nil {
+			group.Use(rbac)
+		}
+	}
 
 	// User management routes
 	users := v1.Group("/users")
-	users.Use(auth)
+	applyAuth(users)
 	users.Post("/", c.UserHandler.Create)
 	users.Post("/bulk", c.UserHandler.BulkCreate)
 	users.Get("/:id", c.UserHandler.GetByID)
@@ -92,19 +111,19 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users.Get("/:id/subscriber-hash", c.UserHandler.GetSubscriberHash)
 
 	// SSE token endpoint (secure — generates short-lived tokens for SSE connections)
-	v1.Post("/sse/tokens", auth, c.SSEHandler.CreateToken)
+	v1.Post("/sse/tokens", apiAuth, c.SSEHandler.CreateToken)
 
 	// Presence management
 	presence := v1.Group("/presence")
-	presence.Use(auth)
+	presence.Use(apiAuth)
 	presence.Post("/check-in", c.PresenceHandler.CheckIn)
 
 	// Quick-send (simplified notification endpoint)
-	v1.Post("/quick-send", auth, c.QuickSendHandler.Send)
+	v1.Post("/quick-send", apiAuth, c.QuickSendHandler.Send)
 
 	// Notification routes
 	notifications := v1.Group("/notifications")
-	notifications.Use(auth)
+	applyAuth(notifications)
 	notifications.Post("/", c.NotificationHandler.Send)
 	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
 	notifications.Post("/broadcast", c.NotificationHandler.Broadcast)
@@ -127,7 +146,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Template routes
 	templates := v1.Group("/templates")
-	templates.Use(auth)
+	applyAuth(templates)
 	templates.Get("/library", c.TemplateHandler.GetLibrary)
 	templates.Post("/library/:name/clone", c.TemplateHandler.CloneFromLibrary)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)
@@ -150,7 +169,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// ── Phase 1: Workflow routes (feature-gated) ──
 	if c.WorkflowHandler != nil {
 		workflows := v1.Group("/workflows")
-		workflows.Use(auth)
+		applyAuth(workflows)
 		workflows.Post("/", c.WorkflowHandler.Create)
 		workflows.Get("/", c.WorkflowHandler.List)
 		workflows.Get("/executions", c.WorkflowHandler.ListExecutions)
@@ -165,7 +184,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// ── Phase 1: Digest rules routes (feature-gated) ──
 	if c.DigestHandler != nil {
 		digestRules := v1.Group("/digest-rules")
-		digestRules.Use(auth)
+		applyAuth(digestRules)
 		digestRules.Post("/", c.DigestHandler.Create)
 		digestRules.Get("/", c.DigestHandler.List)
 		digestRules.Get("/:id", c.DigestHandler.Get)
@@ -176,7 +195,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// ── Phase 2: Topic routes (feature-gated) ──
 	if c.TopicHandler != nil {
 		topics := v1.Group("/topics")
-		topics.Use(auth)
+		applyAuth(topics)
 		topics.Post("/", c.TopicHandler.Create)
 		topics.Get("/", c.TopicHandler.List)
 		topics.Get("/key/:key", c.TopicHandler.GetByKey)
@@ -202,6 +221,21 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
+
+	// Tenant/organization management (C1)
+	if c.TenantHandler != nil {
+		tenants := v1.Group("/tenants")
+		tenants.Use(jwtAuth)
+		tenants.Post("/", c.TenantHandler.Create)
+		tenants.Get("/", c.TenantHandler.List)
+		tenants.Get("/:id", c.TenantHandler.GetByID)
+		tenants.Put("/:id", c.TenantHandler.Update)
+		tenants.Delete("/:id", c.TenantHandler.Delete)
+		tenants.Get("/:id/members", c.TenantHandler.ListMembers)
+		tenants.Post("/:id/members", c.TenantHandler.InviteMember)
+		tenants.Put("/:id/members/:memberId", c.TenantHandler.UpdateMemberRole)
+		tenants.Delete("/:id/members/:memberId", c.TenantHandler.RemoveMember)
+	}
 
 	// Application management routes (JWT protected for admin dashboard)
 	apps := v1.Group("/apps")
@@ -229,17 +263,16 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		apps.Delete("/:id/environments/:envId", c.EnvironmentHandler.Delete)
 	}
 
-	// ── Phase 2: RBAC enforcement on app routes (feature-gated) ──
-	// RequirePermission checks membership-based permissions for JWT-authenticated users.
-	// If RBAC is disabled, the routes above remain unguarded (any authenticated admin user).
-	if c.MembershipRepo != nil {
-		apps.Put("/:id/settings", extractAppIDFromParam("id"),
-			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.AppRepo, c.Logger),
-			c.ApplicationHandler.UpdateSettings)
-		apps.Delete("/:id", extractAppIDFromParam("id"),
-			middleware.RequirePermission(auth.PermManageApp, c.MembershipRepo, c.AppRepo, c.Logger),
-			c.ApplicationHandler.Delete)
+	// Cross-app resource linking
+	if c.ImportHandler != nil {
+		apps.Post("/:id/import", c.ImportHandler.Import)
+		apps.Get("/:id/links", c.ImportHandler.ListLinks)
+		apps.Delete("/:id/links", c.ImportHandler.UnlinkAll)
+		apps.Delete("/:id/links/:link_id", c.ImportHandler.Unlink)
 	}
+
+	// RBAC for app routes is enforced inside ApplicationHandler.authorizeAppAccess()
+	// which checks ownership and team membership with role-based guards per endpoint.
 
 	// Queue management (JWT-protected)
 	queues := adminAuth.Group("/queues")
@@ -264,12 +297,10 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Get("/activity-feed", c.SSEHandler.AdminActivityFeed)
 
 	// ── Phase 2: Audit log routes (feature-gated) ──
+	// Audit is platform-level: JWT auth only. Handler scopes to user's apps via AdminUserID.
 	if c.AuditHandler != nil {
 		auditGroup := admin.Group("/audit")
 		auditGroup.Use(jwtAuth)
-		if c.MembershipRepo != nil {
-			auditGroup.Use(middleware.RequirePermission(auth.PermViewAudit, c.MembershipRepo, c.AppRepo, c.Logger))
-		}
 		auditGroup.Get("/", c.AuditHandler.List)
 		auditGroup.Get("/:id", c.AuditHandler.Get)
 	}

@@ -43,6 +43,24 @@ func (h *AuditHandler) getAdminAppIDs(c *fiber.Ctx) ([]string, error) {
 
 // List returns audit logs matching the query parameters.
 // GET /v1/admin/audit?app_id=&actor_id=&action=&resource=&limit=&offset=
+// @Summary List audit logs
+// @Description Query audit logs with filters for app, actor, action, resource, and pagination
+// @Tags Audit
+// @Produce json
+// @Param app_id query string false "Filter by application ID"
+// @Param actor_id query string false "Filter by actor ID"
+// @Param action query string false "Filter by action"
+// @Param resource query string false "Filter by resource type"
+// @Param resource_id query string false "Filter by resource ID"
+// @Param environment_id query string false "Filter by environment ID"
+// @Param limit query int false "Limit results" default(50)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/audit [get]
 func (h *AuditHandler) List(c *fiber.Ctx) error {
 	appIDs, err := h.getAdminAppIDs(c)
 	if err != nil {
@@ -110,6 +128,17 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 
 // Get returns a single audit log by ID.
 // GET /v1/admin/audit/:id
+// @Summary Get an audit log entry
+// @Description Retrieve a single audit log entry by its ID
+// @Tags Audit
+// @Produce json
+// @Param id path string true "Audit Log ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/audit/{id} [get]
 func (h *AuditHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {

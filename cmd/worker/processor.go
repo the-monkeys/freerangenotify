@@ -141,6 +141,10 @@ func (p *NotificationProcessor) Start(ctx context.Context) error {
 	p.wg.Add(1)
 	go p.unsnoozeLoop(ctx)
 
+	// Start processing reaper for at-least-once delivery
+	p.wg.Add(1)
+	go p.processingReaper(ctx)
+
 	return nil
 }
 
@@ -205,6 +209,12 @@ func (p *NotificationProcessor) worker(ctx context.Context, workerID int) {
 
 // processNotification processes a single notification
 func (p *NotificationProcessor) processNotification(ctx context.Context, item *queue.NotificationQueueItem, logger *zap.Logger) {
+	defer func() {
+		if rq, ok := p.queue.(*queue.RedisQueue); ok {
+			rq.Acknowledge(ctx, *item)
+		}
+	}()
+
 	startTime := time.Now()
 
 	logger.Info("Processing notification",
@@ -1086,7 +1096,36 @@ func (p *NotificationProcessor) unsnoozeLoop(ctx context.Context) {
 					_ = p.redisClient.Publish(ctx, "notification:activity", string(data)).Err()
 				}
 
-				p.logger.Debug("Un-snoozed notification", zap.String("notification_id", notif.NotificationID))
+			p.logger.Debug("Un-snoozed notification", zap.String("notification_id", notif.NotificationID))
+		}
+		}
+	}
+}
+
+// processingReaper periodically checks for items stuck in the processing set
+// (visibility timeout expired) and requeues them for at-least-once delivery.
+func (p *NotificationProcessor) processingReaper(ctx context.Context) {
+	defer p.wg.Done()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	p.logger.Info("Processing reaper started (30s interval)")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.stopChan:
+			return
+		case <-ticker.C:
+			if rq, ok := p.queue.(*queue.RedisQueue); ok {
+				count, err := rq.RequeueExpiredProcessing(ctx)
+				if err != nil {
+					p.logger.Error("Processing reaper error", zap.Error(err))
+				}
+				if count > 0 {
+					p.logger.Info("Processing reaper requeued items", zap.Int("count", count))
+				}
 			}
 		}
 	}

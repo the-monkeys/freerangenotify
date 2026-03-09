@@ -114,6 +114,28 @@ func (p *DiscordProvider) resolveWebhookURL(notif *notification.Notification, us
 	return p.config.DefaultWebhookURL
 }
 
+func init() {
+	RegisterFactory("discord", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		enabled, _ := cfg["enabled"].(bool)
+		if !enabled {
+			return nil, fmt.Errorf("discord: provider disabled")
+		}
+		webhookURL, _ := cfg["default_webhook_url"].(string)
+		timeout := 10
+		if t, ok := cfg["timeout"].(float64); ok && t > 0 {
+			timeout = int(t)
+		}
+		maxRetries := 3
+		if r, ok := cfg["max_retries"].(float64); ok {
+			maxRetries = int(r)
+		}
+		return NewDiscordProvider(DiscordConfig{
+			Config:            Config{Timeout: time.Duration(timeout) * time.Second, MaxRetries: maxRetries, RetryDelay: 2 * time.Second},
+			DefaultWebhookURL: webhookURL,
+		}, logger)
+	})
+}
+
 // buildPayload constructs a Discord webhook payload with embeds.
 func (p *DiscordProvider) buildPayload(notif *notification.Notification) map[string]interface{} {
 	embed := map[string]interface{}{

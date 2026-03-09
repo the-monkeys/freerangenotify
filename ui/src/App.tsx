@@ -17,6 +17,8 @@ const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const SSOCallback = lazy(() => import('./pages/SSOCallback'));
 const AppsList = lazy(() => import('./pages/AppsList'));
+const TenantsList = lazy(() => import('./pages/TenantsList'));
+const TenantDetail = lazy(() => import('./pages/TenantDetail'));
 const AppDetail = lazy(() => import('./pages/AppDetail'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const WorkflowsList = lazy(() => import('./pages/workflows/WorkflowsList'));
@@ -66,6 +68,8 @@ const App: React.FC = () => {
                 <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
                   <Route path="/apps" element={<AppsList />} />
                   <Route path="/apps/:id" element={<AppDetail />} />
+                  <Route path="/tenants" element={<TenantsList />} />
+                  <Route path="/tenants/:id" element={<TenantDetail />} />
                   <Route path="/apps/:id/templates/library" element={<TemplateLibrary />} />
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/workflows" element={<WorkflowsList />} />

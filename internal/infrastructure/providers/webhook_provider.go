@@ -215,3 +215,21 @@ func getString(m map[string]interface{}, key string) string {
 	}
 	return ""
 }
+
+func init() {
+	RegisterFactory("webhook", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		secret, _ := cfg["secret"].(string)
+		timeout := 30
+		if t, ok := cfg["timeout"].(float64); ok {
+			timeout = int(t)
+		}
+		maxRetries := 3
+		if r, ok := cfg["max_retries"].(float64); ok {
+			maxRetries = int(r)
+		}
+		return NewWebhookProvider(WebhookConfig{
+			Config: Config{Timeout: time.Duration(timeout) * time.Second, MaxRetries: maxRetries, RetryDelay: 2 * time.Second},
+			Secret: secret,
+		}, logger)
+	})
+}

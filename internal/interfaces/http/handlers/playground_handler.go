@@ -36,6 +36,15 @@ func (h *PlaygroundHandler) SetBroadcaster(b *sse.Broadcaster) {
 
 // CreatePlayground handles POST /v1/admin/playground/webhook
 // Generates a temporary webhook receiver URL stored in Redis with 30-minute TTL.
+// @Summary Create a webhook playground
+// @Description Generate a temporary webhook receiver URL with a 30-minute TTL for testing
+// @Tags Playground
+// @Produce json
+// @Success 201 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/playground/webhook [post]
 func (h *PlaygroundHandler) CreatePlayground(c *fiber.Ctx) error {
 	playgroundID := uuid.New().String()[:8]
 
@@ -62,6 +71,16 @@ func (h *PlaygroundHandler) CreatePlayground(c *fiber.Ctx) error {
 
 // ReceiveWebhook handles POST /v1/playground/:id
 // Public endpoint — receives webhook payloads and appends them to the Redis list.
+// @Summary Receive a webhook payload
+// @Description Public endpoint that captures incoming webhook payloads for a playground session
+// @Tags Playground
+// @Accept json
+// @Produce json
+// @Param id path string true "Playground ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/playground/{id} [post]
 func (h *PlaygroundHandler) ReceiveWebhook(c *fiber.Ctx) error {
 	playgroundID := c.Params("id")
 	key := "playground:" + playgroundID
@@ -106,6 +125,15 @@ func (h *PlaygroundHandler) ReceiveWebhook(c *fiber.Ctx) error {
 
 // GetPayloads handles GET /v1/playground/:id
 // Returns all received payloads for a playground.
+// @Summary Get playground payloads
+// @Description Retrieve all received webhook payloads for a playground session
+// @Tags Playground
+// @Produce json
+// @Param id path string true "Playground ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/playground/{id} [get]
 func (h *PlaygroundHandler) GetPayloads(c *fiber.Ctx) error {
 	playgroundID := c.Params("id")
 	key := "playground:" + playgroundID
@@ -146,6 +174,15 @@ func (h *PlaygroundHandler) GetPayloads(c *fiber.Ctx) error {
 // CreateSSEPlayground handles POST /v1/admin/playground/sse
 // Generates a temporary user ID stored in Redis with 30-minute TTL.
 // Returns the SSE connection URL for the browser to connect to.
+// @Summary Create an SSE playground
+// @Description Generate a temporary SSE playground session with a 30-minute TTL for testing real-time notifications
+// @Tags Playground
+// @Produce json
+// @Success 201 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/playground/sse [post]
 func (h *PlaygroundHandler) CreateSSEPlayground(c *fiber.Ctx) error {
 	playgroundID := "sse-" + uuid.New().String()[:8]
 
@@ -172,6 +209,20 @@ func (h *PlaygroundHandler) CreateSSEPlayground(c *fiber.Ctx) error {
 
 // SendSSETestMessage handles POST /v1/admin/playground/sse/:id/send
 // Publishes a test notification to the SSE broadcaster for the playground user.
+// @Summary Send an SSE test message
+// @Description Publish a test notification to an SSE playground session
+// @Tags Playground
+// @Accept json
+// @Produce json
+// @Param id path string true "Playground ID"
+// @Param body body object false "Optional message content (title, body, category, data)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/playground/sse/{id}/send [post]
 func (h *PlaygroundHandler) SendSSETestMessage(c *fiber.Ctx) error {
 	playgroundID := c.Params("id")
 	key := "playground:sse:" + playgroundID

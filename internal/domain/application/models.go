@@ -12,7 +12,8 @@ type Application struct {
 	Description       string            `json:"description" es:"description"`
 	APIKey            string            `json:"api_key" es:"api_key"`
 	APIKeyGeneratedAt time.Time         `json:"api_key_generated_at" es:"api_key_generated_at"`
-	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"` // The admin user who owns this app
+	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"`   // The admin user who owns this app
+	TenantID          string            `json:"tenant_id,omitempty" es:"tenant_id"` // Optional: app belongs to tenant (C1)
 	WebhookURL        string            `json:"webhook_url,omitempty" es:"webhook_url"`
 	Webhooks          map[string]string `json:"webhooks,omitempty" es:"webhooks"`
 	Settings          Settings          `json:"settings" es:"settings"`
@@ -118,10 +119,13 @@ type CustomProviderConfig struct {
 
 // ApplicationFilter represents query filters for applications
 type ApplicationFilter struct {
-	AppName     string `json:"app_name,omitempty"`
-	AdminUserID string `json:"admin_user_id,omitempty"`
-	Limit       int    `json:"limit,omitempty"`
-	Offset      int    `json:"offset,omitempty"`
+	AppName      string   `json:"app_name,omitempty"`
+	AdminUserID  string   `json:"admin_user_id,omitempty"`
+	TenantID     string   `json:"tenant_id,omitempty"`
+	TenantIDs    []string `json:"tenant_ids,omitempty"` // List apps in any of these tenants
+	Limit        int      `json:"limit,omitempty"`
+	Offset       int      `json:"offset,omitempty"`
+	Cursor       string   `json:"cursor,omitempty"`
 }
 
 // Repository defines the interface for application data operations
@@ -149,6 +153,7 @@ type Service interface {
 // CreateRequest represents a request to create an application
 type CreateRequest struct {
 	Name       string            `json:"name" validate:"required,min=1,max=100"`
+	TenantID   string            `json:"tenant_id,omitempty"`
 	WebhookURL string            `json:"webhook_url,omitempty" validate:"omitempty,url"`
 	Webhooks   map[string]string `json:"webhooks,omitempty"`
 	Settings   Settings          `json:"settings"`

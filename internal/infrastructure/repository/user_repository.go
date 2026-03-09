@@ -18,7 +18,7 @@ type UserRepository struct {
 // NewUserRepository creates a new user repository
 func NewUserRepository(client *elasticsearch.Client, logger *zap.Logger) user.Repository {
 	return &UserRepository{
-		BaseRepository: NewBaseRepository(client, "users", logger),
+		BaseRepository: NewBaseRepository(client, "users", logger, RefreshWaitFor),
 	}
 }
 

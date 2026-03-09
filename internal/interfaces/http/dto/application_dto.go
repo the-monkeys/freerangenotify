@@ -6,6 +6,7 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/application"
 type CreateApplicationRequest struct {
 	AppName     string                `json:"app_name" validate:"required,min=3,max=100"`
 	Description string                `json:"description" validate:"omitempty,max=500"`
+	TenantID    string                `json:"tenant_id,omitempty"`
 	WebhookURL  string                `json:"webhook_url" validate:"omitempty,url"`
 	Webhooks    map[string]string     `json:"webhooks,omitempty"`
 	Settings    *application.Settings `json:"settings,omitempty"`
@@ -46,6 +47,8 @@ type ApplicationResponse struct {
 	AppName           string               `json:"app_name"`
 	Description       string               `json:"description"`
 	APIKey            string               `json:"api_key"`
+	AdminUserID       string               `json:"admin_user_id"`
+	TenantID          string               `json:"tenant_id,omitempty"`
 	WebhookURL        string               `json:"webhook_url,omitempty"`
 	Webhooks          map[string]string    `json:"webhooks,omitempty"`
 	Settings          application.Settings `json:"settings"`
@@ -75,6 +78,8 @@ func ToApplicationResponse(app *application.Application) ApplicationResponse {
 		AppName:           app.AppName,
 		Description:       app.Description,
 		APIKey:            app.APIKey,
+		AdminUserID:       app.AdminUserID,
+		TenantID:          app.TenantID,
 		WebhookURL:        app.WebhookURL,
 		Webhooks:          app.Webhooks,
 		Settings:          app.Settings,

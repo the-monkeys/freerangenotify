@@ -19,6 +19,12 @@ const client = new FreeRangeNotify('frn_xxx', {
   baseURL: 'http://localhost:8080/v1',
 });
 
+// Code-first trigger (recommended)
+await client.trigger('welcome-email', {
+  to: 'user@example.com',
+  name: 'Alice',
+});
+
 // Quick-Send (backward-compatible)
 await client.send({
   to: 'user@example.com',
@@ -196,8 +202,9 @@ try {
 
 ## Backward Compatibility
 
-| Legacy Method | Delegates To |
+| Method | Delegates To |
 |---|---|
+| `client.trigger(template, { to, data })` | `client.notifications.quickSend({ template, to, data })` |
 | `client.send(params)` | `client.notifications.quickSend(params)` |
 | `client.broadcast(params)` | `client.notifications.broadcast(params)` |
 | `client.createUser(params)` | `client.users.create(params)` |

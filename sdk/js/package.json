@@ -1,7 +1,7 @@
 {
     "name": "@freerangenotify/sdk",
     "version": "0.1.0",
-    "description": "Official JavaScript/TypeScript SDK for FreeRangeNotify",
+    "description": "FreeRangeNotify SDK - trigger notifications, manage users, templates, and more",
     "main": "dist/index.js",
     "module": "dist/index.mjs",
     "types": "dist/index.d.ts",

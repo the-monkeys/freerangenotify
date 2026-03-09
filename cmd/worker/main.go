@@ -57,130 +57,110 @@ func main() {
 	// Create provider manager and register providers
 	providerManager := providers.NewManager(c.Metrics, c.PresenceRepository, logger)
 
-	// Initialize and register FCM provider
-	fcmProvider, err := providers.NewFCMProvider(providers.FCMConfig{
-		Config: providers.Config{
-			Timeout:    10 * time.Second,
-			MaxRetries: 3,
-			RetryDelay: 1 * time.Second,
+	// Build provider config map from application config
+	providerConfigs := map[string]map[string]interface{}{
+		"fcm": {
+			"project_id":       cfg.Providers.FCM.ProjectID,
+			"credentials_path": cfg.Providers.FCM.CredentialsPath,
 		},
-		ProjectID:       cfg.Providers.FCM.ProjectID,
-		CredentialsPath: cfg.Providers.FCM.CredentialsPath,
-	}, logger)
-	if err != nil {
-		logger.Warn("Failed to initialize FCM provider", zap.Error(err))
-	} else {
-		providerManager.RegisterProvider(fcmProvider)
-	}
-
-	// Initialize and register APNS provider
-	apnsProvider, err := providers.NewAPNSProvider(providers.APNSConfig{
-		Config: providers.Config{
-			Timeout:    10 * time.Second,
-			MaxRetries: 3,
-			RetryDelay: 1 * time.Second,
+		"apns": {
+			"bundle_id":  cfg.Providers.APNS.BundleID,
+			"team_id":    cfg.Providers.APNS.TeamID,
+			"key_id":     cfg.Providers.APNS.KeyID,
+			"key_path":   cfg.Providers.APNS.KeyPath,
+			"production": cfg.Providers.APNS.Production,
 		},
-		BundleID:   cfg.Providers.APNS.BundleID,
-		TeamID:     cfg.Providers.APNS.TeamID,
-		KeyID:      cfg.Providers.APNS.KeyID,
-		KeyPath:    cfg.Providers.APNS.KeyPath,
-		Production: cfg.Providers.APNS.Production,
-	}, logger)
-	if err != nil {
-		logger.Warn("Failed to initialize APNS provider", zap.Error(err))
-	} else {
-		providerManager.RegisterProvider(apnsProvider)
-	}
-
-	// Initialize and register SMTP provider if configured
-	logger.Debug("Checking SMTP configuration", zap.String("host", cfg.Providers.SMTP.Host))
-	if cfg.Providers.SMTP.Host != "" {
-		smtpProvider, err := providers.NewSMTPProvider(providers.SMTPConfig{
-			Config: providers.Config{
-				Timeout:    30 * time.Second,
-				MaxRetries: 3,
-				RetryDelay: 1 * time.Second,
-			},
-			Host:      cfg.Providers.SMTP.Host,
-			Port:      cfg.Providers.SMTP.Port,
-			Username:  cfg.Providers.SMTP.Username,
-			Password:  cfg.Providers.SMTP.Password,
-			FromEmail: cfg.Providers.SMTP.FromEmail,
-			FromName:  cfg.Providers.SMTP.FromName,
-		}, logger)
-
-		if err != nil {
-			logger.Warn("Failed to initialize SMTP provider", zap.Error(err))
-		} else {
-			if err := providerManager.RegisterProvider(smtpProvider); err != nil {
-				logger.Warn("Failed to register SMTP provider", zap.Error(err))
-			} else {
-				logger.Info("Registered SMTP provider for email channel")
-			}
-		}
-	} else {
-		logger.Warn("SMTP provider not configured - host is empty")
-	}
-
-	// Initialize and register SendGrid provider if configured
-	logger.Debug("Checking SendGrid configuration", zap.String("api_key", cfg.Providers.SendGrid.APIKey))
-	if cfg.Providers.SendGrid.APIKey != "" {
-		sendgridProvider, err := providers.NewSendGridProvider(providers.SendGridConfig{
-			Config: providers.Config{
-				Timeout:    15 * time.Second,
-				MaxRetries: 3,
-				RetryDelay: 1 * time.Second,
-			},
-			APIKey:    cfg.Providers.SendGrid.APIKey,
-			FromEmail: cfg.Providers.SendGrid.FromEmail,
-			FromName:  cfg.Providers.SendGrid.FromName,
-		}, logger)
-		if err != nil {
-			logger.Warn("Failed to initialize SendGrid provider", zap.Error(err))
-		} else {
-			if err := providerManager.RegisterProvider(sendgridProvider); err != nil {
-				logger.Warn("Failed to register SendGrid provider", zap.Error(err))
-			} else {
-				logger.Info("Registered SendGrid provider for email channel")
-			}
-		}
-	}
-
-	// Initialize and register Twilio provider
-	twilioProvider, err := providers.NewTwilioProvider(providers.TwilioConfig{
-		Config: providers.Config{
-			Timeout:    10 * time.Second,
-			MaxRetries: 3,
-			RetryDelay: 1 * time.Second,
+		"smtp": {
+			"host":       cfg.Providers.SMTP.Host,
+			"port":       cfg.Providers.SMTP.Port,
+			"username":   cfg.Providers.SMTP.Username,
+			"password":   cfg.Providers.SMTP.Password,
+			"from_email": cfg.Providers.SMTP.FromEmail,
+			"from_name":  cfg.Providers.SMTP.FromName,
 		},
-		AccountSID: cfg.Providers.Twilio.AccountSID,
-		AuthToken:  cfg.Providers.Twilio.AuthToken,
-		FromNumber: cfg.Providers.Twilio.FromNumber,
-	}, logger)
-	if err != nil {
-		logger.Warn("Failed to initialize Twilio provider", zap.Error(err))
-	} else {
-		providerManager.RegisterProvider(twilioProvider)
+		"sendgrid": {
+			"api_key":    cfg.Providers.SendGrid.APIKey,
+			"from_email": cfg.Providers.SendGrid.FromEmail,
+			"from_name":  cfg.Providers.SendGrid.FromName,
+		},
+		"twilio": {
+			"account_sid": cfg.Providers.Twilio.AccountSID,
+			"auth_token":  cfg.Providers.Twilio.AuthToken,
+			"from_number": cfg.Providers.Twilio.FromNumber,
+		},
+		"webhook": {
+			"secret":      cfg.Providers.Webhook.Secret,
+			"timeout":     float64(cfg.Providers.Webhook.Timeout),
+			"max_retries": float64(cfg.Providers.Webhook.MaxRetries),
+		},
+		"slack": {
+			"enabled":             cfg.Providers.Slack.Enabled,
+			"default_webhook_url": cfg.Providers.Slack.DefaultWebhookURL,
+			"timeout":             float64(cfg.Providers.Slack.Timeout),
+			"max_retries":         float64(cfg.Providers.Slack.MaxRetries),
+		},
+		"discord": {
+			"enabled":             cfg.Providers.Discord.Enabled,
+			"default_webhook_url": cfg.Providers.Discord.DefaultWebhookURL,
+			"timeout":             float64(cfg.Providers.Discord.Timeout),
+			"max_retries":         float64(cfg.Providers.Discord.MaxRetries),
+		},
+		"whatsapp": {
+			"enabled":     cfg.Providers.WhatsApp.Enabled,
+			"account_sid": cfg.Providers.WhatsApp.AccountSID,
+			"auth_token":  cfg.Providers.WhatsApp.AuthToken,
+			"from_number": cfg.Providers.WhatsApp.FromNumber,
+			"timeout":     float64(cfg.Providers.WhatsApp.Timeout),
+			"max_retries": float64(cfg.Providers.WhatsApp.MaxRetries),
+		},
+		"resend": {
+			"enabled":    cfg.Providers.Resend.Enabled,
+			"api_key":    cfg.Providers.Resend.APIKey,
+			"from_email": cfg.Providers.Resend.FromEmail,
+			"from_name":  cfg.Providers.Resend.FromName,
+		},
+		"postmark": {
+			"enabled":      cfg.Providers.Postmark.Enabled,
+			"server_token": cfg.Providers.Postmark.ServerToken,
+			"from_email":   cfg.Providers.Postmark.FromEmail,
+			"from_name":    cfg.Providers.Postmark.FromName,
+		},
+		"mailgun": {
+			"enabled":    cfg.Providers.Mailgun.Enabled,
+			"api_key":    cfg.Providers.Mailgun.APIKey,
+			"domain":     cfg.Providers.Mailgun.Domain,
+			"from_email": cfg.Providers.Mailgun.FromEmail,
+			"from_name":  cfg.Providers.Mailgun.FromName,
+		},
+		"ses": {
+			"enabled":          cfg.Providers.SES.Enabled,
+			"region":           cfg.Providers.SES.Region,
+			"access_key_id":    cfg.Providers.SES.AccessKeyID,
+			"secret_access_key": cfg.Providers.SES.SecretAccessKey,
+			"from_email":       cfg.Providers.SES.FromEmail,
+			"from_name":        cfg.Providers.SES.FromName,
+		},
+		"vonage": {
+			"enabled":     cfg.Providers.Vonage.Enabled,
+			"api_key":     cfg.Providers.Vonage.APIKey,
+			"api_secret":  cfg.Providers.Vonage.APISecret,
+			"from_number": cfg.Providers.Vonage.FromNumber,
+		},
+		"teams": {
+			"enabled":             cfg.Providers.Teams.Enabled,
+			"default_webhook_url": cfg.Providers.Teams.DefaultWebhookURL,
+		},
 	}
 
-	// Initialize and register Webhook provider
-	webhookProvider, err := providers.NewWebhookProvider(providers.WebhookConfig{
-		Config: providers.Config{
-			Timeout:    time.Duration(cfg.Providers.Webhook.Timeout) * time.Second,
-			MaxRetries: cfg.Providers.Webhook.MaxRetries,
-			RetryDelay: 2 * time.Second,
-		},
-		Secret: cfg.Providers.Webhook.Secret,
-	}, logger)
-	if err != nil {
-		logger.Warn("Failed to initialize Webhook provider", zap.Error(err))
-	} else {
-		if err := providerManager.RegisterProvider(webhookProvider); err != nil {
-			logger.Warn("Failed to register Webhook provider", zap.Error(err))
+	// Auto-instantiate all registered providers
+	registeredProviders := providers.InstantiateAll(providerConfigs, logger)
+	for _, p := range registeredProviders {
+		if err := providerManager.RegisterProvider(p); err != nil {
+			logger.Warn("Failed to register provider", zap.String("provider", p.GetName()), zap.Error(err))
 		}
 	}
 
-	// Initialize and register SSE provider
+	// SSE provider requires Redis client — wire manually
 	sseProvider, err := providers.NewSSEProvider(providers.SSEConfig{
 		Config: providers.Config{
 			Timeout:    5 * time.Second,
@@ -196,73 +176,9 @@ func main() {
 		}
 	}
 
-	// ── Phase 3: Slack provider ──
-	if cfg.Providers.Slack.Enabled {
-		slackProvider, err := providers.NewSlackProvider(providers.SlackConfig{
-			Config: providers.Config{
-				Timeout:    time.Duration(cfg.Providers.Slack.Timeout) * time.Second,
-				MaxRetries: cfg.Providers.Slack.MaxRetries,
-				RetryDelay: 2 * time.Second,
-			},
-			DefaultWebhookURL: cfg.Providers.Slack.DefaultWebhookURL,
-		}, logger)
-		if err != nil {
-			logger.Warn("Failed to initialize Slack provider", zap.Error(err))
-		} else {
-			if err := providerManager.RegisterProvider(slackProvider); err != nil {
-				logger.Warn("Failed to register Slack provider", zap.Error(err))
-			} else {
-				logger.Info("Registered Slack provider")
-			}
-		}
-	}
-
-	// ── Phase 3: Discord provider ──
-	if cfg.Providers.Discord.Enabled {
-		discordProvider, err := providers.NewDiscordProvider(providers.DiscordConfig{
-			Config: providers.Config{
-				Timeout:    time.Duration(cfg.Providers.Discord.Timeout) * time.Second,
-				MaxRetries: cfg.Providers.Discord.MaxRetries,
-				RetryDelay: 2 * time.Second,
-			},
-			DefaultWebhookURL: cfg.Providers.Discord.DefaultWebhookURL,
-		}, logger)
-		if err != nil {
-			logger.Warn("Failed to initialize Discord provider", zap.Error(err))
-		} else {
-			if err := providerManager.RegisterProvider(discordProvider); err != nil {
-				logger.Warn("Failed to register Discord provider", zap.Error(err))
-			} else {
-				logger.Info("Registered Discord provider")
-			}
-		}
-	}
-
-	// ── Phase 3: WhatsApp provider (Twilio-backed) ──
-	if cfg.Providers.WhatsApp.Enabled {
-		whatsappProvider, err := providers.NewWhatsAppProvider(providers.WhatsAppConfig{
-			Config: providers.Config{
-				Timeout:    time.Duration(cfg.Providers.WhatsApp.Timeout) * time.Second,
-				MaxRetries: cfg.Providers.WhatsApp.MaxRetries,
-				RetryDelay: 2 * time.Second,
-			},
-			AccountSID: cfg.Providers.WhatsApp.AccountSID,
-			AuthToken:  cfg.Providers.WhatsApp.AuthToken,
-			FromNumber: cfg.Providers.WhatsApp.FromNumber,
-		}, logger)
-		if err != nil {
-			logger.Warn("Failed to initialize WhatsApp provider", zap.Error(err))
-		} else {
-			if err := providerManager.RegisterProvider(whatsappProvider); err != nil {
-				logger.Warn("Failed to register WhatsApp provider", zap.Error(err))
-			} else {
-				logger.Info("Registered WhatsApp provider")
-			}
-		}
-	}
-
-	logger.Info("Provider manager initialized",
-		zap.Strings("channels", func() []string {
+	logger.Info("Provider registry initialized",
+		zap.Strings("registered_factories", providers.RegisteredProviders()),
+		zap.Strings("active_channels", func() []string {
 			channels := providerManager.GetSupportedChannels()
 			result := make([]string, len(channels))
 			for i, ch := range channels {

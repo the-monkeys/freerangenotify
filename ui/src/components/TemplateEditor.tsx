@@ -1,12 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import { EmailBlockBuilder } from './templates/EmailBlockBuilder';
 
 interface TemplateEditorProps {
     content: string;
     onChange: (html: string) => void;
     channel: string;
     placeholder?: string;
+    /** Variable names for the block builder's variable inserter. Only used when channel is email. */
+    variables?: string[];
 }
 
 /**
@@ -14,8 +17,8 @@ interface TemplateEditorProps {
  * formatting toolbar, and live preview. Falls back to plain textarea
  * for non-email channels (SMS, push, webhook, SSE).
  */
-const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, channel, placeholder }) => {
-    const [mode, setMode] = useState<'visual' | 'html'>('visual');
+const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, channel, placeholder, variables = [] }) => {
+    const [mode, setMode] = useState<'builder' | 'visual' | 'html'>('builder');
     const editorRef = useRef<HTMLDivElement>(null);
     // Track whether we're actively typing in the contentEditable div
     // to prevent dangerouslySetInnerHTML from resetting cursor position.
@@ -81,11 +84,20 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
         );
     }
 
+    // Email channel: Builder (drag-and-drop blocks), Visual (contentEditable), or HTML
     return (
         <div className="space-y-2">
             <div className="border rounded overflow-hidden">
                 {/* Toolbar */}
                 <div className="flex items-center gap-1 p-2 border-b bg-muted/30 flex-wrap">
+                    <Button
+                        type="button"
+                        variant={mode === 'builder' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setMode('builder')}
+                    >
+                        Builder
+                    </Button>
                     <Button
                         type="button"
                         variant={mode === 'visual' ? 'default' : 'ghost'}
@@ -145,7 +157,16 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
                 </div>
 
                 {/* Editor area */}
-                {mode === 'visual' ? (
+                {mode === 'builder' ? (
+                    <div className="p-4 min-h-[300px] bg-white">
+                        <EmailBlockBuilder
+                            content={content}
+                            onChange={onChange}
+                            variables={variables}
+                            placeholder={placeholder}
+                        />
+                    </div>
+                ) : mode === 'visual' ? (
                     <div
                         ref={editorRef}
                         contentEditable

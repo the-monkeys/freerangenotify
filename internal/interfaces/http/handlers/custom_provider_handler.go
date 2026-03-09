@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -15,16 +16,40 @@ import (
 
 // CustomProviderHandler handles CRUD for custom delivery providers (Phase 3).
 type CustomProviderHandler struct {
-	service usecases.ApplicationService
-	logger  *zap.Logger
+	service        usecases.ApplicationService
+	membershipRepo auth.MembershipRepository
+	logger         *zap.Logger
 }
 
 // NewCustomProviderHandler creates a new CustomProviderHandler.
-func NewCustomProviderHandler(service usecases.ApplicationService, logger *zap.Logger) *CustomProviderHandler {
+func NewCustomProviderHandler(service usecases.ApplicationService, membershipRepo auth.MembershipRepository, logger *zap.Logger) *CustomProviderHandler {
 	return &CustomProviderHandler{
-		service: service,
-		logger:  logger,
+		service:        service,
+		membershipRepo: membershipRepo,
+		logger:         logger,
 	}
+}
+
+// authorizeProviderAccess checks ownership or team membership and returns the
+// app and the caller's resolved role.
+func (h *CustomProviderHandler) authorizeProviderAccess(c *fiber.Ctx, appID, userID string) (*application.Application, auth.Role, error) {
+	app, err := h.service.GetByID(c.Context(), appID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if app.AdminUserID == userID {
+		return app, auth.RoleOwner, nil
+	}
+
+	if h.membershipRepo != nil {
+		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
+		if mErr == nil && membership != nil {
+			return app, membership.Role, nil
+		}
+	}
+
+	return nil, "", errors.Forbidden("You do not have access to this application")
 }
 
 // registerCustomProviderRequest is the request body for registering a custom provider.
@@ -36,25 +61,37 @@ type registerCustomProviderRequest struct {
 }
 
 // Register registers a new custom provider for an application.
-// POST /v1/apps/:id/providers
+// POST /v1/apps/:id/providers — requires admin or owner role
+// @Summary Register a custom provider
+// @Description Register a new custom delivery provider for an application (admin or owner)
+// @Tags Custom Providers
+// @Accept json
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param body body registerCustomProviderRequest true "Custom provider registration request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers [post]
 func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
 		return errors.BadRequest("app ID is required")
 	}
 
-	// Verify ownership via JWT
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
 		return errors.Unauthorized("authentication required")
 	}
 
-	app, err := h.service.GetByID(c.Context(), appID)
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("only the app owner can manage custom providers")
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to manage custom providers")
 	}
 
 	var req registerCustomProviderRequest
@@ -62,14 +99,12 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 		return errors.BadRequest("invalid request body")
 	}
 
-	// Check for duplicate provider name (allow multiple providers per channel)
 	for _, cp := range app.Settings.CustomProviders {
 		if cp.Name == req.Name && cp.Active {
 			return errors.BadRequest("a custom provider named '" + req.Name + "' already exists")
 		}
 	}
 
-	// Generate signing key (32 bytes = 64 hex chars)
 	signingKeyBytes := make([]byte, 32)
 	if _, err := rand.Read(signingKeyBytes); err != nil {
 		h.logger.Error("Failed to generate signing key", zap.Error(err))
@@ -83,7 +118,7 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 		Channel:    req.Channel,
 		WebhookURL: req.WebhookURL,
 		Headers:    req.Headers,
-		SigningKey: signingKey,
+		SigningKey:  signingKey,
 		Active:     true,
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
@@ -106,7 +141,18 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 }
 
 // List returns all custom providers for an application.
-// GET /v1/apps/:id/providers
+// GET /v1/apps/:id/providers — any team member can view
+// @Summary List custom providers
+// @Description List all registered custom delivery providers for an application
+// @Tags Custom Providers
+// @Produce json
+// @Param id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers [get]
 func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -118,15 +164,11 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 		return errors.Unauthorized("authentication required")
 	}
 
-	app, err := h.service.GetByID(c.Context(), appID)
+	app, _, err := h.authorizeProviderAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("only the app owner can view custom providers")
-	}
 
-	// Redact signing keys for security — show only last 4 characters
 	providers := make([]application.CustomProviderConfig, len(app.Settings.CustomProviders))
 	copy(providers, app.Settings.CustomProviders)
 	for i := range providers {
@@ -142,7 +184,19 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 }
 
 // Remove removes a custom provider from an application.
-// DELETE /v1/apps/:id/providers/:provider_id
+// DELETE /v1/apps/:id/providers/:provider_id — requires admin or owner role
+// @Summary Remove a custom provider
+// @Description Remove a custom delivery provider from an application (admin or owner)
+// @Tags Custom Providers
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param provider_id path string true "Provider ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers/{provider_id} [delete]
 func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -155,12 +209,12 @@ func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 		return errors.Unauthorized("authentication required")
 	}
 
-	app, err := h.service.GetByID(c.Context(), appID)
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
-	if app.AdminUserID != userID {
-		return errors.Forbidden("only the app owner can remove custom providers")
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to remove custom providers")
 	}
 
 	found := false

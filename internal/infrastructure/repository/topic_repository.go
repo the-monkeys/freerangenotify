@@ -19,8 +19,8 @@ type TopicRepository struct {
 // NewTopicRepository creates a new topic repository.
 func NewTopicRepository(client *elasticsearch.Client, logger *zap.Logger) topic.Repository {
 	return &TopicRepository{
-		topics:        NewBaseRepository(client, "topics", logger),
-		subscriptions: NewBaseRepository(client, "topic_subscriptions", logger),
+		topics:        NewBaseRepository(client, "topics", logger, RefreshWaitFor),
+		subscriptions: NewBaseRepository(client, "topic_subscriptions", logger, RefreshWaitFor),
 	}
 }
 
@@ -136,21 +136,21 @@ func (r *TopicRepository) Delete(ctx context.Context, id string) error {
 // --- Subscription management ---
 
 func (r *TopicRepository) AddSubscribers(ctx context.Context, topicID, appID string, userIDs []string) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	docs := make(map[string]interface{}, len(userIDs))
 	for _, userID := range userIDs {
 		subID := fmt.Sprintf("%s_%s", topicID, userID)
-		sub := &topic.TopicSubscription{
+		docs[subID] = &topic.TopicSubscription{
 			ID:        subID,
 			TopicID:   topicID,
 			AppID:     appID,
 			UserID:    userID,
 			CreatedAt: time.Now().UTC(),
 		}
-		// Use Create which will upsert if document already exists
-		if err := r.subscriptions.Create(ctx, subID, sub); err != nil {
-			return fmt.Errorf("failed to add subscriber %s: %w", userID, err)
-		}
 	}
-	return nil
+	return r.subscriptions.BulkCreate(ctx, docs)
 }
 
 func (r *TopicRepository) RemoveSubscribers(ctx context.Context, topicID string, userIDs []string) error {
@@ -202,12 +202,7 @@ func (r *TopicRepository) GetSubscriberCount(ctx context.Context, topicID string
 			"term": map[string]interface{}{"topic_id": topicID},
 		},
 	}
-
-	result, err := r.subscriptions.Search(ctx, query)
-	if err != nil {
-		return 0, err
-	}
-	return result.Total, nil
+	return r.subscriptions.Count(ctx, query)
 }
 
 func (r *TopicRepository) GetUserTopics(ctx context.Context, appID, userID string) ([]*topic.Topic, error) {
@@ -243,14 +238,26 @@ func (r *TopicRepository) GetUserTopics(ctx context.Context, appID, userID strin
 		return []*topic.Topic{}, nil
 	}
 
-	// Fetch topics by IDs
-	topics := make([]*topic.Topic, 0, len(topicIDs))
-	for _, id := range topicIDs {
-		t, err := r.GetByID(ctx, id)
-		if err != nil {
+	// Batch fetch all topics in a single query
+	topicQuery := map[string]interface{}{
+		"query": map[string]interface{}{
+			"terms": map[string]interface{}{
+				"_id": topicIDs,
+			},
+		},
+		"size": len(topicIDs),
+	}
+	topicResult, err := r.topics.Search(ctx, topicQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch fetch topics: %w", err)
+	}
+	topics := make([]*topic.Topic, 0, len(topicResult.Hits))
+	for _, hit := range topicResult.Hits {
+		var t topic.Topic
+		if err := mapToStruct(hit, &t); err != nil {
 			continue
 		}
-		topics = append(topics, t)
+		topics = append(topics, &t)
 	}
 	return topics, nil
 }

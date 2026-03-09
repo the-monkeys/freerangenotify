@@ -18,13 +18,14 @@ const (
 	ChannelSlack    Channel = "slack"    // Phase 3
 	ChannelDiscord  Channel = "discord"  // Phase 3
 	ChannelWhatsApp Channel = "whatsapp" // Phase 3
+	ChannelTeams    Channel = "teams"    // Phase 3
 )
 
 // Valid checks if the channel is valid
 func (c Channel) Valid() bool {
 	switch c {
 	case ChannelPush, ChannelEmail, ChannelSMS, ChannelWebhook, ChannelInApp, ChannelSSE,
-		ChannelSlack, ChannelDiscord, ChannelWhatsApp:
+		ChannelSlack, ChannelDiscord, ChannelWhatsApp, ChannelTeams:
 		return true
 	default:
 		return false
@@ -158,6 +159,7 @@ type NotificationFilter struct {
 	PageSize      int                    `json:"page_size,omitempty"`
 	SortBy        string                 `json:"sort_by,omitempty"`
 	SortOrder     string                 `json:"sort_order,omitempty"` // "asc" or "desc"
+	Cursor        string                 `json:"cursor,omitempty"`     // opaque cursor for search_after pagination
 }
 
 // DefaultFilter returns a filter with default values

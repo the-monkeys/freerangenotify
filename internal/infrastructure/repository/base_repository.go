@@ -11,26 +11,42 @@ import (
 	"go.uber.org/zap"
 )
 
+// RefreshPolicy controls Elasticsearch index refresh behavior after writes.
+type RefreshPolicy string
+
+const (
+	RefreshTrue    RefreshPolicy = "true"     // Force immediate refresh (slowest, strongest consistency)
+	RefreshWaitFor RefreshPolicy = "wait_for" // Wait for next refresh cycle (balanced)
+	RefreshFalse   RefreshPolicy = ""         // No refresh, accept near-real-time (fastest)
+)
+
 // BaseRepository provides common Elasticsearch operations
 type BaseRepository struct {
-	client    *elasticsearch.Client
-	indexName string
-	logger    *zap.Logger
+	client         *elasticsearch.Client
+	indexName      string
+	logger         *zap.Logger
+	defaultRefresh RefreshPolicy
 }
 
 // NewBaseRepository creates a new base repository
-func NewBaseRepository(client *elasticsearch.Client, indexName string, logger *zap.Logger) *BaseRepository {
+func NewBaseRepository(client *elasticsearch.Client, indexName string, logger *zap.Logger, opts ...RefreshPolicy) *BaseRepository {
+	refresh := RefreshFalse
+	if len(opts) > 0 {
+		refresh = opts[0]
+	}
 	return &BaseRepository{
-		client:    client,
-		indexName: indexName,
-		logger:    logger,
+		client:         client,
+		indexName:      indexName,
+		logger:         logger,
+		defaultRefresh: refresh,
 	}
 }
 
 // QueryResult represents a search result
 type QueryResult struct {
-	Total int64                    `json:"total"`
-	Hits  []map[string]interface{} `json:"hits"`
+	Total    int64                    `json:"total"`
+	Hits     []map[string]interface{} `json:"hits"`
+	LastSort []interface{}            `json:"last_sort,omitempty"`
 }
 
 // Create creates a new document
@@ -44,7 +60,7 @@ func (r *BaseRepository) Create(ctx context.Context, id string, document interfa
 		Index:      r.indexName,
 		DocumentID: id,
 		Body:       strings.NewReader(string(data)),
-		Refresh:    "true",
+		Refresh:    string(r.defaultRefresh),
 	}
 
 	res, err := req.Do(ctx, r.client)
@@ -113,7 +129,7 @@ func (r *BaseRepository) Update(ctx context.Context, id string, document interfa
 		Index:      r.indexName,
 		DocumentID: id,
 		Body:       strings.NewReader(string(data)),
-		Refresh:    "true",
+		Refresh:    string(r.defaultRefresh),
 	}
 
 	res, err := req.Do(ctx, r.client)
@@ -138,7 +154,7 @@ func (r *BaseRepository) Delete(ctx context.Context, id string) error {
 	req := esapi.DeleteRequest{
 		Index:      r.indexName,
 		DocumentID: id,
-		Refresh:    "true",
+		Refresh:    string(r.defaultRefresh),
 	}
 
 	res, err := req.Do(ctx, r.client)
@@ -169,7 +185,7 @@ func (r *BaseRepository) DeleteByQuery(ctx context.Context, query map[string]int
 		return fmt.Errorf("failed to marshal query: %w", err)
 	}
 
-	refresh := true
+	refresh := r.defaultRefresh == RefreshTrue
 	req := esapi.DeleteByQueryRequest{
 		Index:   []string{r.indexName},
 		Body:    strings.NewReader(string(data)),
@@ -237,6 +253,7 @@ func (r *BaseRepository) Search(ctx context.Context, query map[string]interface{
 	}
 
 	var documents []map[string]interface{}
+	var lastSort []interface{}
 	if hitsList, exists := hits["hits"]; exists {
 		if hitsArray, ok := hitsList.([]interface{}); ok {
 			for _, hit := range hitsArray {
@@ -246,14 +263,20 @@ func (r *BaseRepository) Search(ctx context.Context, query map[string]interface{
 							documents = append(documents, sourceMap)
 						}
 					}
+					if sortVals, exists := hitMap["sort"]; exists {
+						if sortArr, ok := sortVals.([]interface{}); ok {
+							lastSort = sortArr
+						}
+					}
 				}
 			}
 		}
 	}
 
 	return &QueryResult{
-		Total: total,
-		Hits:  documents,
+		Total:    total,
+		Hits:     documents,
+		LastSort: lastSort,
 	}, nil
 }
 
@@ -284,7 +307,7 @@ func (r *BaseRepository) BulkUpdate(ctx context.Context, documents map[string]in
 
 	req := esapi.BulkRequest{
 		Body:    strings.NewReader(body.String()),
-		Refresh: "true",
+		Refresh: string(r.defaultRefresh),
 	}
 
 	res, err := req.Do(ctx, r.client)
@@ -328,7 +351,7 @@ func (r *BaseRepository) BulkCreate(ctx context.Context, documents map[string]in
 
 	req := esapi.BulkRequest{
 		Body:    strings.NewReader(body.String()),
-		Refresh: "true",
+		Refresh: string(r.defaultRefresh),
 	}
 
 	res, err := req.Do(ctx, r.client)
@@ -384,6 +407,86 @@ func (r *BaseRepository) Count(ctx context.Context, query map[string]interface{}
 	return 0, nil
 }
 
+// CreateWithRefresh creates a new document with an explicit per-call refresh policy.
+func (r *BaseRepository) CreateWithRefresh(ctx context.Context, id string, document interface{}, refresh RefreshPolicy) error {
+	data, err := json.Marshal(document)
+	if err != nil {
+		return fmt.Errorf("failed to marshal document: %w", err)
+	}
+	req := esapi.IndexRequest{
+		Index:      r.indexName,
+		DocumentID: id,
+		Body:       strings.NewReader(string(data)),
+		Refresh:    string(refresh),
+	}
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to create document: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+	r.logger.Debug("Document created",
+		zap.String("index", r.indexName),
+		zap.String("id", id))
+	return nil
+}
+
+// UpdateByQuery performs an atomic bulk update using Elasticsearch's _update_by_query API.
+func (r *BaseRepository) UpdateByQuery(ctx context.Context, query map[string]interface{}) (int64, error) {
+	data, err := json.Marshal(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal query: %w", err)
+	}
+	refresh := r.defaultRefresh == RefreshTrue
+	req := esapi.UpdateByQueryRequest{
+		Index:   []string{r.indexName},
+		Body:    strings.NewReader(string(data)),
+		Refresh: &refresh,
+	}
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute update by query: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return 0, fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+	updated := int64(0)
+	if val, ok := result["updated"].(float64); ok {
+		updated = int64(val)
+	}
+	return updated, nil
+}
+
+// ScriptUpdate performs an atomic field update using an Elasticsearch update script.
+func (r *BaseRepository) ScriptUpdate(ctx context.Context, id string, script map[string]interface{}) error {
+	data, err := json.Marshal(script)
+	if err != nil {
+		return fmt.Errorf("failed to marshal script: %w", err)
+	}
+	req := esapi.UpdateRequest{
+		Index:      r.indexName,
+		DocumentID: id,
+		Body:       strings.NewReader(string(data)),
+		Refresh:    string(r.defaultRefresh),
+	}
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to execute script update: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+	return nil
+}
+
 // Exists checks if a document exists
 func (r *BaseRepository) Exists(ctx context.Context, id string) (bool, error) {
 	req := esapi.ExistsRequest{
@@ -398,4 +501,14 @@ func (r *BaseRepository) Exists(ctx context.Context, id string) (bool, error) {
 	defer res.Body.Close()
 
 	return res.StatusCode == 200, nil
+}
+
+// SearchWithCursor performs a search and returns results with a cursor for the next page.
+func (r *BaseRepository) SearchWithCursor(ctx context.Context, query map[string]interface{}) (*QueryResult, string, error) {
+	result, err := r.Search(ctx, query)
+	if err != nil {
+		return nil, "", err
+	}
+	cursor := EncodeCursor(result.LastSort)
+	return result, cursor, nil
 }

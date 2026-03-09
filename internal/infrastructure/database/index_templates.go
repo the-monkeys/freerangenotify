@@ -41,6 +41,9 @@ func (it *IndexTemplates) GetApplicationsTemplate() map[string]interface{} {
 				"admin_user_id": map[string]interface{}{
 					"type": "keyword",
 				},
+				"tenant_id": map[string]interface{}{
+					"type": "keyword",
+				},
 				"webhook_url": map[string]interface{}{
 					"type": "keyword",
 				},
@@ -851,6 +854,41 @@ func (it *IndexTemplates) GetEnvironmentsTemplate() map[string]interface{} {
 	}
 }
 
+// GetResourceLinksTemplate returns the Elasticsearch mapping for app_resource_links index.
+func (it *IndexTemplates) GetResourceLinksTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"link_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"target_app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"source_app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource_type": map[string]interface{}{
+					"type": "keyword",
+				},
+				"resource_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"linked_by": map[string]interface{}{
+					"type": "keyword",
+				},
+				"linked_at": map[string]interface{}{
+					"type": "date",
+				},
+			},
+		},
+	}
+}
+
 // GetAppMembershipsTemplate returns the Elasticsearch mapping for app_memberships index.
 func (it *IndexTemplates) GetAppMembershipsTemplate() map[string]interface{} {
 	return map[string]interface{}{
@@ -884,6 +922,48 @@ func (it *IndexTemplates) GetAppMembershipsTemplate() map[string]interface{} {
 				"updated_at": map[string]interface{}{
 					"type": "date",
 				},
+			},
+		},
+	}
+}
+
+// GetTenantsTemplate returns the Elasticsearch mapping for the tenants index (C1).
+func (it *IndexTemplates) GetTenantsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{"type": "keyword"},
+				"name": map[string]interface{}{"type": "keyword"},
+				"slug": map[string]interface{}{"type": "keyword"},
+				"created_by": map[string]interface{}{"type": "keyword"},
+				"created_at": map[string]interface{}{"type": "date"},
+				"updated_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
+// GetTenantMembersTemplate returns the Elasticsearch mapping for the tenant_members index (C1).
+func (it *IndexTemplates) GetTenantMembersTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{"type": "keyword"},
+				"tenant_id": map[string]interface{}{"type": "keyword"},
+				"user_id": map[string]interface{}{"type": "keyword"},
+				"user_email": map[string]interface{}{"type": "keyword"},
+				"role": map[string]interface{}{"type": "keyword"},
+				"invited_by": map[string]interface{}{"type": "keyword"},
+				"created_at": map[string]interface{}{"type": "date"},
+				"updated_at": map[string]interface{}{"type": "date"},
 			},
 		},
 	}

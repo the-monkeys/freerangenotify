@@ -20,12 +20,13 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	_ "github.com/the-monkeys/freerangenotify/docs" // Swagger docs
 )
 
 // @title FreeRangeNotify API
-// @version 0.1.11-alpha
+// @version 0.1.12-alpha
 // @description High-performance notification service with multi-channel delivery support
 // @termsOfService http://swagger.io/terms/
 
@@ -44,9 +45,14 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and your API key
 
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description Application API key for tenant-facing endpoints
+
 func main() {
 	// Initialize logger
-	zapLogger, _ := zap.NewDevelopment()
+	zapLogger, _ := zap.NewDevelopment(zap.AddStacktrace(zapcore.ErrorLevel))
 	defer zapLogger.Sync()
 
 	// Load configuration

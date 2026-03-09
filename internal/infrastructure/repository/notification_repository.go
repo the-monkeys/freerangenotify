@@ -203,21 +203,19 @@ func (r *NotificationRepository) GetRetryable(ctx context.Context, maxRetries in
 	return notifications, nil
 }
 
-// IncrementRetryCount increments the retry count of a notification
+// IncrementRetryCount atomically increments the retry count of a notification.
 func (r *NotificationRepository) IncrementRetryCount(ctx context.Context, notificationID string, errorMessage string) error {
-	// Get current notification to get retry count
-	n, err := r.GetByID(ctx, notificationID)
-	if err != nil {
-		return err
+	script := map[string]interface{}{
+		"script": map[string]interface{}{
+			"source": "ctx._source.retry_count += 1; ctx._source.error_message = params.error_message; ctx._source.updated_at = params.now",
+			"lang":   "painless",
+			"params": map[string]interface{}{
+				"error_message": errorMessage,
+				"now":           time.Now().Format(time.RFC3339),
+			},
+		},
 	}
-
-	updateDoc := map[string]interface{}{
-		"retry_count":   n.RetryCount + 1,
-		"error_message": errorMessage,
-		"updated_at":    time.Now(),
-	}
-
-	return r.BaseRepository.Update(ctx, notificationID, updateDoc)
+	return r.BaseRepository.ScriptUpdate(ctx, notificationID, script)
 }
 
 // BulkUpdateStatus updates the status of multiple notifications
@@ -245,126 +243,70 @@ func (r *NotificationRepository) BulkUpdateStatus(ctx context.Context, notificat
 	return r.BaseRepository.BulkUpdate(ctx, documents)
 }
 
-// buildNotificationQuery builds Elasticsearch query from filter
+// buildNotificationQuery builds Elasticsearch query from filter using ESQuery builder.
 func (r *NotificationRepository) buildNotificationQuery(filter *notification.NotificationFilter) map[string]interface{} {
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match_all": map[string]interface{}{},
-		},
-	}
-
 	if filter == nil {
-		return query
+		return NewQuery(50).Build()
 	}
 
-	var filters []map[string]interface{}
+	qb := NewQuery(filter.PageSize)
 
 	if filter.AppID != "" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"app_id": filter.AppID,
-			},
-		})
+		qb.Term("app_id", filter.AppID)
 	} else if len(filter.AppIDs) > 0 {
-		filters = append(filters, map[string]interface{}{
-			"terms": map[string]interface{}{
-				"app_id": filter.AppIDs,
-			},
-		})
+		qb.Terms("app_id", filter.AppIDs)
 	}
-
 	if filter.EnvironmentID != "" && filter.EnvironmentID != "default" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"environment_id": filter.EnvironmentID,
-			},
-		})
+		qb.Term("environment_id", filter.EnvironmentID)
 	}
-
 	if filter.UserID != "" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"user_id": filter.UserID,
-			},
-		})
+		qb.Term("user_id", filter.UserID)
 	}
-
 	if filter.Channel != "" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"channel": filter.Channel,
-			},
-		})
+		qb.Term("channel", string(filter.Channel))
 	}
-
 	if filter.Status != "" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"status": filter.Status,
-			},
-		})
+		qb.Term("status", string(filter.Status))
 	}
-
 	if filter.Priority != "" {
-		filters = append(filters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"priority": filter.Priority,
-			},
-		})
+		qb.Term("priority", string(filter.Priority))
+	}
+	if filter.TemplateID != "" {
+		qb.Term("template_id", filter.TemplateID)
+	}
+	if filter.Category != "" {
+		qb.Term("category", filter.Category)
+	}
+	if filter.FromDate != nil {
+		qb.Range("created_at", map[string]interface{}{"gte": filter.FromDate.Format(time.RFC3339)})
+	}
+	if filter.ToDate != nil {
+		qb.Range("created_at", map[string]interface{}{"lte": filter.ToDate.Format(time.RFC3339)})
 	}
 
-	if filter.FromDate != nil || filter.ToDate != nil {
-		dateRange := map[string]interface{}{}
-		if filter.FromDate != nil {
-			dateRange["gte"] = filter.FromDate
+	sortField := filter.SortBy
+	if sortField == "" {
+		sortField = "created_at"
+	}
+	sortOrder := filter.SortOrder
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+	qb.Sort(sortField, sortOrder)
+
+	if filter.Cursor != "" {
+		sortValues, err := DecodeCursor(filter.Cursor)
+		if err == nil && len(sortValues) > 0 {
+			qb.SearchAfter(sortValues)
 		}
-		if filter.ToDate != nil {
-			dateRange["lte"] = filter.ToDate
-		}
-		filters = append(filters, map[string]interface{}{
-			"range": map[string]interface{}{
-				"created_at": dateRange,
-			},
-		})
-	}
-
-	if len(filters) > 0 {
-		query["query"] = map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": filters,
-			},
+	} else {
+		offset := (filter.Page - 1) * filter.PageSize
+		if offset > 0 {
+			qb.Offset(offset)
 		}
 	}
 
-	// Add pagination
-	from := (filter.Page - 1) * filter.PageSize
-	if from > 0 {
-		query["from"] = from
-	}
-	if filter.PageSize > 0 {
-		query["size"] = filter.PageSize
-	}
-
-	// Add sorting
-	sortField := "created_at"
-	if filter.SortBy != "" {
-		sortField = filter.SortBy
-	}
-
-	sortOrder := "desc"
-	if filter.SortOrder == "asc" {
-		sortOrder = "asc"
-	}
-
-	query["sort"] = []map[string]interface{}{
-		{
-			sortField: map[string]interface{}{
-				"order": sortOrder,
-			},
-		},
-	}
-
-	return query
+	return qb.Build()
 }
 
 // Count returns the number of notifications matching a filter
@@ -408,11 +350,10 @@ func (r *NotificationRepository) BulkArchive(ctx context.Context, ids []string, 
 	return r.BaseRepository.BulkUpdate(ctx, documents)
 }
 
-// MarkAllRead marks all unread (sent/delivered) notifications as read for a user.
-// If category is non-empty, only notifications matching that category are updated.
-// Returns the number of notifications updated.
+// MarkAllRead marks all unread (sent/delivered) notifications as read for a user
+// using an atomic _update_by_query. If category is non-empty, only notifications
+// matching that category are updated. Returns the number of notifications updated.
 func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID, appID, category string) (int, error) {
-	// Build a search to find all unread notifications
 	filters := []map[string]interface{}{
 		{"term": map[string]interface{}{"user_id": userID}},
 		{"term": map[string]interface{}{"app_id": appID}},
@@ -431,39 +372,21 @@ func (r *NotificationRepository) MarkAllRead(ctx context.Context, userID, appID,
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{"filter": filters},
 		},
-		"size": 500,
+		"script": map[string]interface{}{
+			"source": "ctx._source.status = params.status; ctx._source.read_at = params.now; ctx._source.updated_at = params.now",
+			"lang":   "painless",
+			"params": map[string]interface{}{
+				"status": string(notification.StatusRead),
+				"now":    time.Now().Format(time.RFC3339),
+			},
+		},
 	}
 
-	results, err := r.BaseRepository.Search(ctx, query)
+	updated, err := r.BaseRepository.UpdateByQuery(ctx, query)
 	if err != nil {
-		return 0, fmt.Errorf("search unread notifications: %w", err)
+		return 0, fmt.Errorf("mark all read: %w", err)
 	}
-
-	if len(results.Hits) == 0 {
-		return 0, nil
-	}
-
-	now := time.Now()
-	updateDoc := map[string]interface{}{
-		"status":     notification.StatusRead,
-		"read_at":    now,
-		"updated_at": now,
-	}
-	documents := make(map[string]interface{})
-	for _, doc := range results.Hits {
-		if id, ok := doc["notification_id"].(string); ok && id != "" {
-			documents[id] = updateDoc
-		}
-	}
-
-	if len(documents) == 0 {
-		return 0, nil
-	}
-
-	if err := r.BaseRepository.BulkUpdate(ctx, documents); err != nil {
-		return 0, err
-	}
-	return len(documents), nil
+	return int(updated), nil
 }
 
 // ListSnoozedDue returns notifications whose snooze period has expired.

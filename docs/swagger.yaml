@@ -1,1159 +1,5714 @@
-openapi: 3.0.3
+basePath: /
+definitions:
+  CreateTemplateRequest:
+    properties:
+      app_id:
+        type: string
+      body:
+        type: string
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        - slack
+        - discord
+        - whatsapp
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      locale:
+        maxLength: 10
+        minLength: 2
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      subject:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+      webhook_target:
+        type: string
+    required:
+    - app_id
+    - body
+    - channel
+    - name
+    type: object
+  CreateVersionRequest:
+    properties:
+      body:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      locale:
+        maxLength: 10
+        minLength: 2
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      subject:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+    required:
+    - body
+    type: object
+  ListTemplatesResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      templates:
+        items:
+          $ref: '#/definitions/TemplateResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  RenderTemplateRequest:
+    properties:
+      data:
+        additionalProperties: true
+        type: object
+    required:
+    - data
+    type: object
+  RenderTemplateResponse:
+    properties:
+      rendered_body:
+        type: string
+    type: object
+  RollbackRequest:
+    properties:
+      updated_by:
+        type: string
+      version:
+        minimum: 1
+        type: integer
+    required:
+    - version
+    type: object
+  SendTestRequest:
+    properties:
+      sample_data:
+        additionalProperties: true
+        type: object
+      to_email:
+        type: string
+    required:
+    - to_email
+    type: object
+  TemplateResponse:
+    properties:
+      app_id:
+        type: string
+      body:
+        type: string
+      channel:
+        type: string
+      control_values:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_template.ControlValues'
+      controls:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_template.TemplateControl'
+        type: array
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      locale:
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      status:
+        type: string
+      subject:
+        type: string
+      updated_at:
+        type: string
+      updated_by:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+      version:
+        type: integer
+      webhook_target:
+        type: string
+    type: object
+  UpdateTemplateRequest:
+    properties:
+      body:
+        type: string
+      description:
+        type: string
+      locale:
+        maxLength: 10
+        minLength: 2
+        type: string
+      metadata:
+        additionalProperties: true
+        type: object
+      status:
+        enum:
+        - active
+        - inactive
+        - archived
+        type: string
+      subject:
+        type: string
+      updated_by:
+        type: string
+      variables:
+        items:
+          type: string
+        type: array
+      webhook_target:
+        type: string
+    type: object
+  fiber.Map:
+    additionalProperties: true
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.CustomProviderConfig:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: string
+      created_at:
+        type: string
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        type: string
+      provider_id:
+        type: string
+      signing_key:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.DefaultPreferences:
+    properties:
+      discord_enabled:
+        description: Phase 3
+        type: boolean
+      email_enabled:
+        type: boolean
+      push_enabled:
+        type: boolean
+      slack_enabled:
+        description: Phase 3
+        type: boolean
+      sms_enabled:
+        type: boolean
+      whatsapp_enabled:
+        description: Phase 3
+        type: boolean
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.DiscordAppConfig:
+    properties:
+      webhook_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.EmailConfig:
+    properties:
+      provider_type:
+        description: '"smtp", "sendgrid", "system"'
+        type: string
+      sendgrid:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SendGridConfig'
+      smtp:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMTPConfig'
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.ProviderFallback:
+    properties:
+      channel:
+        description: e.g. "email", "push", "sms"
+        type: string
+      providers:
+        description: 'Ordered: ["sendgrid", "smtp"]'
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.SMTPConfig:
+    properties:
+      from_email:
+        type: string
+      from_name:
+        type: string
+      host:
+        type: string
+      password:
+        type: string
+      port:
+        type: integer
+      username:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.SendGridConfig:
+    properties:
+      api_key:
+        type: string
+      from_email:
+        type: string
+      from_name:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.Settings:
+    properties:
+      custom_providers:
+        description: Phase 3
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.CustomProviderConfig'
+        type: array
+      daily_email_limit:
+        type: integer
+      default_preferences:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.DefaultPreferences'
+      default_template:
+        description: default template ID
+        type: string
+      discord:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.DiscordAppConfig'
+        description: Phase 3
+      email_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.EmailConfig'
+      enable_analytics:
+        description: analytics tracking
+        type: boolean
+      enable_webhooks:
+        description: webhook notifications
+        type: boolean
+      provider_fallbacks:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ProviderFallback'
+        type: array
+      rate_limit:
+        description: requests per hour
+        type: integer
+      retry_attempts:
+        description: max retry attempts
+        type: integer
+      slack:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SlackAppConfig'
+        description: Phase 3
+      subscriber_throttle:
+        additionalProperties:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SubscriberThrottleConfig'
+        description: App-wide per-channel subscriber throttle defaults (Phase 2)
+        type: object
+      validation_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig'
+      validation_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.SlackAppConfig:
+    properties:
+      bot_token:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.SubscriberThrottleConfig:
+    properties:
+      max_per_day:
+        type: integer
+      max_per_hour:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig:
+    properties:
+      method:
+        description: GET, POST
+        type: string
+      static_headers:
+        additionalProperties:
+          type: string
+        type: object
+      token_key:
+        description: e.g. "Authorization", "access_token"
+        type: string
+      token_placement:
+        description: header, cookie, query, body_json, body_form
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_auth.InviteMemberRequest:
+    properties:
+      email:
+        type: string
+      role:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_auth.Role'
+    required:
+    - email
+    - role
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_auth.Role:
+    enum:
+    - owner
+    - admin
+    - editor
+    - viewer
+    type: string
+    x-enum-varnames:
+    - RoleOwner
+    - RoleAdmin
+    - RoleEditor
+    - RoleViewer
+  github_com_the-monkeys_freerangenotify_internal_domain_auth.UpdateMemberRoleRequest:
+    properties:
+      role:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_auth.Role'
+    required:
+    - role
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_digest.CreateRequest:
+    properties:
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        type: string
+      digest_key:
+        maxLength: 100
+        minLength: 1
+        type: string
+      environment_id:
+        type: string
+      max_batch:
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      template_id:
+        type: string
+      window:
+        type: string
+    required:
+    - channel
+    - digest_key
+    - name
+    - template_id
+    - window
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_digest.UpdateRequest:
+    properties:
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        type: string
+      digest_key:
+        maxLength: 100
+        minLength: 1
+        type: string
+      max_batch:
+        type: integer
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+      template_id:
+        type: string
+      window:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_environment.CreateRequest:
+    properties:
+      app_id:
+        type: string
+      name:
+        enum:
+        - development
+        - staging
+        - production
+        type: string
+    required:
+    - app_id
+    - name
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_environment.PromoteRequest:
+    properties:
+      resources:
+        items:
+          type: string
+        minItems: 1
+        type: array
+      source_env_id:
+        type: string
+      target_env_id:
+        type: string
+    required:
+    - resources
+    - source_env_id
+    - target_env_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ImportRequest:
+    properties:
+      resources:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ResourceType'
+        minItems: 1
+        type: array
+      source_app_id:
+        type: string
+    required:
+    - resources
+    - source_app_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ResourceType:
+    enum:
+    - users
+    - templates
+    - workflows
+    - digest_rules
+    - topics
+    - providers
+    type: string
+    x-enum-varnames:
+    - TypeUser
+    - TypeTemplate
+    - TypeWorkflow
+    - TypeDigest
+    - TypeTopic
+    - TypeProvider
+  github_com_the-monkeys_freerangenotify_internal_domain_template.ControlValues:
+    additionalProperties: true
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_template.TemplateControl:
+    properties:
+      default:
+        description: Default value
+        type: string
+      group:
+        description: UI grouping (e.g., "Hero", "CTA", "Footer")
+        type: string
+      help_text:
+        description: Tooltip/description
+        type: string
+      key:
+        description: Variable name (e.g., "button_text")
+        type: string
+      label:
+        description: UI label (e.g., "Call to Action Text")
+        type: string
+      options:
+        description: For "select" type
+        items:
+          type: string
+        type: array
+      placeholder:
+        description: Input placeholder
+        type: string
+      required:
+        description: Whether the field is required
+        type: boolean
+      type:
+        description: Control type
+        enum:
+        - text
+        - textarea
+        - url
+        - color
+        - image
+        - number
+        - boolean
+        - select
+        type: string
+    required:
+    - type
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_topic.AddSubscribersRequest:
+    properties:
+      user_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - user_ids
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_topic.CreateRequest:
+    properties:
+      description:
+        maxLength: 1024
+        type: string
+      environment_id:
+        type: string
+      key:
+        maxLength: 128
+        minLength: 1
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+    required:
+    - key
+    - name
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_topic.UpdateRequest:
+    properties:
+      description:
+        maxLength: 1024
+        type: string
+      name:
+        maxLength: 255
+        minLength: 1
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_user.CategoryPreference:
+    properties:
+      enabled:
+        type: boolean
+      enabled_channels:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_user.Device:
+    properties:
+      active:
+        type: boolean
+      device_id:
+        type: string
+      last_seen:
+        type: string
+      platform:
+        description: ios, android, web
+        type: string
+      registered_at:
+        type: string
+      token:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_user.Preferences:
+    properties:
+      categories:
+        additionalProperties:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.CategoryPreference'
+        description: Category-specific preferences
+        type: object
+      daily_limit:
+        description: Max notifications per day
+        type: integer
+      discord_enabled:
+        description: Phase 3
+        type: boolean
+      dnd:
+        description: Global Do Not Disturb
+        type: boolean
+      email_enabled:
+        type: boolean
+      push_enabled:
+        type: boolean
+      quiet_hours:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.QuietHours'
+      slack_enabled:
+        description: Phase 3
+        type: boolean
+      sms_enabled:
+        type: boolean
+      throttle:
+        additionalProperties:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.ThrottleConfig'
+        description: Per-channel throttle overrides (Phase 2)
+        type: object
+      whatsapp_enabled:
+        description: Phase 3
+        type: boolean
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_user.QuietHours:
+    properties:
+      enabled:
+        type: boolean
+      end:
+        description: 'Format: "HH:MM"'
+        type: string
+      start:
+        description: 'Format: "HH:MM"'
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_user.ThrottleConfig:
+    properties:
+      max_per_day:
+        type: integer
+      max_per_hour:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.Condition:
+    properties:
+      field:
+        type: string
+      operator:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.ConditionOperator'
+      value: {}
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.ConditionOperator:
+    enum:
+    - eq
+    - neq
+    - contains
+    - gt
+    - lt
+    - exists
+    - not_read
+    type: string
+    x-enum-varnames:
+    - OpEquals
+    - OpNotEquals
+    - OpContains
+    - OpGreaterThan
+    - OpLessThan
+    - OpExists
+    - OpNotRead
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.CreateRequest:
+    properties:
+      description:
+        type: string
+      environment_id:
+        type: string
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.Step'
+        minItems: 1
+        type: array
+      trigger_id:
+        maxLength: 100
+        minLength: 1
+        type: string
+    required:
+    - name
+    - steps
+    - trigger_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.Step:
+    properties:
+      config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.StepConfig'
+      id:
+        type: string
+      metadata:
+        additionalProperties: {}
+        type: object
+      name:
+        type: string
+      on_failure:
+        type: string
+      on_success:
+        type: string
+      order:
+        type: integer
+      skip_if:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.Condition'
+      type:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.StepType'
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.StepConfig:
+    properties:
+      channel:
+        description: Channel step
+        type: string
+      condition:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.Condition'
+        description: Condition step
+      digest_key:
+        description: Digest step
+        type: string
+      duration:
+        description: Delay step
+        type: string
+      max_batch:
+        type: integer
+      provider:
+        type: string
+      template_id:
+        type: string
+      window:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.StepType:
+    enum:
+    - channel
+    - delay
+    - digest
+    - condition
+    type: string
+    x-enum-comments:
+      StepTypeChannel: Deliver via a channel
+      StepTypeCondition: Branch based on a condition
+      StepTypeDelay: Wait for a duration
+      StepTypeDigest: Aggregate events over a window
+    x-enum-descriptions:
+    - Deliver via a channel
+    - Wait for a duration
+    - Aggregate events over a window
+    - Branch based on a condition
+    x-enum-varnames:
+    - StepTypeChannel
+    - StepTypeDelay
+    - StepTypeDigest
+    - StepTypeCondition
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerRequest:
+    properties:
+      overrides:
+        additionalProperties: {}
+        type: object
+      payload:
+        additionalProperties: {}
+        type: object
+      transaction_id:
+        type: string
+      trigger_id:
+        type: string
+      user_id:
+        type: string
+    required:
+    - trigger_id
+    - user_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.UpdateRequest:
+    properties:
+      description:
+        type: string
+      name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      status:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.WorkflowStatus'
+      steps:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.Step'
+        minItems: 1
+        type: array
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.WorkflowStatus:
+    enum:
+    - draft
+    - active
+    - inactive
+    type: string
+    x-enum-varnames:
+    - WorkflowStatusDraft
+    - WorkflowStatusActive
+    - WorkflowStatusInactive
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AddDeviceRequest:
+    properties:
+      platform:
+        enum:
+        - ios
+        - android
+        - web
+        type: string
+      token:
+        type: string
+    required:
+    - platform
+    - token
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AdminUserResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      is_active:
+        type: boolean
+      last_login_at:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse:
+    properties:
+      access_token:
+        type: string
+      expires_at:
+        type: string
+      refresh_token:
+        type: string
+      user:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AdminUserResponse'
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BatchCancelRequest:
+    properties:
+      notification_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - notification_ids
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BatchSendNotificationRequest:
+    properties:
+      notifications:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SendNotificationRequest'
+        minItems: 1
+        type: array
+    required:
+    - notifications
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BroadcastNotificationRequest:
+    properties:
+      body:
+        type: string
+      category:
+        type: string
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        type: string
+      data:
+        additionalProperties: true
+        type: object
+      priority:
+        enum:
+        - low
+        - normal
+        - high
+        - critical
+        type: string
+      scheduled_at:
+        type: string
+      template_id:
+        type: string
+      title:
+        type: string
+      webhook_target:
+        type: string
+      webhook_url:
+        type: string
+    required:
+    - channel
+    - priority
+    - template_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkCreateUserRequest:
+    properties:
+      users:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateUserRequest'
+        maxItems: 1000
+        minItems: 1
+        type: array
+    required:
+    - users
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkCreateUserResponse:
+    properties:
+      created:
+        type: integer
+      errors:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkUserError'
+        type: array
+      total:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendNotificationRequest:
+    properties:
+      body:
+        type: string
+      category:
+        type: string
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        type: string
+      data:
+        additionalProperties: true
+        type: object
+      priority:
+        enum:
+        - low
+        - normal
+        - high
+        - critical
+        type: string
+      scheduled_at:
+        type: string
+      template_id:
+        type: string
+      title:
+        type: string
+      user_ids:
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - body
+    - channel
+    - priority
+    - title
+    - user_ids
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse'
+        type: array
+      sent:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkUserError:
+    properties:
+      email:
+        type: string
+      index:
+        type: integer
+      message:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ChangePasswordRequest:
+    properties:
+      new_password:
+        minLength: 8
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateApplicationRequest:
+    properties:
+      app_name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      settings:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings'
+      webhook_url:
+        type: string
+      webhooks:
+        additionalProperties:
+          type: string
+        type: object
+    required:
+    - app_name
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateUserRequest:
+    properties:
+      email:
+        type: string
+      external_id:
+        type: string
+      language:
+        type: string
+      phone:
+        type: string
+      preferences:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.Preferences'
+      timezone:
+        type: string
+      user_id:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DefaultPreferencesDTO:
+    properties:
+      email_enabled:
+        type: boolean
+      push_enabled:
+        type: boolean
+      sms_enabled:
+        type: boolean
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ForgotPasswordRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationContentResponse:
+    properties:
+      body:
+        type: string
+      data:
+        additionalProperties: true
+        type: object
+      notification:
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationListResponse:
+    properties:
+      notifications:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse:
+    properties:
+      app_id:
+        type: string
+      channel:
+        type: string
+      content:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationContentResponse'
+      created_at:
+        type: string
+      delivered_at:
+        type: string
+      error_message:
+        type: string
+      failed_at:
+        type: string
+      notification_id:
+        type: string
+      priority:
+        type: string
+      read_at:
+        type: string
+      retry_count:
+        type: integer
+      scheduled_at:
+        type: string
+      sent_at:
+        type: string
+      status:
+        type: string
+      template_id:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.QuickSendRequest:
+    properties:
+      body:
+        type: string
+      channel:
+        description: |-
+          Channel: push, email, sms, webhook, in_app, sse.
+          Optional if Template is specified (inferred from template).
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        type: string
+      data:
+        additionalProperties: true
+        description: Template variables (used when Template is specified).
+        type: object
+      priority:
+        description: 'Priority: low, normal, high, critical. Defaults to "normal".'
+        type: string
+      scheduled_at:
+        description: Optional scheduling
+        type: string
+      subject:
+        description: Inline content (used when Template is empty).
+        type: string
+      template:
+        description: |-
+          Template reference: name (string) or UUID.
+          Optional if Subject+Body are provided (inline content).
+        type: string
+      to:
+        description: |-
+          Recipient: email address, external user ID, or internal UUID.
+          If recipient doesn't exist as a user, auto-creates one (email only).
+        type: string
+      webhook_url:
+        description: 'Optional: explicit webhook URL (for webhook channel without
+          user)'
+        type: string
+    required:
+    - to
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RecurrenceRequest:
+    properties:
+      count:
+        type: integer
+      cron_expression:
+        type: string
+      end_date:
+        type: string
+    required:
+    - cron_expression
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RefreshTokenRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RegisterRequest:
+    properties:
+      email:
+        type: string
+      full_name:
+        minLength: 2
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - email
+    - full_name
+    - password
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResetPasswordRequest:
+    properties:
+      new_password:
+        minLength: 8
+        type: string
+      token:
+        type: string
+    required:
+    - new_password
+    - token
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SendNotificationRequest:
+    properties:
+      body:
+        type: string
+      category:
+        type: string
+      channel:
+        enum:
+        - push
+        - email
+        - sms
+        - webhook
+        - in_app
+        - sse
+        type: string
+      data:
+        additionalProperties: true
+        type: object
+      priority:
+        enum:
+        - low
+        - normal
+        - high
+        - critical
+        type: string
+      recurrence:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RecurrenceRequest'
+      scheduled_at:
+        type: string
+      template_id:
+        type: string
+      title:
+        type: string
+      user_id:
+        description: Removed validate:"required"
+        type: string
+      webhook_target:
+        type: string
+      webhook_url:
+        description: New field
+        type: string
+    required:
+    - priority
+    - template_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.TokenPairResponse:
+    properties:
+      access_token:
+        type: string
+      expires_at:
+        type: string
+      refresh_token:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateApplicationRequest:
+    properties:
+      app_name:
+        maxLength: 100
+        minLength: 3
+        type: string
+      description:
+        maxLength: 500
+        type: string
+      settings:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings'
+      webhook_url:
+        type: string
+      webhooks:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdatePreferencesRequest:
+    properties:
+      categories:
+        additionalProperties:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.CategoryPreference'
+        type: object
+      daily_limit:
+        type: integer
+      discord_enabled:
+        description: Phase 5
+        type: boolean
+      dnd:
+        type: boolean
+      email_enabled:
+        type: boolean
+      push_enabled:
+        type: boolean
+      quiet_hours:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.QuietHours'
+      slack_enabled:
+        description: Phase 5
+        type: boolean
+      sms_enabled:
+        type: boolean
+      whatsapp_enabled:
+        description: Phase 5
+        type: boolean
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateSettingsRequest:
+    properties:
+      daily_email_limit:
+        minimum: 0
+        type: integer
+      default_preferences:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DefaultPreferencesDTO'
+      default_template:
+        type: string
+      email_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.EmailConfig'
+      enable_analytics:
+        type: boolean
+      enable_webhooks:
+        type: boolean
+      rate_limit:
+        minimum: 1
+        type: integer
+      retry_attempts:
+        maximum: 10
+        minimum: 0
+        type: integer
+      validation_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig'
+      validation_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateStatusRequest:
+    properties:
+      error_message:
+        type: string
+      status:
+        enum:
+        - pending
+        - queued
+        - processing
+        - sent
+        - delivered
+        - read
+        - failed
+        - cancelled
+        type: string
+    required:
+    - status
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateUserRequest:
+    properties:
+      email:
+        type: string
+      external_id:
+        type: string
+      language:
+        type: string
+      phone:
+        type: string
+      preferences:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.Preferences'
+      timezone:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UserResponse:
+    properties:
+      app_id:
+        type: string
+      created_at:
+        type: string
+      devices:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.Device'
+        type: array
+      email:
+        type: string
+      external_id:
+        type: string
+      language:
+        type: string
+      phone:
+        type: string
+      preferences:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_user.Preferences'
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+      webhook_url:
+        type: string
+    type: object
+  internal_interfaces_http_handlers.CheckInRequest:
+    properties:
+      dynamic_url:
+        type: string
+      user_id:
+        type: string
+    required:
+    - user_id
+    type: object
+  internal_interfaces_http_handlers.registerCustomProviderRequest:
+    properties:
+      channel:
+        maxLength: 50
+        minLength: 1
+        type: string
+      headers:
+        additionalProperties:
+          type: string
+        type: object
+      name:
+        maxLength: 50
+        minLength: 1
+        type: string
+      webhook_url:
+        type: string
+    required:
+    - channel
+    - name
+    - webhook_url
+    type: object
+host: localhost:8080
 info:
-  title: FreeRangeNotify API
-  description: |
-    **FreeRangeNotify** is a high-performance notification service built with Go and Fiber framework.
-    
-    ## Features
-    - Multi-channel notification delivery (Email, Push, SMS, In-App)
-    - User preference management
-    - Device registration and management
-    - Application-level API key authentication
-    - Template management
-    - Real-time analytics
-    - Webhook integration
-    
-    ## Authentication
-    Protected endpoints require Bearer token authentication using your application's API key.
-    
-    **Example:**
-    ```
-    Authorization: Bearer frn_YOUR_API_KEY_HERE
-    ```
-    
-    ## Rate Limiting
-    Rate limits are configurable per application in settings (default: 1000 requests/minute).
-    
-  version: 1.0.0
   contact:
-    name: FreeRangeNotify Support
     email: support@freerangenotify.com
+    name: API Support
+  description: High-performance notification service with multi-channel delivery support
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
-
-servers:
-  - url: http://localhost:8080
-    description: Local development server
-  - url: https://api.freerangenotify.com
-    description: Production server
-
-tags:
-  - name: System
-    description: System health and status endpoints
-  - name: Applications
-    description: Application management and configuration
-  - name: Users
-    description: User management and profiles
-  - name: Devices
-    description: Device registration and management
-  - name: Preferences
-    description: User notification preferences
-
-security:
-  - BearerAuth: []
-
+  termsOfService: http://swagger.io/terms/
+  title: FreeRangeNotify API
+  version: 0.1.9-alpha
 paths:
-  /health:
+  /v1/admin/analytics/summary:
     get:
-      tags:
-        - System
-      summary: Health check
-      description: Returns the health status of the service and database connectivity
-      operationId: healthCheck
-      security: []
-      responses:
-        '200':
-          description: Service is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  service:
-                    type: string
-                    example: FreeRangeNotify
-                  version:
-                    type: string
-                    example: 1.0.0
-                  database:
-                    type: string
-                    example: ok
-                    enum: [ok, error]
-
-  /v1/apps:
-    post:
-      tags:
-        - Applications
-      summary: Create application
-      description: Create a new application and receive an API key for authentication
-      operationId: createApplication
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateApplicationRequest'
-            examples:
-              basic:
-                summary: Basic application
-                value:
-                  app_name: My App
-              with_webhook:
-                summary: With webhook
-                value:
-                  app_name: My App
-                  webhook_url: https://example.com/webhook
-              with_settings:
-                summary: With custom settings
-                value:
-                  app_name: My App
-                  webhook_url: https://example.com/webhook
-                  settings:
-                    rate_limit: 2000
-                    retry_attempts: 5
-                    default_template: welcome
-                    enable_webhooks: true
-                    enable_analytics: true
-      responses:
-        '201':
-          description: Application created successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/Application'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    get:
-      tags:
-        - Applications
-      summary: List applications
-      description: Retrieve a paginated list of all applications
-      operationId: listApplications
-      security: []
+      description: Retrieve aggregated analytics including notification counts, success
+        rates, channel breakdown, and daily trends
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/PageSizeParam'
-        - name: app_name
-          in: query
-          description: Filter by application name
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Applications retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        properties:
-                          applications:
-                            type: array
-                            items:
-                              $ref: '#/components/schemas/ApplicationMasked'
-                          total_count:
-                            type: integer
-                            example: 42
-                          page:
-                            type: integer
-                            example: 1
-                          page_size:
-                            type: integer
-                            example: 10
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/apps/{app_id}:
-    get:
-      tags:
-        - Applications
-      summary: Get application
-      description: Retrieve application details by ID (API key will be masked)
-      operationId: getApplication
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      responses:
-        '200':
-          description: Application retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/ApplicationMasked'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    put:
-      tags:
-        - Applications
-      summary: Update application
-      description: Update application details (name, webhook URL)
-      operationId: updateApplication
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateApplicationRequest'
-      responses:
-        '200':
-          description: Application updated successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/ApplicationMasked'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    delete:
-      tags:
-        - Applications
-      summary: Delete application
-      description: Permanently delete an application and all associated data
-      operationId: deleteApplication
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      responses:
-        '200':
-          description: Application deleted successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Application deleted successfully
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/apps/{app_id}/regenerate-key:
-    post:
-      tags:
-        - Applications
-      summary: Regenerate API key
-      description: Generate a new API key for the application (invalidates the old key)
-      operationId: regenerateApiKey
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      responses:
-        '200':
-          description: API key regenerated successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        properties:
-                          api_key:
-                            type: string
-                            example: frn_NEW_API_KEY_HERE
-                          message:
-                            type: string
-                            example: API key regenerated successfully. Save it securely - it won't be shown again.
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/apps/{app_id}/settings:
-    get:
-      tags:
-        - Applications
-      summary: Get application settings
-      description: Retrieve current application settings
-      operationId: getApplicationSettings
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      responses:
-        '200':
-          description: Settings retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/ApplicationSettings'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    put:
-      tags:
-        - Applications
-      summary: Update application settings
-      description: Update application configuration settings
-      operationId: updateApplicationSettings
-      security: []
-      parameters:
-        - $ref: '#/components/parameters/AppIdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ApplicationSettings'
-      responses:
-        '200':
-          description: Settings updated successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Settings updated successfully
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/users:
-    post:
-      tags:
-        - Users
-      summary: Create user
-      description: Create a new user within your application
-      operationId: createUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateUserRequest'
-            examples:
-              basic:
-                summary: Basic user
-                value:
-                  external_user_id: user-12345
-                  email: john.doe@example.com
-              with_phone:
-                summary: With phone number
-                value:
-                  external_user_id: user-12345
-                  email: john.doe@example.com
-                  phone_number: "+1234567890"
-              with_preferences:
-                summary: With preferences
-                value:
-                  external_user_id: user-12345
-                  email: john.doe@example.com
-                  phone_number: "+1234567890"
-                  preferences:
-                    channels:
-                      - email
-                      - push
-                    timezone: America/New_York
-                    language: en
-                    quiet_hours:
-                      enabled: true
-                      start: "22:00"
-                      end: "08:00"
-      responses:
-        '201':
-          description: User created successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/User'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    get:
-      tags:
-        - Users
-      summary: List users
-      description: Retrieve a paginated list of users in your application
-      operationId: listUsers
-      parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/PageSizeParam'
-        - name: external_user_id
-          in: query
-          description: Filter by external user ID
-          schema:
-            type: string
-        - name: email
-          in: query
-          description: Filter by email
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Users retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        properties:
-                          users:
-                            type: array
-                            items:
-                              $ref: '#/components/schemas/User'
-                          total_count:
-                            type: integer
-                          page:
-                            type: integer
-                          page_size:
-                            type: integer
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/users/{user_id}:
-    get:
-      tags:
-        - Users
-      summary: Get user
-      description: Retrieve user details by ID
-      operationId: getUser
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      responses:
-        '200':
-          description: User retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/User'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    put:
-      tags:
-        - Users
-      summary: Update user
-      description: Update user details (email, phone number)
-      operationId: updateUser
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateUserRequest'
-      responses:
-        '200':
-          description: User updated successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/User'
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    delete:
-      tags:
-        - Users
-      summary: Delete user
-      description: Permanently delete a user and all associated data
-      operationId: deleteUser
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      responses:
-        '200':
-          description: User deleted successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: User deleted successfully
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/users/{user_id}/devices:
-    post:
-      tags:
-        - Devices
-      summary: Add device
-      description: Register a new device for push notifications
-      operationId: addDevice
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AddDeviceRequest'
-            examples:
-              ios:
-                summary: iOS device
-                value:
-                  platform: ios
-                  token: device-token-abc123
-              android:
-                summary: Android device
-                value:
-                  platform: android
-                  token: device-token-xyz789
-              web:
-                summary: Web push
-                value:
-                  platform: web
-                  token: web-push-token
-      responses:
-        '201':
-          description: Device added successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Device added successfully
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    get:
-      tags:
-        - Devices
-      summary: Get user devices
-      description: Retrieve all registered devices for a user
-      operationId: getUserDevices
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      responses:
-        '200':
-          description: Devices retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        type: array
-                        items:
-                          $ref: '#/components/schemas/Device'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/users/{user_id}/devices/{device_id}:
-    delete:
-      tags:
-        - Devices
-      summary: Delete device
-      description: Remove a device from the user's registered devices
-      operationId: deleteDevice
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-        - $ref: '#/components/parameters/DeviceIdParam'
-      responses:
-        '200':
-          description: Device removed successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Device removed successfully
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/users/{user_id}/preferences:
-    get:
-      tags:
-        - Preferences
-      summary: Get user preferences
-      description: Retrieve notification preferences for a user
-      operationId: getUserPreferences
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      responses:
-        '200':
-          description: Preferences retrieved successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      data:
-                        $ref: '#/components/schemas/UserPreferences'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    put:
-      tags:
-        - Preferences
-      summary: Update user preferences
-      description: Update notification preferences for a user
-      operationId: updateUserPreferences
-      parameters:
-        - $ref: '#/components/parameters/UserIdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdatePreferencesRequest'
-      responses:
-        '200':
-          description: Preferences updated successfully
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/SuccessResponse'
-                  - type: object
-                    properties:
-                      message:
-                        type: string
-                        example: Preferences updated successfully
-        '400':
-          $ref: '#/components/responses/ValidationError'
-        '401':
-          $ref: '#/components/responses/UnauthorizedError'
-        '404':
-          $ref: '#/components/responses/NotFoundError'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: API Key
-      description: |
-        Use your application's API key as a Bearer token.
-        
-        **Example:**
-        ```
-        Authorization: Bearer frn_YOUR_API_KEY_HERE
-        ```
-
-  parameters:
-    AppIdParam:
-      name: app_id
-      in: path
-      required: true
-      description: Application UUID
-      schema:
+      - default: 7d
+        description: Time period (1d, 7d, 30d, 90d)
+        in: query
+        name: period
         type: string
-        format: uuid
-      example: e1fdf4b9-c024-41c3-8bef-02a368c6e452
-
-    UserIdParam:
-      name: user_id
-      in: path
-      required: true
-      description: User UUID
-      schema:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get analytics summary
+      tags:
+      - Analytics
+  /v1/admin/audit:
+    get:
+      description: Query audit logs with filters for app, actor, action, resource,
+        and pagination
+      parameters:
+      - description: Filter by application ID
+        in: query
+        name: app_id
         type: string
-        format: uuid
-      example: 4ae565b9-ac45-4aab-9fd3-c0a6f3e3af98
-
-    DeviceIdParam:
-      name: device_id
-      in: path
-      required: true
-      description: Device UUID
-      schema:
+      - description: Filter by actor ID
+        in: query
+        name: actor_id
         type: string
-        format: uuid
-
-    PageParam:
-      name: page
-      in: query
-      description: Page number (starts at 1)
-      schema:
+      - description: Filter by action
+        in: query
+        name: action
+        type: string
+      - description: Filter by resource type
+        in: query
+        name: resource
+        type: string
+      - description: Filter by resource ID
+        in: query
+        name: resource_id
+        type: string
+      - description: Filter by environment ID
+        in: query
+        name: environment_id
+        type: string
+      - default: 50
+        description: Limit results
+        in: query
+        name: limit
         type: integer
-        minimum: 1
-        default: 1
-      example: 1
-
-    PageSizeParam:
-      name: page_size
-      in: query
-      description: Number of items per page
-      schema:
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
         type: integer
-        minimum: 1
-        maximum: 100
-        default: 10
-      example: 10
-
-  schemas:
-    SuccessResponse:
-      type: object
-      required:
-        - success
-      properties:
-        success:
-          type: boolean
-          example: true
-
-    ErrorResponse:
-      type: object
-      required:
-        - success
-        - error
-      properties:
-        success:
-          type: boolean
-          example: false
-        error:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - Audit
+  /v1/admin/audit/{id}:
+    get:
+      description: Retrieve a single audit log entry by its ID
+      parameters:
+      - description: Audit Log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get an audit log entry
+      tags:
+      - Audit
+  /v1/admin/playground/sse:
+    post:
+      description: Generate a temporary SSE playground session with a 30-minute TTL
+        for testing real-time notifications
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create an SSE playground
+      tags:
+      - Playground
+  /v1/admin/playground/sse/{id}/send:
+    post:
+      consumes:
+      - application/json
+      description: Publish a test notification to an SSE playground session
+      parameters:
+      - description: Playground ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Optional message content (title, body, category, data)
+        in: body
+        name: body
+        schema:
           type: object
-          required:
-            - code
-            - message
-          properties:
-            code:
-              type: string
-              example: VALIDATION_ERROR
-            message:
-              type: string
-              example: Validation failed
-            details:
-              type: object
-              additionalProperties: true
-
-    CreateApplicationRequest:
-      type: object
-      required:
-        - app_name
-      properties:
-        app_name:
-          type: string
-          minLength: 1
-          maxLength: 255
-          example: My Awesome App
-        webhook_url:
-          type: string
-          format: uri
-          example: https://example.com/webhook
-        settings:
-          $ref: '#/components/schemas/ApplicationSettings'
-
-    UpdateApplicationRequest:
-      type: object
-      properties:
-        app_name:
-          type: string
-          minLength: 1
-          maxLength: 255
-        webhook_url:
-          type: string
-          format: uri
-
-    Application:
-      type: object
-      properties:
-        app_id:
-          type: string
-          format: uuid
-          example: e1fdf4b9-c024-41c3-8bef-02a368c6e452
-        app_name:
-          type: string
-          example: My Awesome App
-        api_key:
-          type: string
-          description: Full API key (only shown on creation)
-          example: frn_GxSftc5urm7bxVrYh-RHNEmNDvS4auxwOhwjqXwC-kM=
-        webhook_url:
-          type: string
-          example: https://example.com/webhook
-        settings:
-          $ref: '#/components/schemas/ApplicationSettings'
-        api_key_generated_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    ApplicationMasked:
-      type: object
-      properties:
-        app_id:
-          type: string
-          format: uuid
-        app_name:
-          type: string
-        api_key:
-          type: string
-          description: Masked API key (only last 8 characters visible)
-          example: "***qXwC-kM="
-        webhook_url:
-          type: string
-        settings:
-          $ref: '#/components/schemas/ApplicationSettings'
-        api_key_generated_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    ApplicationSettings:
-      type: object
-      properties:
-        rate_limit:
-          type: integer
-          minimum: 1
-          default: 1000
-          description: Maximum requests per minute
-          example: 1000
-        retry_attempts:
-          type: integer
-          minimum: 0
-          maximum: 10
-          default: 3
-          description: Number of retry attempts for failed notifications
-          example: 3
-        default_template:
-          type: string
-          example: default
-        enable_webhooks:
-          type: boolean
-          default: true
-          example: true
-        enable_analytics:
-          type: boolean
-          default: true
-          example: true
-
-    CreateUserRequest:
-      type: object
-      required:
-        - external_user_id
-        - email
-      properties:
-        external_user_id:
-          type: string
-          description: Your application's user ID
-          example: user-12345
-        email:
-          type: string
-          format: email
-          example: john.doe@example.com
-        phone_number:
-          type: string
-          pattern: '^\+[1-9]\d{1,14}$'
-          example: "+1234567890"
-        preferences:
-          $ref: '#/components/schemas/UserPreferencesInput'
-
-    UpdateUserRequest:
-      type: object
-      properties:
-        email:
-          type: string
-          format: email
-        phone_number:
-          type: string
-          pattern: '^\+[1-9]\d{1,14}$'
-
-    User:
-      type: object
-      properties:
-        user_id:
-          type: string
-          format: uuid
-          example: 4ae565b9-ac45-4aab-9fd3-c0a6f3e3af98
-        app_id:
-          type: string
-          format: uuid
-        external_user_id:
-          type: string
-          example: user-12345
-        email:
-          type: string
-          format: email
-          example: john.doe@example.com
-        phone_number:
-          type: string
-          example: "+1234567890"
-        preferences:
-          $ref: '#/components/schemas/UserPreferences'
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-
-    UserPreferencesInput:
-      type: object
-      properties:
-        channels:
-          type: array
-          items:
-            type: string
-            enum: [email, push, sms, in_app]
-          example: ["email", "push"]
-        timezone:
-          type: string
-          example: America/New_York
-        language:
-          type: string
-          pattern: '^[a-z]{2}$'
-          example: en
-        quiet_hours:
-          $ref: '#/components/schemas/QuietHours'
-
-    UserPreferences:
-      type: object
-      properties:
-        email_enabled:
-          type: boolean
-        push_enabled:
-          type: boolean
-        sms_enabled:
-          type: boolean
-        quiet_hours:
-          $ref: '#/components/schemas/QuietHours'
-
-    UpdatePreferencesRequest:
-      type: object
-      properties:
-        channels:
-          type: array
-          items:
-            type: string
-            enum: [email, push, sms, in_app]
-        timezone:
-          type: string
-        language:
-          type: string
-          pattern: '^[a-z]{2}$'
-        quiet_hours:
-          $ref: '#/components/schemas/QuietHours'
-
-    QuietHours:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-          example: true
-        start:
-          type: string
-          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
-          example: "22:00"
-        end:
-          type: string
-          pattern: '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'
-          example: "08:00"
-
-    AddDeviceRequest:
-      type: object
-      required:
-        - platform
-        - token
-      properties:
-        platform:
-          type: string
-          enum: [ios, android, web]
-          example: ios
-        token:
-          type: string
-          description: Device push notification token
-          example: device-token-abc123
-
-    Device:
-      type: object
-      properties:
-        device_id:
-          type: string
-          format: uuid
-        platform:
-          type: string
-          enum: [ios, android, web]
-          example: ios
-        token:
-          type: string
-          example: device-token-abc123
-        active:
-          type: boolean
-          example: true
-        registered_at:
-          type: string
-          format: date-time
-        last_seen:
-          type: string
-          format: date-time
-
-  responses:
-    ValidationError:
-      description: Validation error
-      content:
-        application/json:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            success: false
-            error:
-              code: VALIDATION_ERROR
-              message: Validation failed
-              details:
-                app_name: app_name is required
-                email: invalid email format
-
-    UnauthorizedError:
-      description: Unauthorized - Invalid or missing API key
-      content:
-        application/json:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            success: false
-            error:
-              code: INVALID_API_KEY
-              message: Invalid API key
-
-    NotFoundError:
-      description: Resource not found
-      content:
-        application/json:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            success: false
-            error:
-              code: NOT_FOUND
-              message: Resource not found
-
-    InternalError:
-      description: Internal server error
-      content:
-        application/json:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
-          example:
-            success: false
-            error:
-              code: INTERNAL_ERROR
-              message: An internal error occurred
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send an SSE test message
+      tags:
+      - Playground
+  /v1/admin/playground/webhook:
+    post:
+      description: Generate a temporary webhook receiver URL with a 30-minute TTL
+        for testing
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a webhook playground
+      tags:
+      - Playground
+  /v1/admin/providers/health:
+    get:
+      description: Retrieve the health status of all configured notification delivery
+        providers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get provider health status
+      tags:
+      - Admin
+  /v1/admin/queues/dlq:
+    get:
+      description: Retrieve failed notification items from the dead-letter queue
+      parameters:
+      - default: 10
+        description: Number of items to return
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List dead-letter queue items
+      tags:
+      - Admin
+  /v1/admin/queues/dlq/replay:
+    post:
+      description: Re-enqueue failed notifications from the dead-letter queue for
+        reprocessing
+      parameters:
+      - default: 10
+        description: Maximum items to replay
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Replay dead-letter queue items
+      tags:
+      - Admin
+  /v1/admin/queues/stats:
+    get:
+      description: Retrieve notification queue depth and processing statistics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get queue statistics
+      tags:
+      - Admin
+  /v1/apps:
+    get:
+      description: List all applications owned by or shared with the authenticated
+        user
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by application name
+        in: query
+        name: app_name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List applications
+      tags:
+      - Applications
+    post:
+      consumes:
+      - application/json
+      description: Create a new application and generate an API key
+      parameters:
+      - description: Application creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateApplicationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a new application
+      tags:
+      - Applications
+  /v1/apps/{app_id}/team:
+    get:
+      description: Retrieve all members of an application's team
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List team members
+      tags:
+      - Team
+    post:
+      consumes:
+      - application/json
+      description: Add a new member to an application's team
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Invitation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_auth.InviteMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Invite a team member
+      tags:
+      - Team
+  /v1/apps/{app_id}/team/{membership_id}:
+    delete:
+      description: Remove a member from an application's team
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a team member
+      tags:
+      - Team
+    put:
+      consumes:
+      - application/json
+      description: Change a team member's role within an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Membership ID
+        in: path
+        name: membership_id
+        required: true
+        type: string
+      - description: Role update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_auth.UpdateMemberRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a member's role
+      tags:
+      - Team
+  /v1/apps/{id}:
+    delete:
+      description: Permanently delete an application (owner only)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete an application
+      tags:
+      - Applications
+    get:
+      description: Retrieve application details by ID (any team member can view)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get an application by ID
+      tags:
+      - Applications
+    put:
+      consumes:
+      - application/json
+      description: Update application details (requires admin or owner role)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Application update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateApplicationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update an application
+      tags:
+      - Applications
+  /v1/apps/{id}/environments:
+    get:
+      description: List all environments for an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List environments
+      tags:
+      - Environments
+    post:
+      consumes:
+      - application/json
+      description: Create a new environment (e.g., staging, production) for an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Environment creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_environment.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create an environment
+      tags:
+      - Environments
+  /v1/apps/{id}/environments/{envId}:
+    delete:
+      description: Permanently remove an environment from an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Environment ID
+        in: path
+        name: envId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete an environment
+      tags:
+      - Environments
+    get:
+      description: Retrieve a specific environment by ID
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Environment ID
+        in: path
+        name: envId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get an environment
+      tags:
+      - Environments
+  /v1/apps/{id}/environments/promote:
+    post:
+      consumes:
+      - application/json
+      description: Copy templates and configuration from one environment to another
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Promotion request specifying source and target environments
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_environment.PromoteRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Promote resources between environments
+      tags:
+      - Environments
+  /v1/apps/{id}/import:
+    post:
+      consumes:
+      - application/json
+      description: Create cross-app resource links to share users, templates, workflows,
+        etc. between applications
+      parameters:
+      - description: Target Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Import request specifying source app and resource types
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ImportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import resources from another app
+      tags:
+      - Resource Linking
+  /v1/apps/{id}/links:
+    delete:
+      description: Remove all cross-app resource links for an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove all resource links
+      tags:
+      - Resource Linking
+    get:
+      description: List all cross-app resource links for an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Filter by resource type
+        in: query
+        name: resource_type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List resource links
+      tags:
+      - Resource Linking
+  /v1/apps/{id}/links/{link_id}:
+    delete:
+      description: Remove a specific cross-app resource link
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Link ID
+        in: path
+        name: link_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a resource link
+      tags:
+      - Resource Linking
+  /v1/apps/{id}/providers:
+    get:
+      description: List all registered custom delivery providers for an application
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List custom providers
+      tags:
+      - Custom Providers
+    post:
+      consumes:
+      - application/json
+      description: Register a new custom delivery provider for an application (admin
+        or owner)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Custom provider registration request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_interfaces_http_handlers.registerCustomProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register a custom provider
+      tags:
+      - Custom Providers
+  /v1/apps/{id}/providers/{provider_id}:
+    delete:
+      description: Remove a custom delivery provider from an application (admin or
+        owner)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Provider ID
+        in: path
+        name: provider_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a custom provider
+      tags:
+      - Custom Providers
+  /v1/apps/{id}/regenerate-key:
+    post:
+      description: Regenerate the API key for an application (owner only). The old
+        key is immediately invalidated.
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Regenerate API key
+      tags:
+      - Applications
+  /v1/apps/{id}/settings:
+    get:
+      description: Retrieve settings for an application (any team member can view)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get application settings
+      tags:
+      - Applications
+    put:
+      consumes:
+      - application/json
+      description: Update settings such as rate limits, retry attempts, and provider
+        config (admin or owner)
+      parameters:
+      - description: Application ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Settings update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update application settings
+      tags:
+      - Applications
+  /v1/auth/change-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Old and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change password
+      tags:
+      - Auth
+  /v1/auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Email address
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Request password reset
+      tags:
+      - Auth
+  /v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Login credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Login a user
+      tags:
+      - Auth
+  /v1/auth/logout:
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Logout a user
+      tags:
+      - Auth
+  /v1/auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get current user
+      tags:
+      - Auth
+  /v1/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RefreshTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.TokenPairResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Refresh access token
+      tags:
+      - Auth
+  /v1/auth/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Registration details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Register a new user
+      tags:
+      - Auth
+  /v1/auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reset token and new password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Reset password with token
+      tags:
+      - Auth
+  /v1/auth/sso/callback:
+    get:
+      responses: {}
+      summary: Handle SSO Callback
+      tags:
+      - Auth
+  /v1/auth/sso/login:
+    get:
+      responses: {}
+      summary: Redirect to SSO Identity Provider
+      tags:
+      - Auth
+  /v1/digest-rules:
+    get:
+      description: List all digest rules for the authenticated application
+      parameters:
+      - default: 20
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List digest rules
+      tags:
+      - Digest Rules
+    post:
+      consumes:
+      - application/json
+      description: Create a new digest/batching rule for notifications
+      parameters:
+      - description: Digest rule creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_digest.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a digest rule
+      tags:
+      - Digest Rules
+  /v1/digest-rules/{id}:
+    delete:
+      description: Permanently remove a digest rule
+      parameters:
+      - description: Digest Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a digest rule
+      tags:
+      - Digest Rules
+    get:
+      description: Retrieve a digest rule by its ID
+      parameters:
+      - description: Digest Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a digest rule
+      tags:
+      - Digest Rules
+    put:
+      consumes:
+      - application/json
+      description: Update an existing digest rule
+      parameters:
+      - description: Digest Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Digest rule update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_digest.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a digest rule
+      tags:
+      - Digest Rules
+  /v1/health:
+    get:
+      description: Check the health status of the API and its dependencies (Elasticsearch,
+        Redis)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Health check
+      tags:
+      - Health
+  /v1/notifications:
+    get:
+      description: Get a list of notifications with filtering
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        type: string
+      - description: Channel (push, email, sms, webhook, in_app)
+        in: query
+        name: channel
+        type: string
+      - description: Status
+        in: query
+        name: status
+        type: string
+      - description: Priority
+        in: query
+        name: priority
+        type: string
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List notifications
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Send a notification to a user
+      parameters:
+      - description: Send notification request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SendNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Send a notification
+      tags:
+      - notifications
+  /v1/notifications/{id}:
+    delete:
+      description: Cancel a scheduled notification
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fiber.Map'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel a notification
+      tags:
+      - notifications
+    get:
+      description: Get details of a specific notification
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get notification by ID
+      tags:
+      - notifications
+  /v1/notifications/{id}/retry:
+    post:
+      description: Retry a failed notification
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fiber.Map'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Retry a failed notification
+      tags:
+      - notifications
+  /v1/notifications/{id}/status:
+    put:
+      consumes:
+      - application/json
+      description: Update the status of a notification (admin/webhook only)
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update status request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update notification status
+      tags:
+      - notifications
+  /v1/notifications/batch:
+    delete:
+      consumes:
+      - application/json
+      description: Cancel multiple scheduled notifications
+      parameters:
+      - description: Batch cancel request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BatchCancelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/fiber.Map'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel batch notifications
+      tags:
+      - notifications
+    post:
+      consumes:
+      - application/json
+      description: Send multiple distinct notifications
+      parameters:
+      - description: Batch send request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BatchSendNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Send batch notifications
+      tags:
+      - notifications
+  /v1/notifications/broadcast:
+    post:
+      consumes:
+      - application/json
+      description: Send a notification to all users of an application
+      parameters:
+      - description: Broadcast notification request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BroadcastNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Broadcast notification to all users
+      tags:
+      - notifications
+  /v1/notifications/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Send notifications to multiple users
+      parameters:
+      - description: Bulk send request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Send bulk notifications
+      tags:
+      - notifications
+  /v1/playground/{id}:
+    get:
+      description: Retrieve all received webhook payloads for a playground session
+      parameters:
+      - description: Playground ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get playground payloads
+      tags:
+      - Playground
+    post:
+      consumes:
+      - application/json
+      description: Public endpoint that captures incoming webhook payloads for a playground
+        session
+      parameters:
+      - description: Playground ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Receive a webhook payload
+      tags:
+      - Playground
+  /v1/presence/check-in:
+    post:
+      consumes:
+      - application/json
+      description: Record a user's presence and trigger any pending notifications
+        for that user
+      parameters:
+      - description: Check-in request with user ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_interfaces_http_handlers.CheckInRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: User presence check-in
+      tags:
+      - Presence
+  /v1/quick-send:
+    post:
+      consumes:
+      - application/json
+      description: Send a notification using a simplified one-step payload (auto-creates
+        user if needed)
+      parameters:
+      - description: Quick send request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.QuickSendRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Quick send a notification
+      tags:
+      - Quick Send
+  /v1/templates:
+    get:
+      description: List templates with filtering, pagination, and date range support
+      parameters:
+      - description: Filter by template name
+        in: query
+        name: name
+        type: string
+      - description: Filter by channel
+        in: query
+        name: channel
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - description: Filter by locale
+        in: query
+        name: locale
+        type: string
+      - default: 50
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - description: From date (RFC3339)
+        in: query
+        name: from_date
+        type: string
+      - description: To date (RFC3339)
+        in: query
+        name: to_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ListTemplatesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List templates
+      tags:
+      - Templates
+    post:
+      consumes:
+      - application/json
+      description: Create a new notification template for an application
+      parameters:
+      - description: Template creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CreateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a template
+      tags:
+      - Templates
+  /v1/templates/{app_id}/{name}/versions:
+    get:
+      description: Retrieve all versions of a template by app ID and name
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Template name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Filter by locale
+        in: query
+        name: locale
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/TemplateResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List template versions
+      tags:
+      - Templates
+    post:
+      consumes:
+      - application/json
+      description: Create a new version of an existing template by app ID and name
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Template name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Version creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CreateVersionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a template version
+      tags:
+      - Templates
+  /v1/templates/{app_id}/{name}/versions/{version}:
+    get:
+      description: Retrieve a single template at the specified version number
+      parameters:
+      - description: Application ID
+        in: path
+        name: app_id
+        required: true
+        type: string
+      - description: Template name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Version number
+        in: path
+        name: version
+        required: true
+        type: integer
+      - description: Locale filter
+        in: query
+        name: locale
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a specific template version
+      tags:
+      - Templates
+  /v1/templates/{id}:
+    delete:
+      description: Permanently remove a notification template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a template
+      tags:
+      - Templates
+    get:
+      description: Retrieve a template by its ID
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a template
+      tags:
+      - Templates
+    put:
+      consumes:
+      - application/json
+      description: Update an existing notification template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Template update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a template
+      tags:
+      - Templates
+  /v1/templates/{id}/controls:
+    get:
+      description: Retrieve a template's content control definitions and current values
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get template controls
+      tags:
+      - Templates
+    put:
+      consumes:
+      - application/json
+      description: Validate and save content control values for a template
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Control values
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update template controls
+      tags:
+      - Templates
+  /v1/templates/{id}/diff:
+    get:
+      description: Compare two versions of a template and return field-level changes
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Source version number
+        in: query
+        name: from
+        required: true
+        type: integer
+      - description: Target version number
+        in: query
+        name: to
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Diff two template versions
+      tags:
+      - Templates
+  /v1/templates/{id}/render:
+    post:
+      consumes:
+      - application/json
+      description: Render a template with the provided variable data and return the
+        output
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Render request with template data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/RenderTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/RenderTemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Render a template
+      tags:
+      - Templates
+  /v1/templates/{id}/rollback:
+    post:
+      consumes:
+      - application/json
+      description: Create a new version by rolling back to a previous version's content
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Rollback request with target version
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/RollbackRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Rollback a template
+      tags:
+      - Templates
+  /v1/templates/{id}/test:
+    post:
+      consumes:
+      - application/json
+      description: Render a template with sample data and send a test email to a specified
+        address
+      parameters:
+      - description: Template ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Test send request with email and optional sample data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/SendTestRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Send a test email
+      tags:
+      - Templates
+  /v1/templates/library:
+    get:
+      description: Retrieve pre-built template library with optional category filter
+      parameters:
+      - description: Filter by category (transactional, newsletter, notification)
+        in: query
+        name: category
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get template library
+      tags:
+      - Templates
+  /v1/templates/library/{name}/clone:
+    post:
+      description: Clone a pre-built library template into the authenticated application
+      parameters:
+      - description: Library template name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/TemplateResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Clone a library template
+      tags:
+      - Templates
+  /v1/topics:
+    get:
+      description: List all topics for the authenticated application
+      parameters:
+      - default: 50
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List topics
+      tags:
+      - Topics
+    post:
+      consumes:
+      - application/json
+      description: Create a new notification topic for pub/sub messaging
+      parameters:
+      - description: Topic creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_topic.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a topic
+      tags:
+      - Topics
+  /v1/topics/{id}:
+    delete:
+      description: Permanently remove a topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a topic
+      tags:
+      - Topics
+    get:
+      description: Retrieve a topic by its ID
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a topic
+      tags:
+      - Topics
+    put:
+      consumes:
+      - application/json
+      description: Update an existing topic's configuration
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Topic update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_topic.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a topic
+      tags:
+      - Topics
+  /v1/topics/{id}/subscribers:
+    delete:
+      consumes:
+      - application/json
+      description: Unsubscribe one or more users from a topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Subscriber user IDs to remove
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_topic.AddSubscribersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Remove subscribers from a topic
+      tags:
+      - Topics
+    get:
+      description: Retrieve all subscribers of a topic with pagination
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 50
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get topic subscribers
+      tags:
+      - Topics
+    post:
+      consumes:
+      - application/json
+      description: Subscribe one or more users to a topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Subscriber user IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_topic.AddSubscribersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Add subscribers to a topic
+      tags:
+      - Topics
+  /v1/topics/key/{key}:
+    get:
+      description: Retrieve a topic by its unique key
+      parameters:
+      - description: Topic key
+        in: path
+        name: key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a topic by key
+      tags:
+      - Topics
+  /v1/users:
+    get:
+      description: List users for the authenticated application with pagination and
+        filtering
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by email
+        in: query
+        name: email
+        type: string
+      - description: Filter by timezone
+        in: query
+        name: timezone
+        type: string
+      - description: Filter by language
+        in: query
+        name: language
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List users
+      tags:
+      - Users
+    post:
+      consumes:
+      - application/json
+      description: Create a new subscriber/user within an application
+      parameters:
+      - description: User creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a new user
+      tags:
+      - Users
+  /v1/users/{id}:
+    delete:
+      description: Permanently remove a user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a user
+      tags:
+      - Users
+    get:
+      description: Retrieve a single user by their ID
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a user by ID
+      tags:
+      - Users
+    put:
+      consumes:
+      - application/json
+      description: Update an existing user's information
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: User update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a user
+      tags:
+      - Users
+  /v1/users/{id}/devices:
+    get:
+      description: Retrieve all registered devices for a user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get user devices
+      tags:
+      - Users
+    post:
+      consumes:
+      - application/json
+      description: Register a push notification device token for a user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Device registration request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AddDeviceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Add a device to a user
+      tags:
+      - Users
+  /v1/users/{id}/devices/{device_id}:
+    delete:
+      description: Unregister a push notification device token
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Device ID
+        in: path
+        name: device_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Remove a device from a user
+      tags:
+      - Users
+  /v1/users/{id}/preferences:
+    get:
+      description: Retrieve notification preferences for a user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get user notification preferences
+      tags:
+      - Users
+    put:
+      consumes:
+      - application/json
+      description: Update channel preferences, quiet hours, and DND settings for a
+        user
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Preferences update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdatePreferencesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update user notification preferences
+      tags:
+      - Users
+  /v1/users/{id}/subscriber-hash:
+    get:
+      description: Generate an HMAC subscriber hash for SSE authentication
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get subscriber hash
+      tags:
+      - Users
+  /v1/users/bulk:
+    post:
+      consumes:
+      - application/json
+      description: Create multiple users in a single request
+      parameters:
+      - description: Bulk user creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkCreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkCreateUserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Bulk create users
+      tags:
+      - Users
+  /v1/workflows:
+    get:
+      description: List all workflows for the authenticated application
+      parameters:
+      - default: 20
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List workflows
+      tags:
+      - Workflows
+    post:
+      consumes:
+      - application/json
+      description: Create a new notification workflow with steps and triggers
+      parameters:
+      - description: Workflow creation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.CreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Create a workflow
+      tags:
+      - Workflows
+  /v1/workflows/{id}:
+    delete:
+      description: Permanently remove a workflow
+      parameters:
+      - description: Workflow ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a workflow
+      tags:
+      - Workflows
+    get:
+      description: Retrieve a workflow by its ID
+      parameters:
+      - description: Workflow ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a workflow
+      tags:
+      - Workflows
+    put:
+      consumes:
+      - application/json
+      description: Update an existing workflow's configuration
+      parameters:
+      - description: Workflow ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Workflow update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.UpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a workflow
+      tags:
+      - Workflows
+  /v1/workflows/executions:
+    get:
+      description: List workflow execution history with optional workflow_id filter
+      parameters:
+      - description: Filter by workflow ID
+        in: query
+        name: workflow_id
+        type: string
+      - default: 20
+        description: Limit results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: List workflow executions
+      tags:
+      - Workflows
+  /v1/workflows/executions/{id}:
+    get:
+      description: Retrieve details of a specific workflow execution
+      parameters:
+      - description: Execution ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a workflow execution
+      tags:
+      - Workflows
+  /v1/workflows/executions/{id}/cancel:
+    post:
+      description: Cancel a running workflow execution
+      parameters:
+      - description: Execution ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Cancel a workflow execution
+      tags:
+      - Workflows
+  /v1/workflows/trigger:
+    post:
+      consumes:
+      - application/json
+      description: Trigger a workflow execution with provided payload
+      parameters:
+      - description: Workflow trigger request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger a workflow
+      tags:
+      - Workflows
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    description: Application API key for tenant-facing endpoints
+    in: header
+    name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: Type "Bearer" followed by a space and your API key
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

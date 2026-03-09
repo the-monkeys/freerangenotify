@@ -26,6 +26,19 @@ func NewEnvironmentHandler(service environment.Service, v *validator.Validator, 
 }
 
 // Create handles POST /v1/apps/:id/environments
+// @Summary Create an environment
+// @Description Create a new environment (e.g., staging, production) for an application
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param body body environment.CreateRequest true "Environment creation request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/environments [post]
 func (h *EnvironmentHandler) Create(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -55,6 +68,17 @@ func (h *EnvironmentHandler) Create(c *fiber.Ctx) error {
 }
 
 // List handles GET /v1/apps/:id/environments
+// @Summary List environments
+// @Description List all environments for an application
+// @Tags Environments
+// @Produce json
+// @Param id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/environments [get]
 func (h *EnvironmentHandler) List(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -73,6 +97,18 @@ func (h *EnvironmentHandler) List(c *fiber.Ctx) error {
 }
 
 // Get handles GET /v1/apps/:id/environments/:envId
+// @Summary Get an environment
+// @Description Retrieve a specific environment by ID
+// @Tags Environments
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param envId path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/environments/{envId} [get]
 func (h *EnvironmentHandler) Get(c *fiber.Ctx) error {
 	envID := c.Params("envId")
 	if envID == "" {
@@ -91,6 +127,18 @@ func (h *EnvironmentHandler) Get(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE /v1/apps/:id/environments/:envId
+// @Summary Delete an environment
+// @Description Permanently remove an environment from an application
+// @Tags Environments
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param envId path string true "Environment ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/environments/{envId} [delete]
 func (h *EnvironmentHandler) Delete(c *fiber.Ctx) error {
 	envID := c.Params("envId")
 	if envID == "" {
@@ -108,6 +156,19 @@ func (h *EnvironmentHandler) Delete(c *fiber.Ctx) error {
 }
 
 // Promote handles POST /v1/apps/:id/environments/promote
+// @Summary Promote resources between environments
+// @Description Copy templates and configuration from one environment to another
+// @Tags Environments
+// @Accept json
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param body body environment.PromoteRequest true "Promotion request specifying source and target environments"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/environments/promote [post]
 func (h *EnvironmentHandler) Promote(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {

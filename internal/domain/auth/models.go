@@ -211,7 +211,7 @@ type MembershipRepository interface {
 
 // TeamService defines the business logic interface for team/membership management.
 type TeamService interface {
-	InviteMember(ctx context.Context, appID string, req *InviteMemberRequest, inviterID string) (*AppMembership, error)
+	InviteMember(ctx context.Context, appID string, req *InviteMemberRequest, inviterID, appName string) (*AppMembership, error)
 	UpdateRole(ctx context.Context, appID, membershipID string, req *UpdateMemberRoleRequest) (*AppMembership, error)
 	RemoveMember(ctx context.Context, appID, membershipID string) error
 	ListMembers(ctx context.Context, appID string) ([]*AppMembership, error)

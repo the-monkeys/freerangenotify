@@ -59,6 +59,12 @@ type Queue interface {
 	// GetScheduledItems returns items from scheduled queue that are ready to be processed
 	GetScheduledItems(ctx context.Context, limit int64) ([]NotificationQueueItem, error)
 
+	// Acknowledge removes a processed item from the processing set
+	Acknowledge(ctx context.Context, item NotificationQueueItem) error
+
+	// RequeueExpiredProcessing moves timed-out items back to their priority queues
+	RequeueExpiredProcessing(ctx context.Context) (int, error)
+
 	// Close closes the queue connection
 	Close() error
 }

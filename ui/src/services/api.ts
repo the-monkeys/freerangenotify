@@ -45,6 +45,10 @@ import type {
   Environment,
   CreateEnvironmentRequest,
   PromoteEnvironmentRequest,
+  Tenant,
+  TenantMember,
+  CreateTenantRequest,
+  InviteTenantMemberRequest,
   CustomProvider,
   RegisterProviderRequest,
   PresenceCheckInRequest,
@@ -179,7 +183,7 @@ interface ApplicationListResponse {
 export const applicationsAPI = {
   list: async () => {
     const { data } = await api.get<ApiResponse<ApplicationListResponse>>('/apps/');
-    return data.data.applications;
+    return data.data?.applications ?? [];
   },
 
   get: async (id: string) => {
@@ -215,12 +219,37 @@ export const applicationsAPI = {
     const { data } = await api.put<{ success: boolean; message: string }>(`/apps/${id}/settings`, settings);
     return data;
   },
+
+  importResources: async (targetAppId: string, sourceAppId: string, resources: string[]) => {
+    const { data } = await api.post<ApiResponse<{ linked: Record<string, number>; skipped: Record<string, number> }>>(`/apps/${targetAppId}/import`, {
+      source_app_id: sourceAppId,
+      resources,
+    });
+    return data.data;
+  },
+
+  listLinks: async (appId: string, resourceType?: string) => {
+    const params = resourceType ? `?resource_type=${resourceType}` : '';
+    const { data } = await api.get<ApiResponse<{ links: any[]; total_count: number }>>(`/apps/${appId}/links${params}`);
+    return data.data;
+  },
+
+  removeLink: async (appId: string, linkId: string) => {
+    await api.delete(`/apps/${appId}/links/${linkId}`);
+  },
+
+  removeAllLinks: async (appId: string) => {
+    await api.delete(`/apps/${appId}/links`);
+  },
 };
 
-// Helper to get auth headers
+// Helper to get auth headers — sends app API key via X-API-Key so the JWT
+// in the Authorization header (added by the axios interceptor) is preserved.
+// This allows the backend to identify both the app AND the dashboard user,
+// enabling RBAC enforcement on API-key-protected routes.
 const getAuthHeaders = (apiKey?: string) => {
   if (!apiKey) return {};
-  return { 'Authorization': `Bearer ${apiKey}` };
+  return { 'X-API-Key': apiKey };
 };
 
 // ============= User APIs =============
@@ -916,6 +945,52 @@ export const environmentsAPI = {
   promote: async (appId: string, payload: PromoteEnvironmentRequest) => {
     const { data } = await api.post<ApiResponse<any>>(`/apps/${appId}/environments/promote`, payload);
     return data.data;
+  },
+};
+
+// ============= Tenant APIs (C1) =============
+export const tenantsAPI = {
+  create: async (payload: CreateTenantRequest) => {
+    const { data } = await api.post<ApiResponse<Tenant>>('/tenants', payload);
+    return data.data;
+  },
+
+  list: async () => {
+    const { data } = await api.get<ApiResponse<Tenant[]>>('/tenants');
+    return data.data ?? [];
+  },
+
+  get: async (id: string) => {
+    const { data } = await api.get<ApiResponse<Tenant>>(`/tenants/${id}`);
+    return data.data;
+  },
+
+  update: async (id: string, payload: { name?: string }) => {
+    const { data } = await api.put<ApiResponse<Tenant>>(`/tenants/${id}`, payload);
+    return data.data;
+  },
+
+  delete: async (id: string) => {
+    await api.delete(`/tenants/${id}`);
+  },
+
+  listMembers: async (id: string) => {
+    const { data } = await api.get<ApiResponse<TenantMember[]>>(`/tenants/${id}/members`);
+    return data.data ?? [];
+  },
+
+  inviteMember: async (id: string, payload: InviteTenantMemberRequest) => {
+    const { data } = await api.post<ApiResponse<TenantMember>>(`/tenants/${id}/members`, payload);
+    return data.data;
+  },
+
+  updateMemberRole: async (id: string, memberId: string, role: 'owner' | 'admin' | 'member') => {
+    const { data } = await api.put<ApiResponse<TenantMember>>(`/tenants/${id}/members/${memberId}`, { role });
+    return data.data;
+  },
+
+  removeMember: async (id: string, memberId: string) => {
+    await api.delete(`/tenants/${id}/members/${memberId}`);
   },
 };
 

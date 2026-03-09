@@ -204,3 +204,31 @@ func (p *SMTPProvider) IsHealthy(ctx context.Context) bool {
 func (p *SMTPProvider) Close() error {
 	return nil
 }
+
+func init() {
+	RegisterFactory("smtp", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		host, _ := cfg["host"].(string)
+		if host == "" {
+			return nil, fmt.Errorf("smtp: host is required")
+		}
+		port, _ := cfg["port"].(int)
+		if port == 0 {
+			if pf, ok := cfg["port"].(float64); ok {
+				port = int(pf)
+			}
+		}
+		username, _ := cfg["username"].(string)
+		password, _ := cfg["password"].(string)
+		fromEmail, _ := cfg["from_email"].(string)
+		fromName, _ := cfg["from_name"].(string)
+		return NewSMTPProvider(SMTPConfig{
+			Config:    Config{Timeout: 30 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Second},
+			Host:      host,
+			Port:      port,
+			Username:  username,
+			Password:  password,
+			FromEmail: fromEmail,
+			FromName:  fromName,
+		}, logger)
+	})
+}

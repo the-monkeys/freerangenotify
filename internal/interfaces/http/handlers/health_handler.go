@@ -24,6 +24,13 @@ func NewHealthHandler(dbManager *database.DatabaseManager, redisClient *redis.Cl
 }
 
 // Check handles GET /v1/health
+// @Summary Health check
+// @Description Check the health status of the API and its dependencies (Elasticsearch, Redis)
+// @Tags Health
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Router /v1/health [get]
 func (h *HealthHandler) Check(c *fiber.Ctx) error {
 	status := fiber.StatusOK
 	health := fiber.Map{

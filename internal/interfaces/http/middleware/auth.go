@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -11,6 +12,10 @@ import (
 )
 
 // APIKeyAuth creates a middleware for API key authentication.
+// It reads the API key from X-API-Key header first (dashboard flow), falling
+// back to the Authorization header (SDK / server-to-server flow).
+// When the API key comes via X-API-Key and a valid JWT is in Authorization,
+// the dashboard user's identity is extracted so downstream RBAC can apply.
 // When envService is non-nil (multi-environment enabled), it performs
 // two-phase resolution: first by app key, then by environment key.
 func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger, opts ...APIKeyAuthOption) fiber.Handler {
@@ -20,49 +25,48 @@ func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger, opts
 	}
 
 	return func(c *fiber.Ctx) error {
-		// Get API key from Authorization header
-		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return errors.Unauthorized("Missing Authorization header")
-		}
+		var apiKey string
+		dashboardFlow := false
 
-		// Extract API key (format: "Bearer <api_key>" or just "<api_key>")
-		apiKey := authHeader
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			apiKey = strings.TrimPrefix(authHeader, "Bearer ")
+		// Prefer X-API-Key header (dashboard sends API key here, JWT in Authorization)
+		if xKey := c.Get("X-API-Key"); xKey != "" {
+			apiKey = xKey
+			dashboardFlow = true
+		} else {
+			// Fallback: read from Authorization header (SDK backward compat)
+			authHeader := c.Get("Authorization")
+			if authHeader == "" {
+				return errors.Unauthorized("Missing API key")
+			}
+			apiKey = authHeader
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				apiKey = strings.TrimPrefix(authHeader, "Bearer ")
+			}
 		}
-
-		logger.Info("Validating API Key", zap.String("received_key", apiKey))
 
 		if apiKey == "" {
 			return errors.Unauthorized("Missing API key")
 		}
 
+		// Resolve app from API key
+		resolvedApp := false
+
 		// Phase 1: Try to resolve by application API key
 		app, err := appService.ValidateAPIKey(c.Context(), apiKey)
 		if err == nil {
-			// App-level key resolved
 			c.Locals("app_id", app.AppID)
 			c.Locals("app_name", app.AppName)
 			c.Locals("app", app)
 			if cfg.envService != nil {
-				// Multi-env enabled — app-level key maps to default environment
 				c.Locals("environment_id", "default")
 			}
-
-			logger.Debug("API key authenticated",
-				zap.String("app_id", app.AppID),
-				zap.String("app_name", app.AppName),
-				zap.String("path", c.Path()),
-			)
-			return c.Next()
+			resolvedApp = true
 		}
 
 		// Phase 2: If multi-environment is enabled, try environment API key
-		if cfg.envService != nil {
+		if !resolvedApp && cfg.envService != nil {
 			env, envErr := cfg.envService.GetByAPIKey(c.Context(), apiKey)
 			if envErr == nil && env != nil {
-				// Fetch parent application
 				parentApp, appErr := appService.GetByID(c.Context(), env.AppID)
 				if appErr != nil {
 					logger.Warn("Environment key valid but parent app not found",
@@ -76,28 +80,46 @@ func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger, opts
 				c.Locals("app_name", parentApp.AppName)
 				c.Locals("app", parentApp)
 				c.Locals("environment_id", env.ID)
-
-				logger.Debug("Environment API key authenticated",
-					zap.String("app_id", parentApp.AppID),
-					zap.String("env_id", env.ID),
-					zap.String("env_name", env.Name),
-					zap.String("path", c.Path()),
-				)
-				return c.Next()
+				resolvedApp = true
 			}
 		}
 
-		logger.Warn("Invalid API key attempt",
-			zap.String("ip", c.IP()),
+		if !resolvedApp {
+			logger.Warn("Invalid API key attempt",
+				zap.String("ip", c.IP()),
+				zap.String("path", c.Path()),
+			)
+			return errors.New(errors.ErrCodeInvalidAPIKey, "Invalid API key")
+		}
+
+		// Dashboard flow: also extract JWT identity from Authorization header
+		// so that DashboardRBAC can enforce per-user permissions.
+		if dashboardFlow {
+			if authHeader := c.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+				jwtToken := strings.TrimPrefix(authHeader, "Bearer ")
+				if cfg.authService != nil && jwtToken != "" {
+					user, jwtErr := cfg.authService.ValidateToken(c.Context(), jwtToken)
+					if jwtErr == nil && user != nil {
+						c.Locals("user_id", user.UserID)
+						c.Locals("user_email", user.Email)
+					}
+				}
+			}
+		}
+
+		logger.Debug("API key authenticated",
+			zap.String("app_id", c.Locals("app_id").(string)),
+			zap.Bool("dashboard_flow", dashboardFlow),
 			zap.String("path", c.Path()),
 		)
-		return errors.New(errors.ErrCodeInvalidAPIKey, "Invalid API key")
+		return c.Next()
 	}
 }
 
 // apiKeyAuthConfig holds optional configuration for the APIKeyAuth middleware.
 type apiKeyAuthConfig struct {
-	envService environment.Service
+	envService  environment.Service
+	authService auth.Service
 }
 
 // APIKeyAuthOption configures the APIKeyAuth middleware.
@@ -107,6 +129,13 @@ type APIKeyAuthOption func(*apiKeyAuthConfig)
 func WithEnvironmentService(svc environment.Service) APIKeyAuthOption {
 	return func(cfg *apiKeyAuthConfig) {
 		cfg.envService = svc
+	}
+}
+
+// WithAuthService enables JWT identity extraction for dashboard RBAC.
+func WithAuthService(svc auth.Service) APIKeyAuthOption {
+	return func(cfg *apiKeyAuthConfig) {
+		cfg.authService = svc
 	}
 }
 
