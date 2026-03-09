@@ -20,7 +20,7 @@ type MembershipRepository struct {
 // NewMembershipRepository creates a new MembershipRepository.
 func NewMembershipRepository(client *elasticsearch.Client, logger *zap.Logger) auth.MembershipRepository {
 	return &MembershipRepository{
-		base: NewBaseRepository(client, "app_memberships", logger),
+		base: NewBaseRepository(client, "app_memberships", logger, RefreshWaitFor),
 	}
 }
 

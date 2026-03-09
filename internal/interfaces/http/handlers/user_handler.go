@@ -60,6 +60,18 @@ func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.Us
 }
 
 // Create handles POST /v1/users
+// @Summary Create a new user
+// @Description Create a new subscriber/user within an application
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param body body dto.CreateUserRequest true "User creation request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users [post]
 func (h *UserHandler) Create(c *fiber.Ctx) error {
 	var req dto.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -106,6 +118,17 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 }
 
 // GetByID handles GET /v1/users/:id
+// @Summary Get a user by ID
+// @Description Retrieve a single user by their ID
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id} [get]
 func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -124,6 +147,19 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 }
 
 // Update handles PUT /v1/users/:id
+// @Summary Update a user
+// @Description Update an existing user's information
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body dto.UpdateUserRequest true "User update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id} [put]
 func (h *UserHandler) Update(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -179,6 +215,17 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE /v1/users/:id
+// @Summary Delete a user
+// @Description Permanently remove a user
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id} [delete]
 func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -201,6 +248,20 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 }
 
 // List handles GET /v1/users
+// @Summary List users
+// @Description List users for the authenticated application with pagination and filtering
+// @Tags Users
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(20)
+// @Param email query string false "Filter by email"
+// @Param timezone query string false "Filter by timezone"
+// @Param language query string false "Filter by language"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users [get]
 func (h *UserHandler) List(c *fiber.Ctx) error {
 	// Get app_id from context
 	appID, ok := c.Locals("app_id").(string)
@@ -265,6 +326,19 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 }
 
 // AddDevice handles POST /v1/users/:id/devices
+// @Summary Add a device to a user
+// @Description Register a push notification device token for a user
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body dto.AddDeviceRequest true "Device registration request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/devices [post]
 func (h *UserHandler) AddDevice(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -300,6 +374,18 @@ func (h *UserHandler) AddDevice(c *fiber.Ctx) error {
 }
 
 // RemoveDevice handles DELETE /v1/users/:id/devices/:device_id
+// @Summary Remove a device from a user
+// @Description Unregister a push notification device token
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Param device_id path string true "Device ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/devices/{device_id} [delete]
 func (h *UserHandler) RemoveDevice(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	deviceID := c.Params("device_id")
@@ -323,6 +409,17 @@ func (h *UserHandler) RemoveDevice(c *fiber.Ctx) error {
 }
 
 // GetDevices handles GET /v1/users/:id/devices
+// @Summary Get user devices
+// @Description Retrieve all registered devices for a user
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/devices [get]
 func (h *UserHandler) GetDevices(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -345,6 +442,19 @@ func (h *UserHandler) GetDevices(c *fiber.Ctx) error {
 }
 
 // UpdatePreferences handles PUT /v1/users/:id/preferences
+// @Summary Update user notification preferences
+// @Description Update channel preferences, quiet hours, and DND settings for a user
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID"
+// @Param body body dto.UpdatePreferencesRequest true "Preferences update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/preferences [put]
 func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -387,6 +497,17 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 }
 
 // GetPreferences handles GET /v1/users/:id/preferences
+// @Summary Get user notification preferences
+// @Description Retrieve notification preferences for a user
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/preferences [get]
 func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {
@@ -409,6 +530,18 @@ func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 }
 
 // BulkCreate handles POST /v1/users/bulk
+// @Summary Bulk create users
+// @Description Create multiple users in a single request
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param body body dto.BulkCreateUserRequest true "Bulk user creation request"
+// @Success 201 {object} dto.BulkCreateUserResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/bulk [post]
 func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -470,6 +603,17 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 // ── Phase 5: Subscriber Hash ────────────────────────
 
 // GetSubscriberHash handles GET /v1/users/:id/subscriber-hash
+// @Summary Get subscriber hash
+// @Description Generate an HMAC subscriber hash for SSE authentication
+// @Tags Users
+// @Produce json
+// @Param id path string true "User ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/{id}/subscriber-hash [get]
 func (h *UserHandler) GetSubscriberHash(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	if userID == "" {

@@ -26,6 +26,9 @@ export type { FreeRangeProviderProps, FreeRangeContextValue } from './FreeRangeP
 export { NotificationBell } from './NotificationBell';
 export type { NotificationBellProps, NotificationBellTab } from './NotificationBell';
 
+export { NotificationCenter } from './NotificationCenter';
+export type { NotificationCenterProps, NotificationCenterTab } from './NotificationCenter';
+
 export { Preferences } from './Preferences';
 export type { PreferencesProps } from './Preferences';
 

@@ -26,6 +26,18 @@ func NewWorkflowHandler(service workflow.Service, v *validator.Validator, logger
 }
 
 // Create handles POST /v1/workflows
+// @Summary Create a workflow
+// @Description Create a new notification workflow with steps and triggers
+// @Tags Workflows
+// @Accept json
+// @Produce json
+// @Param body body workflow.CreateRequest true "Workflow creation request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows [post]
 func (h *WorkflowHandler) Create(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -61,6 +73,17 @@ func (h *WorkflowHandler) Create(c *fiber.Ctx) error {
 }
 
 // List handles GET /v1/workflows
+// @Summary List workflows
+// @Description List all workflows for the authenticated application
+// @Tags Workflows
+// @Produce json
+// @Param limit query int false "Limit results" default(20)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows [get]
 func (h *WorkflowHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
@@ -98,6 +121,16 @@ func (h *WorkflowHandler) List(c *fiber.Ctx) error {
 }
 
 // Get handles GET /v1/workflows/:id
+// @Summary Get a workflow
+// @Description Retrieve a workflow by its ID
+// @Tags Workflows
+// @Produce json
+// @Param id path string true "Workflow ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/{id} [get]
 func (h *WorkflowHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -116,6 +149,19 @@ func (h *WorkflowHandler) Get(c *fiber.Ctx) error {
 }
 
 // Update handles PUT /v1/workflows/:id
+// @Summary Update a workflow
+// @Description Update an existing workflow's configuration
+// @Tags Workflows
+// @Accept json
+// @Produce json
+// @Param id path string true "Workflow ID"
+// @Param body body workflow.UpdateRequest true "Workflow update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/{id} [put]
 func (h *WorkflowHandler) Update(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -141,6 +187,16 @@ func (h *WorkflowHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE /v1/workflows/:id
+// @Summary Delete a workflow
+// @Description Permanently remove a workflow
+// @Tags Workflows
+// @Produce json
+// @Param id path string true "Workflow ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/{id} [delete]
 func (h *WorkflowHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -158,6 +214,18 @@ func (h *WorkflowHandler) Delete(c *fiber.Ctx) error {
 }
 
 // Trigger handles POST /v1/workflows/trigger
+// @Summary Trigger a workflow
+// @Description Trigger a workflow execution with provided payload
+// @Tags Workflows
+// @Accept json
+// @Produce json
+// @Param body body workflow.TriggerRequest true "Workflow trigger request"
+// @Success 202 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/trigger [post]
 func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -189,6 +257,18 @@ func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 }
 
 // ListExecutions handles GET /v1/workflows/executions
+// @Summary List workflow executions
+// @Description List workflow execution history with optional workflow_id filter
+// @Tags Workflows
+// @Produce json
+// @Param workflow_id query string false "Filter by workflow ID"
+// @Param limit query int false "Limit results" default(20)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/executions [get]
 func (h *WorkflowHandler) ListExecutions(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	workflowID := c.Query("workflow_id")
@@ -210,6 +290,16 @@ func (h *WorkflowHandler) ListExecutions(c *fiber.Ctx) error {
 }
 
 // GetExecution handles GET /v1/workflows/executions/:id
+// @Summary Get a workflow execution
+// @Description Retrieve details of a specific workflow execution
+// @Tags Workflows
+// @Produce json
+// @Param id path string true "Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/executions/{id} [get]
 func (h *WorkflowHandler) GetExecution(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -228,6 +318,16 @@ func (h *WorkflowHandler) GetExecution(c *fiber.Ctx) error {
 }
 
 // CancelExecution handles POST /v1/workflows/executions/:id/cancel
+// @Summary Cancel a workflow execution
+// @Description Cancel a running workflow execution
+// @Tags Workflows
+// @Produce json
+// @Param id path string true "Execution ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/executions/{id}/cancel [post]
 func (h *WorkflowHandler) CancelExecution(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")

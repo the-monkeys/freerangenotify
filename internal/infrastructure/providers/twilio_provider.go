@@ -157,3 +157,20 @@ func (p *TwilioProvider) handleError(err error) *Result {
 
 	return NewErrorResult(err, ErrorTypeUnknown)
 }
+
+func init() {
+	RegisterFactory("twilio", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		accountSID, _ := cfg["account_sid"].(string)
+		authToken, _ := cfg["auth_token"].(string)
+		fromNumber, _ := cfg["from_number"].(string)
+		if accountSID == "" || authToken == "" {
+			return nil, fmt.Errorf("twilio: account_sid and auth_token are required")
+		}
+		return NewTwilioProvider(TwilioConfig{
+			Config:     Config{Timeout: 10 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Second},
+			AccountSID: accountSID,
+			AuthToken:  authToken,
+			FromNumber: fromNumber,
+		}, logger)
+	})
+}

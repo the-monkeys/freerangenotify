@@ -24,6 +24,18 @@ type CheckInRequest struct {
 }
 
 // CheckIn handles POST /v1/presence/check-in
+// @Summary User presence check-in
+// @Description Record a user's presence and trigger any pending notifications for that user
+// @Tags Presence
+// @Accept json
+// @Produce json
+// @Param body body CheckInRequest true "Check-in request with user ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/presence/check-in [post]
 func (h *PresenceHandler) CheckIn(c *fiber.Ctx) error {
 	var req CheckInRequest
 	if err := c.BodyParser(&req); err != nil {

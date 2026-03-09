@@ -85,6 +85,28 @@ export class FreeRangeNotify {
     return this.notifications.quickSend(params);
   }
 
+  /**
+   * Trigger a notification by template name (code-first style).
+   * Equivalent to: send({ template, to, data, ...opts })
+   *
+   * @example
+   * await client.trigger('welcome-email', { to: 'user@example.com', name: 'Alice' });
+   * await client.trigger('order-shipped', { to: userId, orderId: '123', trackingUrl: '...' });
+   * await client.trigger('welcome', { to: 'u@x.com', idempotencyKey: 'req-123' }); // safe retry
+   */
+  async trigger(
+    template: string,
+    params: { to: string; data?: Record<string, unknown> } & Omit<QuickSendParams, 'to' | 'template' | 'data'>,
+  ): Promise<SendResult> {
+    const { to, data, ...rest } = params;
+    return this.notifications.quickSend({
+      template,
+      to,
+      data,
+      ...rest,
+    });
+  }
+
   /** Broadcast to all users (delegates to notifications.broadcast). */
   async broadcast(params: BroadcastParams): Promise<BroadcastResult> {
     return this.notifications.broadcast(params);

@@ -126,3 +126,29 @@ func (p *WhatsAppProvider) IsHealthy(_ context.Context) bool { return true }
 
 // Close releases provider resources.
 func (p *WhatsAppProvider) Close() error { return nil }
+
+func init() {
+	RegisterFactory("whatsapp", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		enabled, _ := cfg["enabled"].(bool)
+		if !enabled {
+			return nil, fmt.Errorf("whatsapp: provider disabled")
+		}
+		accountSID, _ := cfg["account_sid"].(string)
+		authToken, _ := cfg["auth_token"].(string)
+		fromNumber, _ := cfg["from_number"].(string)
+		timeout := 10
+		if t, ok := cfg["timeout"].(float64); ok && t > 0 {
+			timeout = int(t)
+		}
+		maxRetries := 3
+		if r, ok := cfg["max_retries"].(float64); ok {
+			maxRetries = int(r)
+		}
+		return NewWhatsAppProvider(WhatsAppConfig{
+			Config:     Config{Timeout: time.Duration(timeout) * time.Second, MaxRetries: maxRetries, RetryDelay: 2 * time.Second},
+			AccountSID: accountSID,
+			AuthToken:  authToken,
+			FromNumber: fromNumber,
+		}, logger)
+	})
+}

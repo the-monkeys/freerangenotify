@@ -172,10 +172,20 @@ func (s *environmentService) promoteTemplates(ctx context.Context, appID, source
 
 	count := 0
 	for _, tmpl := range templates {
-		// Check if same-named template exists in target
-		existing, _ := s.tmplRepo.GetByAppAndName(ctx, appID, tmpl.Name, tmpl.Locale)
+		// Check if same-named template exists in target environment
+		existingList, _ := s.tmplRepo.List(ctx, template.Filter{
+			AppID:         appID,
+			EnvironmentID: targetEnvID,
+			Name:          tmpl.Name,
+			Locale:        tmpl.Locale,
+			Limit:         1,
+		})
+		var existing *template.Template
+		if len(existingList) > 0 {
+			existing = existingList[0]
+		}
 
-		if existing != nil && existing.EnvironmentID == targetEnvID {
+		if existing != nil {
 			// Update existing template in target
 			existing.Subject = tmpl.Subject
 			existing.Body = tmpl.Body

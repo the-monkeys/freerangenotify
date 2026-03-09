@@ -59,6 +59,7 @@ type Filter struct {
 	ToDate        *time.Time `json:"to_date,omitempty"`
 	Limit         int        `json:"limit,omitempty"`
 	Offset        int        `json:"offset,omitempty"`
+	Cursor        string     `json:"cursor,omitempty"`
 }
 
 // Repository defines the interface for template data operations

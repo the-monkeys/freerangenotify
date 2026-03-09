@@ -33,8 +33,7 @@ const ENV_COLORS: Record<string, string> = {
 
 const PROMOTE_RESOURCES = [
     { key: 'templates', label: 'Templates' },
-    { key: 'users', label: 'Users' },
-    { key: 'providers', label: 'Providers' },
+    { key: 'workflows', label: 'Workflows' },
 ];
 
 const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey, onApiKeyChange }) => {

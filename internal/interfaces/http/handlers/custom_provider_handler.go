@@ -62,6 +62,19 @@ type registerCustomProviderRequest struct {
 
 // Register registers a new custom provider for an application.
 // POST /v1/apps/:id/providers — requires admin or owner role
+// @Summary Register a custom provider
+// @Description Register a new custom delivery provider for an application (admin or owner)
+// @Tags Custom Providers
+// @Accept json
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param body body registerCustomProviderRequest true "Custom provider registration request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers [post]
 func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -129,6 +142,17 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 
 // List returns all custom providers for an application.
 // GET /v1/apps/:id/providers — any team member can view
+// @Summary List custom providers
+// @Description List all registered custom delivery providers for an application
+// @Tags Custom Providers
+// @Produce json
+// @Param id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers [get]
 func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -161,6 +185,18 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 
 // Remove removes a custom provider from an application.
 // DELETE /v1/apps/:id/providers/:provider_id — requires admin or owner role
+// @Summary Remove a custom provider
+// @Description Remove a custom delivery provider from an application (admin or owner)
+// @Tags Custom Providers
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param provider_id path string true "Provider ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/providers/{provider_id} [delete]
 func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")

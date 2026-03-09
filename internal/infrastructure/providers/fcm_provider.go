@@ -167,3 +167,15 @@ func (p *FCMProvider) handleError(err error) *Result {
 
 	return NewErrorResult(err, ErrorTypeUnknown)
 }
+
+func init() {
+	RegisterFactory("fcm", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		projectID, _ := cfg["project_id"].(string)
+		credentialsPath, _ := cfg["credentials_path"].(string)
+		return NewFCMProvider(FCMConfig{
+			Config:          Config{Timeout: 10 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Second},
+			ProjectID:       projectID,
+			CredentialsPath: credentialsPath,
+		}, logger)
+	})
+}

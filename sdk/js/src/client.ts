@@ -11,6 +11,7 @@ export class HttpClient {
         path: string,
         body?: unknown,
         query?: Record<string, string | undefined>,
+        options?: { headers?: Record<string, string> },
     ): Promise<T> {
         let url = this.baseURL + path;
 
@@ -30,6 +31,7 @@ export class HttpClient {
         const headers: Record<string, string> = {
             Authorization: `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
+            ...(options?.headers ?? {}),
         };
 
         const init: RequestInit = { method, headers };

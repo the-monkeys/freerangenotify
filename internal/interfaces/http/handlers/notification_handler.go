@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"text/template"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"go.uber.org/zap"
 )
@@ -15,6 +17,7 @@ import (
 type NotificationHandler struct {
 	service notification.Service
 	logger  *zap.Logger
+	idemp   *idempotency.Store
 }
 
 // NewNotificationHandler creates a new notification handler
@@ -25,6 +28,11 @@ func NewNotificationHandler(service notification.Service, logger *zap.Logger) *N
 	}
 }
 
+// SetIdempotencyStore injects the idempotency store for Idempotency-Key support.
+func (h *NotificationHandler) SetIdempotencyStore(store *idempotency.Store) {
+	h.idemp = store
+}
+
 // Send handles POST /v1/notifications
 // @Summary Send a notification
 // @Description Send a notification to a user
@@ -33,13 +41,24 @@ func NewNotificationHandler(service notification.Service, logger *zap.Logger) *N
 // @Produce json
 // @Param request body dto.SendNotificationRequest true "Send notification request"
 // @Success 202 {object} dto.NotificationResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications [post]
 func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	// Get app ID from context (set by API key middleware)
 	appID := c.Locals("app_id").(string)
+
+	// Idempotency: return cached response if key present and we've seen it before
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			cached, err := h.idemp.Get(c.Context(), appID, key)
+			if err == nil && cached != nil {
+				return c.Status(cached.Status).Send(cached.Body)
+			}
+		}
+	}
 
 	body := c.Body()
 	h.logger.Debug("Raw request body", zap.String("body", string(body)), zap.String("app_id", appID))
@@ -126,12 +145,23 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.BulkSendNotificationRequest true "Bulk send request"
 // @Success 202 {object} dto.BulkSendResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/bulk [post]
 func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
+
+	// Idempotency
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			cached, err := h.idemp.Get(c.Context(), appID, key)
+			if err == nil && cached != nil {
+				return c.Status(cached.Status).Send(cached.Body)
+			}
+		}
+	}
 
 	var req dto.BulkSendNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -167,6 +197,14 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 		Items: items,
 	}
 
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			bodyBytes, _ := json.Marshal(response)
+			_ = h.idemp.Set(c.Context(), appID, key, fiber.StatusAccepted, bodyBytes)
+		}
+	}
+
 	return c.Status(fiber.StatusAccepted).JSON(response)
 }
 
@@ -178,8 +216,8 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.BatchSendNotificationRequest true "Batch send request"
 // @Success 202 {object} dto.BulkSendResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/batch [post]
 func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
@@ -221,6 +259,14 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 		Items: items,
 	}
 
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			bodyBytes, _ := json.Marshal(response)
+			_ = h.idemp.Set(c.Context(), appID, key, fiber.StatusAccepted, bodyBytes)
+		}
+	}
+
 	return c.Status(fiber.StatusAccepted).JSON(response)
 }
 
@@ -232,12 +278,23 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.BroadcastNotificationRequest true "Broadcast notification request"
 // @Success 202 {object} dto.BulkSendResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/broadcast [post]
 func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
+
+	// Idempotency
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			cached, err := h.idemp.Get(c.Context(), appID, key)
+			if err == nil && cached != nil {
+				return c.Status(cached.Status).Send(cached.Body)
+			}
+		}
+	}
 
 	var req dto.BroadcastNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -268,6 +325,14 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 		Total: len(notifications), // In broadcast, total is what was found and sent
 	}
 
+	if h.idemp != nil {
+		key := idempotency.GetIdempotencyKey(c)
+		if key != "" {
+			bodyBytes, _ := json.Marshal(response)
+			_ = h.idemp.Set(c.Context(), appID, key, fiber.StatusAccepted, bodyBytes)
+		}
+	}
+
 	return c.Status(fiber.StatusAccepted).JSON(response)
 }
 
@@ -283,8 +348,8 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 // @Param page query int false "Page number" default(1)
 // @Param page_size query int false "Page size" default(20)
 // @Success 200 {object} dto.NotificationListResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications [get]
 func (h *NotificationHandler) List(c *fiber.Ctx) error {
@@ -345,8 +410,8 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 // @Produce json
 // @Param id path string true "Notification ID"
 // @Success 200 {object} dto.NotificationResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/{id} [get]
 func (h *NotificationHandler) Get(c *fiber.Ctx) error {
@@ -374,9 +439,9 @@ func (h *NotificationHandler) Get(c *fiber.Ctx) error {
 // @Param id path string true "Notification ID"
 // @Param request body dto.UpdateStatusRequest true "Update status request"
 // @Success 200 {object} dto.NotificationResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/{id}/status [put]
 func (h *NotificationHandler) UpdateStatus(c *fiber.Ctx) error {
@@ -419,9 +484,9 @@ func (h *NotificationHandler) UpdateStatus(c *fiber.Ctx) error {
 // @Produce json
 // @Param id path string true "Notification ID"
 // @Success 200 {object} fiber.Map
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/{id} [delete]
 func (h *NotificationHandler) Cancel(c *fiber.Ctx) error {
@@ -449,8 +514,8 @@ func (h *NotificationHandler) Cancel(c *fiber.Ctx) error {
 // @Produce json
 // @Param request body dto.BatchCancelRequest true "Batch cancel request"
 // @Success 200 {object} fiber.Map
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/batch [delete]
 func (h *NotificationHandler) CancelBatch(c *fiber.Ctx) error {
@@ -483,9 +548,9 @@ func (h *NotificationHandler) CancelBatch(c *fiber.Ctx) error {
 // @Produce json
 // @Param id path string true "Notification ID"
 // @Success 200 {object} fiber.Map
-// @Failure 400 {object} ErrorResponse
-// @Failure 404 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
 // @Router /v1/notifications/{id}/retry [post]
 func (h *NotificationHandler) Retry(c *fiber.Ctx) error {

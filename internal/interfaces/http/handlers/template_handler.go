@@ -41,6 +41,18 @@ func NewTemplateHandler(service *usecases.TemplateService, smtpProvider provider
 }
 
 // CreateTemplate creates a new notification template
+// @Summary Create a template
+// @Description Create a new notification template for an application
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param body body dto.CreateTemplateRequest true "Template creation request"
+// @Success 201 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates [post]
 func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -90,6 +102,17 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 }
 
 // GetTemplate retrieves a template by ID
+// @Summary Get a template
+// @Description Retrieve a template by its ID
+// @Tags Templates
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id} [get]
 func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -113,6 +136,24 @@ func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 }
 
 // ListTemplates lists templates based on filter criteria
+// @Summary List templates
+// @Description List templates with filtering, pagination, and date range support
+// @Tags Templates
+// @Produce json
+// @Param name query string false "Filter by template name"
+// @Param channel query string false "Filter by channel"
+// @Param status query string false "Filter by status"
+// @Param locale query string false "Filter by locale"
+// @Param limit query int false "Limit results" default(50)
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param from_date query string false "From date (RFC3339)"
+// @Param to_date query string false "To date (RFC3339)"
+// @Success 200 {object} dto.ListTemplatesResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates [get]
 func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 	var req dto.ListTemplatesRequest
 	if err := c.QueryParser(&req); err != nil {
@@ -193,6 +234,20 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 }
 
 // UpdateTemplate updates an existing template
+// @Summary Update a template
+// @Description Update an existing notification template
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param body body dto.UpdateTemplateRequest true "Template update request"
+// @Success 200 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id} [put]
 func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -263,6 +318,16 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 }
 
 // DeleteTemplate permanently removes a template.
+// @Summary Delete a template
+// @Description Permanently remove a notification template
+// @Tags Templates
+// @Param id path string true "Template ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id} [delete]
 func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -285,6 +350,20 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 }
 
 // RenderTemplate renders a template with provided data
+// @Summary Render a template
+// @Description Render a template with the provided variable data and return the output
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param body body dto.RenderTemplateRequest true "Render request with template data"
+// @Success 200 {object} dto.RenderTemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/render [post]
 func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -331,6 +410,21 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 }
 
 // CreateTemplateVersion creates a new version of a template
+// @Summary Create a template version
+// @Description Create a new version of an existing template by app ID and name
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Param name path string true "Template name"
+// @Param body body dto.CreateVersionRequest true "Version creation request"
+// @Success 201 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{app_id}/{name}/versions [post]
 func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string) // Ignore params app_id, force context one
 	name := c.Params("name")
@@ -387,6 +481,19 @@ func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 }
 
 // GetTemplateVersions retrieves all versions of a template
+// @Summary List template versions
+// @Description Retrieve all versions of a template by app ID and name
+// @Tags Templates
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Param name path string true "Template name"
+// @Param locale query string false "Filter by locale"
+// @Success 200 {array} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{app_id}/{name}/versions [get]
 func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	name := c.Params("name")
@@ -423,6 +530,20 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 
 // GetTemplateVersion returns a single template at the specified version number.
 // GET /v1/templates/:app_id/:name/versions/:version?locale=en-US
+// @Summary Get a specific template version
+// @Description Retrieve a single template at the specified version number
+// @Tags Templates
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Param name path string true "Template name"
+// @Param version path int true "Version number"
+// @Param locale query string false "Locale filter"
+// @Success 200 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{app_id}/{name}/versions/{version} [get]
 func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	name := c.Params("name")
@@ -463,6 +584,15 @@ func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
 
 // GetLibrary returns the pre-built template library.
 // Supports optional ?category= filter (transactional, newsletter, notification).
+// @Summary Get template library
+// @Description Retrieve pre-built template library with optional category filter
+// @Tags Templates
+// @Produce json
+// @Param category query string false "Filter by category (transactional, newsletter, notification)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/library [get]
 func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
 	category := c.Query("category", "")
 
@@ -484,6 +614,17 @@ func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
 }
 
 // CloneFromLibrary clones a library template into the user's app.
+// @Summary Clone a library template
+// @Description Clone a pre-built library template into the authenticated application
+// @Tags Templates
+// @Produce json
+// @Param name path string true "Library template name"
+// @Success 201 {object} dto.TemplateResponse
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/library/{name}/clone [post]
 func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	name := c.Params("name")
@@ -530,6 +671,20 @@ func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 }
 
 // RollbackTemplate creates a new version whose content is copied from a target version
+// @Summary Rollback a template
+// @Description Create a new version by rolling back to a previous version's content
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param body body dto.RollbackRequest true "Rollback request with target version"
+// @Success 201 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/rollback [post]
 func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -578,6 +733,20 @@ func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
 }
 
 // DiffTemplate compares two versions of a template and returns field-level changes
+// @Summary Diff two template versions
+// @Description Compare two versions of a template and return field-level changes
+// @Tags Templates
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param from query int true "Source version number"
+// @Param to query int true "Target version number"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/diff [get]
 func (h *TemplateHandler) DiffTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -645,6 +814,21 @@ func (h *TemplateHandler) DiffTemplate(c *fiber.Ctx) error {
 }
 
 // SendTest renders a template with sample data and sends a test email
+// @Summary Send a test email
+// @Description Render a template with sample data and send a test email to a specified address
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param body body dto.SendTestRequest true "Test send request with email and optional sample data"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/test [post]
 func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 	if h.smtpProvider == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -745,6 +929,17 @@ func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 // ── Phase 6: Content Controls ──
 
 // GetControls returns a template's control definitions and current values.
+// @Summary Get template controls
+// @Description Retrieve a template's content control definitions and current values
+// @Tags Templates
+// @Produce json
+// @Param id path string true "Template ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/controls [get]
 func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -780,6 +975,20 @@ func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
 }
 
 // UpdateControls validates and saves control values for a template.
+// @Summary Update template controls
+// @Description Validate and save content control values for a template
+// @Tags Templates
+// @Accept json
+// @Produce json
+// @Param id path string true "Template ID"
+// @Param body body map[string]interface{} true "Control values"
+// @Success 200 {object} dto.TemplateResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/templates/{id}/controls [put]
 func (h *TemplateHandler) UpdateControls(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")

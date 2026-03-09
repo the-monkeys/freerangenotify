@@ -18,7 +18,7 @@ type ApplicationRepository struct {
 // NewApplicationRepository creates a new application repository
 func NewApplicationRepository(client *elasticsearch.Client, logger *zap.Logger) application.Repository {
 	return &ApplicationRepository{
-		BaseRepository: NewBaseRepository(client, "applications", logger),
+		BaseRepository: NewBaseRepository(client, "applications", logger, RefreshWaitFor),
 	}
 }
 
@@ -119,6 +119,20 @@ func (r *ApplicationRepository) buildApplicationQuery(filter application.Applica
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
 				"admin_user_id": filter.AdminUserID,
+			},
+		})
+	}
+	if filter.TenantID != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"tenant_id": filter.TenantID,
+			},
+		})
+	}
+	if len(filter.TenantIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"tenant_id": filter.TenantIDs,
 			},
 		})
 	}

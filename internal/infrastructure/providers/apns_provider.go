@@ -197,3 +197,21 @@ func (p *APNSProvider) handleAPNSError(res interface{}) *Result {
 
 	return NewErrorResult(fmt.Errorf("APNS error"), ErrorTypeUnknown)
 }
+
+func init() {
+	RegisterFactory("apns", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		bundleID, _ := cfg["bundle_id"].(string)
+		teamID, _ := cfg["team_id"].(string)
+		keyID, _ := cfg["key_id"].(string)
+		keyPath, _ := cfg["key_path"].(string)
+		production, _ := cfg["production"].(bool)
+		return NewAPNSProvider(APNSConfig{
+			Config:     Config{Timeout: 10 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Second},
+			BundleID:   bundleID,
+			TeamID:     teamID,
+			KeyID:      keyID,
+			KeyPath:    keyPath,
+			Production: production,
+		}, logger)
+	})
+}

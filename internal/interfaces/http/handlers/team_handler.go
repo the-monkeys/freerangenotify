@@ -40,6 +40,19 @@ func (h *TeamHandler) extractTeamContext(c *fiber.Ctx) (appID, userID string, er
 
 // InviteMember adds a new member to the application.
 // POST /v1/apps/:app_id/team
+// @Summary Invite a team member
+// @Description Add a new member to an application's team
+// @Tags Team
+// @Accept json
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Param body body auth.InviteMemberRequest true "Invitation request"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{app_id}/team [post]
 func (h *TeamHandler) InviteMember(c *fiber.Ctx) error {
 	appID, userID, err := h.extractTeamContext(c)
 	if err != nil {
@@ -69,6 +82,17 @@ func (h *TeamHandler) InviteMember(c *fiber.Ctx) error {
 
 // ListMembers returns all members of an application.
 // GET /v1/apps/:app_id/team
+// @Summary List team members
+// @Description Retrieve all members of an application's team
+// @Tags Team
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{app_id}/team [get]
 func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
 	appID, _, err := h.extractTeamContext(c)
 	if err != nil {
@@ -88,6 +112,20 @@ func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
 
 // UpdateRole changes a member's role.
 // PUT /v1/apps/:app_id/team/:membership_id
+// @Summary Update a member's role
+// @Description Change a team member's role within an application
+// @Tags Team
+// @Accept json
+// @Produce json
+// @Param app_id path string true "Application ID"
+// @Param membership_id path string true "Membership ID"
+// @Param body body auth.UpdateMemberRoleRequest true "Role update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{app_id}/team/{membership_id} [put]
 func (h *TeamHandler) UpdateRole(c *fiber.Ctx) error {
 	appID, _, err := h.extractTeamContext(c)
 	if err != nil {
@@ -114,6 +152,17 @@ func (h *TeamHandler) UpdateRole(c *fiber.Ctx) error {
 
 // RemoveMember removes a member from the application.
 // DELETE /v1/apps/:app_id/team/:membership_id
+// @Summary Remove a team member
+// @Description Remove a member from an application's team
+// @Tags Team
+// @Param app_id path string true "Application ID"
+// @Param membership_id path string true "Membership ID"
+// @Success 204 "No Content"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{app_id}/team/{membership_id} [delete]
 func (h *TeamHandler) RemoveMember(c *fiber.Ctx) error {
 	appID, _, err := h.extractTeamContext(c)
 	if err != nil {

@@ -16,10 +16,12 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
@@ -47,6 +49,9 @@ type Container struct {
 	// Queue
 	RedisClient *redis.Client
 	Queue       queue.Queue
+
+	// Idempotency (Redis-backed for Idempotency-Key header)
+	IdempotencyStore *idempotency.Store
 
 	// Metrics
 	Metrics *metrics.NotificationMetrics
@@ -117,6 +122,10 @@ type Container struct {
 	EnvironmentService environment.Service
 	EnvironmentHandler *handlers.EnvironmentHandler
 
+	// Tenant/Organization (Phase C1)
+	TenantService tenant.Service
+	TenantHandler *handlers.TenantHandler
+
 	// SSE
 	SSEBroadcaster *sse.Broadcaster
 
@@ -161,6 +170,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Initialize limiter
 	container.Limiter = limiter.NewRedisLimiter(redisClient, logger)
+
+	// Initialize idempotency store
+	container.IdempotencyStore = idempotency.NewStore(redisClient, logger)
 
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
@@ -213,8 +225,14 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
 
 	// Initialize auth repository and service
-	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), logger)
+	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
 	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, logger)
+
+	// Initialize tenant/organization support (C1)
+	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
+	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
+	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, logger)
+	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 
 	// Initialize OIDC
 	if cfg.OIDC.Enabled {
@@ -255,6 +273,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.ApplicationHandler = handlers.NewApplicationHandler(
 		container.ApplicationService,
 		container.MembershipRepo,
+		container.TenantService,
 		repos.Application,
 		container.Validator,
 		logger,
@@ -269,6 +288,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.NotificationService,
 		logger,
 	)
+	container.NotificationHandler.SetIdempotencyStore(container.IdempotencyStore)
 	// Create SMTP provider for template test-send (best-effort — nil if not configured)
 	var smtpProvider providers.Provider
 	if cfg.Providers.SMTP.Host != "" {
@@ -334,6 +354,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.Validator,
 		logger,
 	)
+	container.QuickSendHandler.SetIdempotencyStore(container.IdempotencyStore)
 
 	// Playground handler
 	var playgroundBaseURL string

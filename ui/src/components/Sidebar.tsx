@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon } from 'lucide-react';
+import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { Sheet, SheetContent } from './ui/sheet';
 import UserMenu from './UserMenu';
@@ -21,6 +21,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
     { label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, to: '/apps', section: 'MAIN' },
+    { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants', section: 'MAIN' },
     { label: 'Workflows', icon: <Workflow className="h-4 w-4" />, to: '/workflows', section: 'MAIN' },
     { label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, to: '/digest-rules', section: 'MAIN' },
     { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics', section: 'MAIN' },

@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { applicationsAPI } from '../services/api';
-import type { Application, CreateApplicationRequest } from '../types';
+import { applicationsAPI, tenantsAPI } from '../services/api';
+import type { Application, CreateApplicationRequest, Tenant } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
+import { toast } from 'sonner';
+import { extractErrorMessage } from '../lib/utils';
 
 const AppsList: React.FC = () => {
   const navigate = useNavigate();
   const [apps, setApps] = useState<Application[]>([]);
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<CreateApplicationRequest>({
@@ -23,11 +27,17 @@ const AppsList: React.FC = () => {
     fetchApps();
   }, []);
 
+  useEffect(() => {
+    if (showForm) {
+      tenantsAPI.list().then((d) => setTenants(Array.isArray(d) ? d : [])).catch(() => setTenants([]));
+    }
+  }, [showForm]);
+
   const fetchApps = async () => {
     setLoading(true);
     try {
       const data = await applicationsAPI.list();
-      setApps(data);
+      setApps(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch applications:', error);
     } finally {
@@ -43,7 +53,7 @@ const AppsList: React.FC = () => {
       setShowForm(false);
       fetchApps();
     } catch (error) {
-      console.error('Failed to create application:', error);
+      toast.error(extractErrorMessage(error as Error, 'Failed to create application'));
     }
   };
 
@@ -91,6 +101,25 @@ const AppsList: React.FC = () => {
                     placeholder="Short description..."
                   />
                 </div>
+                {tenants.length > 0 && (
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="tenant_id">Organization (optional)</Label>
+                    <Select
+                      value={formData.tenant_id || 'none'}
+                      onValueChange={(v) => setFormData({ ...formData, tenant_id: v === 'none' ? undefined : v })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Personal workspace" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Personal workspace</SelectItem>
+                        {(tenants ?? []).map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end mt-6">
                 <Button type="submit">
@@ -108,7 +137,7 @@ const AppsList: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {apps.map((app) => (
+          {(apps ?? []).map((app) => (
             <Card
               key={app.app_id}
               className="cursor-pointer hover:shadow-sm transition-shadow"

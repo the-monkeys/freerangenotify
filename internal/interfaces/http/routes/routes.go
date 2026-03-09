@@ -222,6 +222,21 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
 
+	// Tenant/organization management (C1)
+	if c.TenantHandler != nil {
+		tenants := v1.Group("/tenants")
+		tenants.Use(jwtAuth)
+		tenants.Post("/", c.TenantHandler.Create)
+		tenants.Get("/", c.TenantHandler.List)
+		tenants.Get("/:id", c.TenantHandler.GetByID)
+		tenants.Put("/:id", c.TenantHandler.Update)
+		tenants.Delete("/:id", c.TenantHandler.Delete)
+		tenants.Get("/:id/members", c.TenantHandler.ListMembers)
+		tenants.Post("/:id/members", c.TenantHandler.InviteMember)
+		tenants.Put("/:id/members/:memberId", c.TenantHandler.UpdateMemberRole)
+		tenants.Delete("/:id/members/:memberId", c.TenantHandler.RemoveMember)
+	}
+
 	// Application management routes (JWT protected for admin dashboard)
 	apps := v1.Group("/apps")
 	apps.Use(jwtAuth)
@@ -282,12 +297,10 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Get("/activity-feed", c.SSEHandler.AdminActivityFeed)
 
 	// ── Phase 2: Audit log routes (feature-gated) ──
+	// Audit is platform-level: JWT auth only. Handler scopes to user's apps via AdminUserID.
 	if c.AuditHandler != nil {
 		auditGroup := admin.Group("/audit")
 		auditGroup.Use(jwtAuth)
-		if c.MembershipRepo != nil {
-			auditGroup.Use(middleware.RequirePermission(auth.PermViewAudit, c.MembershipRepo, c.AppRepo, c.Logger))
-		}
 		auditGroup.Get("/", c.AuditHandler.List)
 		auditGroup.Get("/:id", c.AuditHandler.Get)
 	}

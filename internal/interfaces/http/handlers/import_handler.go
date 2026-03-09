@@ -58,6 +58,19 @@ func (h *ImportHandler) SetDigestService(ds digest.Service)               { h.di
 func (h *ImportHandler) SetTopicService(ts topic.Service)                 { h.topicService = ts }
 
 // Import handles POST /v1/apps/:id/import
+// @Summary Import resources from another app
+// @Description Create cross-app resource links to share users, templates, workflows, etc. between applications
+// @Tags Resource Linking
+// @Accept json
+// @Produce json
+// @Param id path string true "Target Application ID"
+// @Param body body resourcelink.ImportRequest true "Import request specifying source app and resource types"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/import [post]
 func (h *ImportHandler) Import(c *fiber.Ctx) error {
 	targetAppID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)
@@ -143,6 +156,19 @@ func (h *ImportHandler) Import(c *fiber.Ctx) error {
 }
 
 // ListLinks handles GET /v1/apps/:id/links
+// @Summary List resource links
+// @Description List all cross-app resource links for an application
+// @Tags Resource Linking
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param resource_type query string false "Filter by resource type"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/links [get]
 func (h *ImportHandler) ListLinks(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)
@@ -174,6 +200,18 @@ func (h *ImportHandler) ListLinks(c *fiber.Ctx) error {
 }
 
 // Unlink handles DELETE /v1/apps/:id/links/:link_id
+// @Summary Remove a resource link
+// @Description Remove a specific cross-app resource link
+// @Tags Resource Linking
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param link_id path string true "Link ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/links/{link_id} [delete]
 func (h *ImportHandler) Unlink(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	linkID := c.Params("link_id")
@@ -191,6 +229,17 @@ func (h *ImportHandler) Unlink(c *fiber.Ctx) error {
 }
 
 // UnlinkAll handles DELETE /v1/apps/:id/links
+// @Summary Remove all resource links
+// @Description Remove all cross-app resource links for an application
+// @Tags Resource Linking
+// @Produce json
+// @Param id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 403 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/links [delete]
 func (h *ImportHandler) UnlinkAll(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)

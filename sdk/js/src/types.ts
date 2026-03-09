@@ -9,6 +9,8 @@ export interface QuickSendParams {
     channel?: string;
     priority?: 'low' | 'normal' | 'high' | 'critical';
     scheduledAt?: Date;
+    /** Idempotency key to prevent duplicate sends on retry */
+    idempotencyKey?: string;
 }
 
 export interface SendResult {
@@ -30,6 +32,8 @@ export interface NotificationSendParams {
     scheduled_at?: string;
     webhook_url?: string;
     webhook_target?: string;
+    /** Idempotency key to prevent duplicate sends on retry */
+    idempotency_key?: string;
 }
 
 export interface BulkSendParams {
@@ -41,6 +45,8 @@ export interface BulkSendParams {
     data?: Record<string, unknown>;
     template_id?: string;
     category?: string;
+    /** Idempotency key to prevent duplicate sends on retry */
+    idempotency_key?: string;
 }
 
 export interface BulkSendResult {
@@ -54,6 +60,8 @@ export interface BroadcastParams {
     data?: Record<string, unknown>;
     channel?: string;
     priority?: string;
+    /** Idempotency key to prevent duplicate sends on retry */
+    idempotency_key?: string;
 }
 
 export interface BroadcastResult {

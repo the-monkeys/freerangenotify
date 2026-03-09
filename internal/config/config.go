@@ -103,6 +103,22 @@ type ProvidersConfig struct {
 	Slack    SlackProviderConfig    `mapstructure:"slack"`
 	Discord  DiscordProviderConfig  `mapstructure:"discord"`
 	WhatsApp WhatsAppProviderConfig `mapstructure:"whatsapp"`
+	Resend   ResendProviderConfig   `mapstructure:"resend"`
+	Postmark PostmarkProviderConfig `mapstructure:"postmark"`
+	Mailgun  MailgunProviderConfig  `mapstructure:"mailgun"`
+	SES      SESProviderConfig     `mapstructure:"ses"`
+	Vonage   VonageProviderConfig   `mapstructure:"vonage"`
+	Teams    TeamsProviderConfig    `mapstructure:"teams"`
+}
+
+// SESProviderConfig contains AWS Simple Email Service provider configuration.
+type SESProviderConfig struct {
+	Enabled         bool   `mapstructure:"enabled"`
+	Region          string `mapstructure:"region"`
+	AccessKeyID     string `mapstructure:"access_key_id"`
+	SecretAccessKey string `mapstructure:"secret_access_key"`
+	FromEmail       string `mapstructure:"from_email"`
+	FromName        string `mapstructure:"from_name"`
 }
 
 // SlackProviderConfig contains Slack provider configuration (Phase 3)
@@ -130,6 +146,45 @@ type WhatsAppProviderConfig struct {
 	FromNumber string `mapstructure:"from_number"`
 	Timeout    int    `mapstructure:"timeout"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// ResendProviderConfig contains Resend email provider configuration
+type ResendProviderConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	APIKey    string `mapstructure:"api_key"`
+	FromEmail string `mapstructure:"from_email"`
+	FromName  string `mapstructure:"from_name"`
+}
+
+// PostmarkProviderConfig contains Postmark email provider configuration
+type PostmarkProviderConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	ServerToken string `mapstructure:"server_token"`
+	FromEmail   string `mapstructure:"from_email"`
+	FromName    string `mapstructure:"from_name"`
+}
+
+// MailgunProviderConfig contains Mailgun email provider configuration
+type MailgunProviderConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	APIKey    string `mapstructure:"api_key"`
+	Domain    string `mapstructure:"domain"`
+	FromEmail string `mapstructure:"from_email"`
+	FromName  string `mapstructure:"from_name"`
+}
+
+// VonageProviderConfig contains Vonage/Nexmo SMS provider configuration
+type VonageProviderConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	APIKey     string `mapstructure:"api_key"`
+	APISecret  string `mapstructure:"api_secret"`
+	FromNumber string `mapstructure:"from_number"`
+}
+
+// TeamsProviderConfig contains Microsoft Teams provider configuration
+type TeamsProviderConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	DefaultWebhookURL string `mapstructure:"default_webhook_url"`
 }
 
 // FCMConfig contains Firebase Cloud Messaging configuration

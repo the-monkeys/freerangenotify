@@ -51,6 +51,15 @@ func (h *AdminHandler) getAdminAppIDs(c *fiber.Ctx) (map[string]bool, error) {
 }
 
 // GetQueueStats handles GET /v1/admin/queues/stats
+// @Summary Get queue statistics
+// @Description Retrieve notification queue depth and processing statistics
+// @Tags Admin
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/queues/stats [get]
 func (h *AdminHandler) GetQueueStats(c *fiber.Ctx) error {
 	stats, err := h.queue.GetQueueDepth(c.Context())
 	if err != nil {
@@ -65,6 +74,16 @@ func (h *AdminHandler) GetQueueStats(c *fiber.Ctx) error {
 }
 
 // ListDLQ handles GET /v1/admin/queues/dlq
+// @Summary List dead-letter queue items
+// @Description Retrieve failed notification items from the dead-letter queue
+// @Tags Admin
+// @Produce json
+// @Param limit query int false "Number of items to return" default(10)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/queues/dlq [get]
 func (h *AdminHandler) ListDLQ(c *fiber.Ctx) error {
 	limitStr := c.Query("limit", "10")
 	limit, _ := strconv.Atoi(limitStr)
@@ -122,6 +141,16 @@ func (h *AdminHandler) ListDLQ(c *fiber.Ctx) error {
 }
 
 // ReplayDLQ handles POST /v1/admin/queues/dlq/replay
+// @Summary Replay dead-letter queue items
+// @Description Re-enqueue failed notifications from the dead-letter queue for reprocessing
+// @Tags Admin
+// @Produce json
+// @Param limit query int false "Maximum items to replay" default(10)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/queues/dlq/replay [post]
 func (h *AdminHandler) ReplayDLQ(c *fiber.Ctx) error {
 	limitStr := c.Query("limit", "10")
 	limit, _ := strconv.Atoi(limitStr)
@@ -148,6 +177,14 @@ func (h *AdminHandler) ReplayDLQ(c *fiber.Ctx) error {
 }
 
 // GetProviderHealth handles GET /v1/admin/providers/health
+// @Summary Get provider health status
+// @Description Retrieve the health status of all configured notification delivery providers
+// @Tags Admin
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/providers/health [get]
 func (h *AdminHandler) GetProviderHealth(c *fiber.Ctx) error {
 	if h.providerManager == nil {
 		return c.JSON(fiber.Map{

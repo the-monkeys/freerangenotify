@@ -45,6 +45,11 @@ import (
 // @name Authorization
 // @description Type "Bearer" followed by a space and your API key
 
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description Application API key for tenant-facing endpoints
+
 func main() {
 	// Initialize logger
 	zapLogger, _ := zap.NewDevelopment(zap.AddStacktrace(zapcore.ErrorLevel))

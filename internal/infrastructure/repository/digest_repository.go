@@ -18,7 +18,7 @@ type DigestRepository struct {
 // NewDigestRepository creates a new digest repository.
 func NewDigestRepository(client *elasticsearch.Client, logger *zap.Logger) digest.Repository {
 	return &DigestRepository{
-		BaseRepository: NewBaseRepository(client, "digest_rules", logger),
+		BaseRepository: NewBaseRepository(client, "digest_rules", logger, RefreshWaitFor),
 	}
 }
 

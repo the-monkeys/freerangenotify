@@ -17,7 +17,7 @@ type EnvironmentRepository struct {
 // NewEnvironmentRepository creates a new EnvironmentRepository.
 func NewEnvironmentRepository(client *elasticsearch.Client, logger *zap.Logger) environment.Repository {
 	return &EnvironmentRepository{
-		base: NewBaseRepository(client, "environments", logger),
+		base: NewBaseRepository(client, "environments", logger, RefreshWaitFor),
 	}
 }
 

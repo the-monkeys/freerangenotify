@@ -21,6 +21,7 @@ const (
 	QueueRetry      = "frn:queue:retry"
 	QueueDeadLetter = "frn:queue:dlq"
 	QueueScheduled  = "frn:queue:scheduled"
+	QueueProcessing = "frn:queue:processing"
 
 	// Timeout for blocking operations
 	BlockTimeout = 5 * time.Second
@@ -28,15 +29,17 @@ const (
 
 // RedisQueue implements the Queue interface using Redis Lists
 type RedisQueue struct {
-	client *redis.Client
-	logger *zap.Logger
+	client            *redis.Client
+	logger            *zap.Logger
+	visibilityTimeout time.Duration
 }
 
 // NewRedisQueue creates a new Redis queue
-func NewRedisQueue(client *redis.Client, logger *zap.Logger) Queue {
+func NewRedisQueue(client *redis.Client, logger *zap.Logger) *RedisQueue {
 	return &RedisQueue{
-		client: client,
-		logger: logger,
+		client:            client,
+		logger:            logger,
+		visibilityTimeout: 5 * time.Minute,
 	}
 }
 
@@ -108,6 +111,14 @@ func (q *RedisQueue) Dequeue(ctx context.Context) (*NotificationQueueItem, error
 	if err := json.Unmarshal([]byte(result[1]), &item); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal queue item: %w", err)
 	}
+
+	// Track in processing set for at-least-once delivery
+	processingData, _ := json.Marshal(item)
+	score := float64(time.Now().Add(q.visibilityTimeout).Unix())
+	q.client.ZAdd(ctx, QueueProcessing, &redis.Z{
+		Score:  score,
+		Member: string(processingData),
+	})
 
 	q.logger.Debug("Item dequeued",
 		zap.String("notification_id", item.NotificationID),
@@ -235,38 +246,36 @@ func (q *RedisQueue) EnqueueRetry(ctx context.Context, item NotificationQueueIte
 	return nil
 }
 
-// GetRetryableItems returns items from retry queue that are ready to be retried
-func (q *RedisQueue) GetRetryableItems(ctx context.Context, limit int64) ([]NotificationQueueItem, error) {
+// GetRetryableItems atomically fetches and removes items from the retry queue
+// that are ready to be retried, preventing double-delivery under concurrency.
+func (q *RedisQueue) GetRetryableItems(ctx context.Context, count int64) ([]NotificationQueueItem, error) {
+	luaScript := redis.NewScript(`
+		local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+		if #items == 0 then return {} end
+		for _, item in ipairs(items) do
+			redis.call('ZREM', KEYS[1], item)
+		end
+		return items
+	`)
+
 	now := float64(time.Now().Unix())
-
-	// Get items with score <= now (ready to retry)
-	results, err := q.client.ZRangeByScore(ctx, QueueRetry, &redis.ZRangeBy{
-		Min:   "0",
-		Max:   fmt.Sprintf("%f", now),
-		Count: limit,
-	}).Result()
-
+	result, err := luaScript.Run(ctx, q.client, []string{QueueRetry}, now, count).StringSlice()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get retryable items: %w", err)
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get retryable items: %w", err)
 	}
 
-	var items []NotificationQueueItem
-	for _, data := range results {
+	items := make([]NotificationQueueItem, 0, len(result))
+	for _, s := range result {
 		var item NotificationQueueItem
-		if err := json.Unmarshal([]byte(data), &item); err != nil {
+		if err := json.Unmarshal([]byte(s), &item); err != nil {
 			q.logger.Error("Failed to unmarshal retry item", zap.Error(err))
 			continue
 		}
 		items = append(items, item)
 	}
-
-	// Remove processed items from retry queue
-	if len(results) > 0 {
-		if err := q.client.ZRem(ctx, QueueRetry, results).Err(); err != nil {
-			q.logger.Error("Failed to remove retry items", zap.Error(err))
-		}
-	}
-
 	return items, nil
 }
 
@@ -413,6 +422,53 @@ func (q *RedisQueue) EnqueueDeadLetter(ctx context.Context, item NotificationQue
 	return nil
 }
 
+// Acknowledge removes a completed item from the processing set
+func (q *RedisQueue) Acknowledge(ctx context.Context, item NotificationQueueItem) error {
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("failed to marshal item: %w", err)
+	}
+	q.client.ZRem(ctx, QueueProcessing, string(data))
+	return nil
+}
+
+// RequeueExpiredProcessing moves items that exceeded their visibility timeout
+// back to their original priority queues. Returns the number of requeued items.
+func (q *RedisQueue) RequeueExpiredProcessing(ctx context.Context) (int, error) {
+	now := float64(time.Now().Unix())
+
+	luaScript := redis.NewScript(`
+		local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+		if #items == 0 then return 0 end
+		redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+		for _, item in ipairs(items) do
+			local decoded = cjson.decode(item)
+			local queue = KEYS[2]
+			if decoded.priority == 'critical' or decoded.priority == 'high' then
+				queue = KEYS[3]
+			elseif decoded.priority == 'low' then
+				queue = KEYS[4]
+			end
+			redis.call('LPUSH', queue, item)
+		end
+		return #items
+	`)
+
+	result, err := luaScript.Run(ctx, q.client,
+		[]string{QueueProcessing, QueueNormal, QueueHigh, QueueLow},
+		now,
+	).Int()
+	if err != nil {
+		return 0, fmt.Errorf("requeue expired processing: %w", err)
+	}
+
+	if result > 0 {
+		q.logger.Warn("Requeued expired processing items",
+			zap.Int("count", result))
+	}
+	return result, nil
+}
+
 // Close closes the Redis client connection
 func (q *RedisQueue) Close() error {
 	return q.client.Close()
@@ -441,38 +497,36 @@ func (q *RedisQueue) EnqueueScheduled(ctx context.Context, item NotificationQueu
 	return nil
 }
 
-// GetScheduledItems returns items from scheduled queue that are ready to be processed
-func (q *RedisQueue) GetScheduledItems(ctx context.Context, limit int64) ([]NotificationQueueItem, error) {
+// GetScheduledItems atomically fetches and removes items from the scheduled queue
+// that are ready to be processed, preventing double-delivery under concurrency.
+func (q *RedisQueue) GetScheduledItems(ctx context.Context, count int64) ([]NotificationQueueItem, error) {
+	luaScript := redis.NewScript(`
+		local items = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+		if #items == 0 then return {} end
+		for _, item in ipairs(items) do
+			redis.call('ZREM', KEYS[1], item)
+		end
+		return items
+	`)
+
 	now := float64(time.Now().Unix())
-
-	// Get items with score <= now (ready to process)
-	results, err := q.client.ZRangeByScore(ctx, QueueScheduled, &redis.ZRangeBy{
-		Min:   "0",
-		Max:   fmt.Sprintf("%f", now),
-		Count: limit,
-	}).Result()
-
+	result, err := luaScript.Run(ctx, q.client, []string{QueueScheduled}, now, count).StringSlice()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get scheduled items: %w", err)
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get scheduled items: %w", err)
 	}
 
-	var items []NotificationQueueItem
-	for _, data := range results {
+	items := make([]NotificationQueueItem, 0, len(result))
+	for _, s := range result {
 		var item NotificationQueueItem
-		if err := json.Unmarshal([]byte(data), &item); err != nil {
+		if err := json.Unmarshal([]byte(s), &item); err != nil {
 			q.logger.Error("Failed to unmarshal scheduled item", zap.Error(err))
 			continue
 		}
 		items = append(items, item)
 	}
-
-	// Remove processed items from scheduled queue
-	if len(results) > 0 {
-		if err := q.client.ZRem(ctx, QueueScheduled, results).Err(); err != nil {
-			q.logger.Error("Failed to remove scheduled items", zap.Error(err))
-		}
-	}
-
 	return items, nil
 }
 

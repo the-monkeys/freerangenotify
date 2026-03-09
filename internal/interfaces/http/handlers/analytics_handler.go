@@ -82,6 +82,16 @@ func (h *AnalyticsHandler) getAdminAppIDs(c *fiber.Ctx) ([]string, error) {
 }
 
 // GetSummary handles GET /v1/admin/analytics/summary?period=7d
+// @Summary Get analytics summary
+// @Description Retrieve aggregated analytics including notification counts, success rates, channel breakdown, and daily trends
+// @Tags Analytics
+// @Produce json
+// @Param period query string false "Time period (1d, 7d, 30d, 90d)" default(7d)
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/analytics/summary [get]
 func (h *AnalyticsHandler) GetSummary(c *fiber.Ctx) error {
 	// Scope all data to the authenticated admin's applications
 	appIDs, err := h.getAdminAppIDs(c)

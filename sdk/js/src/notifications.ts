@@ -18,6 +18,8 @@ export class NotificationsClient {
     // ── Quick-Send ──
 
     async quickSend(params: QuickSendParams): Promise<SendResult> {
+        const headers: Record<string, string> = {};
+        if (params.idempotencyKey) headers['Idempotency-Key'] = params.idempotencyKey;
         return this.http.request<SendResult>('POST', '/quick-send', {
             to: params.to,
             template: params.template,
@@ -27,19 +29,25 @@ export class NotificationsClient {
             channel: params.channel,
             priority: params.priority,
             scheduled_at: params.scheduledAt?.toISOString(),
-        });
+        }, undefined, { headers });
     }
 
     // ── Standard Send ──
 
     async send(params: NotificationSendParams): Promise<NotificationResponse> {
-        return this.http.request<NotificationResponse>('POST', '/notifications/', params);
+        const headers: Record<string, string> = {};
+        if (params.idempotency_key) headers['Idempotency-Key'] = params.idempotency_key;
+        const { idempotency_key: _, ...body } = params;
+        return this.http.request<NotificationResponse>('POST', '/notifications/', body, undefined, { headers });
     }
 
     // ── Bulk Send ──
 
     async sendBulk(params: BulkSendParams): Promise<BulkSendResult> {
-        return this.http.request<BulkSendResult>('POST', '/notifications/bulk', params);
+        const headers: Record<string, string> = {};
+        if (params.idempotency_key) headers['Idempotency-Key'] = params.idempotency_key;
+        const { idempotency_key: _, ...body } = params;
+        return this.http.request<BulkSendResult>('POST', '/notifications/bulk', body, undefined, { headers });
     }
 
     // ── Batch Send ──
@@ -51,7 +59,10 @@ export class NotificationsClient {
     // ── Broadcast ──
 
     async broadcast(params: BroadcastParams): Promise<BroadcastResult> {
-        return this.http.request<BroadcastResult>('POST', '/notifications/broadcast', params);
+        const headers: Record<string, string> = {};
+        if (params.idempotency_key) headers['Idempotency-Key'] = params.idempotency_key;
+        const { idempotency_key: _, ...body } = params;
+        return this.http.request<BroadcastResult>('POST', '/notifications/broadcast', body, undefined, { headers });
     }
 
     // ── List ──

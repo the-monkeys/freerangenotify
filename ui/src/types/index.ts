@@ -5,6 +5,7 @@ export interface Application {
     description?: string;
     api_key: string;
     admin_user_id?: string;
+    tenant_id?: string;
     webhook_url?: string;
     webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
@@ -105,6 +106,7 @@ export interface ValidationConfig {
 }
 
 export interface CreateApplicationRequest {
+    tenant_id?: string;
     app_name: string;
     description?: string;
     webhook_url?: string;
@@ -657,6 +659,36 @@ export interface PromoteEnvironmentRequest {
     source_env_id: string;
     target_env_id: string;
     resources: string[];
+}
+
+// ============= Tenant/Organization Types (C1) =============
+export interface Tenant {
+    id: string;
+    name: string;
+    slug: string;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface TenantMember {
+    id: string;
+    tenant_id: string;
+    user_id: string;
+    user_email: string;
+    role: 'owner' | 'admin' | 'member';
+    invited_by: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateTenantRequest {
+    name: string;
+}
+
+export interface InviteTenantMemberRequest {
+    email: string;
+    role: 'admin' | 'member';
 }
 
 // ============= Custom Provider Types =============

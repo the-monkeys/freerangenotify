@@ -10,6 +10,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"go.uber.org/zap"
@@ -21,21 +22,21 @@ func bytesReader(data []byte) io.Reader {
 }
 
 const (
-	authUsersIndex     = "auth_users"
-	resetTokensIndex   = "password_reset_tokens"
-	refreshTokensIndex = "refresh_tokens"
+	authUsersIndex = "auth_users"
 )
 
 type authRepository struct {
-	client *elasticsearch.Client
-	logger *zap.Logger
+	client     *elasticsearch.Client
+	logger     *zap.Logger
+	tokenStore *redisTokenStore
 }
 
 // NewAuthRepository creates a new auth repository
-func NewAuthRepository(client *elasticsearch.Client, logger *zap.Logger) auth.Repository {
+func NewAuthRepository(esClient *elasticsearch.Client, redisClient *redis.Client, logger *zap.Logger) auth.Repository {
 	return &authRepository{
-		client: client,
-		logger: logger,
+		client:     esClient,
+		logger:     logger,
+		tokenStore: newRedisTokenStore(redisClient, logger),
 	}
 }
 
@@ -241,301 +242,30 @@ func (r *authRepository) UpdateLastLogin(ctx context.Context, userID string, log
 	return nil
 }
 
-// CreateResetToken creates a password reset token
 func (r *authRepository) CreateResetToken(ctx context.Context, token *auth.PasswordResetToken) error {
-	if token.TokenID == "" {
-		token.TokenID = uuid.New().String()
-	}
-	token.CreatedAt = time.Now()
-
-	data, err := json.Marshal(token)
-	if err != nil {
-		return fmt.Errorf("failed to marshal reset token: %w", err)
-	}
-
-	req := esapi.IndexRequest{
-		Index:      resetTokensIndex,
-		DocumentID: token.TokenID,
-		Body:       bytesReader(data),
-		Refresh:    "true",
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return fmt.Errorf("failed to index reset token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error indexing reset token: %s", res.String())
-	}
-
-	return nil
+	return r.tokenStore.CreateResetToken(ctx, token)
 }
 
-// GetResetToken retrieves a password reset token
 func (r *authRepository) GetResetToken(ctx context.Context, token string) (*auth.PasswordResetToken, error) {
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"term": map[string]interface{}{
-							"token.keyword": token,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"used": false,
-						},
-					},
-					{
-						"range": map[string]interface{}{
-							"expires_at": map[string]interface{}{
-								"gte": time.Now().Format(time.RFC3339),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	data, err := json.Marshal(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query: %w", err)
-	}
-
-	req := esapi.SearchRequest{
-		Index: []string{resetTokensIndex},
-		Body:  bytesReader(data),
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search reset token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, fmt.Errorf("error searching reset token: %s", res.String())
-	}
-
-	var result struct {
-		Hits struct {
-			Hits []struct {
-				Source auth.PasswordResetToken `json:"_source"`
-			} `json:"hits"`
-		} `json:"hits"`
-	}
-
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode search results: %w", err)
-	}
-
-	if len(result.Hits.Hits) == 0 {
-		return nil, nil
-	}
-
-	return &result.Hits.Hits[0].Source, nil
+	return r.tokenStore.GetResetToken(ctx, token)
 }
 
-// MarkResetTokenUsed marks a reset token as used
 func (r *authRepository) MarkResetTokenUsed(ctx context.Context, tokenID string) error {
-	data, err := json.Marshal(map[string]interface{}{
-		"doc": map[string]interface{}{
-			"used": true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal token update: %w", err)
-	}
-
-	req := esapi.UpdateRequest{
-		Index:      resetTokensIndex,
-		DocumentID: tokenID,
-		Body:       bytesReader(data),
-		Refresh:    "true",
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return fmt.Errorf("failed to update reset token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error updating reset token: %s", res.String())
-	}
-
-	return nil
+	return r.tokenStore.MarkResetTokenUsed(ctx, tokenID)
 }
 
-// CreateRefreshToken creates a refresh token
 func (r *authRepository) CreateRefreshToken(ctx context.Context, token *auth.RefreshToken) error {
-	if token.TokenID == "" {
-		token.TokenID = uuid.New().String()
-	}
-	token.CreatedAt = time.Now()
-
-	data, err := json.Marshal(token)
-	if err != nil {
-		return fmt.Errorf("failed to marshal refresh token: %w", err)
-	}
-
-	req := esapi.IndexRequest{
-		Index:      refreshTokensIndex,
-		DocumentID: token.TokenID,
-		Body:       bytesReader(data),
-		Refresh:    "true",
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return fmt.Errorf("failed to index refresh token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error indexing refresh token: %s", res.String())
-	}
-
-	return nil
+	return r.tokenStore.CreateRefreshToken(ctx, token)
 }
 
-// GetRefreshToken retrieves a refresh token
 func (r *authRepository) GetRefreshToken(ctx context.Context, token string) (*auth.RefreshToken, error) {
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{
-						"term": map[string]interface{}{
-							"token.keyword": token,
-						},
-					},
-					{
-						"term": map[string]interface{}{
-							"revoked": false,
-						},
-					},
-					{
-						"range": map[string]interface{}{
-							"expires_at": map[string]interface{}{
-								"gte": time.Now().Format(time.RFC3339),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	data, err := json.Marshal(query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query: %w", err)
-	}
-
-	req := esapi.SearchRequest{
-		Index: []string{refreshTokensIndex},
-		Body:  bytesReader(data),
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search refresh token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return nil, fmt.Errorf("error searching refresh token: %s", res.String())
-	}
-
-	var result struct {
-		Hits struct {
-			Hits []struct {
-				Source auth.RefreshToken `json:"_source"`
-			} `json:"hits"`
-		} `json:"hits"`
-	}
-
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode search results: %w", err)
-	}
-
-	if len(result.Hits.Hits) == 0 {
-		return nil, nil
-	}
-
-	return &result.Hits.Hits[0].Source, nil
+	return r.tokenStore.GetRefreshToken(ctx, token)
 }
 
-// RevokeRefreshToken revokes a refresh token
 func (r *authRepository) RevokeRefreshToken(ctx context.Context, tokenID string) error {
-	data, err := json.Marshal(map[string]interface{}{
-		"doc": map[string]interface{}{
-			"revoked": true,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to marshal token revocation: %w", err)
-	}
-
-	retryOnConflict := 3
-	req := esapi.UpdateRequest{
-		Index:           refreshTokensIndex,
-		DocumentID:      tokenID,
-		Body:            bytesReader(data),
-		Refresh:         "true",
-		RetryOnConflict: &retryOnConflict,
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return fmt.Errorf("failed to revoke refresh token: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error revoking refresh token: %s", res.String())
-	}
-
-	return nil
+	return r.tokenStore.RevokeRefreshToken(ctx, tokenID)
 }
 
-// RevokeAllUserTokens revokes all refresh tokens for a user
 func (r *authRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {
-	query := map[string]interface{}{
-		"script": map[string]interface{}{
-			"source": "ctx._source.revoked = true",
-			"lang":   "painless",
-		},
-		"query": map[string]interface{}{
-			"term": map[string]interface{}{
-				"user_id": userID,
-			},
-		},
-	}
-
-	data, err := json.Marshal(query)
-	if err != nil {
-		return fmt.Errorf("failed to marshal query: %w", err)
-	}
-
-	req := esapi.UpdateByQueryRequest{
-		Index: []string{refreshTokensIndex},
-		Body:  bytesReader(data),
-	}
-
-	res, err := req.Do(ctx, r.client)
-	if err != nil {
-		return fmt.Errorf("failed to revoke user tokens: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("error revoking user tokens: %s", res.String())
-	}
-
-	return nil
+	return r.tokenStore.RevokeAllUserTokens(ctx, userID)
 }

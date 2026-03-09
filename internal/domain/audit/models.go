@@ -33,6 +33,7 @@ type Filter struct {
 	ResourceID    string   `json:"resource_id,omitempty"`
 	Limit         int      `json:"limit,omitempty"`
 	Offset        int      `json:"offset,omitempty"`
+	Cursor        string   `json:"cursor,omitempty"`
 }
 
 // DefaultFilter returns a filter with sensible defaults.

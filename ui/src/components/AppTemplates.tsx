@@ -402,6 +402,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                             <Label htmlFor="body">Body / Content</Label>
                             <TemplateEditor
                                 content={formData.body}
+                                variables={formData.variables || []}
                                 onChange={(newBody) => {
                                     // Auto-detect variables like {{.var_name}}
                                     const regex = /{{\s*\.?(\w+)\s*}}/g;

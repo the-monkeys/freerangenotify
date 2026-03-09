@@ -186,3 +186,20 @@ func (p *SendGridProvider) handleError(err error) *Result {
 	// TODO: Implement proper error categorization
 	return NewErrorResult(err, ErrorTypeUnknown)
 }
+
+func init() {
+	RegisterFactory("sendgrid", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
+		apiKey, _ := cfg["api_key"].(string)
+		if apiKey == "" {
+			return nil, fmt.Errorf("sendgrid: api_key is required")
+		}
+		fromEmail, _ := cfg["from_email"].(string)
+		fromName, _ := cfg["from_name"].(string)
+		return NewSendGridProvider(SendGridConfig{
+			Config:    Config{Timeout: 15 * time.Second, MaxRetries: 3, RetryDelay: 1 * time.Second},
+			APIKey:    apiKey,
+			FromEmail: fromEmail,
+			FromName:  fromName,
+		}, logger)
+	})
+}

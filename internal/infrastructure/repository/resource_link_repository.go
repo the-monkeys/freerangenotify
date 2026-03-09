@@ -16,7 +16,7 @@ type ResourceLinkRepository struct {
 
 func NewResourceLinkRepository(client *elasticsearch.Client, logger *zap.Logger) resourcelink.Repository {
 	return &ResourceLinkRepository{
-		BaseRepository: NewBaseRepository(client, "app_resource_links", logger),
+		BaseRepository: NewBaseRepository(client, "app_resource_links", logger, RefreshWaitFor),
 	}
 }
 
