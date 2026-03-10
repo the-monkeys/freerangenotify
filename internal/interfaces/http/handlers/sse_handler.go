@@ -270,6 +270,50 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 	return h.broadcaster.HandleSSE(c, userID)
 }
 
+// CreateDashboardToken issues a short-lived SSE token for dashboard users (JWT auth).
+// POST /v1/admin/sse/token
+// Authorization: Bearer <jwt>
+// Response: { "sse_token": "sset_...", "user_id": "...", "expires_in": 900 }
+//
+// The frontend uses this token to connect to GET /v1/sse?sse_token=sset_... for real-time
+// dashboard notifications (e.g. org invites).
+func (h *SSEHandler) CreateDashboardToken(c *fiber.Ctx) error {
+	if h.redisClient == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "SSE tokens require Redis",
+		})
+	}
+
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "authentication required"})
+	}
+
+	rawBytes := make([]byte, 32)
+	if _, err := rand.Read(rawBytes); err != nil {
+		h.logger.Error("Failed to generate dashboard SSE token", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "token generation failed"})
+	}
+	tokenValue := "sset_" + hex.EncodeToString(rawBytes)
+
+	tokenData := sseTokenData{UserID: userID, AppID: "dashboard"}
+	payload, _ := json.Marshal(tokenData)
+
+	redisKey := sseTokenPrefix + tokenValue
+	if err := h.redisClient.Set(c.Context(), redisKey, payload, sseTokenTTL).Err(); err != nil {
+		h.logger.Error("Failed to store dashboard SSE token in Redis", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "token storage failed"})
+	}
+
+	h.logger.Info("Dashboard SSE token issued", zap.String("user_id", userID))
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"sse_token":  tokenValue,
+		"user_id":    userID,
+		"expires_in": int(sseTokenTTL.Seconds()),
+	})
+}
+
 // AdminActivityFeed streams real-time notification status events to admin
 // dashboards via SSE. Subscribes to "notification:activity" Redis pub/sub channel.
 func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {

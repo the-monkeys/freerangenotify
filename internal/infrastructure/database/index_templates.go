@@ -968,3 +968,25 @@ func (it *IndexTemplates) GetTenantMembersTemplate() map[string]interface{} {
 		},
 	}
 }
+
+// GetDashboardNotificationsTemplate returns the Elasticsearch mapping for platform dashboard notifications.
+func (it *IndexTemplates) GetDashboardNotificationsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id":         map[string]interface{}{"type": "keyword"},
+				"user_id":    map[string]interface{}{"type": "keyword"},
+				"title":      map[string]interface{}{"type": "text"},
+				"body":       map[string]interface{}{"type": "text"},
+				"category":   map[string]interface{}{"type": "keyword"},
+				"data":       map[string]interface{}{"type": "object", "enabled": false},
+				"read_at":    map[string]interface{}{"type": "date"},
+				"created_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}

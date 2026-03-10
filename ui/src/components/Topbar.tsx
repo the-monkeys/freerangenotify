@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Menu, ChevronRight, LogOut, Sun, Moon } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 import { useTheme } from '../contexts/ThemeContext';
 import {
     DropdownMenu,
@@ -32,6 +33,18 @@ function useBreadcrumb(): { label: string; segments: { label: string; path?: str
             segments: [
                 { label: 'Applications', path: '/apps' },
                 { label: 'App Detail' },
+            ],
+        };
+    }
+    if (path === '/tenants') {
+        return { label: 'Organizations', segments: [{ label: 'Organizations' }] };
+    }
+    if (path.startsWith('/tenants/')) {
+        return {
+            label: 'Organization',
+            segments: [
+                { label: 'Organizations', path: '/tenants' },
+                { label: 'Organization' },
             ],
         };
     }
@@ -81,8 +94,9 @@ const Topbar: React.FC<TopbarProps> = ({ onMenuClick }) => {
                 </nav>
             </div>
 
-            {/* Right: theme toggle + user dropdown */}
+            {/* Right: notifications + theme toggle + user dropdown */}
             <div className="flex items-center gap-2">
+                <NotificationBell isAuthenticated={!!user} />
                 <button
                     onClick={toggleTheme}
                     className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"

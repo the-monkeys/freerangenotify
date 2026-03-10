@@ -296,6 +296,14 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// Activity feed (real-time SSE stream of notification events)
 	adminAuth.Get("/activity-feed", c.SSEHandler.AdminActivityFeed)
 
+	// Dashboard notifications (in-app + SSE for org invites, etc.)
+	if c.DashboardNotificationHandler != nil {
+		adminAuth.Get("/notifications", c.DashboardNotificationHandler.List)
+		adminAuth.Get("/notifications/unread-count", c.DashboardNotificationHandler.GetUnreadCount)
+		adminAuth.Post("/notifications/read", c.DashboardNotificationHandler.MarkRead)
+		adminAuth.Post("/sse/token", c.SSEHandler.CreateDashboardToken)
+	}
+
 	// ── Phase 2: Audit log routes (feature-gated) ──
 	// Audit is platform-level: JWT auth only. Handler scopes to user's apps via AdminUserID.
 	if c.AuditHandler != nil {

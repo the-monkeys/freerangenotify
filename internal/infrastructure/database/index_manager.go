@@ -69,6 +69,9 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		// Phase C1: Tenant/organization support
 		"tenants":         im.templates.GetTenantsTemplate,
 		"tenant_members": im.templates.GetTenantMembersTemplate,
+
+		// Platform dashboard notifications (in-app + SSE for org invites, etc.)
+		"dashboard_notifications": im.templates.GetDashboardNotificationsTemplate,
 	}
 
 	for indexName, templateFunc := range indices {
