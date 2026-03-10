@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { workflowsAPI, usersAPI, applicationsAPI } from '../../services/api';
-import type { Workflow, WorkflowStep, WorkflowStatus, User, Application } from '../../types';
+import { workflowsAPI, usersAPI, applicationsAPI, topicsAPI } from '../../services/api';
+import type { Workflow, WorkflowStep, WorkflowStatus, User, Application, Topic } from '../../types';
 import { extractErrorMessage } from '../../lib/utils';
 import WorkflowStepCard from '../../components/workflows/WorkflowStepCard';
 import WorkflowStepEditor from '../../components/workflows/WorkflowStepEditor';
@@ -59,6 +59,11 @@ const WorkflowBuilder: React.FC = () => {
     const [testUserId, setTestUserId] = useState<string | null>(null);
     const [testPayload, setTestPayload] = useState('{}');
     const [triggering, setTriggering] = useState(false);
+    // Test trigger by topic state
+    const [showTestByTopic, setShowTestByTopic] = useState(false);
+    const [testTopicId, setTestTopicId] = useState<string | null>(null);
+    const [testTopicPayload, setTestTopicPayload] = useState('{}');
+    const [triggeringByTopic, setTriggeringByTopic] = useState(false);
 
     // Load existing workflow in edit mode
     useEffect(() => {
@@ -173,6 +178,28 @@ const WorkflowBuilder: React.FC = () => {
             toast.error(extractErrorMessage(err, 'Failed to trigger workflow'));
         } finally {
             setTriggering(false);
+        }
+    };
+
+    // Test trigger by topic
+    const handleTriggerByTopic = async () => {
+        if (!apiKey || !testTopicId) return;
+        setTriggeringByTopic(true);
+        try {
+            let payload: Record<string, any> = {};
+            if (testTopicPayload.trim()) {
+                payload = JSON.parse(testTopicPayload);
+            }
+            const result = await workflowsAPI.triggerByTopic(apiKey, {
+                trigger_id: triggerId,
+                topic_id: testTopicId,
+                payload,
+            });
+            toast.success(`Workflow triggered for ${result.triggered} subscriber(s)`);
+        } catch (err: any) {
+            toast.error(extractErrorMessage(err, 'Failed to trigger workflow by topic'));
+        } finally {
+            setTriggeringByTopic(false);
         }
     };
 
@@ -376,7 +403,7 @@ const WorkflowBuilder: React.FC = () => {
                                 label="Payload"
                                 value={testPayload}
                                 onChange={setTestPayload}
-                                hint='Variables for your template — e.g. {"user_name": "Alice"}'
+                                hint={'Variables for your template, e.g. {"user_name": "Alice"}'}
                                 rows={4}
                             />
                             <Button
@@ -385,6 +412,54 @@ const WorkflowBuilder: React.FC = () => {
                             >
                                 {triggering && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                                 Trigger Workflow
+                            </Button>
+                        </CardContent>
+                    )}
+                </Card>
+            )}
+
+            {/* Test Trigger by Topic (collapsible) */}
+            {isEditMode && status === 'active' && (
+                <Card>
+                    <CardHeader
+                        className="cursor-pointer"
+                        onClick={() => setShowTestByTopic(!showTestByTopic)}
+                    >
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <Play className="h-4 w-4" />
+                            Test Trigger by Topic
+                            <ChevronDown className={`h-4 w-4 ml-auto transition-transform ${showTestByTopic ? 'rotate-180' : ''}`} />
+                        </CardTitle>
+                    </CardHeader>
+                    {showTestByTopic && (
+                        <CardContent className="space-y-4 pt-0">
+                            <ResourcePicker<Topic>
+                                label="Topic"
+                                value={testTopicId}
+                                onChange={setTestTopicId}
+                                fetcher={async () => {
+                                    const res = await topicsAPI.list(apiKey!, 100, 0);
+                                    return res.topics || [];
+                                }}
+                                labelKey="name"
+                                valueKey="id"
+                                hint="Select a topic - workflow will run for all subscribers"
+                                placeholder="Search topics..."
+                                required
+                            />
+                            <JsonEditor
+                                label="Payload"
+                                value={testTopicPayload}
+                                onChange={setTestTopicPayload}
+                                hint={'Variables for your templates, e.g. {"product": "v2"}'}
+                                rows={4}
+                            />
+                            <Button
+                                onClick={handleTriggerByTopic}
+                                disabled={!testTopicId || triggeringByTopic}
+                            >
+                                {triggeringByTopic && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                                Trigger for Topic Subscribers
                             </Button>
                         </CardContent>
                     )}

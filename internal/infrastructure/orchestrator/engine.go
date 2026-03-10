@@ -259,10 +259,30 @@ func (e *Engine) executeDelayStep(ctx context.Context, exec *workflow.WorkflowEx
 	exec.UpdatedAt = time.Now()
 	e.workflowRepo.UpdateExecution(ctx, exec)
 
-	// Find next step to enqueue after delay
+	// Find next step to enqueue after delay (on_success, or next step by order if unset)
 	nextStepID := step.OnSuccess
 	if nextStepID == "" {
-		nextStepID = step.ID
+		// BUG FIX: Previously used step.ID which re-enqueued the delay step itself, causing
+		// an infinite loop. Now find the next step by order in the workflow.
+		wf, wfErr := e.workflowRepo.GetWorkflow(ctx, exec.WorkflowID)
+		if wfErr != nil {
+			logger.Error("Failed to get workflow for delay step fallback", zap.Error(wfErr))
+			e.failExecution(ctx, exec, "cannot resolve next step after delay")
+			return
+		}
+		for i := range wf.Steps {
+			if wf.Steps[i].ID == step.ID && i+1 < len(wf.Steps) {
+				nextStepID = wf.Steps[i+1].ID
+				logger.Info("Delay step on_success empty, using next step by order",
+					zap.String("next_step_id", nextStepID))
+				break
+			}
+		}
+		if nextStepID == "" {
+			logger.Info("Delay step is last step, execution will complete after delay")
+			// No next step — after delay we'll complete. Enqueue self to trigger completion path.
+			nextStepID = step.ID
+		}
 	}
 
 	executeAt := time.Now().Add(d)
@@ -300,6 +320,19 @@ func (e *Engine) advanceToNext(ctx context.Context, exec *workflow.WorkflowExecu
 		nextStepID = currentStep.OnSuccess
 	} else if status == workflow.StepStatusFailed {
 		nextStepID = currentStep.OnFailure
+	}
+
+	// Fallback: if on_success/on_failure not set, use next step by order (UI often omits these)
+	if nextStepID == "" && (status == workflow.StepStatusCompleted || status == workflow.StepStatusSkipped) {
+		for i := range wf.Steps {
+			if wf.Steps[i].ID == currentStep.ID && i+1 < len(wf.Steps) {
+				nextStepID = wf.Steps[i+1].ID
+				logger.Info("Step on_success empty, using next step by order",
+					zap.String("current_step", currentStep.ID),
+					zap.String("next_step_id", nextStepID))
+				break
+			}
+		}
 	}
 
 	if nextStepID == "" {
@@ -432,6 +465,10 @@ func (e *Engine) delayedPoller(ctx context.Context) {
 			for _, item := range items {
 				if err := e.wfQueue.EnqueueWorkflow(ctx, item); err != nil {
 					e.logger.Error("Failed to re-enqueue delayed workflow item", zap.Error(err))
+				} else {
+					e.logger.Info("Delayed workflow item moved to queue",
+						zap.String("execution_id", item.ExecutionID),
+						zap.String("step_id", item.StepID))
 				}
 			}
 		}

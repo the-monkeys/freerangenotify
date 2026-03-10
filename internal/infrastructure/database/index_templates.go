@@ -645,6 +645,36 @@ func (it *IndexTemplates) GetWorkflowExecutionsTemplate() map[string]interface{}
 	}
 }
 
+// GetWorkflowSchedulesTemplate returns the Elasticsearch mapping for workflow_schedules index (Phase 6)
+func (it *IndexTemplates) GetWorkflowSchedulesTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{"type": "keyword"},
+				"app_id": map[string]interface{}{"type": "keyword"},
+				"environment_id": map[string]interface{}{"type": "keyword"},
+				"name": map[string]interface{}{
+					"type": "text",
+					"fields": map[string]interface{}{"keyword": map[string]interface{}{"type": "keyword"}},
+				},
+				"workflow_trigger_id": map[string]interface{}{"type": "keyword"},
+				"cron": map[string]interface{}{"type": "keyword"},
+				"target_type": map[string]interface{}{"type": "keyword"},
+				"topic_id": map[string]interface{}{"type": "keyword"},
+				"payload": map[string]interface{}{"type": "object", "enabled": false},
+				"status": map[string]interface{}{"type": "keyword"},
+				"last_run_at": map[string]interface{}{"type": "date"},
+				"created_at": map[string]interface{}{"type": "date"},
+				"updated_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
 // GetDigestRulesTemplate returns the Elasticsearch mapping for digest_rules index.
 func (it *IndexTemplates) GetDigestRulesTemplate() map[string]interface{} {
 	return map[string]interface{}{

@@ -31,8 +31,10 @@ type UpdateSettingsRequest struct {
 	EnableWebhooks     *bool                         `json:"enable_webhooks"`
 	EnableAnalytics    *bool                         `json:"enable_analytics"`
 	ValidationURL      *string                       `json:"validation_url"`
-	ValidationConfig   *application.ValidationConfig `json:"validation_config"`
-	DefaultPreferences *DefaultPreferencesDTO        `json:"default_preferences"`
+	ValidationConfig       *application.ValidationConfig `json:"validation_config"`
+	DefaultPreferences       *DefaultPreferencesDTO        `json:"default_preferences"`
+	OnUserCreatedTriggerID   *string                       `json:"on_user_created_trigger_id,omitempty"`   // Phase 5: workflow to trigger on user create
+	InboundWebhookConfig     *application.InboundWebhookConfig `json:"inbound_webhook_config,omitempty"` // Phase 7: inbound webhook (secret, event mapping)
 }
 
 type DefaultPreferencesDTO struct {

@@ -561,6 +561,12 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 			settings.DefaultPreferences.SMSEnabled = req.DefaultPreferences.SMSEnabled
 		}
 	}
+	if req.OnUserCreatedTriggerID != nil {
+		settings.OnUserCreatedTriggerID = *req.OnUserCreatedTriggerID
+	}
+	if req.InboundWebhookConfig != nil {
+		settings.InboundWebhookConfig = req.InboundWebhookConfig
+	}
 
 	if err := h.service.UpdateSettings(c.Context(), appID, settings); err != nil {
 		return err

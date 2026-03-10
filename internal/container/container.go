@@ -16,6 +16,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/schedule"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -95,6 +96,10 @@ type Container struct {
 	WorkflowService workflow.Service
 	WorkflowHandler *handlers.WorkflowHandler
 
+	// Phase 6: Schedules (feature-gated with Workflow)
+	ScheduleService schedule.Service
+	ScheduleHandler *handlers.ScheduleHandler
+
 	// Digest Engine (Phase 1 — feature-gated)
 	DigestService digest.Service
 	DigestHandler *handlers.DigestHandler
@@ -123,6 +128,9 @@ type Container struct {
 	// Multi-Environment (Phase 6 — feature-gated)
 	EnvironmentService environment.Service
 	EnvironmentHandler *handlers.EnvironmentHandler
+
+	// Phase 7: Inbound Webhooks (feature-gated with Workflow)
+	InboundWebhookHandler *handlers.InboundWebhookHandler
 
 	// Tenant/Organization (Phase C1)
 	TenantService tenant.Service
@@ -415,6 +423,30 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			)
 			// Wire workflow repo into analytics handler for dashboard counts
 			container.AnalyticsHandler.SetWorkflowRepo(wfRepo)
+			// Wire workflow service into notification service for broadcast→workflow
+			if ns, ok := container.NotificationService.(*usecases.NotificationService); ok {
+				ns.SetWorkflowService(container.WorkflowService)
+			}
+			// Wire app repo + workflow service into user service for on-user-created trigger
+			if us, ok := container.UserService.(*services.UserServiceImpl); ok {
+				us.SetAppRepo(repos.Application)
+				us.SetWorkflowService(container.WorkflowService)
+			}
+			// Phase 6: Schedule service + handler (workflow schedules)
+			scheduleRepo := repository.NewScheduleRepository(dbManager.Client.GetClient(), logger)
+			container.ScheduleService = services.NewScheduleService(
+				scheduleRepo,
+				container.WorkflowService,
+				repos.User,
+				logger,
+			)
+			container.ScheduleHandler = handlers.NewScheduleHandler(container.ScheduleService, container.Validator, logger)
+			container.InboundWebhookHandler = handlers.NewInboundWebhookHandler(
+				container.ApplicationService,
+				container.UserService,
+				container.WorkflowService,
+				logger,
+			)
 			logger.Info("Workflow engine enabled")
 		}
 	}
@@ -446,6 +478,18 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		// Wire topic service into notification service for fan-out
 		if ns, ok := container.NotificationService.(*usecases.NotificationService); ok {
 			ns.SetTopicService(container.TopicService)
+		}
+		// Wire topic service into workflow service for trigger-by-topic
+		if ws, ok := container.WorkflowService.(interface{ SetTopicService(topic.Service) }); ok {
+			ws.SetTopicService(container.TopicService)
+		}
+		// Wire workflow service into topic service for on-subscribe trigger
+		if ts, ok := container.TopicService.(interface{ SetWorkflowService(workflow.Service) }); ok && container.WorkflowService != nil {
+			ts.SetWorkflowService(container.WorkflowService)
+		}
+		// Wire topic service into schedule service for target_type=topic
+		if ss, ok := container.ScheduleService.(interface{ SetTopicService(topic.Service) }); ok {
+			ss.SetTopicService(container.TopicService)
 		}
 		logger.Info("Topics feature enabled")
 	}

@@ -37,11 +37,22 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ stepResults }) =>
                 const duration = result.started_at && result.completed_at
                     ? formatDuration(result.started_at, result.completed_at)
                     : null;
+                const isCompleted = result.status === 'completed';
+                const isFailed = result.status === 'failed';
 
                 return (
-                    <div key={stepId} className="relative flex items-start gap-3 pb-5 last:pb-0">
+                    <div
+                        key={stepId}
+                        className={`relative flex items-start gap-3 pb-5 last:pb-0 rounded-r-lg pr-2 py-2 ${
+                            isCompleted
+                                ? 'bg-emerald-50 dark:bg-emerald-950/30 border-l-2 border-l-emerald-500'
+                                : isFailed
+                                    ? 'bg-red-50 dark:bg-red-950/30 border-l-2 border-l-red-500'
+                                    : ''
+                        }`}
+                    >
                         {/* Dot / Icon */}
-                        <div className={`absolute -left-6 mt-0.5 flex items-center justify-center w-[22px] h-[22px] rounded-full bg-background border border-border ${cfg.color}`}>
+                        <div className={`absolute -left-6 mt-0.5 flex items-center justify-center w-[22px] h-[22px] rounded-full bg-background border-2 ${isCompleted ? 'border-emerald-500' : isFailed ? 'border-red-500' : 'border-border'} ${cfg.color}`}>
                             <Icon className={`h-3.5 w-3.5 ${result.status === 'running' ? 'animate-spin' : ''}`} />
                         </div>
 

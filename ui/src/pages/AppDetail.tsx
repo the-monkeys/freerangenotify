@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { applicationsAPI, providersAPI } from '../services/api';
-import type { Application, ApplicationSettings } from '../types';
+import { applicationsAPI, providersAPI, workflowsAPI } from '../services/api';
+import type { Application, ApplicationSettings, Workflow as WorkflowType } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
@@ -11,6 +11,7 @@ import AppEnvironments from '../components/apps/AppEnvironments';
 import AppImport from '../components/apps/AppImport';
 import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
+import SchedulesList from './schedules/SchedulesList';
 
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -23,10 +24,11 @@ import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
 import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, ArrowRight, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
+import { useApiQuery } from '../hooks/use-api-query';
 
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
 
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import'];
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import'];
 
 interface TabDef {
     id: TabId;
@@ -49,6 +51,7 @@ const TAB_GROUPS: { label: string; tabs: TabDef[] }[] = [
         tabs: [
             { id: 'digest-rules', label: 'Digest Rules', icon: <Layers className="h-4 w-4" /> },
             { id: 'workflows', label: 'Workflows', icon: <Workflow className="h-4 w-4" /> },
+            { id: 'schedules', label: 'Schedules', icon: <Timer className="h-4 w-4" /> },
             { id: 'topics', label: 'Topics', icon: <MessageSquare className="h-4 w-4" /> },
             { id: 'team', label: 'Team', icon: <UsersRound className="h-4 w-4" /> },
             { id: 'providers', label: 'Providers', icon: <Plug className="h-4 w-4" /> },
@@ -103,9 +106,17 @@ const AppDetail: React.FC = () => {
         }
     };
     const [staticHeadersText, setStaticHeadersText] = useState('');
+    const [eventMappingText, setEventMappingText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+
+    const { data: workflowsData } = useApiQuery(
+        () => workflowsAPI.list(app!.api_key, 100, 0),
+        [app?.api_key, activeTab],
+        { enabled: !!app?.api_key && activeTab === 'settings' }
+    );
+    const workflows: WorkflowType[] = workflowsData?.workflows ?? [];
 
 
     useEffect(() => {
@@ -135,6 +146,7 @@ const AppDetail: React.FC = () => {
             const text = Object.entries(appData.settings?.validation_config?.static_headers || {})
                 .map(([k, v]) => `${k}: ${v}`).join('\n');
             setStaticHeadersText(text);
+            setEventMappingText(JSON.stringify(appData.settings?.inbound_webhook_config?.event_mapping || {}, null, 2));
         } catch (error) {
             console.error('Failed to fetch app details:', error);
         } finally {
@@ -350,7 +362,21 @@ const AppDetail: React.FC = () => {
                                 onSubmit={async (e) => {
                                     e.preventDefault();
                                     try {
+                                        // Validate event mapping JSON before save (if Inbound Webhooks section exists)
+                                        if (workflows.length > 0 && eventMappingText.trim()) {
+                                            try {
+                                                const parsed = JSON.parse(eventMappingText);
+                                                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                                                    toast.error('Event mapping must be a JSON object');
+                                                    return;
+                                                }
+                                            } catch {
+                                                toast.error('Event mapping must be valid JSON');
+                                                return;
+                                            }
+                                        }
                                         await applicationsAPI.updateSettings(id!, settings);
+                                        setEventMappingText(JSON.stringify(settings.inbound_webhook_config?.event_mapping || {}, null, 2));
                                         toast.success('Settings saved successfully!');
                                     } catch (err: any) {
                                         toast.error('Error saving settings: ' + (err.response?.data?.message || err.message));
@@ -418,6 +444,89 @@ const AppDetail: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
+
+                                {workflows.length > 0 && (
+                                    <div>
+                                        <h4 className="text-base font-semibold text-foreground mb-4">Workflow Hooks</h4>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="onUserCreated">On User Created Workflow</Label>
+                                            <Select
+                                                value={settings.on_user_created_trigger_id || 'none'}
+                                                onValueChange={(val) => setSettings({ ...settings, on_user_created_trigger_id: val === 'none' ? '' : val })}
+                                            >
+                                                <SelectTrigger id="onUserCreated">
+                                                    <SelectValue placeholder="None" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    {workflows.map((w) => (
+                                                        <SelectItem key={w.id} value={w.trigger_id}>{w.name} ({w.trigger_id})</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">Trigger this workflow when a new user is created (via API or dashboard)</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {workflows.length > 0 && (
+                                    <div>
+                                        <h4 className="text-base font-semibold text-foreground mb-4">Inbound Webhooks (Phase 7)</h4>
+                                        <p className="text-sm text-muted-foreground mb-4">
+                                            Receive webhooks from external systems (Stripe, CRM, etc.) and trigger workflows. Use X-API-Key to identify the app.
+                                        </p>
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <Label htmlFor="inboundWebhookSecret">Webhook Secret (optional)</Label>
+                                                <Input
+                                                    id="inboundWebhookSecret"
+                                                    type="password"
+                                                    value={settings.inbound_webhook_config?.secret || ''}
+                                                    onChange={(e) => setSettings({
+                                                        ...settings,
+                                                        inbound_webhook_config: {
+                                                            ...settings.inbound_webhook_config,
+                                                            secret: e.target.value
+                                                        }
+                                                    })}
+                                                    placeholder="Leave empty to skip HMAC verification"
+                                                />
+                                                <p className="text-xs text-muted-foreground">If set, send X-Webhook-Signature: sha256=&lt;hex&gt; (HMAC-SHA256 of body)</p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label htmlFor="inboundEventMapping">Event Mapping (JSON)</Label>
+                                                <Textarea
+                                                    id="inboundEventMapping"
+                                                    className="font-mono text-sm"
+                                                    rows={4}
+                                                    value={eventMappingText}
+                                                    onChange={(e) => {
+                                                        const raw = e.target.value;
+                                                        setEventMappingText(raw);
+                                                        try {
+                                                            const parsed = JSON.parse(raw || '{}');
+                                                            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                                                                setSettings({
+                                                                    ...settings,
+                                                                    inbound_webhook_config: {
+                                                                        ...settings.inbound_webhook_config,
+                                                                        event_mapping: parsed
+                                                                    }
+                                                                });
+                                                            }
+                                                        } catch { /* allow typing */ }
+                                                    }}
+                                                    placeholder='{"payment.received": "payment_workflow", "order.shipped": "shipping_workflow"}'
+                                                />
+                                                <p className="text-xs text-muted-foreground">Map event names to workflow trigger_ids. POST body: {"{ \"event\": \"...\", \"user_id\": \"external_id or email\", \"payload\": {...} }"}</p>
+                                            </div>
+                                            <div className="p-3 bg-muted rounded text-xs font-mono">
+                                                POST /v1/webhooks/inbound<br />
+                                                Headers: X-API-Key (required), X-Webhook-Signature (if secret set)
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div>
                                     <h4 className="text-base font-semibold text-foreground mb-4">Authentication & Security</h4>
@@ -851,6 +960,11 @@ const AppDetail: React.FC = () => {
                         </Card>
                         <DigestRulesList apiKey={app.api_key} embedded />
                     </div>
+                )}
+
+                {/* Schedules Tab */}
+                {activeTab === 'schedules' && app && (
+                    <SchedulesList apiKey={app.api_key} embedded />
                 )}
 
                 {/* Topics Tab */}

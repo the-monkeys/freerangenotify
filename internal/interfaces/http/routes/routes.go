@@ -176,9 +176,25 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		workflows.Get("/executions/:id", c.WorkflowHandler.GetExecution)
 		workflows.Post("/executions/:id/cancel", c.WorkflowHandler.CancelExecution)
 		workflows.Post("/trigger", c.WorkflowHandler.Trigger)
+		workflows.Post("/trigger-by-topic", c.WorkflowHandler.TriggerByTopic)
+		// Phase 6: Schedules (before /:id to avoid collision)
+		if c.ScheduleHandler != nil {
+			workflows.Post("/schedules", c.ScheduleHandler.Create)
+			workflows.Get("/schedules", c.ScheduleHandler.List)
+			workflows.Get("/schedules/:id", c.ScheduleHandler.Get)
+			workflows.Put("/schedules/:id", c.ScheduleHandler.Update)
+			workflows.Delete("/schedules/:id", c.ScheduleHandler.Delete)
+		}
 		workflows.Get("/:id", c.WorkflowHandler.Get)
 		workflows.Put("/:id", c.WorkflowHandler.Update)
 		workflows.Delete("/:id", c.WorkflowHandler.Delete)
+	}
+
+	// ── Phase 7: Inbound Webhooks (feature-gated with Workflow) ──
+	if c.InboundWebhookHandler != nil {
+		webhooks := v1.Group("/webhooks")
+		applyAuth(webhooks)
+		webhooks.Post("/inbound", c.InboundWebhookHandler.Receive)
 	}
 
 	// ── Phase 1: Digest rules routes (feature-gated) ──

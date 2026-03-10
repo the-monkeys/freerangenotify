@@ -13,6 +13,8 @@ type Service interface {
 
 	// Execution
 	Trigger(ctx context.Context, appID string, req *TriggerRequest) (*WorkflowExecution, error)
+	TriggerByTopic(ctx context.Context, appID string, req *TriggerByTopicRequest) (*TriggerByTopicResult, error)
+	TriggerForUserIDs(ctx context.Context, appID, triggerID string, userIDs []string, payload map[string]any) (*TriggerForUserIDsResult, error)
 	CancelExecution(ctx context.Context, executionID, appID string) error
 	GetExecution(ctx context.Context, executionID, appID string) (*WorkflowExecution, error)
 	ListExecutions(ctx context.Context, workflowID, appID string, limit, offset int) ([]*WorkflowExecution, int64, error)
@@ -42,4 +44,23 @@ type TriggerRequest struct {
 	Payload       map[string]any `json:"payload"`
 	TransactionID string         `json:"transaction_id"`
 	Overrides     map[string]any `json:"overrides"`
+}
+
+// TriggerByTopicRequest is the input for triggering a workflow for all topic subscribers.
+type TriggerByTopicRequest struct {
+	TriggerID string         `json:"trigger_id" validate:"required"`
+	TopicID   string         `json:"topic_id" validate:"required"`
+	Payload   map[string]any `json:"payload"`
+}
+
+// TriggerByTopicResult is the response from TriggerByTopic.
+type TriggerByTopicResult struct {
+	Triggered    int      `json:"triggered"`
+	ExecutionIDs []string `json:"execution_ids"`
+}
+
+// TriggerForUserIDsResult is the response from TriggerForUserIDs (broadcast→workflow fan-out).
+type TriggerForUserIDsResult struct {
+	Triggered    int      `json:"triggered"`
+	ExecutionIDs []string `json:"execution_ids"`
 }

@@ -8,18 +8,19 @@ import (
 
 // SendNotificationRequest represents the API request to send a notification
 type SendNotificationRequest struct {
-	UserID        string                 `json:"user_id"` // Removed validate:"required"
-	Channel       string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
-	Priority      string                 `json:"priority" validate:"required,oneof=low normal high critical"`
-	Title         string                 `json:"title,omitempty"`
-	Body          string                 `json:"body,omitempty"`
-	Data          map[string]interface{} `json:"data,omitempty"`
-	TemplateID    string                 `json:"template_id" validate:"required"`
-	Category      string                 `json:"category,omitempty"`
-	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
-	Recurrence    *RecurrenceRequest     `json:"recurrence,omitempty"`
-	WebhookURL    string                 `json:"webhook_url,omitempty"` // New field
-	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	UserID            string                 `json:"user_id"` // Removed validate:"required"
+	Channel           string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
+	Priority          string                 `json:"priority" validate:"required,oneof=low normal high critical"`
+	Title             string                 `json:"title,omitempty"`
+	Body              string                 `json:"body,omitempty"`
+	Data              map[string]interface{} `json:"data,omitempty"`
+	TemplateID        string                 `json:"template_id" validate:"required"`
+	Category          string                 `json:"category,omitempty"`
+	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence        *RecurrenceRequest     `json:"recurrence,omitempty"`
+	WebhookURL        string                 `json:"webhook_url,omitempty"`
+	WebhookTarget     string                 `json:"webhook_target,omitempty"`
+	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
 }
 
 // ToSendRequest converts DTO to domain SendRequest
@@ -59,6 +60,7 @@ func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendR
 		}
 	}
 
+	req.WorkflowTriggerID = r.WorkflowTriggerID
 	return req
 }
 
@@ -177,30 +179,34 @@ type RecurrenceRequest struct {
 
 // BroadcastNotificationRequest represents the API request to broadcast a notification to all users
 type BroadcastNotificationRequest struct {
-	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
-	Priority      string                 `json:"priority" validate:"required,oneof=low normal high critical"`
-	Title         string                 `json:"title,omitempty"`
-	Body          string                 `json:"body,omitempty"`
-	Data          map[string]interface{} `json:"data,omitempty"`
-	TemplateID    string                 `json:"template_id" validate:"required"`
-	Category      string                 `json:"category,omitempty"`
-	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
-	WebhookURL    string                 `json:"webhook_url,omitempty"`
-	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	Channel           string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	Priority          string                 `json:"priority" validate:"required,oneof=low normal high critical"`
+	Title             string                 `json:"title,omitempty"`
+	Body              string                 `json:"body,omitempty"`
+	Data              map[string]interface{} `json:"data,omitempty"`
+	TemplateID        string                 `json:"template_id"` // required when workflow_trigger_id is empty
+	Category          string                 `json:"category,omitempty"`
+	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
+	WebhookURL        string                 `json:"webhook_url,omitempty"`
+	WebhookTarget     string                 `json:"webhook_target,omitempty"`
+	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient
+	TopicKey          string                 `json:"topic_key,omitempty"`           // Phase 2: limit to topic subscribers
 }
 
 // ToBroadcastRequest converts DTO to domain BroadcastRequest
 func (r *BroadcastNotificationRequest) ToBroadcastRequest(appID string) notification.BroadcastRequest {
 	return notification.BroadcastRequest{
-		AppID:       appID,
-		Channel:     notification.Channel(r.Channel),
-		Priority:    notification.Priority(r.Priority),
-		Title:       r.Title,
-		Body:        r.Body,
-		Data:        r.Data,
-		TemplateID:  r.TemplateID,
-		Category:    r.Category,
-		ScheduledAt: r.ScheduledAt,
+		AppID:             appID,
+		Channel:           notification.Channel(r.Channel),
+		Priority:          notification.Priority(r.Priority),
+		Title:             r.Title,
+		Body:              r.Body,
+		Data:              r.Data,
+		TemplateID:        r.TemplateID,
+		Category:          r.Category,
+		ScheduledAt:       r.ScheduledAt,
+		WorkflowTriggerID: r.WorkflowTriggerID,
+		TopicKey:          r.TopicKey,
 	}
 }
 

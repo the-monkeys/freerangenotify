@@ -154,7 +154,23 @@ func main() {
 
 	// Auto-instantiate all registered providers
 	registeredProviders := providers.InstantiateAll(providerConfigs, logger)
+	byName := make(map[string]providers.Provider)
 	for _, p := range registeredProviders {
+		byName[p.GetName()] = p
+	}
+	// Register email providers in preferred order: SMTP first (default .env), then SendGrid.
+	// When app has no/invalid email config, we use the default for the channel = first registered.
+	emailOrder := []string{"smtp", "sendgrid", "resend", "postmark", "mailgun", "ses"}
+	for _, name := range emailOrder {
+		if p, ok := byName[name]; ok {
+			if err := providerManager.RegisterProvider(p); err != nil {
+				logger.Warn("Failed to register provider", zap.String("provider", name), zap.Error(err))
+			}
+			delete(byName, name)
+		}
+	}
+	// Register remaining providers
+	for _, p := range byName {
 		if err := providerManager.RegisterProvider(p); err != nil {
 			logger.Warn("Failed to register provider", zap.String("provider", p.GetName()), zap.Error(err))
 		}
@@ -226,6 +242,7 @@ func main() {
 
 	// ── Phase 1: Workflow Engine (feature-gated) ──
 	var workflowEngine *orchestrator.Engine
+	var schedulePoller *orchestrator.SchedulePoller
 	if cfg.Features.WorkflowEnabled {
 		wfQueue, ok := c.Queue.(queue.WorkflowQueue)
 		if !ok {
@@ -243,6 +260,18 @@ func main() {
 		)
 		workflowEngine.Start(processorCtx)
 		logger.Info("Workflow engine started")
+
+		// Phase 6: Schedule poller (runs scheduled workflows every minute)
+		scheduleRepo := repository.NewScheduleRepository(c.DatabaseManager.Client.GetClient(), logger)
+		schedulePoller := orchestrator.NewSchedulePoller(
+			scheduleRepo,
+			c.WorkflowService,
+			c.TopicService,
+			c.DatabaseManager.Repositories.User,
+			logger,
+		)
+		schedulePoller.Start(processorCtx)
+		logger.Info("Schedule poller started")
 	}
 
 	// ── Phase 1: Digest Manager (feature-gated) ──
@@ -284,6 +313,11 @@ func main() {
 		if err := workflowEngine.Shutdown(shutdownEngineCtx); err != nil {
 			logger.Error("Error shutting down workflow engine", zap.Error(err))
 		}
+	}
+
+	// Shutdown schedule poller
+	if schedulePoller != nil {
+		schedulePoller.Shutdown()
 	}
 
 	// Shutdown digest manager

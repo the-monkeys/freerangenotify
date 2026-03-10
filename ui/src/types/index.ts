@@ -68,7 +68,14 @@ export interface ApplicationSettings {
     email_config?: EmailConfig;
     daily_email_limit?: number;
     default_preferences?: DefaultPreferences;
+    on_user_created_trigger_id?: string;  // Phase 5: workflow to trigger on user create
+    inbound_webhook_config?: InboundWebhookConfig;  // Phase 7: inbound webhooks
     [key: string]: any;
+}
+
+export interface InboundWebhookConfig {
+    secret?: string;
+    event_mapping?: Record<string, string>;  // event -> workflow trigger_id
 }
 
 export interface DefaultPreferences {
@@ -228,6 +235,7 @@ export interface NotificationRequest {
     webhook_target?: string;
     scheduled_at?: string;
     recurrence?: Recurrence;
+    workflow_trigger_id?: string;  // Phase 3: trigger workflow after send
 }
 
 export interface BulkNotificationRequest {
@@ -248,6 +256,8 @@ export interface BroadcastNotificationRequest {
     data?: Record<string, any>;
     template_id?: string;
     scheduled_at?: string;
+    workflow_trigger_id?: string;  // Phase 2: trigger workflow for each recipient
+    topic_key?: string;           // Phase 2: limit to topic subscribers
 }
 
 export interface UpdateNotificationStatusRequest {
@@ -487,6 +497,55 @@ export interface TriggerWorkflowRequest {
     transaction_id?: string;
 }
 
+export interface TriggerByTopicRequest {
+    trigger_id: string;
+    topic_id: string;
+    payload?: Record<string, any>;
+}
+
+export interface TriggerByTopicResult {
+    triggered: number;
+    execution_ids: string[];
+}
+
+// ============= Workflow Schedule Types (Phase 6) =============
+export type ScheduleTargetType = 'all' | 'topic';
+
+export interface WorkflowSchedule {
+    id: string;
+    app_id: string;
+    environment_id?: string;
+    name: string;
+    workflow_trigger_id: string;
+    cron: string;
+    target_type: ScheduleTargetType;
+    topic_id?: string;
+    payload?: Record<string, any>;
+    status: 'active' | 'inactive';
+    last_run_at?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateScheduleRequest {
+    name: string;
+    workflow_trigger_id: string;
+    cron: string;
+    target_type: ScheduleTargetType;
+    topic_id?: string;
+    payload?: Record<string, any>;
+}
+
+export interface UpdateScheduleRequest {
+    name?: string;
+    workflow_trigger_id?: string;
+    cron?: string;
+    target_type?: ScheduleTargetType;
+    topic_id?: string;
+    payload?: Record<string, any>;
+    status?: 'active' | 'inactive';
+}
+
 export interface StepResult {
     step_id: string;
     status: StepResultStatus;
@@ -555,6 +614,7 @@ export interface Topic {
     name: string;
     key: string;
     description?: string;
+    on_subscribe_trigger_id?: string;  // Phase 4: workflow to trigger on subscribe
     subscriber_count?: number;
     created_at: string;
     updated_at: string;
@@ -564,12 +624,14 @@ export interface CreateTopicRequest {
     name: string;
     key: string;
     description?: string;
+    on_subscribe_trigger_id?: string;  // Phase 4: workflow to trigger on subscribe
 }
 
 export interface UpdateTopicRequest {
     name?: string;
     key?: string;
     description?: string;
+    on_subscribe_trigger_id?: string;  // Phase 4: workflow to trigger on subscribe
 }
 
 export interface TopicSubscription {

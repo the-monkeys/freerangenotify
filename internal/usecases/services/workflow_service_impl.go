@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -13,9 +14,10 @@ import (
 )
 
 type workflowService struct {
-	repo   workflow.Repository
-	queue  queue.WorkflowQueue
-	logger *zap.Logger
+	repo       workflow.Repository
+	queue      queue.WorkflowQueue
+	topicSvc   topic.Service // optional, for TriggerByTopic
+	logger     *zap.Logger
 }
 
 // NewWorkflowService creates a new workflow service.
@@ -30,6 +32,9 @@ func NewWorkflowService(
 		logger: logger,
 	}
 }
+
+// SetTopicService injects the topic service for TriggerByTopic (called after container init).
+func (s *workflowService) SetTopicService(ts topic.Service) { s.topicSvc = ts }
 
 func (s *workflowService) Create(ctx context.Context, appID string, req *workflow.CreateRequest) (*workflow.Workflow, error) {
 	s.logger.Info("Creating workflow",
@@ -208,6 +213,57 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		zap.String("trigger_id", req.TriggerID))
 
 	return exec, nil
+}
+
+// triggerForUsers triggers a workflow for each user. Returns execution IDs and continues on per-user errors.
+func (s *workflowService) triggerForUsers(ctx context.Context, appID, triggerID string, userIDs []string, payload map[string]any) ([]string, error) {
+	if len(userIDs) == 0 {
+		return []string{}, nil
+	}
+	var execIDs []string
+	for _, userID := range userIDs {
+		req := &workflow.TriggerRequest{
+			TriggerID: triggerID,
+			UserID:    userID,
+			Payload:   payload,
+		}
+		exec, err := s.Trigger(ctx, appID, req)
+		if err != nil {
+			s.logger.Warn("Failed to trigger workflow for user, skipping",
+				zap.String("user_id", userID),
+				zap.String("trigger_id", triggerID),
+				zap.Error(err))
+			continue
+		}
+		execIDs = append(execIDs, exec.ID)
+	}
+	return execIDs, nil
+}
+
+func (s *workflowService) TriggerByTopic(ctx context.Context, appID string, req *workflow.TriggerByTopicRequest) (*workflow.TriggerByTopicResult, error) {
+	if s.topicSvc == nil {
+		return nil, errors.BadRequest("topics feature is not enabled")
+	}
+	userIDs, err := s.topicSvc.GetSubscriberUserIDs(ctx, req.TopicID, appID)
+	if err != nil {
+		return nil, err
+	}
+	execIDs, _ := s.triggerForUsers(ctx, appID, req.TriggerID, userIDs, req.Payload)
+	return &workflow.TriggerByTopicResult{
+		Triggered:    len(execIDs),
+		ExecutionIDs: execIDs,
+	}, nil
+}
+
+func (s *workflowService) TriggerForUserIDs(ctx context.Context, appID, triggerID string, userIDs []string, payload map[string]any) (*workflow.TriggerForUserIDsResult, error) {
+	if len(userIDs) == 0 {
+		return &workflow.TriggerForUserIDsResult{Triggered: 0, ExecutionIDs: nil}, nil
+	}
+	execIDs, _ := s.triggerForUsers(ctx, appID, triggerID, userIDs, payload)
+	return &workflow.TriggerForUserIDsResult{
+		Triggered:    len(execIDs),
+		ExecutionIDs: execIDs,
+	}, nil
 }
 
 func (s *workflowService) CancelExecution(ctx context.Context, executionID, appID string) error {
