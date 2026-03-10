@@ -661,6 +661,18 @@ export interface PromoteEnvironmentRequest {
     resources: string[];
 }
 
+// ============= Dashboard Notification Types =============
+export interface DashboardNotification {
+    id: string;
+    user_id: string;
+    title: string;
+    body: string;
+    category: string;
+    data?: Record<string, unknown>;
+    read_at?: string;
+    created_at: string;
+}
+
 // ============= Tenant/Organization Types (C1) =============
 export interface Tenant {
     id: string;

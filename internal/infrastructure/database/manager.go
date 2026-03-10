@@ -7,6 +7,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -24,10 +25,11 @@ type DatabaseManager struct {
 
 // Repositories holds all repository instances
 type Repositories struct {
-	Application  application.Repository
-	User         user.Repository
-	Notification notification.Repository
-	Template     template.Repository
+	Application            application.Repository
+	User                   user.Repository
+	Notification           notification.Repository
+	Template               template.Repository
+	DashboardNotification  dashboard_notification.Repository
 	// Analytics repository will be added later
 }
 
@@ -44,10 +46,11 @@ func NewDatabaseManager(cfg *config.Config, logger *zap.Logger) (*DatabaseManage
 
 	// Create repositories
 	repositories := &Repositories{
-		Application:  repository.NewApplicationRepository(client.GetClient(), logger),
-		User:         repository.NewUserRepository(client.GetClient(), logger),
-		Notification: repository.NewNotificationRepository(client.GetClient(), logger),
-		Template:     NewTemplateRepository(client, logger),
+		Application:           repository.NewApplicationRepository(client.GetClient(), logger),
+		User:                  repository.NewUserRepository(client.GetClient(), logger),
+		Notification:          repository.NewNotificationRepository(client.GetClient(), logger),
+		Template:              NewTemplateRepository(client, logger),
+		DashboardNotification: repository.NewDashboardNotificationRepository(client.GetClient(), logger),
 	}
 
 	return &DatabaseManager{

@@ -45,6 +45,7 @@ import type {
   Environment,
   CreateEnvironmentRequest,
   PromoteEnvironmentRequest,
+  DashboardNotification,
   Tenant,
   TenantMember,
   CreateTenantRequest,
@@ -678,6 +679,29 @@ export const adminAPI = {
 
   getAnalyticsSummary: async (period = '7d') => {
     const { data } = await api.get<AnalyticsSummary>(`/admin/analytics/summary?period=${period}`);
+    return data;
+  },
+
+  // Dashboard notifications (org invites, etc.)
+  listNotifications: async (limit = 50, offset = 0) => {
+    const { data } = await api.get<{ notifications: DashboardNotification[]; total: number }>(
+      `/admin/notifications?limit=${limit}&offset=${offset}`
+    );
+    return data;
+  },
+
+  getUnreadCount: async () => {
+    const { data } = await api.get<{ unread_count: number }>('/admin/notifications/unread-count');
+    return data.unread_count;
+  },
+
+  markNotificationsRead: async (ids: string[]) => {
+    const { data } = await api.post<{ marked: number }>('/admin/notifications/read', { ids });
+    return data.marked;
+  },
+
+  createDashboardSSEToken: async () => {
+    const { data } = await api.post<{ sse_token: string; user_id: string; expires_in: number }>('/admin/sse/token');
     return data;
   },
 

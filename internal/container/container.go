@@ -26,6 +26,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
@@ -78,7 +79,8 @@ type Container struct {
 	NotificationHandler *handlers.NotificationHandler
 	TemplateHandler     *handlers.TemplateHandler
 	PresenceHandler     *handlers.PresenceHandler
-	AdminHandler        *handlers.AdminHandler
+	AdminHandler                 *handlers.AdminHandler
+	DashboardNotificationHandler *handlers.DashboardNotificationHandler
 	HealthHandler       *handlers.HealthHandler
 	SSEHandler          *handlers.SSEHandler
 	AuthHandler         *handlers.AuthHandler
@@ -231,8 +233,15 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize tenant/organization support (C1)
 	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
 	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
-	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, logger)
+	dashboardNotifier := infrastructure.NewDashboardNotifier(
+		repos.DashboardNotification,
+		container.SSEBroadcaster,
+		redisClient,
+		logger,
+	)
+	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, dashboardNotifier, logger)
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
+	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 
 	// Initialize OIDC
 	if cfg.OIDC.Enabled {

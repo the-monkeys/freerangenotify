@@ -3,20 +3,26 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/smtp"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
+	"github.com/the-monkeys/freerangenotify/internal/platform"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
 type tenantService struct {
-	tenantRepo  tenant.Repository
-	memberRepo  tenant.MemberRepository
-	authRepo    auth.Repository
-	logger      *zap.Logger
+	tenantRepo   tenant.Repository
+	memberRepo   tenant.MemberRepository
+	authRepo     auth.Repository
+	notifier     dashboard_notification.Notifier
+	logger       *zap.Logger
 }
 
 // NewTenantService creates a new tenant service.
@@ -24,12 +30,14 @@ func NewTenantService(
 	tenantRepo tenant.Repository,
 	memberRepo tenant.MemberRepository,
 	authRepo auth.Repository,
+	notifier dashboard_notification.Notifier,
 	logger *zap.Logger,
 ) tenant.Service {
 	return &tenantService{
 		tenantRepo: tenantRepo,
 		memberRepo: memberRepo,
 		authRepo:   authRepo,
+		notifier:   notifier,
 		logger:     logger,
 	}
 }
@@ -184,7 +192,90 @@ func (s *tenantService) InviteMember(ctx context.Context, tenantID string, req t
 	if err := s.memberRepo.Create(ctx, member); err != nil {
 		return nil, errors.Internal("failed to add member", err)
 	}
+
+	// Send invitation email (best-effort)
+	inviterName := ""
+	if inv, _ := s.authRepo.GetUserByID(ctx, invitedBy); inv != nil {
+		inviterName = inv.FullName
+	}
+	if err := s.sendOrgInvitationEmail(ctx, tenantID, req.Email, req.Role, inviterName); err != nil {
+		s.logger.Warn("Failed to send org invitation email", zap.String("email", req.Email), zap.Error(err))
+	}
+
+	// Create in-app notification and publish via SSE (best-effort)
+	if s.notifier != nil {
+		t, _ := s.tenantRepo.GetByID(ctx, tenantID)
+		orgName := tenantID
+		if t != nil {
+			orgName = t.Name
+		}
+		if inviterName == "" {
+			inviterName = "Someone"
+		}
+		title, body := platform.RenderOrgInviteInApp(orgName, inviterName, platform.FormatRoleDisplay(req.Role))
+		if nErr := s.notifier.NotifyUser(ctx, admin.UserID, title, body, "org_invite", map[string]interface{}{
+			"tenant_id": tenantID, "role": req.Role, "invited_by": invitedBy,
+		}); nErr != nil {
+			s.logger.Warn("Failed to create dashboard notification for org invite", zap.Error(nErr))
+		}
+	}
+
 	return member, nil
+}
+
+// sendOrgInvitationEmail sends an organization invitation email using platform templates.
+func (s *tenantService) sendOrgInvitationEmail(ctx context.Context, tenantID, email, role string, inviterName string) error {
+	smtpHost := os.Getenv("FREERANGE_PROVIDERS_SMTP_HOST")
+	smtpPortStr := os.Getenv("FREERANGE_PROVIDERS_SMTP_PORT")
+	smtpUsername := os.Getenv("FREERANGE_PROVIDERS_SMTP_USERNAME")
+	smtpPassword := os.Getenv("FREERANGE_PROVIDERS_SMTP_PASSWORD")
+	smtpFromEmail := os.Getenv("FREERANGE_PROVIDERS_SMTP_FROM_EMAIL")
+	smtpFromName := os.Getenv("FREERANGE_PROVIDERS_SMTP_FROM_NAME")
+
+	if smtpHost == "" || smtpUsername == "" || smtpPassword == "" || smtpFromEmail == "" {
+		return fmt.Errorf("SMTP not configured — org invitation email not sent")
+	}
+
+	smtpPort := 587
+	if smtpPortStr != "" {
+		if port, err := strconv.Atoi(smtpPortStr); err == nil {
+			smtpPort = port
+		}
+	}
+	if smtpFromName == "" {
+		smtpFromName = "FreeRangeNotify"
+	}
+
+	frontendURL := os.Getenv("FREERANGE_FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	t, _ := s.tenantRepo.GetByID(ctx, tenantID)
+	orgName := tenantID
+	if t != nil {
+		orgName = t.Name
+	}
+	if inviterName == "" {
+		inviterName = "Someone"
+	}
+
+	// User always exists (we require registration for org invites)
+	data := platform.OrgInviteEmailDataWithURL(orgName, inviterName, role, email, frontendURL, true)
+	subject, body, err := platform.RenderOrgInviteEmail(data)
+	if err != nil {
+		return fmt.Errorf("render org invite email: %w", err)
+	}
+
+	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s",
+		smtpFromName, smtpFromEmail, email, subject, body)
+
+	auth := smtp.PlainAuth("", smtpUsername, smtpPassword, smtpHost)
+	addr := fmt.Sprintf("%s:%d", smtpHost, smtpPort)
+	if err := smtp.SendMail(addr, auth, smtpFromEmail, []string{email}, []byte(msg)); err != nil {
+		return fmt.Errorf("failed to send org invitation email: %w", err)
+	}
+	return nil
 }
 
 func (s *tenantService) ListMembers(ctx context.Context, tenantID string) ([]*tenant.TenantMember, error) {
