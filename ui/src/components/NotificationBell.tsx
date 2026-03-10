@@ -23,7 +23,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ isAuthentica
     const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
     const [open, setOpen] = useState(false);
     const eventSourceRef = useRef<EventSource | null>(null);
-    const tokenRefreshRef = useRef<NodeJS.Timeout | null>(null);
+    const tokenRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const fetchUnreadCount = useCallback(async () => {
         if (!isAuthenticated) return;
