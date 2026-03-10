@@ -230,7 +230,7 @@ type Service interface {
 	GetUnreadCount(ctx context.Context, userID, appID string) (int64, error)
 	ListUnread(ctx context.Context, userID, appID string) ([]*Notification, error)
 	MarkRead(ctx context.Context, notificationIDs []string, appID, userID string) error
-	Broadcast(ctx context.Context, req BroadcastRequest) ([]*Notification, error)
+	Broadcast(ctx context.Context, req BroadcastRequest) (*BroadcastResult, error)
 	// Phase 5: snooze, archive, mark-all-read
 	Snooze(ctx context.Context, notificationID, appID string, until time.Time) error
 	Unsnooze(ctx context.Context, notificationID, appID string) error
@@ -241,16 +241,24 @@ type Service interface {
 
 // BroadcastRequest represents a request to send a notification to all users of an application
 type BroadcastRequest struct {
-	AppID         string                 `json:"app_id" validate:"required"`
-	EnvironmentID string                 `json:"environment_id,omitempty"`
-	Channel       Channel                `json:"channel" validate:"required"`
-	Priority      Priority               `json:"priority" validate:"required"`
-	Title         string                 `json:"title,omitempty"`
-	Body          string                 `json:"body,omitempty"`
-	Data          map[string]interface{} `json:"data,omitempty"`
-	TemplateID    string                 `json:"template_id" validate:"required"`
-	Category      string                 `json:"category,omitempty"`
-	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
+	AppID             string                 `json:"app_id" validate:"required"`
+	EnvironmentID     string                 `json:"environment_id,omitempty"`
+	Channel           Channel                `json:"channel" validate:"required"`
+	Priority          Priority               `json:"priority" validate:"required"`
+	Title             string                 `json:"title,omitempty"`
+	Body              string                 `json:"body,omitempty"`
+	Data              map[string]interface{} `json:"data,omitempty"`
+	TemplateID        string                 `json:"template_id"`
+	Category          string                 `json:"category,omitempty"`
+	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
+	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient instead of sending notification
+	TopicKey          string                 `json:"topic_key,omitempty"`          // Phase 2: limit recipients to topic subscribers (by topic key)
+}
+
+// BroadcastResult holds the result of a broadcast operation
+type BroadcastResult struct {
+	Notifications []*Notification // when sending notifications
+	Triggered     int             // when triggering workflows
 }
 
 // Validate validates the broadcast request
@@ -264,7 +272,8 @@ func (r *BroadcastRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.TemplateID == "" {
+	// TemplateID required only when NOT triggering a workflow
+	if r.WorkflowTriggerID == "" && r.TemplateID == "" {
 		return ErrTemplateRequired
 	}
 	return nil
@@ -322,19 +331,20 @@ func (n *Notification) IsScheduled() bool {
 
 // SendRequest represents a request to send a notification
 type SendRequest struct {
-	AppID         string                 `json:"app_id" validate:"required"`
-	EnvironmentID string                 `json:"environment_id,omitempty"`
-	UserID        string                 `json:"user_id"` // Removed validate:"required"
-	Channel       Channel                `json:"channel"` // Optional: inferred from template if empty
-	Priority      Priority               `json:"priority" validate:"required"`
-	Title         string                 `json:"title,omitempty"`
-	Body          string                 `json:"body,omitempty"`
-	Data          map[string]interface{} `json:"data,omitempty"`
-	TemplateID    string                 `json:"template_id" validate:"required"`
-	Category      string                 `json:"category,omitempty"`
-	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
-	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
-	TopicID       string                 `json:"topic_id,omitempty"` // Phase 2: send to all subscribers of a topic
+	AppID             string                 `json:"app_id" validate:"required"`
+	EnvironmentID     string                 `json:"environment_id,omitempty"`
+	UserID            string                 `json:"user_id"` // Removed validate:"required"
+	Channel           Channel                `json:"channel"` // Optional: inferred from template if empty
+	Priority          Priority               `json:"priority" validate:"required"`
+	Title             string                 `json:"title,omitempty"`
+	Body              string                 `json:"body,omitempty"`
+	Data              map[string]interface{} `json:"data,omitempty"`
+	TemplateID        string                 `json:"template_id" validate:"required"`
+	Category          string                 `json:"category,omitempty"`
+	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
+	Recurrence        *Recurrence            `json:"recurrence,omitempty"`
+	TopicID           string                 `json:"topic_id,omitempty"`           // Phase 2: send to all subscribers of a topic
+	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
 }
 
 // Validate validates the send request

@@ -120,20 +120,42 @@ func (r *NotificationRepository) GetByApp(ctx context.Context, appID string, fil
 	return r.List(ctx, filter)
 }
 
-// GetPending retrieves notifications that need to be sent
+// GetPending retrieves notifications that need to be sent.
+// Excludes pending notifications with scheduled_at in the future (they stay in Redis scheduled queue).
 func (r *NotificationRepository) GetPending(ctx context.Context) ([]*notification.Notification, error) {
+	now := time.Now().UTC()
+	nowStr := now.Format(time.RFC3339)
+
+	// Exclude future-scheduled: either no scheduled_at, or scheduled_at <= now
+	noScheduledAt := map[string]interface{}{
+		"bool": map[string]interface{}{
+			"must_not": []map[string]interface{}{
+				{"exists": map[string]interface{}{"field": "scheduled_at"}},
+			},
+		},
+	}
+	scheduledInPast := map[string]interface{}{
+		"range": map[string]interface{}{
+			"scheduled_at": map[string]interface{}{"lte": nowStr},
+		},
+	}
+
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"term": map[string]interface{}{
-				"status": notification.StatusPending,
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"status": notification.StatusPending}},
+					{
+						"bool": map[string]interface{}{
+							"should": []map[string]interface{}{noScheduledAt, scheduledInPast},
+							"minimum_should_match": 1,
+						},
+					},
+				},
 			},
 		},
 		"sort": []map[string]interface{}{
-			{
-				"created_at": map[string]interface{}{
-					"order": "asc",
-				},
-			},
+			{"created_at": map[string]interface{}{"order": "asc"}},
 		},
 	}
 

@@ -7,14 +7,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // topicService implements topic.Service.
 type topicService struct {
-	repo   topic.Repository
-	logger *zap.Logger
+	repo        topic.Repository
+	workflowSvc workflow.Service // Phase 4: optional, for on-subscribe trigger
+	logger      *zap.Logger
 }
 
 // NewTopicService creates a new topic service.
@@ -23,6 +25,11 @@ func NewTopicService(repo topic.Repository, logger *zap.Logger) topic.Service {
 		repo:   repo,
 		logger: logger,
 	}
+}
+
+// SetWorkflowService injects the optional workflow service for on-subscribe triggers.
+func (s *topicService) SetWorkflowService(ws workflow.Service) {
+	s.workflowSvc = ws
 }
 
 func (s *topicService) Create(ctx context.Context, appID string, req *topic.CreateRequest) (*topic.Topic, error) {
@@ -34,14 +41,15 @@ func (s *topicService) Create(ctx context.Context, appID string, req *topic.Crea
 	}
 
 	t := &topic.Topic{
-		ID:            uuid.New().String(),
-		AppID:         appID,
-		EnvironmentID: req.EnvironmentID,
-		Name:          req.Name,
-		Key:           req.Key,
-		Description:   req.Description,
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
+		ID:                    uuid.New().String(),
+		AppID:                 appID,
+		EnvironmentID:         req.EnvironmentID,
+		Name:                  req.Name,
+		Key:                   req.Key,
+		Description:           req.Description,
+		OnSubscribeTriggerID: req.OnSubscribeTriggerID,
+		CreatedAt:             time.Now().UTC(),
+		UpdatedAt:             time.Now().UTC(),
 	}
 
 	if err := s.repo.Create(ctx, t); err != nil {
@@ -76,7 +84,18 @@ func (s *topicService) GetByKey(ctx context.Context, appID, key string) (*topic.
 }
 
 func (s *topicService) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*topic.Topic, int64, error) {
-	return s.repo.List(ctx, appID, environmentID, limit, offset)
+	topics, total, err := s.repo.List(ctx, appID, environmentID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Enrich each topic with subscriber count
+	for _, t := range topics {
+		count, countErr := s.repo.GetSubscriberCount(ctx, t.ID)
+		if countErr == nil {
+			t.SubscriberCount = count
+		}
+	}
+	return topics, total, nil
 }
 
 func (s *topicService) Delete(ctx context.Context, id, appID string) error {
@@ -140,6 +159,25 @@ func (s *topicService) AddSubscribers(ctx context.Context, topicID, appID string
 	if err := s.repo.AddSubscribers(ctx, topicID, appID, userIDs); err != nil {
 		s.logger.Error("Failed to add subscribers", zap.Error(err))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "failed to add subscribers")
+	}
+
+	// Phase 4: Trigger workflow for each new subscriber (fire-and-forget)
+	if t.OnSubscribeTriggerID != "" && s.workflowSvc != nil && len(userIDs) > 0 {
+		payload := map[string]any{"topic_id": topicID, "topic_key": t.Key}
+		for _, userID := range userIDs {
+			_, triggerErr := s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
+				TriggerID: t.OnSubscribeTriggerID,
+				UserID:    userID,
+				Payload:   payload,
+			})
+			if triggerErr != nil {
+				s.logger.Warn("On-subscribe workflow trigger failed (non-fatal)",
+					zap.String("topic_id", topicID),
+					zap.String("user_id", userID),
+					zap.String("trigger_id", t.OnSubscribeTriggerID),
+					zap.Error(triggerErr))
+			}
+		}
 	}
 
 	s.logger.Info("Subscribers added to topic",

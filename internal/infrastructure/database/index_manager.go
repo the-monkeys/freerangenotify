@@ -50,9 +50,10 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		"refresh_tokens":        im.templates.GetRefreshTokensTemplate,
 
 		// Phase 1 additions (additive only — existing indices untouched)
-		"workflows":           im.templates.GetWorkflowsTemplate,
-		"workflow_executions": im.templates.GetWorkflowExecutionsTemplate,
-		"digest_rules":        im.templates.GetDigestRulesTemplate,
+		"workflows":            im.templates.GetWorkflowsTemplate,
+		"workflow_executions":  im.templates.GetWorkflowExecutionsTemplate,
+		"workflow_schedules":   im.templates.GetWorkflowSchedulesTemplate,
+		"digest_rules":         im.templates.GetDigestRulesTemplate,
 
 		// Phase 2 additions
 		"topics":              im.templates.GetTopicsTemplate,

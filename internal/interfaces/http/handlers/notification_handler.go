@@ -310,8 +310,8 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 		broadcastReq.EnvironmentID = envID
 	}
 
-	// Send broadcast notifications
-	notifications, err := h.service.Broadcast(c.Context(), broadcastReq)
+	// Send broadcast notifications (or trigger workflows)
+	result, err := h.service.Broadcast(c.Context(), broadcastReq)
 	if err != nil {
 		h.logger.Error("Failed to broadcast notifications", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -320,9 +320,16 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 	}
 
 	// Convert to response
+	var sent, total int
+	if result.Triggered > 0 {
+		sent, total = result.Triggered, result.Triggered
+	} else {
+		sent = len(result.Notifications)
+		total = sent
+	}
 	response := dto.BulkSendResponse{
-		Sent:  len(notifications),
-		Total: len(notifications), // In broadcast, total is what was found and sent
+		Sent:  sent,
+		Total: total,
 	}
 
 	if h.idemp != nil {
@@ -373,6 +380,22 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 	}
 	if priority := c.Query("priority"); priority != "" {
 		filter.Priority = notification.Priority(priority)
+	}
+	if fromDate := c.Query("from_date"); fromDate != "" {
+		if t, err := time.Parse(time.RFC3339, fromDate); err == nil {
+			filter.FromDate = &t
+		} else if t, err := time.Parse("2006-01-02", fromDate); err == nil {
+			filter.FromDate = &t
+		}
+	}
+	if toDate := c.Query("to_date"); toDate != "" {
+		if t, err := time.Parse(time.RFC3339, toDate); err == nil {
+			filter.ToDate = &t
+		} else if t, err := time.Parse("2006-01-02", toDate); err == nil {
+			// Inclusive end of day
+			t = t.Add(24*time.Hour - time.Nanosecond)
+			filter.ToDate = &t
+		}
 	}
 
 	filter.Page = c.QueryInt("page", 1)

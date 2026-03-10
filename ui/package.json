@@ -1,7 +1,7 @@
 {
   "name": "freerange-notify-ui",
   "private": true,
-  "version": "0.1.13-alpha",
+  "version": "0.1.14-alpha",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
@@ -25,6 +25,8 @@
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "lucide-react": "^0.562.0",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.4.3",

@@ -23,21 +23,29 @@ type Application struct {
 
 // Settings represents application-specific settings
 type Settings struct {
-	RateLimit          int                                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
-	RetryAttempts      int                                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
-	DefaultTemplate    string                              `json:"default_template" es:"default_template"` // default template ID
-	EmailConfig        *EmailConfig                        `json:"email_config,omitempty" es:"email_config"`
-	DailyEmailLimit    int                                 `json:"daily_email_limit" es:"daily_email_limit"`
-	EnableWebhooks     bool                                `json:"enable_webhooks" es:"enable_webhooks"`             // webhook notifications
-	EnableAnalytics    bool                                `json:"enable_analytics" es:"enable_analytics"`           // analytics tracking
-	Slack              *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                       // Phase 3
-	Discord            *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                   // Phase 3
-	CustomProviders    []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"` // Phase 3
-	ValidationURL      string                              `json:"validation_url,omitempty" es:"validation_url"`
-	ValidationConfig   *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
-	DefaultPreferences *DefaultPreferences                 `json:"default_preferences,omitempty" es:"default_preferences"`
-	ProviderFallbacks  []ProviderFallback                  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
-	SubscriberThrottle map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"` // App-wide per-channel subscriber throttle defaults (Phase 2)
+	RateLimit               int                                 `json:"rate_limit" es:"rate_limit"`                           // requests per hour
+	RetryAttempts           int                                 `json:"retry_attempts" es:"retry_attempts"`                   // max retry attempts
+	DefaultTemplate         string                              `json:"default_template" es:"default_template"`                // default template ID
+	EmailConfig             *EmailConfig                        `json:"email_config,omitempty" es:"email_config"`
+	DailyEmailLimit         int                                 `json:"daily_email_limit" es:"daily_email_limit"`
+	EnableWebhooks          bool                                `json:"enable_webhooks" es:"enable_webhooks"`                  // webhook notifications
+	EnableAnalytics         bool                                `json:"enable_analytics" es:"enable_analytics"`               // analytics tracking
+	Slack                   *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                           // Phase 3
+	Discord                 *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                       // Phase 3
+	CustomProviders         []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"`      // Phase 3
+	ValidationURL           string                              `json:"validation_url,omitempty" es:"validation_url"`
+	ValidationConfig        *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
+	DefaultPreferences      *DefaultPreferences                 `json:"default_preferences,omitempty" es:"default_preferences"`
+	ProviderFallbacks       []ProviderFallback                  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
+	SubscriberThrottle       map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"`       // Phase 2
+	OnUserCreatedTriggerID   string                              `json:"on_user_created_trigger_id,omitempty" es:"on_user_created_trigger_id"` // Phase 5: workflow to trigger on user create
+	InboundWebhookConfig     *InboundWebhookConfig               `json:"inbound_webhook_config,omitempty" es:"inbound_webhook_config"`       // Phase 7: inbound webhook config (secret, event mapping)
+}
+
+// InboundWebhookConfig holds configuration for receiving inbound webhooks (Phase 7)
+type InboundWebhookConfig struct {
+	Secret       string           `json:"secret,omitempty" es:"secret"`
+	EventMapping map[string]string `json:"event_mapping,omitempty" es:"event_mapping"` // event name -> workflow trigger_id
 }
 
 // SubscriberThrottleConfig defines app-level default throttle limits

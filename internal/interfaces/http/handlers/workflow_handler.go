@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
+	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -253,6 +254,50 @@ func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
 		"success": true,
 		"data":    exec,
+	})
+}
+
+// TriggerByTopic handles POST /v1/workflows/trigger-by-topic
+// @Summary Trigger workflow for topic subscribers
+// @Description Trigger a workflow for all users subscribed to a topic
+// @Tags Workflows
+// @Accept json
+// @Produce json
+// @Param body body workflow.TriggerByTopicRequest true "Trigger by topic request"
+// @Success 202 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/workflows/trigger-by-topic [post]
+func (h *WorkflowHandler) TriggerByTopic(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req workflow.TriggerByTopicRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "invalid request body",
+		})
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "validation failed",
+			"details": err.Error(),
+		})
+	}
+
+	result, err := h.service.TriggerByTopic(c.Context(), appID, &req)
+	if err != nil {
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"success": true,
+		"data":    result,
 	})
 }
 

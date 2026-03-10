@@ -28,7 +28,12 @@ import type {
   CreateWorkflowRequest,
   UpdateWorkflowRequest,
   TriggerWorkflowRequest,
+  TriggerByTopicRequest,
+  TriggerByTopicResult,
   WorkflowExecution,
+  WorkflowSchedule,
+  CreateScheduleRequest,
+  UpdateScheduleRequest,
   DigestRule,
   CreateDigestRuleRequest,
   UpdateDigestRuleRequest,
@@ -374,8 +379,9 @@ export const notificationsAPI = {
     params.set('page_size', String(pageSize));
     if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
     if (filters?.channel && filters.channel !== 'all') params.set('channel', filters.channel);
-    if (filters?.from) params.set('from_date', new Date(filters.from).toISOString());
-    if (filters?.to) params.set('to_date', new Date(filters.to).toISOString());
+    // Send date strings as-is (YYYY-MM-DD) so backend can parse and extend to_date to end of day
+    if (filters?.from) params.set('from_date', filters.from);
+    if (filters?.to) params.set('to_date', filters.to);
 
     // Note: This endpoint is currently NOT wrapped in success/data envelope in backend
     const { data } = await api.get<NotificationListResponse>(`/notifications/?${params.toString()}`, {
@@ -766,6 +772,13 @@ export const workflowsAPI = {
     return data.data;
   },
 
+  triggerByTopic: async (apiKey: string, payload: TriggerByTopicRequest) => {
+    const { data } = await api.post<ApiResponse<TriggerByTopicResult>>('/workflows/trigger-by-topic', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data.data as TriggerByTopicResult;
+  },
+
   listExecutions: async (apiKey: string, limit = 20, offset = 0, workflowId?: string) => {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (workflowId) params.set('workflow_id', workflowId);
@@ -784,6 +797,37 @@ export const workflowsAPI = {
 
   cancelExecution: async (apiKey: string, id: string) => {
     await api.post(`/workflows/executions/${id}/cancel`, {}, {
+      headers: getAuthHeaders(apiKey)
+    });
+  },
+
+  // Phase 6: Schedules
+  createSchedule: async (apiKey: string, payload: CreateScheduleRequest) => {
+    const { data } = await api.post<ApiResponse<WorkflowSchedule>>('/workflows/schedules', payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data.data;
+  },
+  listSchedules: async (apiKey: string, limit = 20, offset = 0) => {
+    const { data } = await api.get<ApiResponse<WorkflowSchedule[]> & { total: number }>(`/workflows/schedules?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return { schedules: data.data, total: data.total };
+  },
+  getSchedule: async (apiKey: string, id: string) => {
+    const { data } = await api.get<ApiResponse<WorkflowSchedule>>(`/workflows/schedules/${id}`, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data.data;
+  },
+  updateSchedule: async (apiKey: string, id: string, payload: UpdateScheduleRequest) => {
+    const { data } = await api.put<ApiResponse<WorkflowSchedule>>(`/workflows/schedules/${id}`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data.data;
+  },
+  deleteSchedule: async (apiKey: string, id: string) => {
+    await api.delete(`/workflows/schedules/${id}`, {
       headers: getAuthHeaders(apiKey)
     });
   },

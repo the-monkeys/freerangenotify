@@ -5,8 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
+	"os"
 	"strings"
+	"sync"
 	stdtemplate "text/template"
 	"time"
 	"unicode"
@@ -369,6 +370,38 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					}
 				}
 
+				// Auto-inject product and cta_url for welcome_email and similar templates when missing
+				hasProductVar := containsString(tmpl.Variables, "product")
+				hasCtaURLVar := containsString(tmpl.Variables, "cta_url")
+				needProduct := hasProductVar && needTemplateVar(notif.Content.Data, "product")
+				needCtaURL := hasCtaURLVar && needTemplateVar(notif.Content.Data, "cta_url")
+				if needProduct || needCtaURL {
+					frontendURL := os.Getenv("FREERANGE_FRONTEND_URL")
+					if frontendURL == "" {
+						frontendURL = "http://localhost:3000"
+					}
+					if needProduct {
+						product := ""
+						if app, err := p.appRepo.GetByID(ctx, notif.AppID); err == nil && app != nil && app.AppName != "" {
+							product = app.AppName
+						}
+						if product == "" {
+							product = "our platform"
+						}
+						notif.Content.Data["product"] = product
+						logger.Debug("Auto-injected product for template",
+							zap.String("notification_id", notif.NotificationID),
+							zap.String("product", product))
+					}
+					if needCtaURL {
+						ctaURL := frontendURL + "/login"
+						notif.Content.Data["cta_url"] = ctaURL
+						logger.Debug("Auto-injected cta_url for template",
+							zap.String("notification_id", notif.NotificationID),
+							zap.String("cta_url", ctaURL))
+					}
+				}
+
 				// Render template content
 				title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
 				if err != nil {
@@ -527,14 +560,22 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		zap.String("channel", string(notif.Channel)),
 		zap.String("user_id", notif.UserID))
 
-	// If it's an email, we might have custom credentials
+	// If it's an email, inject app-specific credentials only when the app has explicitly
+	// configured valid credentials. Otherwise we use default .env SMTP.
 	if notif.Channel == notification.ChannelEmail {
 		app, err := p.appRepo.GetByID(ctx, notif.AppID)
 		if err == nil && app != nil && app.Settings.EmailConfig != nil {
-			ctx = context.WithValue(ctx, providers.EmailConfigKey, app.Settings.EmailConfig)
-			p.logger.Debug("Injecting custom email config into context",
-				zap.String("app_id", notif.AppID),
-				zap.String("provider_type", app.Settings.EmailConfig.ProviderType))
+			ec := app.Settings.EmailConfig
+			if hasValidEmailConfig(ec) {
+				ctx = context.WithValue(ctx, providers.EmailConfigKey, ec)
+				p.logger.Debug("Using app email config",
+					zap.String("app_id", notif.AppID),
+					zap.String("provider_type", ec.ProviderType))
+			} else {
+				p.logger.Debug("App email config incomplete or system default, using .env SMTP",
+					zap.String("app_id", notif.AppID),
+					zap.String("provider_type", ec.ProviderType))
+			}
 		}
 	}
 
@@ -1006,14 +1047,46 @@ func nameFromEmail(email string) string {
     return strings.Join(words, " ")
 }
 
+// hasValidEmailConfig returns true if the app has explicitly configured and complete
+// credentials for its chosen email provider. "system" or incomplete config means use default .env SMTP.
+func hasValidEmailConfig(ec *application.EmailConfig) bool {
+	if ec == nil {
+		return false
+	}
+	switch ec.ProviderType {
+	case "", "system":
+		return false
+	case "smtp":
+		return ec.SMTP != nil && strings.TrimSpace(ec.SMTP.Host) != ""
+	case "sendgrid":
+		return ec.SendGrid != nil && strings.TrimSpace(ec.SendGrid.APIKey) != ""
+	default:
+		return false
+	}
+}
+
 // needNameFromEmail returns true if data does not contain a non-empty "name" value.
 func needNameFromEmail(data map[string]interface{}) bool {
-    v, ok := data["name"]
-    if !ok {
-        return true
-    }
-    s, _ := v.(string)
-    return strings.TrimSpace(s) == ""
+	return needTemplateVar(data, "name")
+}
+
+// needTemplateVar returns true if data does not contain a non-empty value for the given key.
+func needTemplateVar(data map[string]interface{}, key string) bool {
+	v, ok := data[key]
+	if !ok {
+		return true
+	}
+	s, _ := v.(string)
+	return strings.TrimSpace(s) == ""
+}
+
+func containsString(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeTemplateData merges control defaults, saved control values, and user payload

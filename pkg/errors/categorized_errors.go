@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrorCategory represents the category of an error
@@ -287,6 +288,28 @@ func GetCategory(err error) ErrorCategory {
 func IsRetryableError(err error) bool {
 	if appErr, ok := AsAppError(err); ok {
 		return appErr.Retryable
+	}
+	return false
+}
+
+// IsNotFound returns true if the error indicates a not-found condition
+func IsNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if appErr, ok := AsAppError(err); ok {
+		return appErr.Category == CategoryNotFound
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
+}
+
+// IsBadRequest returns true if the error indicates a bad request
+func IsBadRequest(err error) bool {
+	if err == nil {
+		return false
+	}
+	if appErr, ok := AsAppError(err); ok {
+		return appErr.Category == CategoryValidation
 	}
 	return false
 }

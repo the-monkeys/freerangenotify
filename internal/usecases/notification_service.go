@@ -13,6 +13,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
@@ -39,13 +40,19 @@ type NotificationService struct {
 	limiter          limiter.Limiter
 	appCache         map[string]*appCacheEntry
 	appCacheMu       sync.RWMutex
-	topicService     topic.Service // Phase 2: optional, set via SetTopicService
+	topicService     topic.Service   // Phase 2: optional, set via SetTopicService
+	workflowService  workflow.Service // Phase 2: optional, set via SetWorkflowService
 }
 
 // SetTopicService injects the optional topic service for fan-out support.
 // Uses setter injection to avoid circular dependency (TopicService is optional).
 func (s *NotificationService) SetTopicService(ts topic.Service) {
 	s.topicService = ts
+}
+
+// SetWorkflowService injects the optional workflow service for broadcast→workflow.
+func (s *NotificationService) SetWorkflowService(ws workflow.Service) {
+	s.workflowService = ws
 }
 
 // NotificationServiceConfig holds configuration for the notification service
@@ -294,6 +301,30 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		s.metrics.RecordSend(string(req.Channel), string(notification.StatusQueued), string(req.Priority))
 	}
 
+	// Phase 3: After-send workflow trigger (fire-and-forget, single user only)
+	if req.WorkflowTriggerID != "" && req.UserID != "" && s.workflowService != nil {
+		go func() {
+			payload := req.Data
+			if payload == nil {
+				payload = make(map[string]interface{})
+			}
+			payload["notification_id"] = notif.NotificationID
+			payload["channel"] = string(req.Channel)
+			payload["template_id"] = req.TemplateID
+			_, err := s.workflowService.Trigger(context.Background(), req.AppID, &workflow.TriggerRequest{
+				TriggerID: req.WorkflowTriggerID,
+				UserID:    req.UserID,
+				Payload:   payload,
+			})
+			if err != nil {
+				s.logger.Warn("Workflow trigger after send failed (non-fatal)",
+					zap.String("trigger_id", req.WorkflowTriggerID),
+					zap.String("user_id", req.UserID),
+					zap.Error(err))
+			}
+		}()
+	}
+
 	s.logger.Info("Notification sent successfully",
 		zap.String("notification_id", notif.NotificationID),
 		zap.String("user_id", req.UserID),
@@ -474,52 +505,85 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 	return notifications, nil
 }
 
-// Broadcast sends a notification to all users of an application
-func (s *NotificationService) Broadcast(ctx context.Context, req notification.BroadcastRequest) ([]*notification.Notification, error) {
+// Broadcast sends a notification to all users of an application (or triggers workflows when WorkflowTriggerID is set).
+func (s *NotificationService) Broadcast(ctx context.Context, req notification.BroadcastRequest) (*notification.BroadcastResult, error) {
 	// Validate request
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
-	// Fetch all users for the application
 	var allUserIDs []string
-	limit := 100
-	offset := 0
 
-	for {
-		users, err := s.userRepo.List(ctx, user.UserFilter{
-			AppID:  req.AppID,
-			Limit:  limit,
-			Offset: offset,
-		})
+	if req.TopicKey != "" {
+		// Resolve recipients from topic subscribers
+		if s.topicService == nil {
+			return nil, fmt.Errorf("topics feature is not enabled")
+		}
+		topicObj, err := s.topicService.GetByKey(ctx, req.AppID, req.TopicKey)
 		if err != nil {
-			s.logger.Error("Failed to list users for broadcast", zap.Error(err))
-			return nil, fmt.Errorf("failed to list users: %w", err)
+			return nil, fmt.Errorf("failed to get topic by key %q: %w", req.TopicKey, err)
 		}
-
-		if len(users) == 0 {
-			break
+		allUserIDs, err = s.topicService.GetSubscriberUserIDs(ctx, topicObj.ID, req.AppID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get topic subscribers: %w", err)
 		}
-
-		for _, u := range users {
-			allUserIDs = append(allUserIDs, u.UserID)
+		if len(allUserIDs) == 0 {
+			return nil, fmt.Errorf("topic %q has no subscribers", req.TopicKey)
 		}
-
-		if len(users) < limit {
-			break
+		s.logger.Info("Broadcast targeting topic subscribers",
+			zap.String("app_id", req.AppID),
+			zap.String("topic_key", req.TopicKey),
+			zap.Int("user_count", len(allUserIDs)))
+	} else {
+		// Fetch all users for the application
+		limit := 100
+		offset := 0
+		for {
+			users, err := s.userRepo.List(ctx, user.UserFilter{
+				AppID:  req.AppID,
+				Limit:  limit,
+				Offset: offset,
+			})
+			if err != nil {
+				s.logger.Error("Failed to list users for broadcast", zap.Error(err))
+				return nil, fmt.Errorf("failed to list users: %w", err)
+			}
+			if len(users) == 0 {
+				break
+			}
+			for _, u := range users {
+				allUserIDs = append(allUserIDs, u.UserID)
+			}
+			if len(users) < limit {
+				break
+			}
+			offset += limit
 		}
-		offset += limit
+		if len(allUserIDs) == 0 {
+			return nil, fmt.Errorf("no users found for application %s", req.AppID)
+		}
+		s.logger.Info("Starting broadcast to all users",
+			zap.String("app_id", req.AppID),
+			zap.Int("user_count", len(allUserIDs)))
 	}
 
-	if len(allUserIDs) == 0 {
-		return nil, fmt.Errorf("no users found for application %s", req.AppID)
+	// Workflow trigger path
+	if req.WorkflowTriggerID != "" {
+		if s.workflowService == nil {
+			return nil, fmt.Errorf("workflows feature is not enabled")
+		}
+		result, err := s.workflowService.TriggerForUserIDs(ctx, req.AppID, req.WorkflowTriggerID, allUserIDs, req.Data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to trigger workflows: %w", err)
+		}
+		s.logger.Info("Broadcast triggered workflows",
+			zap.String("app_id", req.AppID),
+			zap.String("trigger_id", req.WorkflowTriggerID),
+			zap.Int("triggered", result.Triggered))
+		return &notification.BroadcastResult{Triggered: result.Triggered}, nil
 	}
 
-	s.logger.Info("Starting broadcast to all users",
-		zap.String("app_id", req.AppID),
-		zap.Int("user_count", len(allUserIDs)))
-
-	// Prepare bulk send request
+	// Standard notification broadcast
 	bulkReq := notification.BulkSendRequest{
 		AppID:       req.AppID,
 		UserIDs:     allUserIDs,
@@ -532,8 +596,11 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 		Category:    req.Category,
 		ScheduledAt: req.ScheduledAt,
 	}
-
-	return s.SendBulk(ctx, bulkReq)
+	notifications, err := s.SendBulk(ctx, bulkReq)
+	if err != nil {
+		return nil, err
+	}
+	return &notification.BroadcastResult{Notifications: notifications}, nil
 }
 
 // SendBatch sends multiple distinct notifications

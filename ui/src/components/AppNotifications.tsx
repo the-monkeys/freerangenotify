@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template } from '../types';
+import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI } from '../services/api';
+import type { Notification, NotificationRequest, User, Template, Workflow, Topic, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -24,6 +24,8 @@ import { SlidePanel } from './ui/slide-panel';
 import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
+import { TimezonePicker } from './TimezonePicker';
+import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
 
 interface AppNotificationsProps {
     appId: string;
@@ -65,10 +67,17 @@ function toISODateOnly(val: string): string {
     return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 }
 
+// Convert datetime-local value (YYYY-MM-DDTHH:mm) in given timezone to ISO UTC string
+function scheduleToISO(datetimeLocal: string, timezone: string): string | undefined {
+    return localInTimezoneToISO(datetimeLocal, timezone);
+}
+
 const useNotificationData = (apiKey: string) => {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [users, setUsers] = useState<User[]>([]);
     const [templates, setTemplates] = useState<Template[]>([]);
+    const [workflows, setWorkflows] = useState<Workflow[]>([]);
+    const [topics, setTopics] = useState<Topic[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
@@ -78,15 +87,19 @@ const useNotificationData = (apiKey: string) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [notifsResult, usersResult, templatesResult] = await Promise.all([
+            const [notifsResult, usersResult, templatesResult, workflowsResult, topicsResult] = await Promise.all([
                 notificationsAPI.list(apiKey, page, pageSize, filters).catch(e => { console.error(e); return { notifications: [] as Notification[], total: 0, page: 1, page_size: pageSize }; }),
                 usersAPI.list(apiKey, 1, 100).catch(e => { console.error(e); return { users: [] as User[], total_count: 0, page: 1, page_size: 100 }; }),
-                templatesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { templates: [] as Template[], total: 0, limit: 100, offset: 0 }; })
+                templatesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { templates: [] as Template[], total: 0, limit: 100, offset: 0 }; }),
+                workflowsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { workflows: [] as Workflow[], total: 0, limit: 100, offset: 0 }; }),
+                topicsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { topics: [] as Topic[], total: 0, limit: 100, offset: 0 }; })
             ]);
             setNotifications(notifsResult.notifications || []);
             setTotalNotifications(notifsResult.total || 0);
             setUsers(usersResult.users || []);
             setTemplates(templatesResult.templates || []);
+            setWorkflows(workflowsResult.workflows || []);
+            setTopics(topicsResult.topics || []);
         } catch (error) {
             console.error('Failed to fetch notification data:', error);
         } finally {
@@ -100,11 +113,11 @@ const useNotificationData = (apiKey: string) => {
         }
     }, [apiKey, page, filters]);
 
-    return { notifications, users, templates, loading, refresh: fetchData, page, setPage, pageSize, totalNotifications, filters, setFilters };
+    return { notifications, users, templates, workflows, topics, loading, refresh: fetchData, page, setPage, pageSize, totalNotifications, filters, setFilters };
 };
 
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
-    const { notifications, users, templates, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey);
+    const { notifications, users, templates, workflows, topics, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey);
     const [showSendForm, setShowSendForm] = useState(false);
 
     // Report notification count to parent (app-wide, derived from current list)
@@ -118,6 +131,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [dataInput, setDataInput] = useState('');
     const [confirmingBroadcast, setConfirmingBroadcast] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [broadcastWorkflowTriggerId, setBroadcastWorkflowTriggerId] = useState('');
+    const [broadcastTopicKey, setBroadcastTopicKey] = useState('');
 
     // Inbox selection & actions state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -246,6 +261,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickScheduleEnabled, setQuickScheduleEnabled] = useState(false);
     const [advScheduleEnabled, setAdvScheduleEnabled] = useState(false);
     const [broadcastScheduleEnabled, setBroadcastScheduleEnabled] = useState(false);
+    const [scheduleTimezone, setScheduleTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     const [advRecurrenceEnabled, setAdvRecurrenceEnabled] = useState(false);
     const [advRecurrencePreset, setAdvRecurrencePreset] = useState('');
 
@@ -291,7 +307,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 template: quickSelectedTemplate?.name || quickTemplateId,
                 data: Object.keys(quickData).length > 0 ? quickData : undefined,
                 priority: quickPriority as any,
-                scheduled_at: quickScheduledAt ? new Date(quickScheduledAt).toISOString() : undefined,
+                scheduled_at: quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined,
             });
             toast.success('Notification sent!');
             setQuickTo('');
@@ -325,18 +341,31 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 return;
             }
 
-            await notificationsAPI.broadcast(apiKey, {
+            const useWorkflow = !!broadcastWorkflowTriggerId;
+            if (!useWorkflow && !formData.template_id) {
+                toast.error('Select a template or a workflow to trigger');
+                setIsSubmitting(false);
+                return;
+            }
+
+            const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
-                template_id: formData.template_id,
+                template_id: useWorkflow ? undefined : formData.template_id,
                 data: customData,
-                scheduled_at: formData.scheduled_at
-            });
+                scheduled_at: formData.scheduled_at,
+                workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
+                topic_key: broadcastTopicKey || undefined,
+            };
+
+            await notificationsAPI.broadcast(apiKey, payload);
 
             setFormData(createEmptyForm());
             setDataInput('');
+            setBroadcastWorkflowTriggerId('');
+            setBroadcastTopicKey('');
             refresh();
-            toast.success('Broadcast initiated successfully.');
+            toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
             toast.error(extractErrorMessage(error, 'Failed to broadcast notification'));
@@ -369,6 +398,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 data: customData,
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
+                workflow_trigger_id: formData.workflow_trigger_id || undefined,
             };
 
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
@@ -575,14 +605,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </div>
                                     </button>
                                     {quickScheduleEnabled && (
-                                        <div className="px-4 pb-4 pt-1 space-y-1">
+                                        <div className="px-4 pb-4 pt-1 space-y-2">
                                             <Input
                                                 id="quickScheduledAt"
                                                 type="datetime-local"
                                                 value={quickScheduledAt}
                                                 onChange={e => setQuickScheduledAt(e.target.value)}
                                             />
-                                            <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                            <div className="space-y-1">
+                                                <Label htmlFor="quickScheduleTz" className="text-xs">Timezone</Label>
+                                                <TimezonePicker
+                                                    id="quickScheduleTz"
+                                                    value={scheduleTimezone}
+                                                    onChange={setScheduleTimezone}
+                                                    placeholder="Search timezone..."
+                                                />
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -720,6 +758,26 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    {workflows.length > 0 && (
+                                        <div className="space-y-2">
+                                            <Label htmlFor="sendWorkflow">Trigger workflow after send (optional)</Label>
+                                            <Select
+                                                value={formData.workflow_trigger_id || 'none'}
+                                                onValueChange={(val) => setFormData({ ...formData, workflow_trigger_id: val === 'none' ? '' : val })}
+                                            >
+                                                <SelectTrigger id="sendWorkflow">
+                                                    <SelectValue placeholder="None" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">None</SelectItem>
+                                                    {workflows.map((w) => (
+                                                        <SelectItem key={w.id} value={w.trigger_id}>{w.name} ({w.trigger_id})</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">Runs workflow for the user after notification is sent (single-user send only)</p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {formVariables.length > 0 && (
@@ -803,18 +861,32 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </button>
                                     {advScheduleEnabled && (
                                         <div className="px-4 pb-4 pt-1 space-y-4">
-                                            <div className="space-y-1">
+                                            <div className="space-y-2">
                                                 <Label htmlFor="scheduledAt">Send at</Label>
                                                 <Input
                                                     id="scheduledAt"
                                                     type="datetime-local"
-                                                    value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                    value={formData.scheduled_at ? (() => {
+                                                        try {
+                                                            const d = new Date(formData.scheduled_at);
+                                                            if (isNaN(d.getTime())) return '';
+                                                            return formatInTimezone(d, scheduleTimezone);
+                                                        } catch { return ''; }
+                                                    })() : ''}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
-                                                        setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                                        setFormData({ ...formData, scheduled_at: val ? scheduleToISO(val, scheduleTimezone) : undefined });
                                                     }}
                                                 />
-                                                <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="advScheduleTz" className="text-xs">Timezone</Label>
+                                                    <TimezonePicker
+                                                        id="advScheduleTz"
+                                                        value={scheduleTimezone}
+                                                        onChange={setScheduleTimezone}
+                                                        placeholder="Search timezone..."
+                                                    />
+                                                </div>
                                             </div>
 
                                             {/* Recurrence toggle */}
@@ -872,14 +944,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 <Input
                                                                     id="recurrenceEnd"
                                                                     type="datetime-local"
-                                                                    value={formData.recurrence?.end_date?.substring(0, 16) || ''}
+                                                                    value={formData.recurrence?.end_date ? (() => {
+                                                                        try {
+                                                                            const d = new Date(formData.recurrence!.end_date!);
+                                                                            if (isNaN(d.getTime())) return '';
+                                                                            return formatInTimezone(d, scheduleTimezone);
+                                                                        } catch { return ''; }
+                                                                    })() : ''}
                                                                     onChange={(e) => {
                                                                         const val = e.target.value;
                                                                         setFormData({
                                                                             ...formData,
                                                                             recurrence: {
                                                                                 ...formData.recurrence || { cron_expression: '' },
-                                                                                end_date: val ? new Date(val).toISOString() : undefined
+                                                                                end_date: val ? scheduleToISO(val, scheduleTimezone) : undefined
                                                                             }
                                                                         });
                                                                     }}
@@ -1017,6 +1095,48 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         </div>
 
+                                        {workflows.length > 0 && (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="broadcastWorkflow">Trigger workflow (optional)</Label>
+                                                <Select
+                                                    value={broadcastWorkflowTriggerId || 'none'}
+                                                    onValueChange={(val) => setBroadcastWorkflowTriggerId(val === 'none' ? '' : val)}
+                                                >
+                                                    <SelectTrigger id="broadcastWorkflow">
+                                                        <SelectValue placeholder="Send notifications (no workflow)" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="none">Send notifications (no workflow)</SelectItem>
+                                                        {workflows.map((w) => (
+                                                            <SelectItem key={w.id} value={w.trigger_id ?? w.id}>{w.name} ({w.trigger_id})</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="text-xs text-muted-foreground">When set, runs the workflow for each recipient instead of sending a single notification.</p>
+                                            </div>
+                                        )}
+
+                                        {topics.length > 0 && (
+                                            <div className="space-y-2">
+                                                <Label htmlFor="broadcastTopic">Limit to topic (optional)</Label>
+                                                <Select
+                                                    value={broadcastTopicKey || 'all'}
+                                                    onValueChange={(val) => setBroadcastTopicKey(val === 'all' ? '' : val)}
+                                                >
+                                                    <SelectTrigger id="broadcastTopic">
+                                                        <SelectValue placeholder="All users" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="all">All users</SelectItem>
+                                                        {topics.map((t) => (
+                                                            <SelectItem key={t.id} value={t.key ?? t.id}>{t.name} ({t.key})</SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="text-xs text-muted-foreground">When set, only subscribers of this topic receive the broadcast or workflow.</p>
+                                            </div>
+                                        )}
+
                                         {formVariables.length > 0 && (
                                             <div className="rounded-md border border-border bg-background">
                                                 <button
@@ -1093,17 +1213,31 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 </div>
                                             </button>
                                             {broadcastScheduleEnabled && (
-                                                <div className="px-4 pb-4 pt-1 space-y-1">
+                                                <div className="px-4 pb-4 pt-1 space-y-2">
                                                     <Input
                                                         id="broadcastScheduled"
                                                         type="datetime-local"
-                                                        value={formData.scheduled_at?.substring(0, 16) || ''}
+                                                        value={formData.scheduled_at ? (() => {
+                                                            try {
+                                                                const d = new Date(formData.scheduled_at);
+                                                                if (isNaN(d.getTime())) return '';
+                                                                return formatInTimezone(d, scheduleTimezone);
+                                                            } catch { return ''; }
+                                                        })() : ''}
                                                         onChange={(e) => {
                                                             const val = e.target.value;
-                                                            setFormData({ ...formData, scheduled_at: val ? new Date(val).toISOString() : undefined });
+                                                            setFormData({ ...formData, scheduled_at: val ? scheduleToISO(val, scheduleTimezone) : undefined });
                                                         }}
                                                     />
-                                                    <p className="text-[11px] text-muted-foreground">Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                                                    <div className="space-y-1">
+                                                        <Label htmlFor="broadcastScheduleTz" className="text-xs">Timezone</Label>
+                                                        <TimezonePicker
+                                                            id="broadcastScheduleTz"
+                                                            value={scheduleTimezone}
+                                                            onChange={setScheduleTimezone}
+                                                            placeholder="Search timezone..."
+                                                        />
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -1149,7 +1283,25 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     </Tabs>
                 )}
 
-                <h3 className="text-lg font-semibold mt-6 mb-3">Notification History</h3>
+                <div className="flex items-center justify-between mt-6 mb-3">
+                    <div>
+                        <h3 className="text-lg font-semibold">Notification History</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            Scheduled broadcasts appear here. Each recipient gets a row. Use <strong>Scheduled</strong> to see items waiting to be sent.
+                        </p>
+                    </div>
+                    <Tabs
+                        value={filters.status === 'pending' ? 'scheduled' : 'all'}
+                        onValueChange={v => { setFilters({ ...filters, status: v === 'scheduled' ? 'pending' : undefined }); setPage(1); }}
+                    >
+                        <TabsList className="h-8">
+                            <TabsTrigger value="all" className="text-xs">All</TabsTrigger>
+                            <TabsTrigger value="scheduled" className="text-xs flex items-center gap-1">
+                                <Clock className="h-3.5 w-3.5" /> Scheduled
+                            </TabsTrigger>
+                        </TabsList>
+                    </Tabs>
+                </div>
 
                 {/* Filter Bar */}
                 <div className="flex flex-wrap gap-3 items-end mb-4 p-3 bg-muted rounded border border-border">
@@ -1159,9 +1311,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                             <SelectTrigger className="w-[130px] h-8 text-xs">
                                 <SelectValue placeholder="All" />
                             </SelectTrigger>
-                            <SelectContent>
+                                <SelectContent>
                                 <SelectItem value="all">All</SelectItem>
-                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="pending">Scheduled / Pending</SelectItem>
                                 <SelectItem value="queued">Queued</SelectItem>
                                 <SelectItem value="processing">Processing</SelectItem>
                                 <SelectItem value="sent">Sent</SelectItem>
@@ -1205,7 +1357,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                 {
                     !notifications || notifications.length === 0 ? (
-                        <p className="text-muted-foreground text-center py-8 text-sm">No notification history found.</p>
+                        <div className="text-center py-8">
+                            <p className="text-muted-foreground text-sm">No notification history found.</p>
+                            {filters.status === 'pending' && (
+                                <p className="text-xs text-muted-foreground mt-2 max-w-md mx-auto">
+                                    Scheduled items appear here until they&#39;re sent. If you just scheduled a broadcast, each recipient will show as a row. Already-sent items appear under <strong>All</strong>.
+                                </p>
+                            )}
+                        </div>
                     ) : (
                         <>
                             {/* Bulk Actions Bar */}

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { topicsAPI, usersAPI, applicationsAPI } from '../../services/api';
-import type { Topic, TopicSubscription, CreateTopicRequest, User, Application } from '../../types';
+import { topicsAPI, usersAPI, applicationsAPI, workflowsAPI } from '../../services/api';
+import type { Topic, TopicSubscription, CreateTopicRequest, UpdateTopicRequest, User, Application, Workflow } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
 import ResourcePicker from '../../components/ResourcePicker';
 import SkeletonTable from '../../components/SkeletonTable';
@@ -27,6 +27,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Tag, Plus, MoreHorizontal, Pencil, Trash2, Users, Loader2, X } from 'lucide-react';
 import { timeAgo } from '../../lib/utils';
 import { toast } from 'sonner';
@@ -56,6 +57,13 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
         { enabled: !!apiKey }
     );
 
+    const { data: workflowsData } = useApiQuery(
+        () => workflowsAPI.list(apiKey!, 100, 0),
+        [apiKey],
+        { enabled: !!apiKey }
+    );
+    const workflows: Workflow[] = workflowsData?.workflows ?? [];
+
     // Topic editor state
     const [showEditor, setShowEditor] = useState(false);
     const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
@@ -63,6 +71,7 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
     const [formName, setFormName] = useState('');
     const [formKey, setFormKey] = useState('');
     const [formDesc, setFormDesc] = useState('');
+    const [formOnSubscribeTriggerId, setFormOnSubscribeTriggerId] = useState('');
 
     // Subscribers panel state
     const [subscriberTopic, setSubscriberTopic] = useState<Topic | null>(null);
@@ -95,6 +104,7 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
         setFormName('');
         setFormKey('');
         setFormDesc('');
+        setFormOnSubscribeTriggerId('');
         setShowEditor(true);
     };
 
@@ -103,6 +113,7 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
         setFormName(topic.name);
         setFormKey(topic.key);
         setFormDesc(topic.description || '');
+        setFormOnSubscribeTriggerId(topic.on_subscribe_trigger_id || '');
         setShowEditor(true);
     };
 
@@ -114,17 +125,20 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
         setSaving(true);
         try {
             if (editingTopic) {
-                await topicsAPI.update(apiKey, editingTopic.id, {
+                const updatePayload: UpdateTopicRequest = {
                     name: formName.trim(),
                     key: formKey.trim(),
                     description: formDesc.trim() || undefined,
-                });
+                    on_subscribe_trigger_id: formOnSubscribeTriggerId || undefined,
+                };
+                await topicsAPI.update(apiKey, editingTopic.id, updatePayload);
                 toast.success('Topic updated');
             } else {
                 const payload: CreateTopicRequest = {
                     name: formName.trim(),
                     key: formKey.trim(),
                     description: formDesc.trim() || undefined,
+                    on_subscribe_trigger_id: formOnSubscribeTriggerId || undefined,
                 };
                 await topicsAPI.create(apiKey, payload);
                 toast.success('Topic created');
@@ -356,6 +370,26 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
                         <Label>Description</Label>
                         <Textarea value={formDesc} onChange={(e) => setFormDesc(e.target.value)} placeholder="Optional topic description" rows={3} />
                     </div>
+                    {workflows.length > 0 && (
+                        <div className="space-y-2">
+                            <Label>On Subscribe Workflow (optional)</Label>
+                            <Select
+                                value={formOnSubscribeTriggerId || 'none'}
+                                onValueChange={(val: string) => setFormOnSubscribeTriggerId(val === 'none' ? '' : val)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="None" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">None</SelectItem>
+                                    {workflows.map((w) => (
+                                        <SelectItem key={w.id} value={w.trigger_id}>{w.name} ({w.trigger_id})</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">Trigger this workflow for each new subscriber when they are added</p>
+                        </div>
+                    )}
                     <div className="flex items-center gap-2 pt-2">
                         <Button onClick={handleSave} disabled={saving}>
                             {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
@@ -13,8 +15,10 @@ import (
 
 // UserServiceImpl implements the UserService interface
 type UserServiceImpl struct {
-	repo   user.Repository
-	logger *zap.Logger
+	repo          user.Repository
+	appRepo       application.Repository   // Phase 5: optional, for on-user-created trigger
+	workflowSvc   workflow.Service        // Phase 5: optional
+	logger        *zap.Logger
 }
 
 // NewUserService creates a new UserService
@@ -24,6 +28,12 @@ func NewUserService(repo user.Repository, logger *zap.Logger) *UserServiceImpl {
 		logger: logger,
 	}
 }
+
+// SetAppRepo injects the application repository for on-user-created trigger
+func (s *UserServiceImpl) SetAppRepo(r application.Repository) { s.appRepo = r }
+
+// SetWorkflowService injects the workflow service for on-user-created trigger
+func (s *UserServiceImpl) SetWorkflowService(ws workflow.Service) { s.workflowSvc = ws }
 
 // Create creates a new user
 func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
@@ -62,6 +72,9 @@ func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
 		return errors.DatabaseError("create user", err)
 	}
 
+	// Phase 5: On-user-created workflow trigger (fire-and-forget)
+	s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+
 	s.logger.Info("User created successfully", zap.String("user_id", u.UserID))
 	return nil
 }
@@ -97,6 +110,24 @@ func (s *UserServiceImpl) GetByEmail(ctx context.Context, appID, email string) (
 	}
 	if u == nil {
 		return nil, errors.NotFound("User", email)
+	}
+
+	return u, nil
+}
+
+// GetByExternalID retrieves a user by external_id within an app
+func (s *UserServiceImpl) GetByExternalID(ctx context.Context, appID, externalID string) (*user.User, error) {
+	if appID == "" || externalID == "" {
+		return nil, errors.BadRequest("app_id and external_id are required")
+	}
+
+	u, err := s.repo.GetByExternalID(ctx, appID, externalID)
+	if err != nil {
+		s.logger.Error("Failed to get user by external_id", zap.Error(err))
+		return nil, errors.DatabaseError("get user by external_id", err)
+	}
+	if u == nil {
+		return nil, errors.NotFound("User", externalID)
 	}
 
 	return u, nil
@@ -292,6 +323,34 @@ func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) er
 		return errors.DatabaseError("bulk create users", err)
 	}
 
+	// Phase 5: On-user-created workflow trigger for each new user
+	for _, u := range users {
+		s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+	}
+
 	s.logger.Info("Users created successfully", zap.Int("count", len(users)))
 	return nil
+}
+
+// triggerOnUserCreated fires workflow if app settings have OnUserCreatedTriggerID (fire-and-forget)
+func (s *UserServiceImpl) triggerOnUserCreated(ctx context.Context, appID, userID string) {
+	if s.appRepo == nil || s.workflowSvc == nil {
+		return
+	}
+	app, err := s.appRepo.GetByID(ctx, appID)
+	if err != nil || app == nil || app.Settings.OnUserCreatedTriggerID == "" {
+		return
+	}
+	_, err = s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
+		TriggerID: app.Settings.OnUserCreatedTriggerID,
+		UserID:    userID,
+		Payload:   map[string]any{"user_id": userID},
+	})
+	if err != nil {
+		s.logger.Warn("On-user-created workflow trigger failed (non-fatal)",
+			zap.String("app_id", appID),
+			zap.String("user_id", userID),
+			zap.String("trigger_id", app.Settings.OnUserCreatedTriggerID),
+			zap.Error(err))
+	}
 }
