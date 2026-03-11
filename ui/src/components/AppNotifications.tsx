@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template, Workflow, Topic, BroadcastNotificationRequest } from '../types';
+import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI } from '../services/api';
+import type { Notification, NotificationRequest, User, Template, Workflow, Topic, BroadcastNotificationRequest, DigestRule } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock, Layers, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
@@ -78,6 +78,7 @@ const useNotificationData = (apiKey: string) => {
     const [templates, setTemplates] = useState<Template[]>([]);
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
     const [topics, setTopics] = useState<Topic[]>([]);
+    const [digestRules, setDigestRules] = useState<DigestRule[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
@@ -87,12 +88,13 @@ const useNotificationData = (apiKey: string) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [notifsResult, usersResult, templatesResult, workflowsResult, topicsResult] = await Promise.all([
+            const [notifsResult, usersResult, templatesResult, workflowsResult, topicsResult, digestResult] = await Promise.all([
                 notificationsAPI.list(apiKey, page, pageSize, filters).catch(e => { console.error(e); return { notifications: [] as Notification[], total: 0, page: 1, page_size: pageSize }; }),
                 usersAPI.list(apiKey, 1, 100).catch(e => { console.error(e); return { users: [] as User[], total_count: 0, page: 1, page_size: 100 }; }),
                 templatesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { templates: [] as Template[], total: 0, limit: 100, offset: 0 }; }),
                 workflowsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { workflows: [] as Workflow[], total: 0, limit: 100, offset: 0 }; }),
-                topicsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { topics: [] as Topic[], total: 0, limit: 100, offset: 0 }; })
+                topicsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { topics: [] as Topic[], total: 0, limit: 100, offset: 0 }; }),
+                digestRulesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { rules: [] as DigestRule[], total: 0 }; })
             ]);
             setNotifications(notifsResult.notifications || []);
             setTotalNotifications(notifsResult.total || 0);
@@ -100,6 +102,7 @@ const useNotificationData = (apiKey: string) => {
             setTemplates(templatesResult.templates || []);
             setWorkflows(workflowsResult.workflows || []);
             setTopics(topicsResult.topics || []);
+            setDigestRules(digestResult.rules || []);
         } catch (error) {
             console.error('Failed to fetch notification data:', error);
         } finally {
@@ -113,11 +116,21 @@ const useNotificationData = (apiKey: string) => {
         }
     }, [apiKey, page, filters]);
 
-    return { notifications, users, templates, workflows, topics, loading, refresh: fetchData, page, setPage, pageSize, totalNotifications, filters, setFilters };
+    return { notifications, users, templates, workflows, topics, digestRules, loading, refresh: fetchData, page, setPage, pageSize, totalNotifications, filters, setFilters };
 };
 
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
-    const { notifications, users, templates, workflows, topics, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey);
+    const { notifications, users, templates, workflows, topics, digestRules, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey || '');
+
+    if (!apiKey) {
+        return (
+            <Card>
+                <CardContent className="pt-6">
+                    <p className="text-muted-foreground text-sm">API key is required to load notifications. The application may not have loaded correctly.</p>
+                </CardContent>
+            </Card>
+        );
+    }
     const [showSendForm, setShowSendForm] = useState(false);
 
     // Report notification count to parent (app-wide, derived from current list)
@@ -148,10 +161,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     };
 
     const toggleSelectAll = () => {
-        if (selectedIds.size === notifications.length) {
+        const list = notifications || [];
+        if (list.length === 0 || selectedIds.size === list.length) {
             setSelectedIds(new Set());
         } else {
-            setSelectedIds(new Set(notifications.map(n => n.notification_id)));
+            setSelectedIds(new Set((notifications || []).map(n => n.notification_id)));
         }
     };
 
@@ -194,6 +208,29 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         } catch (err) { toast.error(extractErrorMessage(err, 'Failed to unsnooze')); }
     };
 
+    const handleCancel = async (notifId: string) => {
+        try {
+            await notificationsAPI.cancel(apiKey, notifId);
+            toast.success('Notification cancelled');
+            setDetailNotif(null);
+            refresh();
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to cancel')); }
+    };
+
+    const handleCancelSelected = async () => {
+        if (selectedIds.size === 0) return;
+        const ids = Array.from(selectedIds);
+        setBulkActing(true);
+        try {
+            await notificationsAPI.cancelBatch(apiKey, { notification_ids: ids });
+            toast.success(`${ids.length} notification(s) cancelled`);
+            setSelectedIds(new Set());
+            setDetailNotif(null);
+            refresh();
+        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to cancel')); }
+        finally { setBulkActing(false); }
+    };
+
     const handleMarkAllRead = async () => {
         const firstUserId = notifications[0]?.user_id;
         if (!firstUserId) {
@@ -215,7 +252,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [batchJson, setBatchJson] = useState('{\n  "notifications": [\n    { "user_id": "", "template_id": "", "channel": "email", "title": "", "body": "" }\n  ]\n}');
     const [batchSending, setBatchSending] = useState(false);
     const [showCancelBatch, setShowCancelBatch] = useState(false);
-    const [cancelBatchId, setCancelBatchId] = useState('');
+    const [cancelBatchIds, setCancelBatchIds] = useState('');
     const [cancellingBatch, setCancellingBatch] = useState(false);
 
     const handleBatchSend = async () => {
@@ -234,13 +271,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     };
 
     const handleCancelBatch = async () => {
-        if (!cancelBatchId.trim()) { toast.error('Enter a batch ID'); return; }
+        const ids = cancelBatchIds.trim().split(/[\s,]+/).filter(Boolean);
+        if (ids.length === 0) { toast.error('Enter notification IDs (comma or space separated)'); return; }
         setCancellingBatch(true);
         try {
-            await notificationsAPI.cancelBatch(apiKey, { batch_id: cancelBatchId.trim() });
-            toast.success('Batch cancelled');
+            await notificationsAPI.cancelBatch(apiKey, { notification_ids: ids });
+            toast.success(`${ids.length} notification(s) cancelled`);
             setShowCancelBatch(false);
-            setCancelBatchId('');
+            setCancelBatchIds('');
             refresh();
         } catch (err) { toast.error(extractErrorMessage(err, 'Failed to cancel batch')); }
         finally { setCancellingBatch(false); }
@@ -272,6 +310,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickSending, setQuickSending] = useState(false);
     const [quickPriority, setQuickPriority] = useState<string>('normal');
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
+    const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
+    const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
+    const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
     // Filtered templates by channel
     const filteredTemplates = useMemo(() => (templates || []).filter(t => t.channel === formData.channel), [templates, formData.channel]);
@@ -302,12 +343,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         if (!quickTo || !quickTemplateId) return;
         setQuickSending(true);
         try {
+            const selectedDigestRule = quickDigestRuleId ? digestRules.find(r => r.id === quickDigestRuleId) : null;
             await quickSendAPI.send(apiKey, {
                 to: quickTo,
                 template: quickSelectedTemplate?.name || quickTemplateId,
                 data: Object.keys(quickData).length > 0 ? quickData : undefined,
                 priority: quickPriority as any,
                 scheduled_at: quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined,
+                digest_key: selectedDigestRule?.digest_key,
             });
             toast.success('Notification sent!');
             setQuickTo('');
@@ -316,6 +359,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickPriority('normal');
             setQuickScheduledAt('');
             setQuickScheduleEnabled(false);
+            setQuickDigestRuleId('');
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -348,6 +392,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 return;
             }
 
+            const broadcastDigestRule = broadcastDigestRuleId ? digestRules.find(r => r.id === broadcastDigestRuleId) : null;
             const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
@@ -356,6 +401,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 scheduled_at: formData.scheduled_at,
                 workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
                 topic_key: broadcastTopicKey || undefined,
+                metadata: broadcastDigestRule ? { digest_key: broadcastDigestRule.digest_key } : undefined,
             };
 
             await notificationsAPI.broadcast(apiKey, payload);
@@ -364,6 +410,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setDataInput('');
             setBroadcastWorkflowTriggerId('');
             setBroadcastTopicKey('');
+            setBroadcastDigestRuleId('');
             refresh();
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
@@ -390,6 +437,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 return;
             }
 
+            const advDigestRule = advDigestRuleId ? digestRules.find(r => r.id === advDigestRuleId) : null;
             const payload: NotificationRequest = {
                 user_id: '',
                 channel: formData.channel,
@@ -399,6 +447,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
                 workflow_trigger_id: formData.workflow_trigger_id || undefined,
+                metadata: advDigestRule ? { digest_key: advDigestRule.digest_key } : undefined,
             };
 
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
@@ -413,6 +462,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     priority: payload.priority,
                     template_id: payload.template_id,
                     data: customData,
+                    metadata: payload.metadata,
                 });
             } else {
                 await notificationsAPI.send(apiKey, { ...payload, user_id: userIds[0] || formData.user_id });
@@ -423,6 +473,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setSelectedUsers([]);
             setSelectedTargets([]);
             setDataInput('');
+            setAdvDigestRuleId('');
             refresh();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
@@ -437,6 +488,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             case 'failed': return 'bg-red-100 text-red-700 border-red-300';
             case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
             case 'queued': return 'bg-blue-100 text-blue-700 border-blue-300';
+            case 'digested': return 'bg-cyan-100 text-cyan-700 border-cyan-300';
             case 'delivered': return 'bg-teal-100 text-teal-700 border-teal-300';
             case 'snoozed': return 'bg-purple-100 text-purple-700 border-purple-300';
             case 'archived': return 'bg-gray-100 text-gray-500 border-gray-300';
@@ -584,6 +636,32 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </Select>
                                     </div>
                                 </div>
+
+                                {/* Digest rule (batch notifications) */}
+                                {digestRules.length > 0 && quickSelectedTemplate && (
+                                    <div className="space-y-2">
+                                        <Label className="flex items-center gap-1.5">
+                                            <Layers className="h-3.5 w-3.5" />
+                                            Use digest rule
+                                        </Label>
+                                        <Select value={quickDigestRuleId || '__none__'} onValueChange={v => setQuickDigestRuleId(v === '__none__' ? '' : v)}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Send immediately (no batching)" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="__none__">Send immediately (no batching)</SelectItem>
+                                                {(digestRules || [])
+                                                    .filter(r => r.status === 'active' && r.channel === (quickSelectedTemplate?.channel || 'email'))
+                                                    .map(r => (
+                                                        <SelectItem key={r.id} value={r.id}>
+                                                            {r.name} ({r.digest_key}, {r.window})
+                                                        </SelectItem>
+                                                    ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">Batch this notification with others for the same user. One digest rule at a time.</p>
+                                    </div>
+                                )}
 
                                 {/* Schedule toggle */}
                                 <div className="rounded-md border border-border">
@@ -758,6 +836,28 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    {digestRules.length > 0 && formData.channel !== 'webhook' && (
+                                        <div className="space-y-2">
+                                            <Label className="flex items-center gap-1.5">
+                                                <Layers className="h-3.5 w-3.5" />
+                                                Use digest rule
+                                            </Label>
+                                            <Select value={advDigestRuleId || '__none__'} onValueChange={v => setAdvDigestRuleId(v === '__none__' ? '' : v)}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Send immediately (no batching)" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="__none__">Send immediately (no batching)</SelectItem>
+                                                    {(digestRules || []).filter(r => r.status === 'active' && r.channel === formData.channel).map(r => (
+                                                        <SelectItem key={r.id} value={r.id}>
+                                                            {r.name} ({r.digest_key}, {r.window})
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">Batch notifications for the same user. One digest rule per send.</p>
+                                        </div>
+                                    )}
                                     {workflows.length > 0 && (
                                         <div className="space-y-2">
                                             <Label htmlFor="sendWorkflow">Trigger workflow after send (optional)</Label>
@@ -1093,6 +1193,28 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     </SelectContent>
                                                 </Select>
                                             </div>
+                                            {digestRules.length > 0 && formData.channel !== 'webhook' && (
+                                                <div className="space-y-2">
+                                                    <Label className="flex items-center gap-1.5">
+                                                        <Layers className="h-3.5 w-3.5" />
+                                                        Use digest rule
+                                                    </Label>
+                                                    <Select value={broadcastDigestRuleId || '__none__'} onValueChange={v => setBroadcastDigestRuleId(v === '__none__' ? '' : v)}>
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Send immediately (no batching)" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="__none__">Send immediately (no batching)</SelectItem>
+                                                            {(digestRules || []).filter(r => r.status === 'active' && r.channel === formData.channel).map(r => (
+                                                                <SelectItem key={r.id} value={r.id}>
+                                                                    {r.name} ({r.digest_key}, {r.window})
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    <p className="text-xs text-muted-foreground">Batch notifications per user. One digest rule per broadcast.</p>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {workflows.length > 0 && (
@@ -1315,6 +1437,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 <SelectItem value="all">All</SelectItem>
                                 <SelectItem value="pending">Scheduled / Pending</SelectItem>
                                 <SelectItem value="queued">Queued</SelectItem>
+                                <SelectItem value="digested">Digested (batched)</SelectItem>
                                 <SelectItem value="processing">Processing</SelectItem>
                                 <SelectItem value="sent">Sent</SelectItem>
                                 <SelectItem value="delivered">Delivered</SelectItem>
@@ -1379,6 +1502,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Archive className="h-3.5 w-3.5 mr-1.5" />
                                         Archive
                                     </Button>
+                                    <Button variant="outline" size="sm" onClick={handleCancelSelected} disabled={bulkActing} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                                        <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                                        Cancel Selected
+                                    </Button>
                                     <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
                                         <X className="h-3.5 w-3.5 mr-1" />
                                         Clear
@@ -1407,7 +1534,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {notifications.map((n) => (
+                                        {(notifications || []).map((n) => (
                                             <TableRow
                                                 key={n.notification_id}
                                                 className="cursor-pointer hover:bg-muted/50"
@@ -1457,7 +1584,18 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                                                     {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}
                                                 </TableCell>
-                                                <TableCell onClick={e => e.stopPropagation()}>
+                                                <TableCell onClick={e => e.stopPropagation()} className="space-x-1">
+                                                    {(n.status === 'pending' || n.status === 'queued') && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            title="Cancel"
+                                                            onClick={() => handleCancel(n.notification_id)}
+                                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                        >
+                                                            <XCircle className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    )}
                                                     {n.status === 'snoozed' ? (
                                                         <Button
                                                             variant="ghost"
@@ -1528,6 +1666,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     <Badge variant="outline" className={`text-xs uppercase ${getStatusBadgeClass(detailNotif.status)}`}>
                                         {detailNotif.status}
                                     </Badge>
+                                    {detailNotif.status === 'digested' && (
+                                        <p className="text-xs text-muted-foreground mt-1">Batched into a digest and delivered via consolidated notification</p>
+                                    )}
                                 </div>
                                 <div>
                                     <Label className="text-xs text-muted-foreground">Created</Label>
@@ -1599,6 +1740,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 </div>
                             )}
                             <div className="flex items-center gap-2 pt-2 border-t border-border flex-wrap">
+                                {(detailNotif.status === 'pending' || detailNotif.status === 'queued') && (
+                                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700"
+                                        onClick={() => handleCancel(detailNotif.notification_id)}
+                                    >
+                                        <XCircle className="h-3.5 w-3.5 mr-1.5" />Cancel
+                                    </Button>
+                                )}
                                 <Button variant="outline" size="sm"
                                     onClick={() => {
                                         notificationsAPI.markRead(apiKey, { notification_ids: [detailNotif.notification_id] })
@@ -1677,20 +1825,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         <DialogHeader>
                             <DialogTitle>Cancel Batch</DialogTitle>
                             <DialogDescription>
-                                Cancel all pending notifications in a batch by its ID.
+                                Cancel multiple scheduled/queued notifications by their IDs.
                             </DialogDescription>
                         </DialogHeader>
                         <div className="space-y-3">
                             <div className="space-y-2">
-                                <Label htmlFor="cancelBatchId">Batch ID</Label>
-                                <Input
-                                    id="cancelBatchId"
-                                    value={cancelBatchId}
-                                    onChange={e => setCancelBatchId(e.target.value)}
-                                    placeholder="Enter the batch ID"
+                                <Label htmlFor="cancelBatchIds">Notification IDs</Label>
+                                <Textarea
+                                    id="cancelBatchIds"
+                                    value={cancelBatchIds}
+                                    onChange={e => setCancelBatchIds(e.target.value)}
+                                    placeholder="Paste notification IDs (comma or newline separated). From Batch Send response: items[].notification_id"
+                                    className="font-mono text-xs min-h-[100px]"
                                 />
                                 <p className="text-xs text-muted-foreground">
-                                    The batch ID returned when you sent a batch notification.
+                                    Paste IDs from the Batch Send response or select rows above and use &quot;Cancel Selected&quot;.
                                 </p>
                             </div>
                             <div className="flex justify-end gap-2">

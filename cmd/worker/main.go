@@ -280,6 +280,7 @@ func main() {
 		digestRepo := repository.NewDigestRepository(c.DatabaseManager.Client.GetClient(), logger)
 		digestManager = orchestrator.NewDigestManager(
 			digestRepo,
+			c.DatabaseManager.Repositories.Notification,
 			c.NotificationService,
 			c.RedisClient,
 			logger,

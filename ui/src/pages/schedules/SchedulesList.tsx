@@ -35,9 +35,13 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Badge } from '../../components/ui/badge';
-import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { timeAgo } from '../../lib/utils';
 import { toast } from 'sonner';
+import { TimezonePicker } from '../../components/TimezonePicker';
+
+const getBrowserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 interface SchedulesListProps {
     apiKey?: string;
@@ -85,6 +89,7 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
     const [formName, setFormName] = useState('');
     const [formWorkflowTriggerId, setFormWorkflowTriggerId] = useState('');
     const [formCron, setFormCron] = useState('');
+    const [formTimezone, setFormTimezone] = useState(getBrowserTimezone);
     const [formTargetType, setFormTargetType] = useState<ScheduleTargetType>('all');
     const [formTopicId, setFormTopicId] = useState('');
     const [formPayload, setFormPayload] = useState('');
@@ -114,6 +119,7 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
         setFormName('');
         setFormWorkflowTriggerId('');
         setFormCron('0 9 * * 1');
+        setFormTimezone(getBrowserTimezone());
         setFormTargetType('all');
         setFormTopicId('');
         setFormPayload('{}');
@@ -126,6 +132,7 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
         setFormName(schedule.name);
         setFormWorkflowTriggerId(schedule.workflow_trigger_id);
         setFormCron(schedule.cron);
+        setFormTimezone(schedule.timezone || getBrowserTimezone());
         setFormTargetType(schedule.target_type);
         setFormTopicId(schedule.topic_id || '');
         setFormPayload(
@@ -162,6 +169,7 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
                     name: formName.trim(),
                     workflow_trigger_id: formWorkflowTriggerId,
                     cron: formCron.trim(),
+                    timezone: formTimezone || undefined,
                     target_type: formTargetType,
                     topic_id: formTargetType === 'topic' && formTopicId ? formTopicId : undefined,
                     payload: payload,
@@ -303,7 +311,11 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
                                             )}
                                         </TableCell>
                                         <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                                            {s.last_run_at ? timeAgo(s.last_run_at) : 'Never'}
+                                            {s.last_run_at ? (
+                                                <span title={s.last_run_at}>{timeAgo(s.last_run_at)}</span>
+                                            ) : (
+                                                'Never'
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <DropdownMenu>
@@ -313,6 +325,16 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
+                                                    {workflows.find(w => w.trigger_id === s.workflow_trigger_id) && (
+                                                        <DropdownMenuItem asChild>
+                                                            <Link
+                                                                to={`/workflows/executions?workflow_id=${workflows.find(w => w.trigger_id === s.workflow_trigger_id)!.id}`}
+                                                            >
+                                                                <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                                                                View workflow executions
+                                                            </Link>
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     <DropdownMenuItem onClick={() => openEdit(s)}>
                                                         <Pencil className="h-3.5 w-3.5 mr-2" />
                                                         Edit
@@ -394,6 +416,17 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
                             </p>
                         </div>
                     )}
+                    <div className="space-y-2">
+                        <Label>Timezone</Label>
+                        <TimezonePicker
+                            value={formTimezone}
+                            onChange={setFormTimezone}
+                            placeholder="Search timezone..."
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            Cron runs at this timezone (e.g. 9am Monday = 9am in this zone)
+                        </p>
+                    </div>
                     <div className="space-y-2">
                         <Label>Cron <span className="text-destructive">*</span></Label>
                         <Input

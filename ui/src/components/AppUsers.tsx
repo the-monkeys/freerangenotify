@@ -12,12 +12,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Pagination } from './Pagination';
 import { toast } from 'sonner';
 
-const TIMEZONES = [
+const getBrowserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const TIMEZONES_BASE = [
     'UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
     'America/Los_Angeles', 'America/Toronto', 'Europe/London',
     'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai',
     'Asia/Kolkata', 'Asia/Dubai', 'Australia/Sydney', 'Pacific/Auckland',
 ];
+
+const getTimezones = (): string[] => {
+    const browser = getBrowserTimezone();
+    if (TIMEZONES_BASE.includes(browser)) return TIMEZONES_BASE;
+    return [browser, ...TIMEZONES_BASE];
+};
 
 const LANGUAGES = [
     { code: 'en', label: 'English' },
@@ -48,7 +56,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         email: '',
         phone: '',
         external_id: '',
-        timezone: 'UTC',
+        timezone: getBrowserTimezone(),
         language: 'en',
         preferences: {
             email_enabled: true,
@@ -105,7 +113,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 email: '',
                 phone: '',
                 external_id: '',
-                timezone: 'UTC',
+                timezone: getBrowserTimezone(),
                 language: 'en',
                 preferences: {
                     email_enabled: true,
@@ -136,7 +144,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             external_id: user.external_id || '',
             email: user.email,
             phone: user.phone || '',
-            timezone: user.timezone || 'UTC',
+            timezone: user.timezone || getBrowserTimezone(),
             language: user.language || 'en',
             preferences: {
                 email_enabled: user.preferences?.email_enabled ?? true,
@@ -181,7 +189,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                     email: '',
                                     phone: '',
                                     external_id: '',
-                                    timezone: 'UTC',
+                                    timezone: getBrowserTimezone(),
                                     language: 'en',
                                     preferences: {
                                         email_enabled: true,
@@ -277,14 +285,14 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                             <div className="space-y-2">
                                 <Label htmlFor="timezone">Timezone</Label>
                                 <Select
-                                    value={formData.timezone || 'UTC'}
+                                    value={formData.timezone || getBrowserTimezone()}
                                     onValueChange={(v) => setFormData({ ...formData, timezone: v })}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {TIMEZONES.map(tz => (
+                                        {getTimezones().map(tz => (
                                             <SelectItem key={tz} value={tz}>{tz}</SelectItem>
                                         ))}
                                     </SelectContent>

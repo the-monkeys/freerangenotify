@@ -76,12 +76,13 @@ const (
 	StatusCancelled  Status = "cancelled"
 	StatusSnoozed    Status = "snoozed"  // Phase 5: deferred by user
 	StatusArchived   Status = "archived" // Phase 5: dismissed by user
+	StatusDigested   Status = "digested" // Batched into a digest and delivered via consolidated notification
 )
 
 // Valid checks if the status is valid
 func (s Status) Valid() bool {
 	switch s {
-	case StatusPending, StatusQueued, StatusProcessing, StatusSent, StatusDelivered, StatusRead, StatusFailed, StatusCancelled, StatusSnoozed, StatusArchived:
+	case StatusPending, StatusQueued, StatusProcessing, StatusSent, StatusDelivered, StatusRead, StatusFailed, StatusCancelled, StatusSnoozed, StatusArchived, StatusDigested:
 		return true
 	default:
 		return false
@@ -95,7 +96,7 @@ func (s Status) String() string {
 
 // IsFinal returns true if this is a terminal status
 func (s Status) IsFinal() bool {
-	return s == StatusDelivered || s == StatusRead || s == StatusFailed || s == StatusCancelled || s == StatusArchived
+	return s == StatusDelivered || s == StatusRead || s == StatusFailed || s == StatusCancelled || s == StatusArchived || s == StatusDigested
 }
 
 // Notification represents a notification entity
@@ -154,6 +155,7 @@ type NotificationFilter struct {
 	FromDate      *time.Time             `json:"from_date,omitempty"`
 	ToDate        *time.Time             `json:"to_date,omitempty"`
 	Category      string                 `json:"category,omitempty"`
+	DigestKey     string                 `json:"digest_key,omitempty"` // Filter by metadata.digest_key (for digest rule run history)
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 	Page          int                    `json:"page,omitempty"`
 	PageSize      int                    `json:"page_size,omitempty"`
@@ -253,6 +255,7 @@ type BroadcastRequest struct {
 	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient instead of sending notification
 	TopicKey          string                 `json:"topic_key,omitempty"`          // Phase 2: limit recipients to topic subscribers (by topic key)
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"}
 }
 
 // BroadcastResult holds the result of a broadcast operation
@@ -345,6 +348,7 @@ type SendRequest struct {
 	Recurrence        *Recurrence            `json:"recurrence,omitempty"`
 	TopicID           string                 `json:"topic_id,omitempty"`           // Phase 2: send to all subscribers of a topic
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"} routes to digest batching
 }
 
 // Validate validates the send request
@@ -407,6 +411,7 @@ type BulkSendRequest struct {
 	Category      string                 `json:"category,omitempty"`
 	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"` // Digest: {"digest_key": "rule_key"}
 }
 
 // Validate validates the bulk send request

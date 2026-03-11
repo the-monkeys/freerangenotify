@@ -62,6 +62,7 @@ func (s *scheduleService) Create(ctx context.Context, appID string, req *schedul
 		Name:              req.Name,
 		WorkflowTriggerID: req.WorkflowTriggerID,
 		Cron:              req.Cron,
+		Timezone:          req.Timezone,
 		TargetType:        req.TargetType,
 		TopicID:           req.TopicID,
 		Payload:           req.Payload,
@@ -115,6 +116,9 @@ func (s *scheduleService) Update(ctx context.Context, id, appID string, req *sch
 			return nil, errors.BadRequest(fmt.Sprintf("invalid cron expression: %v", err))
 		}
 		sch.Cron = *req.Cron
+	}
+	if req.Timezone != nil {
+		sch.Timezone = *req.Timezone
 	}
 	if req.TargetType != nil {
 		sch.TargetType = *req.TargetType

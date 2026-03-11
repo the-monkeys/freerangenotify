@@ -373,12 +373,13 @@ interface NotificationListResponse {
 }
 
 export const notificationsAPI = {
-  list: async (apiKey: string, page = 1, pageSize = 20, filters?: { status?: string; channel?: string; from?: string; to?: string }) => {
+  list: async (apiKey: string, page = 1, pageSize = 20, filters?: { status?: string; channel?: string; from?: string; to?: string; digest_key?: string }) => {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('page_size', String(pageSize));
     if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
     if (filters?.channel && filters.channel !== 'all') params.set('channel', filters.channel);
+    if (filters?.digest_key) params.set('digest_key', filters.digest_key);
     // Send date strings as-is (YYYY-MM-DD) so backend can parse and extend to_date to end of day
     if (filters?.from) params.set('from_date', filters.from);
     if (filters?.to) params.set('to_date', filters.to);

@@ -3,10 +3,11 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/the-monkeys/freerangenotify/internal/domain/schedule"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -85,31 +86,15 @@ func (p *SchedulePoller) poll(ctx context.Context) {
 }
 
 func (p *SchedulePoller) runTick(ctx context.Context) {
-	now := time.Now().UTC().Truncate(time.Minute)
-
+	now := time.Now()
 	schedules, err := p.scheduleRepo.ListDue(ctx, now)
 	if err != nil {
 		p.logger.Error("Failed to list due schedules", zap.Error(err))
 		return
 	}
 
-	cronParser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-
 	for _, sch := range schedules {
-		parsed, err := cronParser.Parse(sch.Cron)
-		if err != nil {
-			p.logger.Warn("Invalid cron in schedule, skipping",
-				zap.String("schedule_id", sch.ID),
-				zap.String("cron", sch.Cron),
-				zap.Error(err))
-			continue
-		}
-
-		// Check if this schedule should run at `now`
-		// Next(prevMinute) should equal now for a match
-		prevMinute := now.Add(-1 * time.Minute)
-		nextRun := parsed.Next(prevMinute)
-		if !nextRun.Equal(now) {
+		if !cronMatchesNow(sch) {
 			continue
 		}
 
@@ -187,6 +172,63 @@ func (p *SchedulePoller) resolveUserIDs(ctx context.Context, sch *schedule.Workf
 	default:
 		return nil, fmt.Errorf("unknown target_type: %s", sch.TargetType)
 	}
+}
+
+// cronMatchesNow returns true if the schedule's cron expression matches the current time
+// in the schedule's timezone (or UTC if timezone is empty).
+func cronMatchesNow(sch *schedule.WorkflowSchedule) bool {
+	loc := time.UTC
+	if sch.Timezone != "" {
+		l, err := time.LoadLocation(sch.Timezone)
+		if err != nil {
+			return false
+		}
+		loc = l
+	}
+	t := time.Now().In(loc).Truncate(time.Minute)
+
+	parts := strings.Fields(sch.Cron)
+	if len(parts) != 5 {
+		return false
+	}
+	minute, hour, dom, month, dow := parts[0], parts[1], parts[2], parts[3], parts[4]
+
+	if !cronFieldMatches(minute, t.Minute(), 0, 59) {
+		return false
+	}
+	if !cronFieldMatches(hour, t.Hour(), 0, 23) {
+		return false
+	}
+	if !cronFieldMatches(dom, t.Day(), 1, 31) {
+		return false
+	}
+	if !cronFieldMatches(month, int(t.Month()), 1, 12) {
+		return false
+	}
+	// Cron dow: 0=Sun, 1=Mon, ..., 6=Sat. Go time.Weekday: Sun=0, Mon=1, ...
+	if !cronFieldMatches(dow, int(t.Weekday()), 0, 6) {
+		return false
+	}
+	return true
+}
+
+func cronFieldMatches(field string, value, min, max int) bool {
+	if field == "*" {
+		return true
+	}
+	// Support */N (every N)
+	if strings.HasPrefix(field, "*/") {
+		step, err := strconv.Atoi(field[2:])
+		if err != nil || step <= 0 {
+			return false
+		}
+		return value%step == 0 && value >= min && value <= max
+	}
+	n, err := strconv.Atoi(field)
+	if err != nil {
+		return false
+	}
+	return n >= min && n <= max && n == value
 }
 
 func (p *SchedulePoller) updateLastRun(ctx context.Context, sch *schedule.WorkflowSchedule) {

@@ -447,6 +447,95 @@ func (s *NotificationHTTPTestSuite) TestRetryNotification() {
 	s.NotEmpty(retryResult["message"])
 }
 
+// TestSnoozeNotification tests snoozing a notification
+func (s *NotificationHTTPTestSuite) TestSnoozeNotification() {
+	userID, apiKey := s.setupForNotificationTests()
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + apiKey,
+	}
+
+	// Send notification (queued or pending)
+	sendPayload := map[string]interface{}{
+		"user_id":  userID,
+		"channel":  "push",
+		"title":    "Snooze Test",
+		"body":     "Testing snooze",
+		"priority": "normal",
+	}
+	resp, body := s.makeRequest(http.MethodPost, "/v1/notifications", sendPayload, headers)
+	s.Require().Equal(http.StatusAccepted, resp.StatusCode)
+
+	var sendResult map[string]interface{}
+	s.parseResponse(body, &sendResult)
+	notificationID := sendResult["notification_id"].(string)
+
+	// Snooze for 1 hour
+	snoozePayload := map[string]interface{}{
+		"duration": "1h",
+	}
+	resp, body = s.makeRequest(http.MethodPost, "/v1/notifications/"+notificationID+"/snooze", snoozePayload, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var snoozeResult map[string]interface{}
+	s.parseResponse(body, &snoozeResult)
+	s.Equal("notification snoozed", snoozeResult["message"])
+	s.NotEmpty(snoozeResult["snoozed_until"])
+
+	// Verify status is snoozed
+	time.Sleep(300 * time.Millisecond)
+	resp, body = s.makeRequest(http.MethodGet, "/v1/notifications/"+notificationID, nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+	var result map[string]interface{}
+	s.parseResponse(body, &result)
+	s.Equal("snoozed", result["status"])
+	s.NotEmpty(result["snoozed_until"])
+}
+
+// TestSnoozeUnsnoozeFlow tests snoozing then unsnoozing a notification
+func (s *NotificationHTTPTestSuite) TestSnoozeUnsnoozeFlow() {
+	userID, apiKey := s.setupForNotificationTests()
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + apiKey,
+	}
+
+	// Send notification
+	sendPayload := map[string]interface{}{
+		"user_id":  userID,
+		"channel":  "push",
+		"title":    "Snooze Unsnooze Test",
+		"body":     "Testing snooze then unsnooze",
+		"priority": "normal",
+	}
+	resp, body := s.makeRequest(http.MethodPost, "/v1/notifications", sendPayload, headers)
+	s.Require().Equal(http.StatusAccepted, resp.StatusCode)
+
+	var sendResult map[string]interface{}
+	s.parseResponse(body, &sendResult)
+	notificationID := sendResult["notification_id"].(string)
+
+	// Snooze
+	snoozePayload := map[string]interface{}{"duration": "2h"}
+	resp, _ = s.makeRequest(http.MethodPost, "/v1/notifications/"+notificationID+"/snooze", snoozePayload, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	// Unsnooze
+	resp, body = s.makeRequest(http.MethodPost, "/v1/notifications/"+notificationID+"/unsnooze", nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+	var unsnoozeResult map[string]interface{}
+	s.parseResponse(body, &unsnoozeResult)
+	s.Equal("notification unsnoozed", unsnoozeResult["message"])
+
+	// Verify status is no longer snoozed (queued or sent)
+	time.Sleep(500 * time.Millisecond)
+	resp, body = s.makeRequest(http.MethodGet, "/v1/notifications/"+notificationID, nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+	var result map[string]interface{}
+	s.parseResponse(body, &result)
+	s.NotEqual("snoozed", result["status"])
+}
+
 // TestCancelNotification tests canceling a scheduled notification
 func (s *NotificationHTTPTestSuite) TestCancelNotification() {
 	userID, apiKey := s.setupForNotificationTests()

@@ -95,6 +95,11 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 		ScheduledAt:   req.ScheduledAt,
 	}
 
+	// Pass digest_key as metadata for digest batching
+	if req.DigestKey != "" {
+		sendReq.Metadata = map[string]interface{}{"digest_key": req.DigestKey}
+	}
+
 	// Pass webhook URL through Data if provided
 	if req.WebhookURL != "" {
 		if sendReq.Data == nil {

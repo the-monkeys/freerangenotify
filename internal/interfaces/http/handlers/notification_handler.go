@@ -397,6 +397,9 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 			filter.ToDate = &t
 		}
 	}
+	if digestKey := c.Query("digest_key"); digestKey != "" {
+		filter.DigestKey = digestKey
+	}
 
 	filter.Page = c.QueryInt("page", 1)
 	filter.PageSize = c.QueryInt("page_size", 20)
