@@ -86,8 +86,7 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
         try {
-            const apps = await applicationsAPI.list();
-            const app = apps.find((a: Application) => a.app_id === appId);
+            const app = await applicationsAPI.get(appId);
             if (app) {
                 setSelectedAppId(app.app_id);
                 setOwnApiKey(app.api_key);
@@ -233,15 +232,30 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
         <div className={embedded ? 'space-y-4' : 'p-6 max-w-6xl mx-auto space-y-6'}>
             {/* Header */}
             {!embedded && (
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <Tag className="h-5 w-5 text-muted-foreground" />
-                        <h1 className="text-2xl font-semibold text-foreground">Topics</h1>
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <Tag className="h-5 w-5 text-muted-foreground" />
+                            <h1 className="text-2xl font-semibold text-foreground">Topics</h1>
+                        </div>
+                        <Button onClick={openCreate}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            New Topic
+                        </Button>
                     </div>
-                    <Button onClick={openCreate}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Topic
-                    </Button>
+
+                    {/* App picker (standalone only) */}
+                    <div className="max-w-xs">
+                        <ResourcePicker<Application>
+                            label="Application"
+                            value={selectedAppId}
+                            onChange={handleAppSelect}
+                            fetcher={async () => applicationsAPI.list()}
+                            labelKey="app_name"
+                            valueKey="app_id"
+                            placeholder="Select an application..."
+                        />
+                    </div>
                 </div>
             )}
 
@@ -473,10 +487,10 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
             {/* Delete Confirm */}
             <ConfirmDialog
                 open={!!deleteTarget}
-                onOpenChange={() => setDeleteTarget(null)}
+                onOpenChange={(open) => !open && setDeleteTarget(null)}
                 onConfirm={handleDelete}
                 title="Delete Topic"
-                description={`Are you sure you want to delete "${deleteTarget?.name}"? All subscriptions will be removed.`}
+                description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.name}"? All subscriptions will be removed.` : ''}
                 confirmLabel="Delete"
                 variant="destructive"
             />

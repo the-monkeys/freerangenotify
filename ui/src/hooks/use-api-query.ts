@@ -23,6 +23,7 @@ export function useApiQuery<T>(
             const result = await fetcher();
             setData(result);
         } catch (err: any) {
+            setData(null);
             const raw = err?.response?.data?.error;
             const message =
                 (typeof raw === 'string' ? raw : raw?.message) ||

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workflowsAPI, applicationsAPI } from '../../services/api';
 import type { Workflow, Application } from '../../types';
@@ -41,21 +41,27 @@ const statusBadgeVariant: Record<string, string> = {
     inactive: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 };
 
-const WorkflowsList: React.FC = () => {
+interface WorkflowsListProps {
+    apiKey?: string;
+    embedded?: boolean;
+}
+
+const WorkflowsList: React.FC<WorkflowsListProps> = ({ apiKey: propApiKey, embedded }) => {
     const navigate = useNavigate();
 
-    // App context
+    // App context (used when not embedded)
     const [selectedAppId, setSelectedAppId] = useState<string | null>(
         localStorage.getItem('last_app_id')
     );
-    const [apiKey, setApiKey] = useState<string | null>(
+    const [ownApiKey, setOwnApiKey] = useState<string | null>(
         localStorage.getItem('last_api_key')
     );
+    const apiKey = propApiKey || ownApiKey;
 
     // Filters
     const [statusFilter, setStatusFilter] = useState('all');
     const [search, setSearch] = useState('');
-    const debouncedSearch = useDebounce(search, 300);
+    const debouncedSearch = useDebounce(search, 150); // Faster live search feel
 
     // Data
     const { data, loading, refetch } = useApiQuery(
@@ -67,6 +73,17 @@ const WorkflowsList: React.FC = () => {
     // Delete
     const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);
     const [deleting, setDeleting] = useState(false);
+
+    // Auto-select first app if none selected and not embedded
+    useEffect(() => {
+        if (!embedded && !apiKey) {
+            applicationsAPI.list().then(apps => {
+                if (apps && apps.length > 0) {
+                    handleAppSelect(apps[0].app_id);
+                }
+            }).catch(() => { });
+        }
+    }, [embedded, apiKey]);
 
     // Filter workflows
     const workflows = useMemo(() => {
@@ -82,17 +99,12 @@ const WorkflowsList: React.FC = () => {
     }, [data, statusFilter, debouncedSearch]);
 
     const handleAppSelect = async (appId: string | null) => {
-        if (!appId) {
-            setSelectedAppId(null);
-            setApiKey(null);
-            return;
-        }
+        if (!appId) return; // Prevent deselection
         try {
-            const apps = await applicationsAPI.list();
-            const app = apps.find((a: Application) => a.app_id === appId);
+            const app = await applicationsAPI.get(appId);
             if (app) {
                 setSelectedAppId(app.app_id);
-                setApiKey(app.api_key);
+                setOwnApiKey(app.api_key);
                 localStorage.setItem('last_app_id', app.app_id);
                 localStorage.setItem('last_api_key', app.api_key);
             }
@@ -116,6 +128,18 @@ const WorkflowsList: React.FC = () => {
         }
     };
 
+    const handleToggleStatus = async (w: Workflow) => {
+        if (!apiKey) return;
+        const newStatus = w.status === 'active' ? 'inactive' : 'active';
+        try {
+            await workflowsAPI.update(apiKey, w.id, { status: newStatus });
+            toast.success(`Workflow ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
+            refetch();
+        } catch {
+            toast.error('Failed to update workflow status');
+        }
+    };
+
     const handleDuplicate = async (w: Workflow) => {
         if (!apiKey) return;
         try {
@@ -132,46 +156,78 @@ const WorkflowsList: React.FC = () => {
         }
     };
 
-    return (
-        <div className="p-6 max-w-6xl mx-auto space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-semibold text-foreground">Workflows</h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Multi-step notification flows
-                    </p>
+    // Standalone mode without apiKey — show app picker
+    if (!apiKey && !embedded) {
+        return (
+            <div className="p-6 max-w-6xl mx-auto space-y-6">
+                <h1 className="text-2xl font-semibold text-foreground">Workflows</h1>
+                <div className="max-w-xs">
+                    <ResourcePicker<Application>
+                        label="Application"
+                        value={selectedAppId}
+                        onChange={handleAppSelect}
+                        fetcher={async () => applicationsAPI.list()}
+                        labelKey="app_name"
+                        valueKey="app_id"
+                        placeholder="Select an application..."
+                        hint="Workflows are scoped to an application"
+                    />
                 </div>
-                {apiKey && (
-                    <Button onClick={() => navigate('/workflows/new')}>
-                        <Plus className="h-4 w-4 mr-2" />
-                        New Workflow
-                    </Button>
-                )}
-            </div>
-
-            {/* App picker */}
-            <div className="max-w-xs">
-                <ResourcePicker<Application>
-                    label="Application"
-                    value={selectedAppId}
-                    onChange={handleAppSelect}
-                    fetcher={async () => applicationsAPI.list()}
-                    labelKey="app_name"
-                    valueKey="app_id"
-                    placeholder="Select an application..."
-                    hint="Workflows are scoped to an application"
-                />
-            </div>
-
-            {/* No app selected */}
-            {!apiKey && (
                 <EmptyState
                     title="Select an application"
                     description="Choose an app above to view its workflows"
                     icon={<WorkflowIcon className="h-12 w-12" />}
                     action={{ label: 'Go to Applications', onClick: () => navigate('/apps') }}
                 />
+            </div>
+        );
+    }
+
+    const total = data?.total ?? data?.workflows?.length ?? 0;
+    return (
+        <div className={embedded ? 'space-y-4' : 'p-6 max-w-6xl mx-auto space-y-6'}>
+            {/* Header */}
+            {!embedded && (
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-semibold text-foreground">Workflows</h1>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Multi-step notification flows
+                        </p>
+                    </div>
+                    <Button onClick={() => navigate('/workflows/new')}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        New Workflow
+                    </Button>
+                </div>
+            )}
+
+            {embedded && (
+                <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        {total} workflow{total !== 1 ? 's' : ''}
+                    </p>
+                    <Button size="sm" onClick={() => navigate('/workflows/new')}>
+                        <Plus className="h-4 w-4 mr-1.5" />
+                        New Workflow
+                    </Button>
+                </div>
+            )}
+
+            {/* App picker (standalone only) */}
+            {!embedded && (
+                <div className="max-w-xs">
+                    <ResourcePicker<Application>
+                        label="Application"
+                        value={selectedAppId}
+                        onChange={handleAppSelect}
+                        fetcher={async () => applicationsAPI.list()}
+                        labelKey="app_name"
+                        valueKey="app_id"
+                        placeholder="Select an application..."
+                        hint="Workflows are scoped to an application"
+                    />
+                </div>
             )}
 
             {/* Content */}
@@ -241,10 +297,23 @@ const WorkflowsList: React.FC = () => {
                                                     {w.trigger_id}
                                                 </code>
                                             </TableCell>
-                                            <TableCell>
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeVariant[w.status] || ''}`}>
-                                                    {w.status}
-                                                </span>
+                                            <TableCell onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        role="switch"
+                                                        aria-checked={w.status === 'active'}
+                                                        onClick={() => handleToggleStatus(w)}
+                                                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${w.status === 'active' ? 'bg-primary' : 'bg-input'}`}
+                                                    >
+                                                        <span
+                                                            className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform ${w.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`}
+                                                        />
+                                                    </button>
+                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusBadgeVariant[w.status] || ''}`}>
+                                                        {w.status}
+                                                    </span>
+                                                </div>
                                             </TableCell>
                                             <TableCell className="hidden md:table-cell">{w.steps?.length ?? 0}</TableCell>
                                             <TableCell className="hidden md:table-cell">v{w.version}</TableCell>

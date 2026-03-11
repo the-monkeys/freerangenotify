@@ -12,6 +12,7 @@ import AppImport from '../components/apps/AppImport';
 import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
 import SchedulesList from './schedules/SchedulesList';
+import WorkflowsList from './workflows/WorkflowsList';
 
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -22,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
 import { toast } from 'sonner';
-import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, ArrowRight, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
+import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { useApiQuery } from '../hooks/use-api-query';
 
@@ -974,55 +975,7 @@ const AppDetail: React.FC = () => {
 
                 {/* Workflows Tab */}
                 {activeTab === 'workflows' && app && (
-                    <div className="space-y-6">
-                        <Card>
-                            <CardContent className="pt-6">
-                                <div className="flex items-start gap-4">
-                                    <div className="rounded-lg bg-primary/10 p-3 shrink-0">
-                                        <Workflow className="h-6 w-6 text-primary" />
-                                    </div>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <h3 className="font-semibold text-lg">What are Workflows?</h3>
-                                            <p className="text-muted-foreground text-sm mt-1">
-                                                Workflows are <strong>multi-step notification pipelines</strong> that go beyond simple one-time sends.
-                                                Instead of firing a single notification, you can build a sequence of steps — send an email,
-                                                wait 2 hours, check if it was read, then send a push notification as a follow-up.
-                                            </p>
-                                        </div>
-                                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                                            <div className="rounded-md border p-3 space-y-1">
-                                                <div className="font-medium">Channel Step</div>
-                                                <p className="text-muted-foreground text-xs">Send via email, SMS, push, webhook, or SSE using a template.</p>
-                                            </div>
-                                            <div className="rounded-md border p-3 space-y-1">
-                                                <div className="font-medium">Delay Step</div>
-                                                <p className="text-muted-foreground text-xs">Pause the workflow for a set duration (e.g. wait 1 hour before the next step).</p>
-                                            </div>
-                                            <div className="rounded-md border p-3 space-y-1">
-                                                <div className="font-medium">Digest Step</div>
-                                                <p className="text-muted-foreground text-xs">Batch and aggregate events over a time window before sending.</p>
-                                            </div>
-                                            <div className="rounded-md border p-3 space-y-1">
-                                                <div className="font-medium">Condition Step</div>
-                                                <p className="text-muted-foreground text-xs">Branch logic — skip or route to different steps based on event data.</p>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => navigate('/workflows')}
-                                                className="gap-2"
-                                            >
-                                                Open Workflow Builder <ArrowRight className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                    <WorkflowsList apiKey={app.api_key} embedded />
                 )}
 
                 {/* Team Tab */}

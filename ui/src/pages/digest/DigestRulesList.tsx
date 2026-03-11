@@ -149,8 +149,7 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
         try {
-            const apps = await applicationsAPI.list();
-            const app = apps.find((a: Application) => a.app_id === appId);
+            const app = await applicationsAPI.get(appId);
             if (app) {
                 setSelectedAppId(app.app_id);
                 setOwnApiKey(app.api_key);
@@ -285,7 +284,20 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
                         </Button>
                     </div>
 
-                    <div className="rounded-lg border bg-card p-5">
+                    {/* App picker (standalone only) */}
+                    <div className="max-w-xs mt-4">
+                        <ResourcePicker<Application>
+                            label="Application"
+                            value={selectedAppId}
+                            onChange={handleAppSelect}
+                            fetcher={async () => applicationsAPI.list()}
+                            labelKey="app_name"
+                            valueKey="app_id"
+                            placeholder="Select an application..."
+                        />
+                    </div>
+
+                    <div className="rounded-lg border bg-card p-5 mt-6">
                         <div className="flex items-start gap-4">
                             <div className="rounded-lg bg-primary/10 p-3 shrink-0">
                                 <Timer className="h-6 w-6 text-primary" />
@@ -475,7 +487,7 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
                         </Select>
                     </div>
                     <div className="space-y-2">
-                        <Label>Template ID</Label>
+                        <Label>Template ID <span className="text-destructive">*</span></Label>
                         <Input value={formTemplateId} onChange={(e) => setFormTemplateId(e.target.value)} placeholder="Template ID for digest summary" className="font-mono" />
                     </div>
                     <div className="space-y-2">
@@ -495,10 +507,10 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
             {/* Delete Confirmation */}
             <ConfirmDialog
                 open={!!deleteTarget}
-                onOpenChange={() => setDeleteTarget(null)}
+                onOpenChange={(open) => !open && setDeleteTarget(null)}
                 onConfirm={handleDelete}
                 title="Delete Digest Rule"
-                description={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
+                description={deleteTarget ? `Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.` : ''}
                 confirmLabel="Delete"
                 variant="destructive"
             />

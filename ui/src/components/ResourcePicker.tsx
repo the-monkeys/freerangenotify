@@ -134,7 +134,7 @@ function ResourcePicker<T>({
                                 <button
                                     key={itemValue}
                                     onClick={() => {
-                                        onChange(isSelected ? null : itemValue);
+                                        if (!isSelected) onChange(itemValue);
                                         setOpen(false);
                                         setSearch('');
                                     }}
