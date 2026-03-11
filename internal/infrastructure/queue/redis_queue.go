@@ -530,6 +530,49 @@ func (q *RedisQueue) GetScheduledItems(ctx context.Context, count int64) ([]Noti
 	return items, nil
 }
 
+// RemoveScheduledByID removes notifications from the scheduled queue by ID.
+// Scans the scheduled sorted set, finds members matching the IDs, and ZREM's them.
+func (q *RedisQueue) RemoveScheduledByID(ctx context.Context, notificationIDs []string) error {
+	if len(notificationIDs) == 0 {
+		return nil
+	}
+	idSet := make(map[string]bool, len(notificationIDs))
+	for _, id := range notificationIDs {
+		idSet[id] = true
+	}
+
+	// ZRANGE gets all members (score doesn't matter for filtering)
+	// For large queues, could use ZSCAN; for typical sizes this is acceptable.
+	members, err := q.client.ZRange(ctx, QueueScheduled, 0, -1).Result()
+	if err != nil {
+		return fmt.Errorf("remove scheduled by id: %w", err)
+	}
+
+	var toRemove []interface{}
+	for _, data := range members {
+		var item NotificationQueueItem
+		if err := json.Unmarshal([]byte(data), &item); err != nil {
+			continue
+		}
+		if idSet[item.NotificationID] {
+			toRemove = append(toRemove, data)
+		}
+	}
+
+	if len(toRemove) == 0 {
+		return nil
+	}
+
+	if err := q.client.ZRem(ctx, QueueScheduled, toRemove...).Err(); err != nil {
+		return fmt.Errorf("remove scheduled by id: %w", err)
+	}
+
+	q.logger.Info("Removed scheduled notifications",
+		zap.Int("count", len(toRemove)),
+		zap.Strings("notification_ids", notificationIDs))
+	return nil
+}
+
 // getQueueName returns the queue name for a given priority
 func (q *RedisQueue) getQueueName(priority notification.Priority) string {
 	switch priority {

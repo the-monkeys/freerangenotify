@@ -1,10 +1,13 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import type { StepResult, StepResultStatus } from '../../types';
-import { CheckCircle2, XCircle, Clock, Loader2, SkipForward } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, Loader2, SkipForward, ExternalLink } from 'lucide-react';
 import { formatDuration } from '../../lib/utils';
 
 interface ExecutionTimelineProps {
     stepResults: Record<string, StepResult>;
+    /** When provided, notification_id becomes a link to app notifications tab */
+    appId?: string;
 }
 
 const statusConfig: Record<StepResultStatus, { icon: React.ElementType; color: string; label: string }> = {
@@ -15,7 +18,7 @@ const statusConfig: Record<StepResultStatus, { icon: React.ElementType; color: s
     skipped:   { icon: SkipForward,  color: 'text-amber-500',   label: 'Skipped' },
 };
 
-const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ stepResults }) => {
+const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ stepResults, appId }) => {
     const entries = Object.entries(stepResults).sort(
         ([, a], [, b]) => (a.started_at || '').localeCompare(b.started_at || '')
     );
@@ -77,9 +80,20 @@ const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ stepResults }) =>
                                     </span>
                                 )}
                                 {result.notification_id && (
-                                    <span className="font-mono text-xs text-muted-foreground">
-                                        notif: {result.notification_id.slice(0, 8)}…
-                                    </span>
+                                    appId ? (
+                                        <Link
+                                            to={`/apps/${appId}?tab=notifications`}
+                                            className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+                                            title={`View notification ${result.notification_id}`}
+                                        >
+                                            <ExternalLink className="h-3 w-3" />
+                                            notif: {result.notification_id.slice(0, 8)}…
+                                        </Link>
+                                    ) : (
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                            notif: {result.notification_id.slice(0, 8)}…
+                                        </span>
+                                    )
                                 )}
                                 {result.digest_count != null && (
                                     <span className="text-xs text-muted-foreground">

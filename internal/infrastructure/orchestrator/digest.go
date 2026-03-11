@@ -22,6 +22,7 @@ const (
 // DigestManager manages notification digesting using Redis sorted sets.
 type DigestManager struct {
 	digestRepo   digest.Repository
+	notifRepo    notification.Repository
 	notifService notification.Service
 	redisClient  *redis.Client
 	logger       *zap.Logger
@@ -33,12 +34,14 @@ type DigestManager struct {
 // NewDigestManager creates a new digest manager.
 func NewDigestManager(
 	digestRepo digest.Repository,
+	notifRepo notification.Repository,
 	notifService notification.Service,
 	redisClient *redis.Client,
 	logger *zap.Logger,
 ) *DigestManager {
 	return &DigestManager{
 		digestRepo:   digestRepo,
+		notifRepo:    notifRepo,
 		notifService: notifService,
 		redisClient:  redisClient,
 		logger:       logger,
@@ -71,6 +74,7 @@ func (dm *DigestManager) MatchesDigestRule(ctx context.Context, notif *notificat
 }
 
 // Accumulate adds a notification payload to the digest accumulator.
+// Redis key format: frn:digest:{app_id}:{digest_key}:{user_id}:{group_val} (digest_key enables rule lookup on flush).
 func (dm *DigestManager) Accumulate(ctx context.Context, notif *notification.Notification, rule *digest.DigestRule, digestKeyValue string) error {
 	// Determine the grouping value from the notification metadata
 	groupVal := ""
@@ -78,7 +82,7 @@ func (dm *DigestManager) Accumulate(ctx context.Context, notif *notification.Not
 		groupVal = fmt.Sprintf("%v", v)
 	}
 
-	redisKey := fmt.Sprintf("%s%s:%s:%s", digestKeyPrefix, notif.AppID, notif.UserID, groupVal)
+	redisKey := fmt.Sprintf("%s%s:%s:%s:%s", digestKeyPrefix, notif.AppID, digestKeyValue, notif.UserID, groupVal)
 
 	// Serialize notification payload for accumulation
 	payload := map[string]interface{}{
@@ -193,8 +197,7 @@ func (dm *DigestManager) flushOneDigest(ctx context.Context, redisKey string) er
 		events = append(events, event)
 	}
 
-	// Parse the redis key to extract app_id, user_id, groupVal
-	// Key format: frn:digest:{app_id}:{user_id}:{group_val}
+	// Parse the redis key: frn:digest:{app_id}:{digest_key}:{user_id}:{group_val}
 	parts := parseDigestKey(redisKey)
 	if parts == nil {
 		dm.logger.Error("Failed to parse digest key", zap.String("key", redisKey))
@@ -202,14 +205,24 @@ func (dm *DigestManager) flushOneDigest(ctx context.Context, redisKey string) er
 		return nil
 	}
 
-	// Send a consolidated digest notification
+	// Look up rule to get channel and template (required for email, push, etc.)
+	rule, err := dm.digestRepo.GetActiveByKey(ctx, parts.appID, parts.digestKey)
+	channel := notification.ChannelInApp
+	templateID := ""
+	if err == nil && rule != nil {
+		channel = notification.Channel(rule.Channel)
+		templateID = rule.TemplateID
+	}
+
+	// Send a consolidated digest notification (rule's template_id is required for email/push channels)
 	req := notification.SendRequest{
-		AppID:    parts.appID,
-		UserID:   parts.userID,
-		Channel:  notification.ChannelInApp,
-		Priority: notification.PriorityNormal,
-		Title:    fmt.Sprintf("You have %d new notifications", len(events)),
-		Body:     fmt.Sprintf("%d notifications have been batched for you.", len(events)),
+		AppID:       parts.appID,
+		UserID:      parts.userID,
+		Channel:     channel,
+		TemplateID:  templateID,
+		Priority:    notification.PriorityNormal,
+		Title:       fmt.Sprintf("You have %d new notifications", len(events)),
+		Body:        fmt.Sprintf("%d notifications have been batched for you.", len(events)),
 		Data: map[string]interface{}{
 			"events":       events,
 			"event_count":  len(events),
@@ -219,6 +232,21 @@ func (dm *DigestManager) flushOneDigest(ctx context.Context, redisKey string) er
 
 	if _, err := dm.notifService.Send(ctx, req); err != nil {
 		return fmt.Errorf("failed to send digest notification: %w", err)
+	}
+
+	// Mark accumulated notifications as digested (so UI shows correct status)
+	ids := make([]string, 0, len(events))
+	for _, e := range events {
+		if nid, ok := e["notification_id"].(string); ok && nid != "" {
+			ids = append(ids, nid)
+		}
+	}
+	if len(ids) > 0 && dm.notifRepo != nil {
+		if err := dm.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusDigested); err != nil {
+			dm.logger.Warn("Failed to mark notifications as digested",
+				zap.Strings("notification_ids", ids),
+				zap.Error(err))
+		}
 	}
 
 	dm.logger.Info("Digest flushed",
@@ -239,31 +267,31 @@ func (dm *DigestManager) Shutdown() {
 
 // digestKeyParts holds parsed components of a digest Redis key.
 type digestKeyParts struct {
-	appID    string
-	userID   string
-	groupVal string
+	appID     string
+	digestKey string
+	userID    string
+	groupVal  string
 }
 
-// parseDigestKey extracts app_id, user_id, and group_val from a digest Redis key.
-// Key format: frn:digest:{app_id}:{user_id}:{group_val}
+// parseDigestKey extracts app_id, digest_key, user_id, and group_val from a digest Redis key.
+// Key format: frn:digest:{app_id}:{digest_key}:{user_id}:{group_val}
 func parseDigestKey(key string) *digestKeyParts {
-	// Remove prefix "frn:digest:"
 	prefix := digestKeyPrefix
 	if len(key) <= len(prefix) {
 		return nil
 	}
 	remainder := key[len(prefix):]
-	// Split into at most 3 parts: app_id, user_id, group_val
-	parts := splitN(remainder, ":", 3)
-	if len(parts) < 2 {
+	parts := splitN(remainder, ":", 4)
+	if len(parts) < 3 {
 		return nil
 	}
 	result := &digestKeyParts{
-		appID:  parts[0],
-		userID: parts[1],
+		appID:     parts[0],
+		digestKey: parts[1],
+		userID:    parts[2],
 	}
-	if len(parts) == 3 {
-		result.groupVal = parts[2]
+	if len(parts) == 4 {
+		result.groupVal = parts[3]
 	}
 	return result
 }

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { workflowsAPI, applicationsAPI } from '../../services/api';
-import type { WorkflowExecution, ExecutionStatus, Application } from '../../types';
+import type { WorkflowExecution, ExecutionStatus, Application, Workflow } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
 import ResourcePicker from '../../components/ResourcePicker';
 import SkeletonTable from '../../components/SkeletonTable';
@@ -45,6 +46,15 @@ const WorkflowExecutions: React.FC = () => {
     const [selectedAppId, setSelectedAppId] = useState<string | null>(
         localStorage.getItem('last_app_id')
     );
+    const [searchParams] = useSearchParams();
+    const workflowIdFromUrl = searchParams.get('workflow_id');
+    const [workflowFilter, setWorkflowFilter] = useState<string>(workflowIdFromUrl || 'all');
+
+    useEffect(() => {
+        if (workflowIdFromUrl && workflowIdFromUrl !== workflowFilter) {
+            setWorkflowFilter(workflowIdFromUrl);
+        }
+    }, [workflowIdFromUrl]);
     const [statusFilter, setStatusFilter] = useState<ExecutionStatus | 'all'>('all');
     const [page, setPage] = useState(1);
     const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -53,10 +63,22 @@ const WorkflowExecutions: React.FC = () => {
     const offset = (page - 1) * PAGE_SIZE;
 
     const { data, loading, refetch } = useApiQuery(
-        () => workflowsAPI.listExecutions(apiKey!, PAGE_SIZE, offset),
-        [apiKey, offset],
+        () => workflowsAPI.listExecutions(
+            apiKey!,
+            PAGE_SIZE,
+            offset,
+            workflowFilter === 'all' ? undefined : workflowFilter
+        ),
+        [apiKey, offset, workflowFilter],
         { enabled: !!apiKey }
     );
+
+    const { data: workflowsData } = useApiQuery(
+        () => workflowsAPI.list(apiKey!, 100, 0),
+        [apiKey],
+        { enabled: !!apiKey }
+    );
+    const workflows: Workflow[] = workflowsData?.workflows ?? [];
 
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
@@ -118,12 +140,29 @@ const WorkflowExecutions: React.FC = () => {
     return (
         <div className="p-6 max-w-6xl mx-auto space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <Activity className="h-5 w-5 text-muted-foreground" />
                     <h1 className="text-2xl font-semibold text-foreground">Workflow Executions</h1>
                 </div>
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as ExecutionStatus | 'all')}>
+                <div className="flex items-center gap-2">
+                    <Select
+                        value={workflowFilter}
+                        onValueChange={(v) => { setWorkflowFilter(v); setPage(1); }}
+                    >
+                        <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="All workflows" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Workflows</SelectItem>
+                            {workflows.map((w) => (
+                                <SelectItem key={w.id} value={w.id}>
+                                    {w.name} ({w.trigger_id})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as ExecutionStatus | 'all')}>
                     <SelectTrigger className="w-[160px]">
                         <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
@@ -136,7 +175,17 @@ const WorkflowExecutions: React.FC = () => {
                         <SelectItem value="cancelled">Cancelled</SelectItem>
                     </SelectContent>
                 </Select>
+                </div>
             </div>
+
+            {total > 0 && (
+                <p className="text-sm text-muted-foreground">
+                    {total} execution{total !== 1 ? 's' : ''} total
+                    {workflowFilter !== 'all' && workflows.find(w => w.id === workflowFilter) && (
+                        <> for <strong>{workflows.find(w => w.id === workflowFilter)?.name}</strong></>
+                    )}
+                </p>
+            )}
 
             {/* Table */}
             {loading ? (
@@ -222,7 +271,7 @@ const WorkflowExecutions: React.FC = () => {
                                                                 <h4 className="text-sm font-medium text-foreground mb-3">
                                                                     Step Timeline
                                                                 </h4>
-                                                                <ExecutionTimeline stepResults={exec.step_results} />
+                                                                <ExecutionTimeline stepResults={exec.step_results} appId={selectedAppId || undefined} />
                                                             </div>
                                                             <div>
                                                                 <h4 className="text-sm font-medium text-foreground mb-2">

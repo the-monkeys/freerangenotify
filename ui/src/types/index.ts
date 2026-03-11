@@ -236,6 +236,7 @@ export interface NotificationRequest {
     scheduled_at?: string;
     recurrence?: Recurrence;
     workflow_trigger_id?: string;  // Phase 3: trigger workflow after send
+    metadata?: Record<string, any>;  // Digest: { digest_key }
 }
 
 export interface BulkNotificationRequest {
@@ -246,6 +247,7 @@ export interface BulkNotificationRequest {
     body?: string;
     data?: Record<string, any>;
     template_id?: string;
+    metadata?: Record<string, any>;  // Digest: { digest_key }
 }
 
 export interface BroadcastNotificationRequest {
@@ -258,6 +260,7 @@ export interface BroadcastNotificationRequest {
     scheduled_at?: string;
     workflow_trigger_id?: string;  // Phase 2: trigger workflow for each recipient
     topic_key?: string;           // Phase 2: limit to topic subscribers
+    metadata?: Record<string, any>;  // Digest: { digest_key }
 }
 
 export interface UpdateNotificationStatusRequest {
@@ -276,6 +279,7 @@ export interface QuickSendRequest {
     priority?: 'low' | 'normal' | 'high' | 'critical';
     scheduled_at?: string;
     webhook_url?: string;
+    digest_key?: string;  // Batch via digest rule
 }
 
 export interface QuickSendResponse {
@@ -518,6 +522,7 @@ export interface WorkflowSchedule {
     name: string;
     workflow_trigger_id: string;
     cron: string;
+    timezone?: string;
     target_type: ScheduleTargetType;
     topic_id?: string;
     payload?: Record<string, any>;
@@ -531,6 +536,7 @@ export interface CreateScheduleRequest {
     name: string;
     workflow_trigger_id: string;
     cron: string;
+    timezone?: string;
     target_type: ScheduleTargetType;
     topic_id?: string;
     payload?: Record<string, any>;
@@ -540,6 +546,7 @@ export interface UpdateScheduleRequest {
     name?: string;
     workflow_trigger_id?: string;
     cron?: string;
+    timezone?: string;
     target_type?: ScheduleTargetType;
     topic_id?: string;
     payload?: Record<string, any>;
@@ -796,7 +803,10 @@ export interface BatchNotificationRequest {
 }
 
 export interface CancelBatchRequest {
-    batch_id: string;
+    /** Notification IDs to cancel (backend expects this) */
+    notification_ids: string[];
+    /** @deprecated Use notification_ids. Batch ID from send response - no longer returned by API. */
+    batch_id?: string;
 }
 
 // ============= Notification Inbox Types =============

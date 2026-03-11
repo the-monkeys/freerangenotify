@@ -33,6 +33,9 @@ type QuickSendRequest struct {
 	// Optional: explicit webhook URL (for webhook channel without user)
 	WebhookURL string `json:"webhook_url,omitempty"`
 
+	// Optional: digest rule key — notifications with this key are batched by the matching digest rule
+	DigestKey string `json:"digest_key,omitempty"`
+
 	// EnvironmentID is set by the auth middleware (not from JSON body).
 	EnvironmentID string `json:"-"`
 }

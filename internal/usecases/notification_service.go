@@ -134,9 +134,13 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		return nil, err
 	}
 
-	// Use template subject/body as title/body
+	// Use req.Title/req.Body when both provided (e.g. digest flush with fixed text); otherwise use template
 	title := tmpl.Subject
 	body := tmpl.Body
+	if req.Title != "" && req.Body != "" {
+		title = req.Title
+		body = req.Body
+	}
 
 	s.logger.Debug("Template loaded for notification",
 		zap.String("template_id", req.TemplateID),
@@ -231,6 +235,15 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 			notif.Metadata["webhook_url"] = url
 			// Remove from Content.Data to keep payload clean
 			delete(notif.Content.Data, "webhook_url")
+		}
+	}
+	// Copy request metadata (e.g. digest_key for digest batching)
+	if req.Metadata != nil {
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		for k, v := range req.Metadata {
+			notif.Metadata[k] = v
 		}
 	}
 
@@ -363,6 +376,7 @@ func (s *NotificationService) sendToTopic(ctx context.Context, req notification.
 		TemplateID:  req.TemplateID,
 		Category:    req.Category,
 		ScheduledAt: req.ScheduledAt,
+		Metadata:    req.Metadata,
 	}
 
 	results, err := s.SendBulk(ctx, bulkReq)
@@ -448,6 +462,12 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			RetryCount:  0,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
+		}
+		if req.Metadata != nil {
+			notif.Metadata = make(map[string]interface{})
+			for k, v := range req.Metadata {
+				notif.Metadata[k] = v
+			}
 		}
 
 		if err := notif.Validate(); err != nil {
@@ -595,6 +615,7 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 		TemplateID:  req.TemplateID,
 		Category:    req.Category,
 		ScheduledAt: req.ScheduledAt,
+		Metadata:    req.Metadata,
 	}
 	notifications, err := s.SendBulk(ctx, bulkReq)
 	if err != nil {
@@ -710,7 +731,12 @@ func (s *NotificationService) Cancel(ctx context.Context, notificationID, appID 
 		return fmt.Errorf("cannot cancel notification in final state %s", notif.Status)
 	}
 
-	return s.notificationRepo.UpdateStatus(ctx, notificationID, notification.StatusCancelled)
+	if err := s.notificationRepo.UpdateStatus(ctx, notificationID, notification.StatusCancelled); err != nil {
+		return err
+	}
+	// Remove from scheduled queue so it won't be sent when due
+	_ = s.queue.RemoveScheduledByID(ctx, []string{notificationID})
+	return nil
 }
 
 // CancelBatch cancels multiple scheduled notifications
@@ -744,7 +770,12 @@ func (s *NotificationService) CancelBatch(ctx context.Context, notificationIDs [
 		return nil
 	}
 
-	return s.notificationRepo.BulkUpdateStatus(ctx, validIDs, notification.StatusCancelled)
+	if err := s.notificationRepo.BulkUpdateStatus(ctx, validIDs, notification.StatusCancelled); err != nil {
+		return err
+	}
+	// Remove from scheduled queue so they won't be sent when due
+	_ = s.queue.RemoveScheduledByID(ctx, validIDs)
+	return nil
 }
 
 // Retry retries a failed notification
@@ -1055,7 +1086,12 @@ func (s *NotificationService) Snooze(ctx context.Context, notificationID, appID 
 		return notification.ErrInvalidSnoozeDuration
 	}
 
-	return s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusSnoozed, &until)
+	if err := s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusSnoozed, &until); err != nil {
+		return err
+	}
+	// Remove from scheduled queue so it won't fire at scheduled_at
+	_ = s.queue.RemoveScheduledByID(ctx, []string{notificationID})
+	return nil
 }
 
 // Unsnooze immediately removes snooze from a notification.
@@ -1071,7 +1107,18 @@ func (s *NotificationService) Unsnooze(ctx context.Context, notificationID, appI
 		return notification.ErrCannotSnooze
 	}
 
-	return s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusSent, nil)
+	// Set status to queued and re-enqueue for delivery
+	if err := s.notificationRepo.UpdateSnooze(ctx, notificationID, notification.StatusQueued, nil); err != nil {
+		return err
+	}
+	queueItem := queue.NotificationQueueItem{
+		NotificationID: notif.NotificationID,
+		AppID:          notif.AppID,
+		Priority:       notif.Priority,
+		RetryCount:     0,
+		EnqueuedAt:     time.Now(),
+	}
+	return s.queue.Enqueue(ctx, queueItem)
 }
 
 // Archive marks notifications as archived for a user.

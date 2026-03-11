@@ -59,6 +59,10 @@ type Queue interface {
 	// GetScheduledItems returns items from scheduled queue that are ready to be processed
 	GetScheduledItems(ctx context.Context, limit int64) ([]NotificationQueueItem, error)
 
+	// RemoveScheduledByID removes notifications from the scheduled queue by ID.
+	// Used when cancelling or snoozing so they are not dequeued and sent when due.
+	RemoveScheduledByID(ctx context.Context, notificationIDs []string) error
+
 	// Acknowledge removes a processed item from the processing set
 	Acknowledge(ctx context.Context, item NotificationQueueItem) error
 

@@ -299,6 +299,9 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 	if filter.Category != "" {
 		qb.Term("category", filter.Category)
 	}
+	if filter.DigestKey != "" {
+		qb.Term("metadata.digest_key", filter.DigestKey)
+	}
 	if filter.FromDate != nil {
 		qb.Range("created_at", map[string]interface{}{"gte": filter.FromDate.Format(time.RFC3339)})
 	}

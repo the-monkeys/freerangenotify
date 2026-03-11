@@ -41,9 +41,10 @@ class ErrorBoundary extends React.Component<React.PropsWithChildren, ErrorBounda
                                 An unexpected error occurred. This has been logged.
                             </p>
                         </div>
-                        {this.state.error?.message && (
-                            <pre className="text-xs font-mono text-left bg-muted rounded-lg p-4 max-h-24 overflow-auto border border-border">
+                        {this.state.error && (
+                            <pre className="text-xs font-mono text-left bg-muted rounded-lg p-4 max-h-40 overflow-auto border border-border">
                                 {this.state.error.message}
+                                {this.state.error.stack && `\n\n${this.state.error.stack}`}
                             </pre>
                         )}
                         <div className="flex items-center justify-center gap-3">

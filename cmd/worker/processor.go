@@ -235,6 +235,31 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// Skip cancelled — do not send
+	if notif.Status == notification.StatusCancelled {
+		logger.Info("Skipping cancelled notification",
+			zap.String("notification_id", notif.NotificationID))
+		return
+	}
+
+	// Skip snoozed — re-enqueue for snoozed_until so it will be processed when due
+	if notif.Status == notification.StatusSnoozed && notif.SnoozedUntil != nil {
+		if time.Now().Before(*notif.SnoozedUntil) {
+			logger.Info("Skipping snoozed notification, re-queueing for later",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Time("snoozed_until", *notif.SnoozedUntil))
+			if err := p.queue.EnqueueScheduled(ctx, *item, *notif.SnoozedUntil); err != nil {
+				logger.Error("Failed to re-enqueue snoozed notification",
+					zap.String("notification_id", notif.NotificationID),
+					zap.Error(err))
+				// Fall through? No — we'd send it. Better to re-enqueue to main queue
+				// so it gets another chance. Or leave in processing for requeue. For now just log.
+			}
+			return
+		}
+		// snoozed_until has passed — treat as ready, fall through to process
+	}
+
 	// ── Phase 1: Digest check (nil-guarded for backward compat) ──
 	if p.digestManager != nil {
 		rule, digestKeyValue := p.digestManager.MatchesDigestRule(ctx, notif)
@@ -525,6 +550,10 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	// Update status to sent
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusSent); err != nil {
 		logger.Error("Failed to update status to sent", zap.Error(err))
+	}
+	// Persist rendered content (title/body) so Notification History displays resolved text, not {{.var}}
+	if err := p.notifRepo.Update(ctx, notif); err != nil {
+		logger.Warn("Failed to persist rendered content after send", zap.Error(err))
 	}
 	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "sent")
 
@@ -1150,27 +1179,45 @@ func (p *NotificationProcessor) unsnoozeLoop(ctx context.Context) {
 			p.logger.Info("Un-snoozing notifications", zap.Int("count", len(due)))
 
 			for _, notif := range due {
-				if err := p.notifRepo.UpdateSnooze(ctx, notif.NotificationID, notification.StatusSent, nil); err != nil {
+				// Set status to queued (not sent) so worker will actually deliver
+				if err := p.notifRepo.UpdateSnooze(ctx, notif.NotificationID, notification.StatusQueued, nil); err != nil {
 					p.logger.Error("Failed to un-snooze notification",
 						zap.String("notification_id", notif.NotificationID),
 						zap.Error(err))
 					continue
 				}
 
-				// Publish to SSE via Redis pub/sub so browser clients see it resurface
+				// Re-enqueue for delivery — worker will pick up and send
+				queueItem := queue.NotificationQueueItem{
+					NotificationID: notif.NotificationID,
+					AppID:          notif.AppID,
+					Priority:       notif.Priority,
+					RetryCount:     0,
+					EnqueuedAt:     time.Now(),
+				}
+				if err := p.queue.Enqueue(ctx, queueItem); err != nil {
+					p.logger.Error("Failed to re-enqueue un-snoozed notification",
+						zap.String("notification_id", notif.NotificationID),
+						zap.Error(err))
+					// Revert status? Could leave as queued; processing reaper might help. For now log.
+					continue
+				}
+
+				// Publish to SSE via Redis pub/sub so browser clients see activity
 				if p.redisClient != nil {
 					event := map[string]string{
 						"notification_id": notif.NotificationID,
 						"channel":         string(notif.Channel),
-						"status":          string(notification.StatusSent),
+						"status":          string(notification.StatusQueued),
 						"timestamp":       time.Now().Format(time.RFC3339),
 					}
 					data, _ := json.Marshal(event)
 					_ = p.redisClient.Publish(ctx, "notification:activity", string(data)).Err()
 				}
 
-			p.logger.Debug("Un-snoozed notification", zap.String("notification_id", notif.NotificationID))
-		}
+				p.logger.Debug("Un-snoozed and re-enqueued notification",
+					zap.String("notification_id", notif.NotificationID))
+			}
 		}
 	}
 }

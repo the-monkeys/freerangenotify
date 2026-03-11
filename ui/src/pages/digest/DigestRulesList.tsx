@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { digestRulesAPI, applicationsAPI } from '../../services/api';
-import type { DigestRule, DigestRuleStatus, CreateDigestRuleRequest, Application } from '../../types';
+import { digestRulesAPI, applicationsAPI, notificationsAPI } from '../../services/api';
+import type { DigestRule, DigestRuleStatus, CreateDigestRuleRequest, Application, Notification } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
 import ResourcePicker from '../../components/ResourcePicker';
 import SkeletonTable from '../../components/SkeletonTable';
@@ -33,7 +33,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
-import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2, Zap, Mail, Route, Users } from 'lucide-react';
+import { Timer, Plus, MoreHorizontal, Pencil, Trash2, Loader2, Zap, Mail, Route, Users, List } from 'lucide-react';
 import { timeAgo } from '../../lib/utils';
 import { toast } from 'sonner';
 
@@ -44,6 +44,70 @@ interface DigestRulesListProps {
 
 const CHANNELS = ['email', 'sms', 'push', 'webhook', 'in_app', 'sse'] as const;
 const PAGE_SIZE = 15;
+
+const DigestedNotificationsPanel: React.FC<{
+    apiKey: string;
+    digestKey: string;
+}> = ({ apiKey, digestKey }) => {
+    const [page, setPage] = useState(1);
+    const { data, loading } = useApiQuery(
+        () => notificationsAPI.list(apiKey, page, 20, {
+            digest_key: digestKey,
+            status: 'digested',
+        }),
+        [apiKey, digestKey, page],
+        { enabled: !!apiKey && !!digestKey }
+    );
+    const notifications: Notification[] = data?.notifications ?? [];
+    const total = data?.total ?? 0;
+
+    return (
+        <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+                Notifications batched and delivered by this digest rule (status=digested, metadata.digest_key={digestKey})
+            </p>
+            {loading ? (
+                <div className="py-8 text-center text-muted-foreground">Loading…</div>
+            ) : notifications.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">No digested notifications yet.</div>
+            ) : (
+                <>
+                    <p className="text-sm font-medium">{total} total</p>
+                    <div className="border rounded-lg overflow-hidden">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>ID</TableHead>
+                                    <TableHead>User</TableHead>
+                                    <TableHead>Channel</TableHead>
+                                    <TableHead>Created</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {notifications.map((n) => (
+                                    <TableRow key={n.notification_id}>
+                                        <TableCell className="font-mono text-xs">{n.notification_id?.slice(0, 8)}…</TableCell>
+                                        <TableCell className="text-sm">{n.user_id?.slice(0, 12)}…</TableCell>
+                                        <TableCell><Badge variant="outline">{n.channel}</Badge></TableCell>
+                                        <TableCell className="text-xs text-muted-foreground">{n.created_at ? timeAgo(n.created_at) : '-'}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    {total > 20 && (
+                        <Pagination
+                            currentPage={page}
+                            totalItems={total}
+                            pageSize={20}
+                            onPageChange={setPage}
+                        />
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
 
 const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, embedded }) => {
     const [ownApiKey, setOwnApiKey] = useState<string | null>(
@@ -78,6 +142,9 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
 
     // Delete
     const [deleteTarget, setDeleteTarget] = useState<DigestRule | null>(null);
+
+    // Run history (digested notifications)
+    const [viewingRule, setViewingRule] = useState<DigestRule | null>(null);
 
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
@@ -324,6 +391,10 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
+                                                    <DropdownMenuItem onClick={() => setViewingRule(rule)}>
+                                                        <List className="h-3.5 w-3.5 mr-2" />
+                                                        View digested notifications
+                                                    </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => openEdit(rule)}>
                                                         <Pencil className="h-3.5 w-3.5 mr-2" />
                                                         Edit
@@ -354,6 +425,20 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
                     )}
                 </>
             )}
+
+            {/* Digested Notifications Panel */}
+            <SlidePanel
+                open={!!viewingRule}
+                onClose={() => setViewingRule(null)}
+                title={viewingRule ? `Digested: ${viewingRule.name}` : ''}
+            >
+                {viewingRule && apiKey && (
+                    <DigestedNotificationsPanel
+                        apiKey={apiKey}
+                        digestKey={viewingRule.digest_key}
+                    />
+                )}
+            </SlidePanel>
 
             {/* Editor Panel */}
             <SlidePanel
