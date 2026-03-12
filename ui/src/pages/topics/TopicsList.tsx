@@ -54,7 +54,11 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
     const { data, loading, refetch } = useApiQuery(
         () => topicsAPI.list(apiKey!, PAGE_SIZE, offset),
         [apiKey, offset],
-        { enabled: !!apiKey }
+        { 
+            enabled: !!apiKey,
+            cacheKey: `topics-list-${apiKey}-${offset}`
+        }
+
     );
 
     const { data: workflowsData } = useApiQuery(

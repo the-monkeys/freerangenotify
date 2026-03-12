@@ -67,7 +67,10 @@ const WorkflowsList: React.FC<WorkflowsListProps> = ({ apiKey: propApiKey, embed
     const { data, loading, refetch } = useApiQuery(
         () => workflowsAPI.list(apiKey!, 100, 0),
         [apiKey],
-        { enabled: !!apiKey }
+        { 
+            enabled: !!apiKey,
+            cacheKey: `workflows-list-${apiKey}`
+        }
     );
 
     // Delete

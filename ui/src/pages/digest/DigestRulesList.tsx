@@ -124,7 +124,11 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
     const { data, loading, refetch } = useApiQuery(
         () => digestRulesAPI.list(apiKey!, PAGE_SIZE, offset),
         [apiKey, offset],
-        { enabled: !!apiKey }
+        { 
+            enabled: !!apiKey,
+            cacheKey: `digest-rules-list-${apiKey}-${offset}`
+        }
+
     );
 
     // Editor state

@@ -65,7 +65,10 @@ const SchedulesList: React.FC<SchedulesListProps> = ({ apiKey: propApiKey, embed
     const { data, loading, refetch } = useApiQuery(
         () => workflowsAPI.listSchedules(apiKey!, PAGE_SIZE, offset),
         [apiKey, offset],
-        { enabled: !!apiKey }
+        { 
+            enabled: !!apiKey,
+            cacheKey: `schedules-list-${apiKey}-${offset}`
+        }
     );
 
     const { data: workflowsData } = useApiQuery(

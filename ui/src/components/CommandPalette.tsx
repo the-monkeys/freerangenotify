@@ -2,8 +2,8 @@ import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent } from './ui/dialog';
 import { Input } from './ui/input';
-import { applicationsAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useApps } from '../contexts/AppsContext';
 import {
     Search, LayoutGrid, Workflow, Timer, Tag, BarChart3, ScrollText,
     BookOpen, Plus, KeyRound, ArrowRight, Building2,
@@ -22,11 +22,15 @@ const CommandPalette: React.FC = () => {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [activeIndex, setActiveIndex] = useState(0);
-    const [apps, setApps] = useState<{ app_id: string; app_name: string }[]>([]);
+    const { apps: globalApps } = useApps();
     const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
+
+    const apps = useMemo(() => {
+        return globalApps.map(a => ({ app_id: a.app_id, app_name: a.app_name }));
+    }, [globalApps]);
 
     // Global keyboard shortcut
     useEffect(() => {
@@ -40,17 +44,11 @@ const CommandPalette: React.FC = () => {
         return () => document.removeEventListener('keydown', handler);
     }, [isAuthenticated]);
 
-    // Load apps when palette opens
+    // Reset palette on open
     useEffect(() => {
         if (!open) return;
         setQuery('');
         setActiveIndex(0);
-        applicationsAPI.list()
-            .then(resp => {
-                const list = Array.isArray(resp) ? resp : (resp as any)?.applications || [];
-                setApps(list.map((a: any) => ({ app_id: a.app_id, app_name: a.app_name || a.name })));
-            })
-            .catch(() => setApps([]));
     }, [open]);
 
     const go = useCallback((path: string) => {

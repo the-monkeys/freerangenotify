@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useApiQuery } from '../hooks/use-api-query';
 import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
 import { extractErrorMessage } from '../lib/utils';
@@ -45,13 +46,26 @@ interface AppUsersProps {
 }
 
 const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
-    const [users, setUsers] = useState<User[]>([]);
-    const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingUser, setEditingUser] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
-    const [totalCount, setTotalCount] = useState(0);
+
+    const { 
+        data: usersData, 
+        loading, 
+        refetch: fetchUsers 
+    } = useApiQuery(
+        () => usersAPI.list(apiKey, page, pageSize),
+        [apiKey, page, pageSize],
+        { 
+            cacheKey: `users-${apiKey}-${page}`,
+            staleTime: 60000 // 1 minute
+        }
+    );
+
+    const users = useMemo(() => usersData?.users || [], [usersData]);
+    const totalCount = useMemo(() => usersData?.total_count || 0, [usersData]);
     const [formData, setFormData] = useState<CreateUserRequest>({
         email: '',
         phone: '',
@@ -72,22 +86,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         }
     });
 
-    useEffect(() => {
-        fetchUsers();
-    }, [apiKey, page]);
 
-    const fetchUsers = async () => {
-        setLoading(true);
-        try {
-            const result = await usersAPI.list(apiKey, page, pageSize);
-            setUsers(result.users);
-            setTotalCount(result.total_count);
-        } catch (error) {
-            console.error('Failed to fetch users:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleUpdateUser = async (e: React.FormEvent) => {
         e.preventDefault();

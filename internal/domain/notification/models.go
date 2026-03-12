@@ -385,10 +385,13 @@ func (r *SendRequest) Validate() error {
 	if r.Channel == "" && r.TemplateID == "" {
 		return ErrInvalidChannel
 	}
+	if r.Priority == "" {
+		r.Priority = PriorityNormal
+	}
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.TemplateID == "" {
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
 		return ErrTemplateRequired
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {

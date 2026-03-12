@@ -44,7 +44,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
     const [copied, setCopied] = useState(false);
 
     const fetcher = useCallback(() => providersAPI.list(appId), [appId]);
-    const { data: providers, loading, refetch } = useApiQuery<CustomProvider[]>(fetcher, [appId]);
+    const { data: providers, loading, refetch } = useApiQuery<CustomProvider[]>(fetcher, [appId], { cacheKey: `app-providers-${appId}` });
 
     const resetForm = () => {
         setName('');

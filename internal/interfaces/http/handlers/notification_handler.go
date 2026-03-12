@@ -249,12 +249,16 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 
 	// Convert to response
 	var items []*dto.NotificationResponse
+	sentCount := 0
 	for _, n := range notifications {
 		items = append(items, dto.FromNotification(n))
+		if n.Status != notification.StatusFailed {
+			sentCount++
+		}
 	}
 
 	response := dto.BulkSendResponse{
-		Sent:  len(notifications),
+		Sent:  sentCount,
 		Total: len(req.Notifications),
 		Items: items,
 	}

@@ -15,7 +15,7 @@ import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
 
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
@@ -115,15 +115,43 @@ const AppDetail: React.FC = () => {
     const { data: workflowsData } = useApiQuery(
         () => workflowsAPI.list(app!.api_key, 100, 0),
         [app?.api_key, activeTab],
-        { enabled: !!app?.api_key && activeTab === 'settings' }
+        { 
+            enabled: !!app?.api_key && activeTab === 'settings',
+            cacheKey: `app-workflows-settings-${app?.app_id}`
+        }
     );
     const workflows: WorkflowType[] = workflowsData?.workflows ?? [];
 
 
     useEffect(() => {
-        if (id) fetchAppDetails();
+        if (!id) return;
+        let ignore = false;
+        const doFetch = async () => {
+            setLoading(true);
+            try {
+                const appData = await applicationsAPI.get(id);
+                if (ignore) return;
+                setApp(appData);
+                setAppName(appData.app_name);
+                setDescription(appData.description || '');
+                setWebhookUrl(appData.webhook_url || '');
+                setSettings(appData.settings || {});
+                fetchWebhookEndpoints();
+                localStorage.setItem('last_api_key', appData.api_key);
+                localStorage.setItem('last_app_id', appData.app_id);
+                const text = Object.entries(appData.settings?.validation_config?.static_headers || {})
+                    .map(([k, v]) => `${k}: ${v}`).join('\n');
+                setStaticHeadersText(text);
+                setEventMappingText(JSON.stringify(appData.settings?.inbound_webhook_config?.event_mapping || {}, null, 2));
+            } catch (error) {
+                console.error('Failed to fetch app details:', error);
+            } finally {
+                if (!ignore) setLoading(false);
+            }
+        };
+        doFetch();
+        return () => { ignore = true; };
     }, [id]);
-
 
 
     const fetchAppDetails = async () => {
@@ -298,59 +326,98 @@ const AppDetail: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Overview Tab */}
-                {activeTab === 'overview' && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Application Details</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                            <form onSubmit={handleUpdateOverview} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="appName">Application Name</Label>
-                                    <Input
-                                        id="appName"
-                                        type="text"
-                                        value={appName}
-                                        onChange={(e) => setAppName(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="description">Description</Label>
-                                    <Textarea
-                                        id="description"
-                                        className="min-h-[100px]"
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                    />
-                                </div>
+                {/* Tab Contents with Persistence */}
+                <div className="space-y-6">
+                    {activeTab === 'overview' && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Application Details</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handleUpdateOverview} className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="appName">Application Name</Label>
+                                        <Input
+                                            id="appName"
+                                            type="text"
+                                            value={appName}
+                                            onChange={(e) => setAppName(e.target.value)}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="description">Description</Label>
+                                        <Textarea
+                                            id="description"
+                                            className="min-h-[100px]"
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                        />
+                                    </div>
 
-                                <div className="flex justify-end mt-8">
-                                    <Button type="submit">Save Overview</Button>
-                                </div>
-                            </form>
-                        </CardContent>
-                    </Card>
-                )}
+                                    <div className="flex justify-end mt-8">
+                                        <Button type="submit">Save Overview</Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
+                    )}
 
-                {/* Users Tab */}
-                {activeTab === 'users' && app && (
-                    <AppUsers apiKey={app.api_key} />
-                )}
+                    {app && (
+                        <>
+                            <div className={activeTab === 'users' ? 'block' : 'hidden'}>
+                                <AppUsers apiKey={app.api_key} />
+                            </div>
+                            <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
+                                <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
+                            </div>
+                            <div className={activeTab === 'notifications' ? 'block' : 'hidden'}>
+                                <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
+                            </div>
+                        </>
+                    )}
 
-                {/* Templates Tab */}
-                {activeTab === 'templates' && app && (
-                    <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
-                )}
+                    {activeTab === 'digest-rules' && app && (
+                        <DigestRulesList apiKey={app.api_key} />
+                    )}
 
-                {/* Notifications Tab */}
-                {activeTab === 'notifications' && app && (
-                    <AppNotifications appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
-                )}
+                    {activeTab === 'workflows' && app && (
+                        <WorkflowsList apiKey={app.api_key} />
+                    )}
 
-                {/* Settings Tab */}
-                {activeTab === 'settings' && (
+                    {activeTab === 'schedules' && app && (
+                        <SchedulesList apiKey={app.api_key} />
+                    )}
+
+                    {activeTab === 'topics' && app && (
+                        <TopicsList apiKey={app.api_key} />
+                    )}
+
+                    {activeTab === 'team' && app && (
+                        <AppTeam appId={app.app_id} />
+                    )}
+
+                    {activeTab === 'providers' && app && (
+                        <AppProviders appId={app.app_id} />
+                    )}
+
+                    {activeTab === 'import' && app && (
+                        <AppImport appId={app.app_id} appName={app.app_name} />
+                    )}
+
+                    {activeTab === 'environments' && app && (
+                        <AppEnvironments 
+                            appId={app.app_id} 
+                            currentApiKey={app.api_key} 
+                            onApiKeyChange={(newKey) => {
+                                setApp({ ...app, api_key: newKey });
+                                localStorage.setItem('last_api_key', newKey);
+                                toast.success('Switched environment');
+                            }}
+                        />
+                    )}
+
+                    {activeTab === 'settings' && (
                     <Card>
                         <CardHeader>
                             <CardTitle>Configuration</CardTitle>
@@ -1087,9 +1154,10 @@ const AppDetail: React.FC = () => {
                         </Card>
                     </div>
                 )}
-            </>
-        </div>
-    );
+            </div>
+        </>
+    </div>
+);
 };
 
 export default AppDetail;

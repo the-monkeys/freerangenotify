@@ -547,6 +547,12 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// Update in-memory status BEFORE persisting the full object,
+	// otherwise the subsequent Update() overwrites "sent" back to "queued".
+	notif.Status = notification.StatusSent
+	now := time.Now()
+	notif.SentAt = &now
+
 	// Update status to sent
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusSent); err != nil {
 		logger.Error("Failed to update status to sent", zap.Error(err))
@@ -708,6 +714,7 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 		}
 
 		// Update status to failed
+		notif.Status = notification.StatusFailed
 		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
 		p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "failed")
 		// Update error message separately
@@ -1050,30 +1057,30 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 // nameFromEmail derives a display name from an email address (e.g. "john.doe@example.com" -> "John Doe").
 // Used to auto-fill {{.name}} in templates like welcome_email when the caller does not provide it.
 func nameFromEmail(email string) string {
-    email = strings.TrimSpace(email)
-    if email == "" {
-        return "there"
-    }
-    at := strings.Index(email, "@")
-    local := email
-    if at > 0 {
-        local = email[:at]
-    }
-    local = strings.ReplaceAll(local, ".", " ")
-    local = strings.ReplaceAll(local, "_", " ")
-    local = strings.TrimSpace(local)
-    if local == "" {
-        return "there"
-    }
-    words := strings.Fields(local)
-    for i, w := range words {
-        r := []rune(w)
-        if len(r) > 0 {
-            r[0] = unicode.ToUpper(r[0])
-            words[i] = string(r)
-        }
-    }
-    return strings.Join(words, " ")
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "there"
+	}
+	at := strings.Index(email, "@")
+	local := email
+	if at > 0 {
+		local = email[:at]
+	}
+	local = strings.ReplaceAll(local, ".", " ")
+	local = strings.ReplaceAll(local, "_", " ")
+	local = strings.TrimSpace(local)
+	if local == "" {
+		return "there"
+	}
+	words := strings.Fields(local)
+	for i, w := range words {
+		r := []rune(w)
+		if len(r) > 0 {
+			r[0] = unicode.ToUpper(r[0])
+			words[i] = string(r)
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // hasValidEmailConfig returns true if the app has explicitly configured and complete

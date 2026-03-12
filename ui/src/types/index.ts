@@ -812,6 +812,7 @@ export interface CancelBatchRequest {
 // ============= Notification Inbox Types =============
 export interface MarkReadRequest {
     notification_ids: string[];
+    user_id: string;
 }
 
 export interface MarkAllReadRequest {
@@ -820,6 +821,7 @@ export interface MarkAllReadRequest {
 
 export interface BulkArchiveRequest {
     notification_ids: string[];
+    user_id: string;
 }
 
 export interface SnoozeRequest {

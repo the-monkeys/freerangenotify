@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useApiQuery } from '../hooks/use-api-query';
 import { templatesAPI } from '../services/api';
 import type { Template, CreateTemplateRequest, TemplateVersion } from '../types';
 import { Button } from './ui/button';
@@ -30,13 +31,27 @@ interface AppTemplatesProps {
 
 const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) => {
     const navigate = useNavigate();
-    const [templates, setTemplates] = useState<Template[]>([]);
-    const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
-    const [totalCount, setTotalCount] = useState(0);
+
+    const offset = (page - 1) * pageSize;
+    const {
+        data: templatesData,
+        loading,
+        refetch: fetchTemplates
+    } = useApiQuery(
+        () => templatesAPI.list(apiKey, pageSize, offset),
+        [apiKey, pageSize, offset],
+        {
+            cacheKey: `templates-${appId}-${offset}`,
+            staleTime: 60000 // 1 minute
+        }
+    );
+
+    const templates = useMemo(() => templatesData?.templates || [], [templatesData]);
+    const totalCount = useMemo(() => templatesData?.total || 0, [templatesData]);
     const [formData, setFormData] = useState<CreateTemplateRequest>({
         app_id: appId,
         name: '',
@@ -71,25 +86,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [rollbackTarget, setRollbackTarget] = useState<{ template: Template; version: TemplateVersion } | null>(null);
     const [rollbackLoading, setRollbackLoading] = useState(false);
 
-    useEffect(() => {
-        if (apiKey) {
-            fetchTemplates();
-        }
-    }, [apiKey, page]);
-
-    const fetchTemplates = async () => {
-        setLoading(true);
-        try {
-            const offset = (page - 1) * pageSize;
-            const result = await templatesAPI.list(apiKey, pageSize, offset);
-            setTemplates(result.templates || []);
-            setTotalCount(result.total || 0);
-        } catch (error) {
-            console.error('Failed to fetch templates:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const resetForm = () => {
         setFormData({
@@ -475,6 +471,16 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         <div>
                                             <h4 className="text-lg font-semibold text-foreground mb-1">{tmpl.name}</h4>
                                             <p className="text-sm text-muted-foreground">{tmpl.description || 'No description'}</p>
+                                            <p
+                                                className="text-xs text-muted-foreground font-mono mt-1 cursor-pointer hover:text-foreground transition-colors"
+                                                title="Click to copy Template ID"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(tmpl.id);
+                                                    toast.success('Template ID copied to clipboard');
+                                                }}
+                                            >
+                                                ID: {tmpl.id} 📋
+                                            </p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <Button

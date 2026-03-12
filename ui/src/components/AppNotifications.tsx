@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template, Workflow, Topic, BroadcastNotificationRequest, DigestRule } from '../types';
+import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -21,14 +22,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock, Layers, XCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
 import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
+import Papa from 'papaparse';
 
 interface AppNotificationsProps {
-    appId: string;
     apiKey: string;
     webhooks?: Record<string, string>;
     onUnreadCount?: (count: number) => void;
@@ -72,55 +73,67 @@ function scheduleToISO(datetimeLocal: string, timezone: string): string | undefi
     return localInTimezoneToISO(datetimeLocal, timezone);
 }
 
-const useNotificationData = (apiKey: string) => {
-    const [notifications, setNotifications] = useState<Notification[]>([]);
-    const [users, setUsers] = useState<User[]>([]);
-    const [templates, setTemplates] = useState<Template[]>([]);
-    const [workflows, setWorkflows] = useState<Workflow[]>([]);
-    const [topics, setTopics] = useState<Topic[]>([]);
-    const [digestRules, setDigestRules] = useState<DigestRule[]>([]);
-    const [loading, setLoading] = useState(true);
+const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
-    const [totalNotifications, setTotalNotifications] = useState(0);
     const [filters, setFilters] = useState<{ status?: string; channel?: string; from?: string; to?: string }>({});
 
-    const fetchData = async () => {
-        setLoading(true);
-        try {
-            const [notifsResult, usersResult, templatesResult, workflowsResult, topicsResult, digestResult] = await Promise.all([
-                notificationsAPI.list(apiKey, page, pageSize, filters).catch(e => { console.error(e); return { notifications: [] as Notification[], total: 0, page: 1, page_size: pageSize }; }),
-                usersAPI.list(apiKey, 1, 100).catch(e => { console.error(e); return { users: [] as User[], total_count: 0, page: 1, page_size: 100 }; }),
-                templatesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { templates: [] as Template[], total: 0, limit: 100, offset: 0 }; }),
-                workflowsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { workflows: [] as Workflow[], total: 0, limit: 100, offset: 0 }; }),
-                topicsAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { topics: [] as Topic[], total: 0, limit: 100, offset: 0 }; }),
-                digestRulesAPI.list(apiKey, 100, 0).catch(e => { console.error(e); return { rules: [] as DigestRule[], total: 0 }; })
-            ]);
-            setNotifications(notifsResult.notifications || []);
-            setTotalNotifications(notifsResult.total || 0);
-            setUsers(usersResult.users || []);
-            setTemplates(templatesResult.templates || []);
-            setWorkflows(workflowsResult.workflows || []);
-            setTopics(topicsResult.topics || []);
-            setDigestRules(digestResult.rules || []);
-        } catch (error) {
-            console.error('Failed to fetch notification data:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // 1. Notifications List
+    const {
+        data: notifsData,
+        loading: notifsLoading,
+        refetch: refreshNotifications
+    } = useApiQuery(
+        () => notificationsAPI.list(apiKey, page, pageSize, filters),
+        [apiKey, page, pageSize, filters],
+        { cacheKey: `notifs-${apiKey}-${page}-${JSON.stringify(filters)}`, staleTime: 30000 }
+    );
 
-    useEffect(() => {
-        if (apiKey) {
-            fetchData();
-        }
-    }, [apiKey, page, filters]);
+    const notifications = useMemo(() => notifsData?.notifications || [], [notifsData]);
+    const totalNotifications = useMemo(() => notifsData?.total || 0, [notifsData]);
 
-    return { notifications, users, templates, workflows, topics, digestRules, loading, refresh: fetchData, page, setPage, pageSize, totalNotifications, filters, setFilters };
-};
+    // 2. Users (limited to 100 for dropdowns)
+    const { data: usersData } = useApiQuery(
+        () => usersAPI.list(apiKey, 1, 100),
+        [apiKey],
+        { cacheKey: `users-list-${apiKey}`, staleTime: 60000 }
+    );
+    const users = useMemo(() => usersData?.users || [], [usersData]);
 
-const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
-    const { notifications, users, templates, workflows, topics, digestRules, loading, refresh, page, setPage, pageSize, totalNotifications, filters, setFilters } = useNotificationData(apiKey || '');
+    // 3. Templates
+    const { data: templatesData } = useApiQuery(
+        () => templatesAPI.list(apiKey, 100, 0),
+        [apiKey],
+        { cacheKey: `templates-list-${apiKey}`, staleTime: 60000 }
+    );
+    const templates = useMemo(() => templatesData?.templates || [], [templatesData]);
+
+    // 4. Workflows
+    const { data: workflowsData } = useApiQuery(
+        () => workflowsAPI.list(apiKey, 100, 0),
+        [apiKey],
+        { cacheKey: `workflows-list-${apiKey}`, staleTime: 60000 }
+    );
+    const workflows = useMemo(() => workflowsData?.workflows || [], [workflowsData]);
+
+    // 5. Topics
+    const { data: topicsData } = useApiQuery(
+        () => topicsAPI.list(apiKey, 100, 0),
+        [apiKey],
+        { cacheKey: `topics-list-${apiKey}`, staleTime: 60000 }
+    );
+    const topics = useMemo(() => topicsData?.topics || [], [topicsData]);
+
+    // 6. Digest Rules
+    const { data: digestData } = useApiQuery(
+        () => digestRulesAPI.list(apiKey, 100, 0),
+        [apiKey],
+        { cacheKey: `digest-rules-list-${apiKey}`, staleTime: 60000 }
+    );
+    const digestRules = useMemo(() => digestData?.rules || [], [digestData]);
+
+    const loading = notifsLoading;
+    const refresh = refreshNotifications;
 
     if (!apiKey) {
         return (
@@ -173,7 +186,19 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         if (selectedIds.size === 0) return;
         setBulkActing(true);
         try {
-            await notificationsAPI.markRead(apiKey, { notification_ids: Array.from(selectedIds) });
+            // Group selected notification IDs by user_id (backend requires user_id per call)
+            const groups = new Map<string, string[]>();
+            for (const id of selectedIds) {
+                const notif = notifications.find(n => n.notification_id === id);
+                const uid = notif?.user_id || '';
+                if (!groups.has(uid)) groups.set(uid, []);
+                groups.get(uid)!.push(id);
+            }
+            await Promise.all(
+                Array.from(groups.entries()).map(([userId, ids]) =>
+                    notificationsAPI.markRead(apiKey, { notification_ids: ids, user_id: userId })
+                )
+            );
             toast.success(`${selectedIds.size} notification(s) marked as read`);
             setSelectedIds(new Set());
             refresh();
@@ -184,7 +209,19 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         if (selectedIds.size === 0) return;
         setBulkActing(true);
         try {
-            await notificationsAPI.bulkArchive(apiKey, { notification_ids: Array.from(selectedIds) });
+            // Group selected notification IDs by user_id (backend requires user_id per call)
+            const groups = new Map<string, string[]>();
+            for (const id of selectedIds) {
+                const notif = notifications.find(n => n.notification_id === id);
+                const uid = notif?.user_id || '';
+                if (!groups.has(uid)) groups.set(uid, []);
+                groups.get(uid)!.push(id);
+            }
+            await Promise.all(
+                Array.from(groups.entries()).map(([userId, ids]) =>
+                    notificationsAPI.bulkArchive(apiKey, { notification_ids: ids, user_id: userId })
+                )
+            );
             toast.success(`${selectedIds.size} notification(s) archived`);
             setSelectedIds(new Set());
             refresh();
@@ -247,41 +284,90 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         finally { setBulkActing(false); }
     };
 
-    // Batch send/cancel state
+    // Batch send state
     const [showBatchSend, setShowBatchSend] = useState(false);
-    const [batchJson, setBatchJson] = useState('{\n  "notifications": [\n    { "user_id": "", "template_id": "", "channel": "email", "title": "", "body": "" }\n  ]\n}');
+    const [batchCsvFile, setBatchCsvFile] = useState<File | null>(null);
     const [batchSending, setBatchSending] = useState(false);
-    const [showCancelBatch, setShowCancelBatch] = useState(false);
-    const [cancelBatchIds, setCancelBatchIds] = useState('');
-    const [cancellingBatch, setCancellingBatch] = useState(false);
+    const [batchRows, setBatchRows] = useState<any[]>([]);
+    const [dragActive, setDragActive] = useState(false);
 
-    const handleBatchSend = async () => {
-        let parsed;
-        try { parsed = JSON.parse(batchJson); } catch { toast.error('Invalid JSON'); return; }
-        if (!parsed.notifications || !Array.isArray(parsed.notifications)) { toast.error('JSON must have a "notifications" array'); return; }
-        setBatchSending(true);
-        try {
-            await notificationsAPI.sendBatch(apiKey, parsed);
-            toast.success(`Batch of ${parsed.notifications.length} notification(s) sent`);
-            setShowBatchSend(false);
-            setBatchJson('{\n  "notifications": [\n    { "user_id": "", "template_id": "", "channel": "email", "title": "", "body": "" }\n  ]\n}');
-            refresh();
-        } catch (err) { toast.error(extractErrorMessage(err, 'Batch send failed')); }
-        finally { setBatchSending(false); }
+    const downloadSampleCSV = () => {
+        const headers = ['user_id', 'channel', 'template_id', 'title', 'body', 'priority', 'name'];
+        const sampleRows = [
+            ['user-uuid-123', 'email', 'template-uuid-456', '', '', 'normal', 'Alice'],
+            ['user-uuid-789', 'email', '', 'Direct Message', 'Hello there!', 'high', '']
+        ];
+        const csvContent = [headers, ...sampleRows].map(r => r.join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'freerange_batch_sample.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
     };
 
-    const handleCancelBatch = async () => {
-        const ids = cancelBatchIds.trim().split(/[\s,]+/).filter(Boolean);
-        if (ids.length === 0) { toast.error('Enter notification IDs (comma or space separated)'); return; }
-        setCancellingBatch(true);
+    const handleFile = (file: File) => {
+        if (!file.name.endsWith('.csv')) {
+            toast.error('Please upload a valid CSV file');
+            return;
+        }
+        setBatchCsvFile(file);
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                setBatchRows(results.data);
+            }
+        });
+    };
+
+    const onDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setDragActive(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    };
+
+    const handleBatchSend = async () => {
+        const rowsToProcess = batchRows.length > 0 ? batchRows : [];
+        if (rowsToProcess.length === 0) {
+            toast.error('No data to send');
+            return;
+        }
+
+        setBatchSending(true);
         try {
-            await notificationsAPI.cancelBatch(apiKey, { notification_ids: ids });
-            toast.success(`${ids.length} notification(s) cancelled`);
-            setShowCancelBatch(false);
-            setCancelBatchIds('');
+            const notifications = rowsToProcess.map((row) => {
+                const { user_id, channel, template_id, title, body, priority, scheduled_at, ...customData } = row;
+                return {
+                    user_id: user_id || '',
+                    channel: channel || 'email',
+                    priority: priority || 'normal',
+                    template_id: template_id || '',
+                    title: title || undefined,
+                    body: body || undefined,
+                    scheduled_at: scheduled_at || undefined,
+                    data: Object.keys(customData).length > 0 ? customData : undefined,
+                };
+            });
+
+            const result = await notificationsAPI.sendBatch(apiKey, { notifications });
+            if (result.sent === result.total) {
+                toast.success(`Batch of ${result.sent} notification(s) sent successfully!`);
+            } else {
+                toast.warning(`Sent ${result.sent} of ${result.total}. Check details in history.`);
+            }
+            setShowBatchSend(false);
+            setBatchCsvFile(null);
+            setBatchRows([]);
             refresh();
-        } catch (err) { toast.error(extractErrorMessage(err, 'Failed to cancel batch')); }
-        finally { setCancellingBatch(false); }
+        } catch (err: any) {
+            toast.error(extractErrorMessage(err, 'Batch send failed'));
+        } finally {
+            setBatchSending(false);
+        }
     };
 
     // Recurrence presets → cron expressions
@@ -509,11 +595,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         <Button variant="outline" size="sm" onClick={handleMarkAllRead} disabled={bulkActing || notifications.length === 0} title="Mark all notifications as read">
                             <CheckSquare className="h-3.5 w-3.5 mr-1.5" />Mark All Read
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => setShowBatchSend(true)} title="Send a batch of notifications">
-                            <Send className="h-3.5 w-3.5 mr-1.5" />Batch Send
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => setShowCancelBatch(true)} title="Cancel a batch by ID">
-                            <Ban className="h-3.5 w-3.5 mr-1.5" />Cancel Batch
+                        <Button variant="outline" size="sm" onClick={() => setShowBatchSend(true)} title="Upload CSV to send batch notifications">
+                            <Send className="h-3.5 w-3.5 mr-1.5" />Batch CSV Upload
                         </Button>
                         <Button
                             size="sm"
@@ -530,7 +613,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     <Tabs defaultValue="quick" className="mb-8">
                         <TabsList>
                             <TabsTrigger value="quick">Quick Send</TabsTrigger>
-                            <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                            <TabsTrigger value="advanced">Bulk Send</TabsTrigger>
                             <TabsTrigger value="broadcast">Broadcast</TabsTrigger>
                         </TabsList>
 
@@ -714,6 +797,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         {/* ── Advanced Send Tab ── */}
                         <TabsContent value="advanced">
                             <form onSubmit={handleSendNotification} className="bg-muted p-6 rounded border border-border space-y-4">
+                                <p className="text-sm text-muted-foreground mb-2">Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="recipient">
@@ -1433,7 +1517,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                             <SelectTrigger className="w-[130px] h-8 text-xs">
                                 <SelectValue placeholder="All" />
                             </SelectTrigger>
-                                <SelectContent>
+                            <SelectContent>
                                 <SelectItem value="all">All</SelectItem>
                                 <SelectItem value="pending">Scheduled / Pending</SelectItem>
                                 <SelectItem value="queued">Queued</SelectItem>
@@ -1490,28 +1574,30 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         </div>
                     ) : (
                         <>
-                            {/* Bulk Actions Bar */}
-                            {selectedIds.size > 0 && (
-                                <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted/60 border border-border rounded-lg">
-                                    <span className="text-sm font-medium text-foreground mr-2">{selectedIds.size} selected</span>
-                                    <Button variant="outline" size="sm" onClick={handleBulkMarkRead} disabled={bulkActing}>
-                                        <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
-                                        Mark Read
-                                    </Button>
-                                    <Button variant="outline" size="sm" onClick={handleBulkArchive} disabled={bulkActing}>
-                                        <Archive className="h-3.5 w-3.5 mr-1.5" />
-                                        Archive
-                                    </Button>
-                                    <Button variant="outline" size="sm" onClick={handleCancelSelected} disabled={bulkActing} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-                                        <XCircle className="h-3.5 w-3.5 mr-1.5" />
-                                        Cancel Selected
-                                    </Button>
+                            {/* Bulk Actions Bar — always visible */}
+                            <div className="flex items-center gap-2 px-3 py-2 mb-2 bg-muted/60 border border-border rounded-lg">
+                                <span className="text-sm font-medium text-foreground mr-2">
+                                    {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select rows to enable bulk actions'}
+                                </span>
+                                <Button variant="outline" size="sm" onClick={handleBulkMarkRead} disabled={bulkActing || selectedIds.size === 0}>
+                                    <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
+                                    Mark Read
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={handleBulkArchive} disabled={bulkActing || selectedIds.size === 0}>
+                                    <Archive className="h-3.5 w-3.5 mr-1.5" />
+                                    Bulk Archive
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={handleCancelSelected} disabled={bulkActing || selectedIds.size === 0} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                                    <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                                    Cancel Batch
+                                </Button>
+                                {selectedIds.size > 0 && (
                                     <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
                                         <X className="h-3.5 w-3.5 mr-1" />
                                         Clear
                                     </Button>
-                                </div>
-                            )}
+                                )}
+                            </div>
 
                             <div className="overflow-x-auto">
                                 <Table>
@@ -1749,7 +1835,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 )}
                                 <Button variant="outline" size="sm"
                                     onClick={() => {
-                                        notificationsAPI.markRead(apiKey, { notification_ids: [detailNotif.notification_id] })
+                                        notificationsAPI.markRead(apiKey, { notification_ids: [detailNotif.notification_id], user_id: detailNotif.user_id })
                                             .then(() => { toast.success('Marked as read'); refresh(); })
                                             .catch(() => toast.error('Failed'));
                                     }}
@@ -1778,7 +1864,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 )}
                                 <Button variant="outline" size="sm"
                                     onClick={() => {
-                                        notificationsAPI.bulkArchive(apiKey, { notification_ids: [detailNotif.notification_id] })
+                                        notificationsAPI.bulkArchive(apiKey, { notification_ids: [detailNotif.notification_id], user_id: detailNotif.user_id })
                                             .then(() => { toast.success('Archived'); setDetailNotif(null); refresh(); })
                                             .catch(() => toast.error('Failed'));
                                     }}
@@ -1791,63 +1877,145 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 </SlidePanel>
 
                 {/* Batch Send Dialog */}
-                <Dialog open={showBatchSend} onOpenChange={setShowBatchSend}>
-                    <DialogContent className="max-w-2xl">
+                <Dialog open={showBatchSend} onOpenChange={(open) => {
+                    setShowBatchSend(open);
+                    if (!open) {
+                        setBatchCsvFile(null);
+                        setBatchRows([]);
+                    }
+                }}>
+                    <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
                         <DialogHeader>
-                            <DialogTitle>Send Batch Notifications</DialogTitle>
-                            <DialogDescription>
-                                Send multiple notifications in a single request. Provide a JSON object with a "notifications" array.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                            <Textarea
-                                className="font-mono text-xs min-h-[200px]"
-                                value={batchJson}
-                                onChange={e => setBatchJson(e.target.value)}
-                                placeholder='{"notifications": [{"user_id": "", "channel": "email", "title": "", "body": ""}]}'
-                            />
-                            <p className="text-xs text-muted-foreground">
-                                Each notification needs at minimum a <code className="bg-muted px-1 rounded">user_id</code>, <code className="bg-muted px-1 rounded">channel</code>, and either a <code className="bg-muted px-1 rounded">template_id</code> or <code className="bg-muted px-1 rounded">title</code> + <code className="bg-muted px-1 rounded">body</code>.
-                            </p>
-                            <div className="flex justify-end gap-2">
-                                <Button variant="outline" onClick={() => setShowBatchSend(false)}>Cancel</Button>
-                                <Button onClick={handleBatchSend} disabled={batchSending}>
-                                    {batchSending ? 'Sending...' : 'Send Batch'}
+                            <div className="flex items-center justify-between pr-6">
+                                <div>
+                                    <DialogTitle>Send Batch Notifications</DialogTitle>
+                                    <DialogDescription>
+                                        Upload a CSV file to dispatch multiple personalized notifications.
+                                    </DialogDescription>
+                                </div>
+                                <Button variant="outline" size="sm" onClick={downloadSampleCSV} className="text-xs">
+                                    <Download className="h-3 w-3 mr-1.5" />
+                                    Sample CSV
                                 </Button>
+                            </div>
+                        </DialogHeader>
+
+                        <div className="flex-1 overflow-y-auto py-2 space-y-4 pr-1">
+                            {!batchCsvFile ? (
+                                <div
+                                    className={`relative rounded-xl border-2 border-dashed transition-all duration-200 p-12 flex flex-col items-center justify-center text-center group cursor-pointer ${dragActive ? 'border-primary bg-primary/5' : 'border-muted-foreground/20 bg-muted/30 hover:bg-muted/50 hover:border-muted-foreground/40'}`}
+                                    onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                                    onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+                                    onDrop={onDrop}
+                                    onClick={() => document.getElementById('batch-file-input')?.click()}
+                                >
+                                    <Input
+                                        id="batch-file-input"
+                                        type="file"
+                                        accept=".csv"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleFile(file);
+                                        }}
+                                        className="hidden"
+                                    />
+                                    <div className="w-16 h-16 rounded-full bg-background border border-border flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-200">
+                                        <UploadCloud className={`h-8 w-8 ${dragActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-medium">Click to upload or drag and drop</p>
+                                        <p className="text-xs text-muted-foreground">Standard CSV files only</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between bg-muted/40 p-3 rounded-lg border border-border">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-background rounded border border-border">
+                                                <FileText className="h-5 w-5 text-primary" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium truncate">{batchCsvFile.name}</p>
+                                                <p className="text-xs text-muted-foreground">{(batchCsvFile.size / 1024).toFixed(1)} KB • {batchRows.length} rows detected</p>
+                                            </div>
+                                        </div>
+                                        <Button variant="ghost" size="sm" onClick={() => { setBatchCsvFile(null); setBatchRows([]); }} className="h-8 w-8 p-0">
+                                            <X className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+
+                                    {batchRows.length > 0 && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Data Preview (First 5 rows)</h4>
+                                                <Badge variant="outline" className="text-[10px] font-normal">
+                                                    Showing {Math.min(5, batchRows.length)} of {batchRows.length}
+                                                </Badge>
+                                            </div>
+                                            <div className="rounded-lg border border-border overflow-hidden">
+                                                <Table>
+                                                    <TableHeader className="bg-muted/50">
+                                                        <TableRow className="hover:bg-transparent">
+                                                            {Object.keys(batchRows[0]).slice(0, 4).map(k => (
+                                                                <TableHead key={k} className="h-9 px-3 text-[11px] font-bold">{k}</TableHead>
+                                                            ))}
+                                                            {Object.keys(batchRows[0]).length > 4 && <TableHead className="h-9 px-3 text-[11px] font-bold">...</TableHead>}
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {batchRows.slice(0, 5).map((row, i) => (
+                                                            <TableRow key={i} className="hover:bg-transparent border-b last:border-0">
+                                                                {Object.keys(row).slice(0, 4).map(k => (
+                                                                    <TableCell key={k} className="py-2 px-3 text-xs max-w-[120px] truncate">{String(row[k] || '-')}</TableCell>
+                                                                ))}
+                                                                {Object.keys(row).length > 4 && <TableCell className="py-2 px-3 text-xs">...</TableCell>}
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {!batchRows[0]?.user_id && batchRows.length > 0 && (
+                                        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg dark:bg-red-950/20 dark:border-red-900/30">
+                                            <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                                            <p className="text-xs text-red-700 dark:text-red-400">
+                                                Column <code className="bg-red-100 dark:bg-red-900/40 px-1 rounded">user_id</code> is missing or empty. Please check your CSV.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="bg-muted/30 p-4 rounded-xl text-[11px] space-y-2 border border-border">
+                                <p className="font-semibold text-foreground/80 flex items-center gap-1.5">
+                                    <FileText className="h-3 w-3" />
+                                    CSV Format Guide
+                                </p>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                                    <p><span className="text-foreground">Required:</span> user_id, channel</p>
+                                    <p><span className="text-foreground">Content:</span> template_id OR (title & body)</p>
+                                    <p><span className="text-foreground">Optional:</span> priority, scheduled_at</p>
+                                    <p><span className="text-foreground">Variables:</span> Any other columns</p>
+                                </div>
                             </div>
                         </div>
-                    </DialogContent>
-                </Dialog>
 
-                {/* Cancel Batch Dialog */}
-                <Dialog open={showCancelBatch} onOpenChange={setShowCancelBatch}>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Cancel Batch</DialogTitle>
-                            <DialogDescription>
-                                Cancel multiple scheduled/queued notifications by their IDs.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-3">
-                            <div className="space-y-2">
-                                <Label htmlFor="cancelBatchIds">Notification IDs</Label>
-                                <Textarea
-                                    id="cancelBatchIds"
-                                    value={cancelBatchIds}
-                                    onChange={e => setCancelBatchIds(e.target.value)}
-                                    placeholder="Paste notification IDs (comma or newline separated). From Batch Send response: items[].notification_id"
-                                    className="font-mono text-xs min-h-[100px]"
-                                />
-                                <p className="text-xs text-muted-foreground">
-                                    Paste IDs from the Batch Send response or select rows above and use &quot;Cancel Selected&quot;.
-                                </p>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <Button variant="outline" onClick={() => setShowCancelBatch(false)}>Cancel</Button>
-                                <Button variant="destructive" onClick={handleCancelBatch} disabled={cancellingBatch}>
-                                    {cancellingBatch ? 'Cancelling...' : 'Cancel Batch'}
-                                </Button>
-                            </div>
+                        <div className="flex justify-end gap-3 pt-4 border-t border-border bg-background mt-auto">
+                            <Button variant="outline" onClick={() => setShowBatchSend(false)}>Cancel</Button>
+                            <Button
+                                onClick={handleBatchSend}
+                                disabled={batchSending || !batchCsvFile || (batchRows.length > 0 && !batchRows[0].user_id)}
+                                className="min-w-[120px]"
+                            >
+                                {batchSending ? 'Processing...' : (
+                                    <>
+                                        <Send className="h-3.5 w-3.5 mr-2" />
+                                        Send {batchRows.length > 0 ? `${batchRows.length} Notifications` : 'Batch'}
+                                    </>
+                                )}
+                            </Button>
                         </div>
                     </DialogContent>
                 </Dialog>
