@@ -1097,4 +1097,19 @@ export const authExtendedAPI = {
   },
 };
 
+// ============= Media Upload APIs =============
+export const mediaAPI = {
+  upload: async (apiKey: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post<{ url: string; filename: string; content_type: string; size: number }>('/media/upload', formData, {
+      headers: {
+        ...getAuthHeaders(apiKey),
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return data;
+  },
+};
+
 export default api;

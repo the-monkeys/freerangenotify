@@ -88,6 +88,7 @@ func main() {
 		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.Server.IdleTimeout) * time.Second,
+		BodyLimit:    16 * 1024 * 1024,                    // 16 MB for media uploads
 		Prefork:      cfg.App.Environment == "production", // Enable prefork in production
 		ErrorHandler: middleware.ErrorHandler(zapLogger),  // Custom error handler
 	})
@@ -166,6 +167,11 @@ func main() {
 
 	// Serve OpenAPI spec
 	app.Static("/openapi", "./docs/openapi")
+
+	// Serve uploaded media files (WhatsApp attachments)
+	app.Static("/media", "./uploads/media", fiber.Static{
+		Browse: false,
+	})
 
 	// Prometheus metrics endpoint
 	app.Get("/metrics", func(ctx *fiber.Ctx) error {

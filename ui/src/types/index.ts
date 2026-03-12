@@ -67,6 +67,7 @@ export interface ApplicationSettings {
     validation_config?: ValidationConfig;
     email_config?: EmailConfig;
     daily_email_limit?: number;
+    whatsapp_config?: WhatsAppConfig;
     default_preferences?: DefaultPreferences;
     on_user_created_trigger_id?: string;  // Phase 5: workflow to trigger on user create
     inbound_webhook_config?: InboundWebhookConfig;  // Phase 7: inbound webhooks
@@ -82,6 +83,7 @@ export interface DefaultPreferences {
     email_enabled?: boolean;
     push_enabled?: boolean;
     sms_enabled?: boolean;
+    whatsapp_enabled?: boolean;
 }
 
 export interface EmailConfig {
@@ -103,6 +105,12 @@ export interface SendGridConfig {
     api_key: string;
     from_email?: string;
     from_name?: string;
+}
+
+export interface WhatsAppConfig {
+    account_sid: string;
+    auth_token: string;
+    from_number: string;
 }
 
 export interface ValidationConfig {
@@ -198,13 +206,14 @@ export interface Notification {
     notification_id: string;
     app_id: string;
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
     priority: 'low' | 'normal' | 'high' | 'critical';
     status: string;
     content: {
         title: string;
         body: string;
         data?: Record<string, any>;
+        media_url?: string;
     };
     template_id?: string;
     category?: string;
@@ -225,7 +234,7 @@ export interface Notification {
 
 export interface NotificationRequest {
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
     priority: 'low' | 'normal' | 'high' | 'critical';
     title?: string;
     body?: string;
@@ -237,6 +246,7 @@ export interface NotificationRequest {
     recurrence?: Recurrence;
     workflow_trigger_id?: string;  // Phase 3: trigger workflow after send
     metadata?: Record<string, any>;  // Digest: { digest_key }
+    media_url?: string;
 }
 
 export interface BulkNotificationRequest {
@@ -251,7 +261,7 @@ export interface BulkNotificationRequest {
 }
 
 export interface BroadcastNotificationRequest {
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
     priority: 'low' | 'normal' | 'high' | 'critical';
     title?: string;
     body?: string;
@@ -271,7 +281,7 @@ export interface UpdateNotificationStatusRequest {
 // ============= Quick-Send Types =============
 export interface QuickSendRequest {
     to: string;
-    channel?: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel?: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
     template?: string;
     subject?: string;
     body?: string;
@@ -321,7 +331,7 @@ export interface CreateTemplateRequest {
     app_id: string;
     name: string;
     description?: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
     webhook_target?: string;
     subject?: string;
     body: string;

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useApiQuery } from '../hooks/use-api-query';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI } from '../services/api';
+import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
 import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -159,6 +159,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [broadcastWorkflowTriggerId, setBroadcastWorkflowTriggerId] = useState('');
     const [broadcastTopicKey, setBroadcastTopicKey] = useState('');
+    // Local blob URL for WhatsApp media preview (survives regardless of server URL accessibility)
+    const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string>('');
+    const [mediaFileType, setMediaFileType] = useState<string>('');
 
     // Inbox selection & actions state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -534,6 +537,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 recurrence: formData.recurrence,
                 workflow_trigger_id: formData.workflow_trigger_id || undefined,
                 metadata: advDigestRule ? { digest_key: advDigestRule.digest_key } : undefined,
+                media_url: (formData as any).media_url || undefined,
             };
 
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
@@ -838,6 +842,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <SelectItem value="email">Email</SelectItem>
                                                 <SelectItem value="push">Push</SelectItem>
                                                 <SelectItem value="sms">SMS</SelectItem>
+                                                <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                 <SelectItem value="webhook">Webhook</SelectItem>
                                                 <SelectItem value="in_app">In-App</SelectItem>
                                                 <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
@@ -903,6 +908,161 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         )
                                     )}
+
+                                    {/* WhatsApp Media Upload */}
+                                    {formData.channel === 'whatsapp' && (
+                                        <div className="space-y-3 md:col-span-2">
+                                            <Label>Media Attachment (optional)</Label>
+                                            {!(formData as any).media_url ? (
+                                                <div className="space-y-2">
+                                                    <label
+                                                        htmlFor="mediaUpload"
+                                                        className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                    >
+                                                        <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                                                        <span className="text-sm font-medium">Click to upload image or file</span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB
+                                                        </span>
+                                                        <input
+                                                            id="mediaUpload"
+                                                            type="file"
+                                                            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
+                                                            className="hidden"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (!file) return;
+                                                                if (file.size > 16 * 1024 * 1024) {
+                                                                    toast.error('File too large (max 16 MB)');
+                                                                    return;
+                                                                }
+                                                                // Create local preview immediately
+                                                                const localUrl = URL.createObjectURL(file);
+                                                                setMediaPreviewUrl(localUrl);
+                                                                setMediaFileType(file.type);
+                                                                try {
+                                                                    toast.info('Uploading media...');
+                                                                    const result = await mediaAPI.upload(apiKey, file);
+                                                                    setFormData({ ...formData, media_url: result.url } as any);
+                                                                    toast.success('Media uploaded');
+                                                                } catch (err) {
+                                                                    setMediaPreviewUrl('');
+                                                                    setMediaFileType('');
+                                                                    toast.error('Upload failed: ' + extractErrorMessage(err));
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {/* WhatsApp chat preview */}
+                                                    <p className="text-xs text-muted-foreground">WhatsApp Preview</p>
+                                                    <div
+                                                        className="rounded-xl p-4 max-w-[380px] mx-auto"
+                                                        style={{
+                                                            backgroundColor: '#0b141a',
+                                                            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'200\' height=\'200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'p\' width=\'40\' height=\'40\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'1\' fill=\'%23ffffff08\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\'200\' height=\'200\' fill=\'url(%23p)\'/%3E%3C/svg%3E")',
+                                                        }}
+                                                    >
+                                                        {/* Message bubble */}
+                                                        <div className="flex justify-end">
+                                                            <div
+                                                                className="relative rounded-lg overflow-hidden shadow-md"
+                                                                style={{
+                                                                    backgroundColor: '#005c4b',
+                                                                    maxWidth: '300px',
+                                                                    minWidth: '180px',
+                                                                }}
+                                                            >
+                                                                {/* Image preview */}
+                                                                {mediaPreviewUrl && mediaFileType.startsWith('image/') && (
+                                                                    <div className="p-1 pb-0">
+                                                                        <img
+                                                                            src={mediaPreviewUrl}
+                                                                            alt="Media"
+                                                                            className="w-full rounded-md object-cover"
+                                                                            style={{ maxHeight: '220px' }}
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                {/* Video preview */}
+                                                                {mediaPreviewUrl && mediaFileType.startsWith('video/') && (
+                                                                    <div className="p-1 pb-0">
+                                                                        <video
+                                                                            src={mediaPreviewUrl}
+                                                                            className="w-full rounded-md"
+                                                                            style={{ maxHeight: '220px' }}
+                                                                            controls={false}
+                                                                            muted
+                                                                        />
+                                                                        <div className="absolute top-3 left-3 bg-black/60 rounded-full p-1.5">
+                                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {/* PDF preview */}
+                                                                {mediaFileType === 'application/pdf' && (
+                                                                    <div className="flex items-center gap-3 m-1 p-3 rounded-md" style={{ backgroundColor: '#025144' }}>
+                                                                        <div className="shrink-0 flex items-center justify-center h-10 w-10 rounded bg-red-500/20">
+                                                                            <FileText className="h-6 w-6 text-red-400" />
+                                                                        </div>
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-sm font-medium text-white truncate">Document.pdf</p>
+                                                                            <p className="text-xs text-white/50">PDF document</p>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Message text */}
+                                                                <div className="px-2 pt-1.5 pb-1">
+                                                                    {formData.data?.title && (
+                                                                        <p className="text-[13px] font-semibold text-white leading-tight">
+                                                                            {formData.data.title as string}
+                                                                        </p>
+                                                                    )}
+                                                                    {formData.data?.body && (
+                                                                        <p className="text-[13px] text-white/90 leading-snug mt-0.5">
+                                                                            {formData.data.body as string}
+                                                                        </p>
+                                                                    )}
+                                                                    {!formData.data?.title && !formData.data?.body && formData.template_id && (
+                                                                        <p className="text-[13px] text-white/70 italic leading-snug">
+                                                                            {templates.find(t => t.id === formData.template_id)?.name || 'Template message'}
+                                                                        </p>
+                                                                    )}
+                                                                    {/* Timestamp + read receipts */}
+                                                                    <div className="flex justify-end items-center gap-1 mt-0.5">
+                                                                        <span className="text-[11px] text-white/40">
+                                                                            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                        <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="text-[#53bdeb]">
+                                                                            <path d="M11.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.011-2.175a.463.463 0 0 0-.352-.153.457.457 0 0 0-.352.762l2.342 2.534a.463.463 0 0 0 .353.153h.026a.462.462 0 0 0 .346-.193l6.525-8.058a.487.487 0 0 0 .1-.339.457.457 0 0 0-.102-.243z" fill="currentColor" />
+                                                                            <path d="M14.757.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-1.2-1.298-.048.06-.096.084 1.327 1.436a.463.463 0 0 0 .353.153h.026a.462.462 0 0 0 .346-.193l6.525-8.058a.487.487 0 0 0-.358-.582v.686z" fill="currentColor" />
+                                                                        </svg>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+                                                            setMediaPreviewUrl('');
+                                                            setMediaFileType('');
+                                                            setFormData({ ...formData, media_url: '' } as any);
+                                                        }}
+                                                    >
+                                                        <X className="h-3.5 w-3.5 mr-1" />
+                                                        Remove media
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
                                     <div className="space-y-2">
                                         <Label htmlFor="priority">Priority</Label>
                                         <Select
@@ -1226,6 +1386,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         <SelectItem value="email">Email</SelectItem>
                                                         <SelectItem value="push">Push</SelectItem>
                                                         <SelectItem value="sms">SMS</SelectItem>
+                                                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                         <SelectItem value="in_app">In-App</SelectItem>
                                                         <SelectItem value="sse">SSE</SelectItem>
                                                     </SelectContent>
@@ -1541,6 +1702,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 <SelectItem value="email">Email</SelectItem>
                                 <SelectItem value="push">Push</SelectItem>
                                 <SelectItem value="sms">SMS</SelectItem>
+                                <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                 <SelectItem value="webhook">Webhook</SelectItem>
                                 <SelectItem value="in_app">In-App</SelectItem>
                                 <SelectItem value="sse">SSE</SelectItem>

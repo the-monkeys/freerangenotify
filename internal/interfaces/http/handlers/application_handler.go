@@ -341,30 +341,30 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	}
 
 	// Include apps from tenants the user belongs to
-		if h.tenantService != nil && h.appRepo != nil {
-			tenants, tErr := h.tenantService.ListByUser(c.Context(), userID)
-			if tErr == nil && len(tenants) > 0 {
-				tenantIDs := make([]string, 0, len(tenants))
-				for _, t := range tenants {
-					tenantIDs = append(tenantIDs, t.ID)
+	if h.tenantService != nil && h.appRepo != nil {
+		tenants, tErr := h.tenantService.ListByUser(c.Context(), userID)
+		if tErr == nil && len(tenants) > 0 {
+			tenantIDs := make([]string, 0, len(tenants))
+			for _, t := range tenants {
+				tenantIDs = append(tenantIDs, t.ID)
+			}
+			tenantApps, _ := h.appRepo.List(c.Context(), application.ApplicationFilter{
+				TenantIDs: tenantIDs,
+				Limit:     100,
+			})
+			for _, a := range tenantApps {
+				if _, exists := ownedIDs[a.AppID]; exists {
+					continue
 				}
-				tenantApps, _ := h.appRepo.List(c.Context(), application.ApplicationFilter{
-					TenantIDs: tenantIDs,
-					Limit:     100,
-				})
-				for _, a := range tenantApps {
-					if _, exists := ownedIDs[a.AppID]; exists {
-						continue
-					}
-					ownedIDs[a.AppID] = struct{}{}
-					apps = append(apps, a)
-					total++
-				}
+				ownedIDs[a.AppID] = struct{}{}
+				apps = append(apps, a)
+				total++
 			}
 		}
+	}
 
-		// Also include apps where the user is a team member
-		if h.membershipRepo != nil && h.appRepo != nil {
+	// Also include apps where the user is a team member
+	if h.membershipRepo != nil && h.appRepo != nil {
 		memberships, mErr := h.membershipRepo.ListByUser(c.Context(), userID)
 		if mErr == nil && len(memberships) > 0 {
 			agentdebug.Log(
@@ -560,6 +560,12 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		if req.DefaultPreferences.SMSEnabled != nil {
 			settings.DefaultPreferences.SMSEnabled = req.DefaultPreferences.SMSEnabled
 		}
+		if req.DefaultPreferences.WhatsAppEnabled != nil {
+			settings.DefaultPreferences.WhatsAppEnabled = req.DefaultPreferences.WhatsAppEnabled
+		}
+	}
+	if req.WhatsAppConfig != nil {
+		settings.WhatsApp = req.WhatsAppConfig
 	}
 	if req.OnUserCreatedTriggerID != nil {
 		settings.OnUserCreatedTriggerID = *req.OnUserCreatedTriggerID

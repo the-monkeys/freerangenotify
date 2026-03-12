@@ -2,12 +2,15 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -15,10 +18,10 @@ import (
 
 // WhatsAppConfig holds configuration for the WhatsApp provider (Twilio-backed).
 type WhatsAppConfig struct {
-	Config                 // Common: Timeout, MaxRetries, RetryDelay
-	AccountSID string     // Twilio Account SID
-	AuthToken  string     // Twilio Auth Token
-	FromNumber string     // WhatsApp sender number (e.g. whatsapp:+14155238886)
+	Config            // Common: Timeout, MaxRetries, RetryDelay
+	AccountSID string // Twilio Account SID
+	AuthToken  string // Twilio Auth Token
+	FromNumber string // WhatsApp sender number (e.g. whatsapp:+14155238886)
 }
 
 // WhatsAppProvider delivers notifications via WhatsApp using the Twilio Messages API.
@@ -30,9 +33,7 @@ type WhatsAppProvider struct {
 
 // NewWhatsAppProvider creates a new WhatsAppProvider.
 func NewWhatsAppProvider(config WhatsAppConfig, logger *zap.Logger) (*WhatsAppProvider, error) {
-	if config.AccountSID == "" || config.AuthToken == "" {
-		return nil, fmt.Errorf("WhatsApp provider requires Twilio AccountSID and AuthToken")
-	}
+	// Allow per-app-only mode: global creds can be empty when per-app override is used at send time.
 	// Ensure from number has whatsapp: prefix
 	if config.FromNumber != "" && !strings.HasPrefix(config.FromNumber, "whatsapp:") {
 		config.FromNumber = "whatsapp:" + config.FromNumber
@@ -61,6 +62,42 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		), nil
 	}
 
+	// Per-app credential override
+	accountSID := p.config.AccountSID
+	authToken := p.config.AuthToken
+	fromNumber := p.config.FromNumber
+
+	if appCfg, ok := ctx.Value(WhatsAppConfigKey).(*application.WhatsAppAppConfig); ok && appCfg != nil {
+		if appCfg.AccountSID != "" && appCfg.AuthToken != "" {
+			accountSID = appCfg.AccountSID
+			authToken = appCfg.AuthToken
+			if appCfg.FromNumber != "" {
+				fromNumber = appCfg.FromNumber
+				if !strings.HasPrefix(fromNumber, "whatsapp:") {
+					fromNumber = "whatsapp:" + fromNumber
+				}
+			}
+			p.logger.Debug("Using per-app WhatsApp config",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("from_number", fromNumber),
+				zap.String("account_sid_prefix", accountSID[:min(6, len(accountSID))]+"..."))
+		}
+	}
+
+	// Validate credentials are available (global or per-app)
+	if accountSID == "" || authToken == "" {
+		return NewErrorResult(
+			fmt.Errorf("WhatsApp credentials not configured: set per-app WhatsApp config or global provider credentials"),
+			ErrorTypeConfiguration,
+		), nil
+	}
+	if fromNumber == "" {
+		return NewErrorResult(
+			fmt.Errorf("WhatsApp sender number not configured: set from_number in app settings or global config"),
+			ErrorTypeConfiguration,
+		), nil
+	}
+
 	// Build message body
 	messageBody := notif.Content.Body
 	if notif.Content.Title != "" {
@@ -70,7 +107,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	// Twilio Messages API endpoint
 	apiURL := fmt.Sprintf(
 		"https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json",
-		p.config.AccountSID,
+		accountSID,
 	)
 
 	// Ensure whatsapp: prefix on recipient
@@ -81,8 +118,13 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 
 	data := url.Values{
 		"To":   {toNumber},
-		"From": {p.config.FromNumber},
+		"From": {fromNumber},
 		"Body": {messageBody},
+	}
+
+	// Attach media if present
+	if notif.Content.MediaURL != "" {
+		data.Set("MediaUrl", notif.Content.MediaURL)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(data.Encode()))
@@ -90,7 +132,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		return NewErrorResult(fmt.Errorf("failed to create WhatsApp request: %w", err), ErrorTypeUnknown), nil
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(p.config.AccountSID, p.config.AuthToken)
+	req.SetBasicAuth(accountSID, authToken)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -98,19 +140,58 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	}
 	defer resp.Body.Close()
 
+	// Parse Twilio response — read body first for logging on error
+	bodyBytes, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return NewErrorResult(fmt.Errorf("failed to read Twilio response: %w", readErr), ErrorTypeNetwork), nil
+	}
+
+	var twilioResp struct {
+		SID       string      `json:"sid"`
+		Status    interface{} `json:"status"`
+		ErrorCode int         `json:"error_code"`
+		ErrorMsg  string      `json:"error_message"`
+		Message   string      `json:"message"`
+		Code      int         `json:"code"`
+	}
+	if decodeErr := json.Unmarshal(bodyBytes, &twilioResp); decodeErr != nil {
+		p.logger.Warn("Failed to decode Twilio response",
+			zap.Error(decodeErr),
+			zap.String("raw_body", string(bodyBytes)))
+	}
+
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return NewErrorResult(
-			fmt.Errorf("Twilio WhatsApp API returned status %d", resp.StatusCode),
-			ErrorTypeProviderAPI,
-		), nil
+		errMsg := fmt.Sprintf("Twilio WhatsApp API returned status %d", resp.StatusCode)
+		if twilioResp.ErrorCode != 0 {
+			errMsg = fmt.Sprintf("Twilio error %d: %s", twilioResp.ErrorCode, twilioResp.ErrorMsg)
+		} else if twilioResp.Code != 0 {
+			errMsg = fmt.Sprintf("Twilio error %d: %s", twilioResp.Code, twilioResp.Message)
+		} else if twilioResp.Message != "" {
+			errMsg = fmt.Sprintf("Twilio error: %s", twilioResp.Message)
+		}
+		p.logger.Error("Twilio WhatsApp API error",
+			zap.Int("http_status", resp.StatusCode),
+			zap.String("error_message", errMsg),
+			zap.String("raw_body", string(bodyBytes)))
+		return NewErrorResult(fmt.Errorf(errMsg), ErrorTypeProviderAPI), nil
+	}
+
+	providerMsgID := twilioResp.SID
+	if providerMsgID == "" {
+		providerMsgID = "whatsapp-" + notif.NotificationID
 	}
 
 	p.logger.Info("WhatsApp notification delivered",
 		zap.String("notification_id", notif.NotificationID),
+		zap.String("twilio_sid", providerMsgID),
 		zap.String("to", toNumber),
 		zap.Duration("delivery_time", time.Since(start)))
 
-	return NewResult("whatsapp-"+notif.NotificationID, time.Since(start)), nil
+	result := NewResult(providerMsgID, time.Since(start))
+	if twilioResp.Status != nil {
+		result.Metadata["twilio_status"] = fmt.Sprintf("%v", twilioResp.Status)
+	}
+	return result, nil
 }
 
 // GetName returns the provider name.
@@ -130,12 +211,15 @@ func (p *WhatsAppProvider) Close() error { return nil }
 func init() {
 	RegisterFactory("whatsapp", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
 		enabled, _ := cfg["enabled"].(bool)
-		if !enabled {
-			return nil, fmt.Errorf("whatsapp: provider disabled")
-		}
 		accountSID, _ := cfg["account_sid"].(string)
 		authToken, _ := cfg["auth_token"].(string)
 		fromNumber, _ := cfg["from_number"].(string)
+
+		// Register if globally enabled OR if global creds are provided.
+		// Per-app credentials override at send time, so global creds can be empty.
+		if !enabled && accountSID == "" {
+			return nil, fmt.Errorf("whatsapp: provider disabled")
+		}
 		timeout := 10
 		if t, ok := cfg["timeout"].(float64); ok && t > 0 {
 			timeout = int(t)

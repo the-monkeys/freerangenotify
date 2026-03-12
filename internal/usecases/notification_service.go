@@ -40,7 +40,7 @@ type NotificationService struct {
 	limiter          limiter.Limiter
 	appCache         map[string]*appCacheEntry
 	appCacheMu       sync.RWMutex
-	topicService     topic.Service   // Phase 2: optional, set via SetTopicService
+	topicService     topic.Service    // Phase 2: optional, set via SetTopicService
 	workflowService  workflow.Service // Phase 2: optional, set via SetWorkflowService
 }
 
@@ -221,9 +221,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		Priority:       req.Priority,
 		Status:         notification.StatusPending,
 		Content: notification.Content{
-			Title: title,
-			Body:  body,
-			Data:  req.Data,
+			Title:    title,
+			Body:     body,
+			Data:     req.Data,
+			MediaURL: req.MediaURL,
 		},
 		Category:    req.Category,
 		TemplateID:  req.TemplateID,
@@ -647,7 +648,7 @@ func (s *NotificationService) SendBatch(ctx context.Context, requests []notifica
 			s.logger.Error("Failed to send notification in batch",
 				zap.String("user_id", req.UserID),
 				zap.Error(err))
-			
+
 			n = &notification.Notification{
 				AppID:        req.AppID,
 				UserID:       req.UserID,

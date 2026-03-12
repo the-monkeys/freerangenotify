@@ -355,6 +355,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         <SelectItem value="email">Email</SelectItem>
                                         <SelectItem value="push">Push</SelectItem>
                                         <SelectItem value="sms">SMS</SelectItem>
+                                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                         <SelectItem value="webhook">Webhook</SelectItem>
                                         <SelectItem value="in_app">In-App</SelectItem>
                                         <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
@@ -384,16 +385,18 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                 </p>
                             </div>
                         )}
-                        <div className="space-y-2">
-                            <Label htmlFor="subject">Subject (for Email)</Label>
-                            <Input
-                                id="subject"
-                                type="text"
-                                value={formData.subject || ''}
-                                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                                placeholder="Email subject"
-                            />
-                        </div>
+                        {formData.channel === 'email' && (
+                            <div className="space-y-2">
+                                <Label htmlFor="subject">Subject (for Email)</Label>
+                                <Input
+                                    id="subject"
+                                    type="text"
+                                    value={formData.subject || ''}
+                                    onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                                    placeholder="Email subject"
+                                />
+                            </div>
+                        )}
                         <div className="space-y-2">
                             <Label htmlFor="body">Body / Content</Label>
                             <TemplateEditor

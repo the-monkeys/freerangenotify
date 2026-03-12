@@ -137,9 +137,10 @@ type Recurrence struct {
 
 // Content represents notification content
 type Content struct {
-	Title string                 `json:"title" es:"title"`
-	Body  string                 `json:"body" es:"body"`
-	Data  map[string]interface{} `json:"data,omitempty" es:"data"`
+	Title    string                 `json:"title" es:"title"`
+	Body     string                 `json:"body" es:"body"`
+	Data     map[string]interface{} `json:"data,omitempty" es:"data"`
+	MediaURL string                 `json:"media_url,omitempty" es:"media_url"`
 }
 
 // NotificationFilter represents query filters for notifications
@@ -254,7 +255,7 @@ type BroadcastRequest struct {
 	Category          string                 `json:"category,omitempty"`
 	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient instead of sending notification
-	TopicKey          string                 `json:"topic_key,omitempty"`          // Phase 2: limit recipients to topic subscribers (by topic key)
+	TopicKey          string                 `json:"topic_key,omitempty"`           // Phase 2: limit recipients to topic subscribers (by topic key)
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"}
 }
 
@@ -346,9 +347,10 @@ type SendRequest struct {
 	Category          string                 `json:"category,omitempty"`
 	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence        *Recurrence            `json:"recurrence,omitempty"`
-	TopicID           string                 `json:"topic_id,omitempty"`           // Phase 2: send to all subscribers of a topic
+	TopicID           string                 `json:"topic_id,omitempty"`            // Phase 2: send to all subscribers of a topic
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"} routes to digest batching
+	MediaURL          string                 `json:"media_url,omitempty"`
 }
 
 // Validate validates the send request

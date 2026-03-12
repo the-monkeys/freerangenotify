@@ -14,20 +14,20 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
-	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/schedule"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
-	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
@@ -75,19 +75,19 @@ type Container struct {
 	JWTManager *jwt.Manager
 
 	// Handlers
-	UserHandler         *handlers.UserHandler
-	ApplicationHandler  *handlers.ApplicationHandler
-	NotificationHandler *handlers.NotificationHandler
-	TemplateHandler     *handlers.TemplateHandler
-	PresenceHandler     *handlers.PresenceHandler
+	UserHandler                  *handlers.UserHandler
+	ApplicationHandler           *handlers.ApplicationHandler
+	NotificationHandler          *handlers.NotificationHandler
+	TemplateHandler              *handlers.TemplateHandler
+	PresenceHandler              *handlers.PresenceHandler
 	AdminHandler                 *handlers.AdminHandler
 	DashboardNotificationHandler *handlers.DashboardNotificationHandler
-	HealthHandler       *handlers.HealthHandler
-	SSEHandler          *handlers.SSEHandler
-	AuthHandler         *handlers.AuthHandler
-	QuickSendHandler    *handlers.QuickSendHandler
-	PlaygroundHandler   *handlers.PlaygroundHandler
-	AnalyticsHandler    *handlers.AnalyticsHandler
+	HealthHandler                *handlers.HealthHandler
+	SSEHandler                   *handlers.SSEHandler
+	AuthHandler                  *handlers.AuthHandler
+	QuickSendHandler             *handlers.QuickSendHandler
+	PlaygroundHandler            *handlers.PlaygroundHandler
+	AnalyticsHandler             *handlers.AnalyticsHandler
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -117,6 +117,9 @@ type Container struct {
 	TeamHandler    *handlers.TeamHandler
 	MembershipRepo auth.MembershipRepository
 	AppRepo        application.Repository
+
+	// Media upload
+	MediaHandler *handlers.MediaHandler
 
 	// Custom Providers (Phase 3)
 	CustomProviderHandler *handlers.CustomProviderHandler
@@ -390,6 +393,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 	container.PlaygroundHandler.SetBroadcaster(container.SSEBroadcaster)
+
+	// Media upload handler
+	container.MediaHandler = handlers.NewMediaHandler(playgroundBaseURL, logger)
 
 	// Analytics handler (workflow repo wired below after feature-gate check)
 	container.AnalyticsHandler = handlers.NewAnalyticsHandler(

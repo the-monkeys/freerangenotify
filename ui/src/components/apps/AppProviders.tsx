@@ -28,6 +28,7 @@ const CHANNEL_OPTIONS = [
     { value: 'email', label: 'Email' },
     { value: 'push', label: 'Push' },
     { value: 'sms', label: 'SMS' },
+    { value: 'whatsapp', label: 'WhatsApp' },
     { value: 'sse', label: 'SSE' },
 ];
 

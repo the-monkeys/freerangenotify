@@ -614,6 +614,19 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		}
 	}
 
+	// If it's WhatsApp, inject app-specific Twilio credentials when configured.
+	if notif.Channel == notification.ChannelWhatsApp {
+		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		if err == nil && app != nil && app.Settings.WhatsApp != nil {
+			waCfg := app.Settings.WhatsApp
+			if waCfg.AccountSID != "" && waCfg.AuthToken != "" {
+				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, waCfg)
+				p.logger.Debug("Using app WhatsApp config",
+					zap.String("app_id", notif.AppID))
+			}
+		}
+	}
+
 	// Check for provider fallback chains
 	app, err := p.appRepo.GetByID(ctx, notif.AppID)
 	if err == nil && app != nil && len(app.Settings.ProviderFallbacks) > 0 {
