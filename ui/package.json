@@ -1,7 +1,7 @@
 {
   "name": "freerange-notify-ui",
   "private": true,
-  "version": "0.1.15-alpha",
+  "version": "0.1.17-alpha",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
@@ -21,6 +21,7 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.12",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/papaparse": "^5.5.2",
     "@types/react-syntax-highlighter": "^15.5.13",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
@@ -29,6 +30,7 @@
     "date-fns-tz": "^3.2.0",
     "lucide-react": "^0.562.0",
     "next-themes": "^0.4.6",
+    "papaparse": "^5.5.3",
     "radix-ui": "^1.4.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

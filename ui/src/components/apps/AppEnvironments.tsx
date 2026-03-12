@@ -52,7 +52,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
     const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
 
     const fetcher = useCallback(() => environmentsAPI.list(appId), [appId]);
-    const { data: environments, loading, refetch } = useApiQuery<Environment[]>(fetcher, [appId]);
+    const { data: environments, loading, refetch } = useApiQuery<Environment[]>(fetcher, [appId], { cacheKey: `app-environments-${appId}` });
 
     const existingNames = (environments || []).map(e => e.name);
     const availableNames = ENV_NAMES.filter(n => !existingNames.includes(n));

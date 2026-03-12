@@ -90,7 +90,7 @@ providers:
     max_retries: 3
 
   whatsapp:
-    enabled: false
+    enabled: true
     account_sid: "${FREERANGE_PROVIDERS_WHATSAPP_ACCOUNT_SID:-}"
     auth_token: "${FREERANGE_PROVIDERS_WHATSAPP_AUTH_TOKEN:-}"
     from_number: "${FREERANGE_PROVIDERS_WHATSAPP_FROM_NUMBER:-}"

@@ -9,7 +9,8 @@ import (
 // SendNotificationRequest represents the API request to send a notification
 type SendNotificationRequest struct {
 	UserID            string                 `json:"user_id"` // Removed validate:"required"
-	Channel           string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
+	Channel           string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse whatsapp"`
+	MediaURL          string                 `json:"media_url,omitempty" validate:"omitempty,url"`
 	Priority          string                 `json:"priority" validate:"required,oneof=low normal high critical"`
 	Title             string                 `json:"title,omitempty"`
 	Body              string                 `json:"body,omitempty"`
@@ -21,7 +22,7 @@ type SendNotificationRequest struct {
 	WebhookURL        string                 `json:"webhook_url,omitempty"`
 	WebhookTarget     string                 `json:"webhook_target,omitempty"`
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
-	Metadata          map[string]interface{} `json:"metadata,omitempty"`             // Digest: {"digest_key": "rule_key"} routes to digest batching
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"} routes to digest batching
 }
 
 // ToSendRequest converts DTO to domain SendRequest
@@ -63,13 +64,14 @@ func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendR
 
 	req.WorkflowTriggerID = r.WorkflowTriggerID
 	req.Metadata = r.Metadata
+	req.MediaURL = r.MediaURL
 	return req
 }
 
 // BulkSendNotificationRequest represents the API request to send notifications to multiple users
 type BulkSendNotificationRequest struct {
 	UserIDs     []string               `json:"user_ids" validate:"required,min=1"`
-	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app"`
+	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app whatsapp"`
 	Priority    string                 `json:"priority" validate:"required,oneof=low normal high critical"`
 	Title       string                 `json:"title" validate:"required"`
 	Body        string                 `json:"body" validate:"required"`
@@ -183,7 +185,7 @@ type RecurrenceRequest struct {
 
 // BroadcastNotificationRequest represents the API request to broadcast a notification to all users
 type BroadcastNotificationRequest struct {
-	Channel           string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse"`
+	Channel           string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse whatsapp"`
 	Priority          string                 `json:"priority" validate:"required,oneof=low normal high critical"`
 	Title             string                 `json:"title,omitempty"`
 	Body              string                 `json:"body,omitempty"`
@@ -195,7 +197,7 @@ type BroadcastNotificationRequest struct {
 	WebhookTarget     string                 `json:"webhook_target,omitempty"`
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient
 	TopicKey          string                 `json:"topic_key,omitempty"`           // Phase 2: limit to topic subscribers
-	Metadata          map[string]interface{} `json:"metadata,omitempty"`             // Digest: {"digest_key": "rule_key"}
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"}
 }
 
 // ToBroadcastRequest converts DTO to domain BroadcastRequest

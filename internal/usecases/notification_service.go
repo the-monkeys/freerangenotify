@@ -40,7 +40,7 @@ type NotificationService struct {
 	limiter          limiter.Limiter
 	appCache         map[string]*appCacheEntry
 	appCacheMu       sync.RWMutex
-	topicService     topic.Service   // Phase 2: optional, set via SetTopicService
+	topicService     topic.Service    // Phase 2: optional, set via SetTopicService
 	workflowService  workflow.Service // Phase 2: optional, set via SetWorkflowService
 }
 
@@ -112,21 +112,37 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		req.UserID = resolvedID
 	}
 
-	// 2.3: Resolve template by name or UUID
-	tmpl, err := s.resolveTemplate(ctx, req.AppID, req.TemplateID)
-	if err != nil {
-		s.logger.Error("Template not found", zap.String("template_id", req.TemplateID), zap.Error(err))
-		return nil, notification.ErrTemplateNotFound
-	}
-	// Update TemplateID to resolved UUID for downstream consistency
-	req.TemplateID = tmpl.ID
+	var title, body string
 
-	// 2.4: Infer channel from template if not explicitly set
-	if req.Channel == "" {
-		req.Channel = notification.Channel(tmpl.Channel)
-		s.logger.Debug("Inferred channel from template",
-			zap.String("template_id", tmpl.ID),
-			zap.String("channel", string(req.Channel)))
+	// 2.3: Resolve template by name or UUID if provided
+	if req.TemplateID != "" {
+		tmpl, err := s.resolveTemplate(ctx, req.AppID, req.TemplateID)
+		if err != nil {
+			s.logger.Error("Template not found", zap.String("template_id", req.TemplateID), zap.Error(err))
+			return nil, notification.ErrTemplateNotFound
+		}
+		// Update TemplateID to resolved UUID for downstream consistency
+		req.TemplateID = tmpl.ID
+
+		// 2.4: Infer channel from template if not explicitly set
+		if req.Channel == "" {
+			req.Channel = notification.Channel(tmpl.Channel)
+			s.logger.Debug("Inferred channel from template",
+				zap.String("template_id", tmpl.ID),
+				zap.String("channel", string(req.Channel)))
+		}
+
+		title = tmpl.Subject
+		body = tmpl.Body
+
+		s.logger.Debug("Template loaded for notification",
+			zap.String("template_id", req.TemplateID),
+			zap.String("template_name", tmpl.Name),
+			zap.String("title", title),
+			zap.String("body", body))
+	} else {
+		title = req.Title
+		body = req.Body
 	}
 
 	// Validate request (after resolution so channel/user/template are populated)
@@ -135,18 +151,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	// Use req.Title/req.Body when both provided (e.g. digest flush with fixed text); otherwise use template
-	title := tmpl.Subject
-	body := tmpl.Body
 	if req.Title != "" && req.Body != "" {
 		title = req.Title
 		body = req.Body
 	}
-
-	s.logger.Debug("Template loaded for notification",
-		zap.String("template_id", req.TemplateID),
-		zap.String("template_name", tmpl.Name),
-		zap.String("title", title),
-		zap.String("body", body))
 
 	// Check if user exists (only if UserID is present)
 	var u *user.User
@@ -213,9 +221,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		Priority:       req.Priority,
 		Status:         notification.StatusPending,
 		Content: notification.Content{
-			Title: title,
-			Body:  body,
-			Data:  req.Data,
+			Title:    title,
+			Body:     body,
+			Data:     req.Data,
+			MediaURL: req.MediaURL,
 		},
 		Category:    req.Category,
 		TemplateID:  req.TemplateID,
@@ -635,11 +644,19 @@ func (s *NotificationService) SendBatch(ctx context.Context, requests []notifica
 		// but reuse the same careful logic.
 		n, err := s.Send(ctx, req)
 		if err != nil {
-			// Log error but continue with others
+			// Log error and return a failed notification item
 			s.logger.Error("Failed to send notification in batch",
 				zap.String("user_id", req.UserID),
 				zap.Error(err))
-			continue
+
+			n = &notification.Notification{
+				AppID:        req.AppID,
+				UserID:       req.UserID,
+				Channel:      req.Channel,
+				Priority:     req.Priority,
+				Status:       notification.StatusFailed,
+				ErrorMessage: err.Error(),
+			}
 		}
 		notifications = append(notifications, n)
 	}

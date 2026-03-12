@@ -14,10 +14,10 @@ import (
 )
 
 type workflowService struct {
-	repo       workflow.Repository
-	queue      queue.WorkflowQueue
-	topicSvc   topic.Service // optional, for TriggerByTopic
-	logger     *zap.Logger
+	repo     workflow.Repository
+	queue    queue.WorkflowQueue
+	topicSvc topic.Service // optional, for TriggerByTopic
+	logger   *zap.Logger
 }
 
 // NewWorkflowService creates a new workflow service.
@@ -66,10 +66,15 @@ func (s *workflowService) Create(ctx context.Context, appID string, req *workflo
 		Description:   req.Description,
 		TriggerID:     req.TriggerID,
 		Steps:         req.Steps,
-		Status:        workflow.WorkflowStatusDraft,
-		Version:       1,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		Status: func() workflow.WorkflowStatus {
+			if req.Status != "" {
+				return req.Status
+			}
+			return workflow.WorkflowStatusDraft
+		}(),
+		Version:   1,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := s.repo.CreateWorkflow(ctx, wf); err != nil {

@@ -12,11 +12,12 @@ import { Spinner } from '../components/ui/spinner';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 
+import { useApps } from '../contexts/AppsContext';
+
 const AppsList: React.FC = () => {
   const navigate = useNavigate();
-  const [apps, setApps] = useState<Application[]>([]);
+  const { apps, loading, refreshApps } = useApps();
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<CreateApplicationRequest>({
     app_name: '',
@@ -24,26 +25,10 @@ const AppsList: React.FC = () => {
   });
 
   useEffect(() => {
-    fetchApps();
-  }, []);
-
-  useEffect(() => {
     if (showForm) {
       tenantsAPI.list().then((d) => setTenants(Array.isArray(d) ? d : [])).catch(() => setTenants([]));
     }
   }, [showForm]);
-
-  const fetchApps = async () => {
-    setLoading(true);
-    try {
-      const data = await applicationsAPI.list();
-      setApps(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Failed to fetch applications:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +36,7 @@ const AppsList: React.FC = () => {
       await applicationsAPI.create(formData);
       setFormData({ app_name: '', description: '' });
       setShowForm(false);
-      fetchApps();
+      refreshApps();
     } catch (error) {
       toast.error(extractErrorMessage(error as Error, 'Failed to create application'));
     }

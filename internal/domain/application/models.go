@@ -23,28 +23,29 @@ type Application struct {
 
 // Settings represents application-specific settings
 type Settings struct {
-	RateLimit               int                                 `json:"rate_limit" es:"rate_limit"`                           // requests per hour
-	RetryAttempts           int                                 `json:"retry_attempts" es:"retry_attempts"`                   // max retry attempts
-	DefaultTemplate         string                              `json:"default_template" es:"default_template"`                // default template ID
-	EmailConfig             *EmailConfig                        `json:"email_config,omitempty" es:"email_config"`
-	DailyEmailLimit         int                                 `json:"daily_email_limit" es:"daily_email_limit"`
-	EnableWebhooks          bool                                `json:"enable_webhooks" es:"enable_webhooks"`                  // webhook notifications
-	EnableAnalytics         bool                                `json:"enable_analytics" es:"enable_analytics"`               // analytics tracking
-	Slack                   *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                           // Phase 3
-	Discord                 *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                       // Phase 3
-	CustomProviders         []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"`      // Phase 3
-	ValidationURL           string                              `json:"validation_url,omitempty" es:"validation_url"`
-	ValidationConfig        *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
-	DefaultPreferences      *DefaultPreferences                 `json:"default_preferences,omitempty" es:"default_preferences"`
-	ProviderFallbacks       []ProviderFallback                  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
-	SubscriberThrottle       map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"`       // Phase 2
-	OnUserCreatedTriggerID   string                              `json:"on_user_created_trigger_id,omitempty" es:"on_user_created_trigger_id"` // Phase 5: workflow to trigger on user create
-	InboundWebhookConfig     *InboundWebhookConfig               `json:"inbound_webhook_config,omitempty" es:"inbound_webhook_config"`       // Phase 7: inbound webhook config (secret, event mapping)
+	RateLimit              int                                 `json:"rate_limit" es:"rate_limit"`             // requests per hour
+	RetryAttempts          int                                 `json:"retry_attempts" es:"retry_attempts"`     // max retry attempts
+	DefaultTemplate        string                              `json:"default_template" es:"default_template"` // default template ID
+	EmailConfig            *EmailConfig                        `json:"email_config,omitempty" es:"email_config"`
+	DailyEmailLimit        int                                 `json:"daily_email_limit" es:"daily_email_limit"`
+	EnableWebhooks         bool                                `json:"enable_webhooks" es:"enable_webhooks"`             // webhook notifications
+	EnableAnalytics        bool                                `json:"enable_analytics" es:"enable_analytics"`           // analytics tracking
+	Slack                  *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                       // Phase 3
+	Discord                *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                   // Phase 3
+	WhatsApp               *WhatsAppAppConfig                  `json:"whatsapp_config,omitempty" es:"whatsapp_config"`   // Phase 3
+	CustomProviders        []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"` // Phase 3
+	ValidationURL          string                              `json:"validation_url,omitempty" es:"validation_url"`
+	ValidationConfig       *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
+	DefaultPreferences     *DefaultPreferences                 `json:"default_preferences,omitempty" es:"default_preferences"`
+	ProviderFallbacks      []ProviderFallback                  `json:"provider_fallbacks,omitempty" es:"provider_fallbacks"`
+	SubscriberThrottle     map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"`               // Phase 2
+	OnUserCreatedTriggerID string                              `json:"on_user_created_trigger_id,omitempty" es:"on_user_created_trigger_id"` // Phase 5: workflow to trigger on user create
+	InboundWebhookConfig   *InboundWebhookConfig               `json:"inbound_webhook_config,omitempty" es:"inbound_webhook_config"`         // Phase 7: inbound webhook config (secret, event mapping)
 }
 
 // InboundWebhookConfig holds configuration for receiving inbound webhooks (Phase 7)
 type InboundWebhookConfig struct {
-	Secret       string           `json:"secret,omitempty" es:"secret"`
+	Secret       string            `json:"secret,omitempty" es:"secret"`
 	EventMapping map[string]string `json:"event_mapping,omitempty" es:"event_mapping"` // event name -> workflow trigger_id
 }
 
@@ -112,6 +113,13 @@ type DiscordAppConfig struct {
 	WebhookURL string `json:"webhook_url,omitempty" es:"webhook_url"`
 }
 
+// WhatsAppAppConfig holds per-app Twilio WhatsApp credentials (Phase 3)
+type WhatsAppAppConfig struct {
+	AccountSID string `json:"account_sid" es:"account_sid"`
+	AuthToken  string `json:"auth_token" es:"auth_token"`
+	FromNumber string `json:"from_number" es:"from_number"`
+}
+
 // CustomProviderConfig defines a user-registered custom delivery channel (Phase 3).
 // Stored in app Settings.CustomProviders.
 type CustomProviderConfig struct {
@@ -127,13 +135,13 @@ type CustomProviderConfig struct {
 
 // ApplicationFilter represents query filters for applications
 type ApplicationFilter struct {
-	AppName      string   `json:"app_name,omitempty"`
-	AdminUserID  string   `json:"admin_user_id,omitempty"`
-	TenantID     string   `json:"tenant_id,omitempty"`
-	TenantIDs    []string `json:"tenant_ids,omitempty"` // List apps in any of these tenants
-	Limit        int      `json:"limit,omitempty"`
-	Offset       int      `json:"offset,omitempty"`
-	Cursor       string   `json:"cursor,omitempty"`
+	AppName     string   `json:"app_name,omitempty"`
+	AdminUserID string   `json:"admin_user_id,omitempty"`
+	TenantID    string   `json:"tenant_id,omitempty"`
+	TenantIDs   []string `json:"tenant_ids,omitempty"` // List apps in any of these tenants
+	Limit       int      `json:"limit,omitempty"`
+	Offset      int      `json:"offset,omitempty"`
+	Cursor      string   `json:"cursor,omitempty"`
 }
 
 // Repository defines the interface for application data operations

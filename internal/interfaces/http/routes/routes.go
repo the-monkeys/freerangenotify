@@ -121,6 +121,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Quick-send (simplified notification endpoint)
 	v1.Post("/quick-send", apiAuth, c.QuickSendHandler.Send)
 
+	// Media upload (for WhatsApp file attachments)
+	v1.Post("/media/upload", apiAuth, c.MediaHandler.Upload)
+
 	// Notification routes
 	notifications := v1.Group("/notifications")
 	applyAuth(notifications)

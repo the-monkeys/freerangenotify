@@ -61,13 +61,14 @@ type Config struct {
 
 // Error types for categorizing provider errors
 const (
-	ErrorTypeNetwork     = "network"
-	ErrorTypeAuth        = "authentication"
-	ErrorTypeInvalid     = "invalid_request"
-	ErrorTypeRateLimit   = "rate_limit"
-	ErrorTypeProviderAPI = "provider_api"
-	ErrorTypeTimeout     = "timeout"
-	ErrorTypeUnknown     = "unknown"
+	ErrorTypeNetwork       = "network"
+	ErrorTypeAuth          = "authentication"
+	ErrorTypeInvalid       = "invalid_request"
+	ErrorTypeRateLimit     = "rate_limit"
+	ErrorTypeProviderAPI   = "provider_api"
+	ErrorTypeTimeout       = "timeout"
+	ErrorTypeConfiguration = "configuration"
+	ErrorTypeUnknown       = "unknown"
 )
 
 // NewResult creates a successful result
@@ -94,5 +95,6 @@ func NewErrorResult(err error, errorType string) *Result {
 type contextKey string
 
 const (
-	EmailConfigKey contextKey = "email_config"
+	EmailConfigKey    contextKey = "email_config"
+	WhatsAppConfigKey contextKey = "whatsapp_config"
 )

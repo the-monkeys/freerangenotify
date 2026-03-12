@@ -85,8 +85,7 @@ const WorkflowBuilder: React.FC = () => {
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
         try {
-            const apps = await applicationsAPI.list();
-            const app = apps.find((a: Application) => a.app_id === appId);
+            const app = await applicationsAPI.get(appId);
             if (app) {
                 setSelectedAppId(app.app_id);
                 setApiKey(app.api_key);
@@ -247,21 +246,33 @@ const WorkflowBuilder: React.FC = () => {
                     </h1>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        onClick={() => handleSave()}
-                        disabled={saving}
-                    >
-                        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                        Save Draft
-                    </Button>
-                    <Button
-                        onClick={() => handleSave('active')}
-                        disabled={saving}
-                    >
-                        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                        Activate
-                    </Button>
+                    {status === 'active' ? (
+                        <Button
+                            onClick={() => handleSave('active')}
+                            disabled={saving}
+                        >
+                            {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                            Save Changes
+                        </Button>
+                    ) : (
+                        <>
+                            <Button
+                                variant="outline"
+                                onClick={() => handleSave()}
+                                disabled={saving}
+                            >
+                                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                                Save Draft
+                            </Button>
+                            <Button
+                                onClick={() => handleSave('active')}
+                                disabled={saving}
+                            >
+                                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                Activate
+                            </Button>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -475,21 +486,24 @@ const WorkflowBuilder: React.FC = () => {
                 }}
                 title={editingStepIndex !== null ? `Edit Step ${editingStepIndex + 1}` : 'Add Step'}
             >
-                <WorkflowStepEditor
-                    step={editingStepIndex !== null ? steps[editingStepIndex] : null}
-                    apiKey={apiKey!}
-                    onSave={(step) => {
-                        if (editingStepIndex !== null) {
-                            updateStep(editingStepIndex, step);
-                        } else {
-                            addStep(step);
-                        }
-                    }}
-                    onCancel={() => {
-                        setShowStepEditor(false);
-                        setEditingStepIndex(null);
-                    }}
-                />
+                {showStepEditor && (
+                    <WorkflowStepEditor
+                        key={editingStepIndex !== null ? `edit-${editingStepIndex}` : 'new'}
+                        step={editingStepIndex !== null ? steps[editingStepIndex] : null}
+                        apiKey={apiKey!}
+                        onSave={(step) => {
+                            if (editingStepIndex !== null) {
+                                updateStep(editingStepIndex, step);
+                            } else {
+                                addStep(step);
+                            }
+                        }}
+                        onCancel={() => {
+                            setShowStepEditor(false);
+                            setEditingStepIndex(null);
+                        }}
+                    />
+                )}
             </SlidePanel>
         </div>
     );

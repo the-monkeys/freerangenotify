@@ -83,8 +83,7 @@ const WorkflowExecutions: React.FC = () => {
     const handleAppSelect = async (appId: string | null) => {
         if (!appId) return;
         try {
-            const apps = await applicationsAPI.list();
-            const app = apps.find((a: Application) => a.app_id === appId);
+            const app = await applicationsAPI.get(appId);
             if (app) {
                 setSelectedAppId(app.app_id);
                 setApiKey(app.api_key);
@@ -163,18 +162,18 @@ const WorkflowExecutions: React.FC = () => {
                         </SelectContent>
                     </Select>
                     <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as ExecutionStatus | 'all')}>
-                    <SelectTrigger className="w-[160px]">
-                        <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        <SelectItem value="running">Running</SelectItem>
-                        <SelectItem value="paused">Paused</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="failed">Failed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                    </SelectContent>
-                </Select>
+                        <SelectTrigger className="w-[160px]">
+                            <SelectValue placeholder="All statuses" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Statuses</SelectItem>
+                            <SelectItem value="running">Running</SelectItem>
+                            <SelectItem value="paused">Paused</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="failed">Failed</SelectItem>
+                            <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                    </Select>
                 </div>
             </div>
 

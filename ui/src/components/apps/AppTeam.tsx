@@ -39,7 +39,7 @@ const AppTeam: React.FC<AppTeamProps> = ({ appId }) => {
     const [removeLoading, setRemoveLoading] = useState(false);
 
     const fetcher = useCallback(() => teamAPI.listMembers(appId), [appId]);
-    const { data: members, loading, error, refetch } = useApiQuery<AppMembership[]>(fetcher, [appId]);
+    const { data: members, loading, error, refetch } = useApiQuery<AppMembership[]>(fetcher, [appId], { cacheKey: `app-team-${appId}` });
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();

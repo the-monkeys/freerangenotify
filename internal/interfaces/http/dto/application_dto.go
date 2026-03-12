@@ -23,24 +23,26 @@ type UpdateApplicationRequest struct {
 
 // UpdateSettingsRequest represents a request to update application settings
 type UpdateSettingsRequest struct {
-	RateLimit          *int                          `json:"rate_limit" validate:"omitempty,min=1"`
-	RetryAttempts      *int                          `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
-	DefaultTemplate    *string                       `json:"default_template" validate:"omitempty"`
-	EmailConfig        *application.EmailConfig      `json:"email_config"`
-	DailyEmailLimit    *int                          `json:"daily_email_limit" validate:"omitempty,min=0"`
-	EnableWebhooks     *bool                         `json:"enable_webhooks"`
-	EnableAnalytics    *bool                         `json:"enable_analytics"`
-	ValidationURL      *string                       `json:"validation_url"`
-	ValidationConfig       *application.ValidationConfig `json:"validation_config"`
-	DefaultPreferences       *DefaultPreferencesDTO        `json:"default_preferences"`
-	OnUserCreatedTriggerID   *string                       `json:"on_user_created_trigger_id,omitempty"`   // Phase 5: workflow to trigger on user create
-	InboundWebhookConfig     *application.InboundWebhookConfig `json:"inbound_webhook_config,omitempty"` // Phase 7: inbound webhook (secret, event mapping)
+	RateLimit              *int                              `json:"rate_limit" validate:"omitempty,min=1"`
+	RetryAttempts          *int                              `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
+	DefaultTemplate        *string                           `json:"default_template" validate:"omitempty"`
+	EmailConfig            *application.EmailConfig          `json:"email_config"`
+	DailyEmailLimit        *int                              `json:"daily_email_limit" validate:"omitempty,min=0"`
+	EnableWebhooks         *bool                             `json:"enable_webhooks"`
+	EnableAnalytics        *bool                             `json:"enable_analytics"`
+	ValidationURL          *string                           `json:"validation_url"`
+	ValidationConfig       *application.ValidationConfig     `json:"validation_config"`
+	DefaultPreferences     *DefaultPreferencesDTO            `json:"default_preferences"`
+	WhatsAppConfig         *application.WhatsAppAppConfig    `json:"whatsapp_config,omitempty"`
+	OnUserCreatedTriggerID *string                           `json:"on_user_created_trigger_id,omitempty"` // Phase 5: workflow to trigger on user create
+	InboundWebhookConfig   *application.InboundWebhookConfig `json:"inbound_webhook_config,omitempty"`     // Phase 7: inbound webhook (secret, event mapping)
 }
 
 type DefaultPreferencesDTO struct {
-	EmailEnabled *bool `json:"email_enabled"`
-	PushEnabled  *bool `json:"push_enabled"`
-	SMSEnabled   *bool `json:"sms_enabled"`
+	EmailEnabled    *bool `json:"email_enabled"`
+	PushEnabled     *bool `json:"push_enabled"`
+	SMSEnabled      *bool `json:"sms_enabled"`
+	WhatsAppEnabled *bool `json:"whatsapp_enabled,omitempty"`
 }
 
 // ApplicationResponse represents an application response

@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { AppsProvider } from './contexts/AppsContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthLayout from './layouts/AuthLayout';
@@ -47,7 +48,8 @@ const App: React.FC = () => {
     <Router>
       <ThemeProvider>
         <AuthProvider>
-          <ErrorBoundary>
+          <AppsProvider>
+            <ErrorBoundary>
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 {/* Landing page — standalone, no layout wrapper */}
@@ -97,6 +99,7 @@ const App: React.FC = () => {
           </ErrorBoundary>
           <CommandPalette />
           <Toaster />
+          </AppsProvider>
         </AuthProvider>
       </ThemeProvider>
     </Router>

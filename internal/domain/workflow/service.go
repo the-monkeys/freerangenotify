@@ -22,11 +22,12 @@ type Service interface {
 
 // CreateRequest is the input for creating a workflow.
 type CreateRequest struct {
-	Name          string `json:"name" validate:"required,min=3,max=100"`
-	Description   string `json:"description"`
-	TriggerID     string `json:"trigger_id" validate:"required,min=1,max=100"`
-	Steps         []Step `json:"steps" validate:"required,min=1,dive"`
-	EnvironmentID string `json:"environment_id,omitempty"`
+	Name          string         `json:"name" validate:"required,min=3,max=100"`
+	Description   string         `json:"description"`
+	TriggerID     string         `json:"trigger_id" validate:"required,min=1,max=100"`
+	Steps         []Step         `json:"steps" validate:"required,min=1,dive"`
+	EnvironmentID string         `json:"environment_id,omitempty"`
+	Status        WorkflowStatus `json:"status,omitempty"`
 }
 
 // UpdateRequest is the input for updating a workflow.

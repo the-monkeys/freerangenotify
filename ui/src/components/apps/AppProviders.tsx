@@ -28,6 +28,7 @@ const CHANNEL_OPTIONS = [
     { value: 'email', label: 'Email' },
     { value: 'push', label: 'Push' },
     { value: 'sms', label: 'SMS' },
+    { value: 'whatsapp', label: 'WhatsApp' },
     { value: 'sse', label: 'SSE' },
 ];
 
@@ -44,7 +45,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
     const [copied, setCopied] = useState(false);
 
     const fetcher = useCallback(() => providersAPI.list(appId), [appId]);
-    const { data: providers, loading, refetch } = useApiQuery<CustomProvider[]>(fetcher, [appId]);
+    const { data: providers, loading, refetch } = useApiQuery<CustomProvider[]>(fetcher, [appId], { cacheKey: `app-providers-${appId}` });
 
     const resetForm = () => {
         setName('');
