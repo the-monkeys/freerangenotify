@@ -186,7 +186,7 @@ const TenantDetail: React.FC = () => {
                     <Button type="submit" disabled={inviting}>
                       {inviting ? 'Inviting...' : 'Send Invite'}
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>
+                    <Button type="button" variant="destructive" onClick={() => setInviteOpen(false)}>
                       Cancel
                     </Button>
                   </div>
