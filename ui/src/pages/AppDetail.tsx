@@ -22,6 +22,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion';
 import { toast } from 'sonner';
 import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
@@ -450,618 +451,634 @@ const AppDetail: React.FC = () => {
                                             toast.error('Error saving settings: ' + (err.response?.data?.message || err.message));
                                         }
                                     }}
-                                    className="space-y-8"
+                                    className="space-y-4"
                                 >
-                                    <div>
-                                        <h4 className="text-base font-semibold text-foreground mb-4">Core Settings</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="space-y-2">
-                                                <Label htmlFor="rateLimit">Rate Limit (requests/hour)</Label>
-                                                <Input
-                                                    id="rateLimit"
-                                                    type="number"
-                                                    value={settings.rate_limit || 0}
-                                                    onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
-                                                    placeholder="e.g. 1000"
-                                                />
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <Label htmlFor="retryAttempts">Retry Attempts</Label>
-                                                <Input
-                                                    id="retryAttempts"
-                                                    type="number"
-                                                    value={settings.retry_attempts || 0}
-                                                    onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
-                                                    placeholder="e.g. 3"
-                                                />
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <Label htmlFor="defaultTemplate">Default Template ID</Label>
-                                                <Input
-                                                    id="defaultTemplate"
-                                                    type="text"
-                                                    value={settings.default_template || ''}
-                                                    onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
-                                                    placeholder="Template UUID"
-                                                />
-                                            </div>
-
-                                            <div className="flex flex-col justify-end space-y-4">
-                                                <div className="flex items-center space-x-3">
-                                                    <Checkbox
-                                                        id="enableWebhooks"
-                                                        checked={!!settings.enable_webhooks}
-                                                        onCheckedChange={(checked) => setSettings({ ...settings, enable_webhooks: !!checked })}
-                                                    />
-                                                    <Label htmlFor="enableWebhooks" className="font-medium cursor-pointer">
-                                                        Enable Webhooks
-                                                    </Label>
-                                                </div>
-                                                <div className="flex items-center space-x-3">
-                                                    <Checkbox
-                                                        id="enableAnalytics"
-                                                        checked={!!settings.enable_analytics}
-                                                        onCheckedChange={(checked) => setSettings({ ...settings, enable_analytics: !!checked })}
-                                                    />
-                                                    <Label htmlFor="enableAnalytics" className="font-medium cursor-pointer">
-                                                        Enable Analytics
-                                                    </Label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {workflows.length > 0 && (
-                                        <div>
-                                            <h4 className="text-base font-semibold text-foreground mb-4">Workflow Hooks</h4>
-                                            <div className="space-y-2">
-                                                <Label htmlFor="onUserCreated">On User Created Workflow</Label>
-                                                <Select
-                                                    value={settings.on_user_created_trigger_id || 'none'}
-                                                    onValueChange={(val) => setSettings({ ...settings, on_user_created_trigger_id: val === 'none' ? '' : val })}
-                                                >
-                                                    <SelectTrigger id="onUserCreated">
-                                                        <SelectValue placeholder="None" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="none">None</SelectItem>
-                                                        {workflows.map((w) => (
-                                                            <SelectItem key={w.id} value={w.trigger_id}>{w.name} ({w.trigger_id})</SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
-                                                <p className="text-xs text-muted-foreground">Trigger this workflow when a new user is created (via API or dashboard)</p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {workflows.length > 0 && (
-                                        <div>
-                                            <h4 className="text-base font-semibold text-foreground mb-4">Inbound Webhooks (Phase 7)</h4>
-                                            <p className="text-sm text-muted-foreground mb-4">
-                                                Receive webhooks from external systems (Stripe, CRM, etc.) and trigger workflows. Use X-API-Key to identify the app.
-                                            </p>
-                                            <div className="space-y-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="inboundWebhookSecret">Webhook Secret (optional)</Label>
-                                                    <Input
-                                                        id="inboundWebhookSecret"
-                                                        type="password"
-                                                        value={settings.inbound_webhook_config?.secret || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            inbound_webhook_config: {
-                                                                ...settings.inbound_webhook_config,
-                                                                secret: e.target.value
-                                                            }
-                                                        })}
-                                                        placeholder="Leave empty to skip HMAC verification"
-                                                    />
-                                                    <p className="text-xs text-muted-foreground">If set, send X-Webhook-Signature: sha256=&lt;hex&gt; (HMAC-SHA256 of body)</p>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="inboundEventMapping">Event Mapping (JSON)</Label>
-                                                    <Textarea
-                                                        id="inboundEventMapping"
-                                                        className="font-mono text-sm"
-                                                        rows={4}
-                                                        value={eventMappingText}
-                                                        onChange={(e) => {
-                                                            const raw = e.target.value;
-                                                            setEventMappingText(raw);
-                                                            try {
-                                                                const parsed = JSON.parse(raw || '{}');
-                                                                if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-                                                                    setSettings({
-                                                                        ...settings,
-                                                                        inbound_webhook_config: {
-                                                                            ...settings.inbound_webhook_config,
-                                                                            event_mapping: parsed
-                                                                        }
-                                                                    });
-                                                                }
-                                                            } catch { /* allow typing */ }
-                                                        }}
-                                                        placeholder='{"payment.received": "payment_workflow", "order.shipped": "shipping_workflow"}'
-                                                    />
-                                                    <p className="text-xs text-muted-foreground">Map event names to workflow trigger_ids. POST body: {"{ \"event\": \"...\", \"user_id\": \"external_id or email\", \"payload\": {...} }"}</p>
-                                                </div>
-                                                <div className="p-3 bg-muted rounded text-xs font-mono">
-                                                    POST /v1/webhooks/inbound<br />
-                                                    Headers: X-API-Key (required), X-Webhook-Signature (if secret set)
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div>
-                                        <h4 className="text-base font-semibold text-foreground mb-4">Authentication & Security</h4>
-                                        <div className="space-y-4">
-                                            <div className="space-y-2">
-                                                <Label htmlFor="validationUrl">Validation URL (Zero-Trust API)</Label>
-                                                <Input
-                                                    id="validationUrl"
-                                                    type="url"
-                                                    value={settings.validation_url || ''}
-                                                    onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
-                                                    placeholder="https://your-bank.com/api/verify-token"
-                                                />
-                                                <p className="text-xs text-muted-foreground">
-                                                    If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
-                                                </p>
-                                            </div>
-
-                                            {settings.validation_url && (
-                                                <div className="p-4 border border-border rounded bg-muted space-y-4">
-                                                    <h5 className="font-semibold text-sm text-foreground">Validation Request Configuration</h5>
-
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="validationMethod" className="text-xs">Method</Label>
-                                                            <Select
-                                                                value={settings.validation_config?.method || 'POST'}
-                                                                onValueChange={(value) => setSettings({
-                                                                    ...settings,
-                                                                    validation_config: {
-                                                                        ...settings.validation_config,
-                                                                        method: value,
-                                                                        token_placement: settings.validation_config?.token_placement || 'body_json',
-                                                                        token_key: settings.validation_config?.token_key || 'token',
-                                                                    }
-                                                                })}
-                                                            >
-                                                                <SelectTrigger className="text-sm">
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="POST">POST</SelectItem>
-                                                                    <SelectItem value="GET">GET</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="tokenPlacement" className="text-xs">Token Placement</Label>
-                                                            <Select
-                                                                value={settings.validation_config?.token_placement || 'body_json'}
-                                                                onValueChange={(value) => setSettings({
-                                                                    ...settings,
-                                                                    validation_config: {
-                                                                        ...settings.validation_config,
-                                                                        method: settings.validation_config?.method || 'POST',
-                                                                        token_placement: value,
-                                                                        token_key: settings.validation_config?.token_key || 'token',
-                                                                    }
-                                                                })}
-                                                            >
-                                                                <SelectTrigger className="text-sm">
-                                                                    <SelectValue />
-                                                                </SelectTrigger>
-                                                                <SelectContent>
-                                                                    <SelectItem value="body_json">Body (JSON)</SelectItem>
-                                                                    <SelectItem value="body_form">Body (Form URL Encoded)</SelectItem>
-                                                                    <SelectItem value="header">Header</SelectItem>
-                                                                    <SelectItem value="query">Query Parameter</SelectItem>
-                                                                    <SelectItem value="cookie">Cookie</SelectItem>
-                                                                </SelectContent>
-                                                            </Select>
-                                                        </div>
-                                                        <div className="space-y-2 md:col-span-2">
-                                                            <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
-                                                            <Input
-                                                                id="tokenKey"
-                                                                type="text"
-                                                                className="text-sm"
-                                                                value={settings.validation_config?.token_key || 'token'}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    validation_config: {
-                                                                        ...settings.validation_config!,
-                                                                        token_key: e.target.value
-                                                                    }
-                                                                })}
-                                                                placeholder="e.g. Authorization, access_token, mat"
-                                                            />
-                                                            <p className="text-xs text-muted-foreground">The name of the header, cookie, or field that contains the token.</p>
-                                                        </div>
+                                    <Accordion type="multiple" defaultValue={["core-settings", "auth-security", "email-channel", "whatsapp-channel"]} className="w-full space-y-4">
+                                        <AccordionItem value="core-settings" className="border bg-card rounded-lg px-4">
+                                            <AccordionTrigger className="text-base font-semibold hover:no-underline">Core Settings</AccordionTrigger>
+                                            <AccordionContent className="pt-4 pb-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="rateLimit">Rate Limit (requests/hour)</Label>
+                                                        <Input
+                                                            id="rateLimit"
+                                                            type="number"
+                                                            value={settings.rate_limit || 0}
+                                                            onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
+                                                            placeholder="e.g. 1000"
+                                                        />
                                                     </div>
 
                                                     <div className="space-y-2">
-                                                        <Label htmlFor="staticHeaders" className="text-xs">Static Headers (e.g., Client-ID, User-Agent)</Label>
-                                                        <Textarea
-                                                            id="staticHeaders"
-                                                            className="text-sm font-mono"
-                                                            rows={3}
-                                                            placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
-                                                            value={staticHeadersText}
-                                                            onChange={(e) => {
-                                                                const newText = e.target.value;
-                                                                setStaticHeadersText(newText);
-
-                                                                const lines = newText.split('\n');
-                                                                const headers: Record<string, string> = {};
-                                                                lines.forEach(line => {
-                                                                    const parts = line.split(':');
-                                                                    if (parts.length >= 2) {
-                                                                        const key = parts[0].trim();
-                                                                        const val = parts.slice(1).join(':').trim();
-                                                                        if (key) headers[key] = val;
-                                                                    }
-                                                                });
-                                                                setSettings({
-                                                                    ...settings,
-                                                                    validation_config: {
-                                                                        ...settings.validation_config!,
-                                                                        static_headers: headers
-                                                                    }
-                                                                });
-                                                            }}
+                                                        <Label htmlFor="retryAttempts">Retry Attempts</Label>
+                                                        <Input
+                                                            id="retryAttempts"
+                                                            type="number"
+                                                            value={settings.retry_attempts || 0}
+                                                            onChange={(e) => setSettings({ ...settings, retry_attempts: parseInt(e.target.value) || 0 })}
+                                                            placeholder="e.g. 3"
                                                         />
-                                                        <p className="text-xs text-muted-foreground">One header per line. Format: Header-Name: Value</p>
                                                     </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
 
-                                    <div>
-                                        <h4 className="text-base font-semibold text-foreground mb-4">Email Channel Configuration</h4>
-                                        <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
-                                            <div className="space-y-2">
-                                                <Label htmlFor="emailProvider">Email Provider</Label>
-                                                <Select
-                                                    value={settings.email_config?.provider_type || 'system'}
-                                                    onValueChange={(value: string) => setSettings({
-                                                        ...settings,
-                                                        email_config: {
-                                                            ...settings.email_config,
-                                                            provider_type: value as any
-                                                        }
-                                                    })}
-                                                >
-                                                    <SelectTrigger id="emailProvider">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="system">System Default (Global SMTP/SendGrid)</SelectItem>
-                                                        <SelectItem value="smtp">Custom SMTP (Direct Gmail, Outlook, etc.)</SelectItem>
-                                                        <SelectItem value="sendgrid">Custom SendGrid API</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                                <p className="text-xs text-muted-foreground">
-                                                    Choose how emails are sent for this application.
-                                                </p>
-                                            </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="defaultTemplate">Default Template ID</Label>
+                                                        <Input
+                                                            id="defaultTemplate"
+                                                            type="text"
+                                                            value={settings.default_template || ''}
+                                                            onChange={(e) => setSettings({ ...settings, default_template: e.target.value })}
+                                                            placeholder="Template UUID"
+                                                        />
+                                                    </div>
 
-                                            <div className="space-y-2">
-                                                <Label htmlFor="dailyEmailLimit">Daily Email Limit</Label>
-                                                <Input
-                                                    id="dailyEmailLimit"
-                                                    type="number"
-                                                    value={settings.daily_email_limit || 0}
-                                                    onChange={(e) => setSettings({ ...settings, daily_email_limit: parseInt(e.target.value) || 0 })}
-                                                    placeholder="e.g. 100"
-                                                />
-                                                <p className="text-xs text-muted-foreground">
-                                                    Maximum number of emails this application can send per day. Set to 0 for unlimited.
-                                                </p>
-                                            </div>
-
-                                            {settings.email_config?.provider_type === 'smtp' && (
-                                                <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
-                                                    <h5 className="font-semibold text-sm text-foreground mb-2">SMTP Settings</h5>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpHost" className="text-xs">SMTP Host</Label>
-                                                            <Input
-                                                                id="smtpHost"
-                                                                type="text"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.host || ''}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
-                                                                    }
-                                                                })}
-                                                                placeholder="smtp.gmail.com"
+                                                    <div className="flex flex-col justify-end space-y-4">
+                                                        <div className="flex items-center space-x-3">
+                                                            <Checkbox
+                                                                id="enableWebhooks"
+                                                                checked={!!settings.enable_webhooks}
+                                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_webhooks: !!checked })}
                                                             />
+                                                            <Label htmlFor="enableWebhooks" className="font-medium cursor-pointer">
+                                                                Enable Webhooks
+                                                            </Label>
                                                         </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpPort" className="text-xs">SMTP Port</Label>
-                                                            <Input
-                                                                id="smtpPort"
-                                                                type="number"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.port || 587}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
-                                                                    }
-                                                                })}
+                                                        <div className="flex items-center space-x-3">
+                                                            <Checkbox
+                                                                id="enableAnalytics"
+                                                                checked={!!settings.enable_analytics}
+                                                                onCheckedChange={(checked) => setSettings({ ...settings, enable_analytics: !!checked })}
                                                             />
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpUsername" className="text-xs">Username</Label>
-                                                            <Input
-                                                                id="smtpUsername"
-                                                                type="text"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.username || ''}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
-                                                                    }
-                                                                })}
-                                                            />
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpPassword" className="text-xs">Password / App Password</Label>
-                                                            <Input
-                                                                id="smtpPassword"
-                                                                type="password"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.password || ''}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
-                                                                    }
-                                                                })}
-                                                            />
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpFromEmail" className="text-xs">From Email Address</Label>
-                                                            <Input
-                                                                id="smtpFromEmail"
-                                                                type="email"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.from_email || ''}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
-                                                                    }
-                                                                })}
-                                                            />
-                                                        </div>
-                                                        <div className="space-y-2">
-                                                            <Label htmlFor="smtpFromName" className="text-xs">From Display Name</Label>
-                                                            <Input
-                                                                id="smtpFromName"
-                                                                type="text"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.smtp_config?.from_name || ''}
-                                                                onChange={(e) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
-                                                                    }
-                                                                })}
-                                                            />
+                                                            <Label htmlFor="enableAnalytics" className="font-medium cursor-pointer">
+                                                                Enable Analytics
+                                                            </Label>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            )}
+                                            </AccordionContent>
+                                        </AccordionItem>
 
-                                            {settings.email_config?.provider_type === 'sendgrid' && (
-                                                <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
-                                                    <h5 className="font-semibold text-sm text-foreground mb-2">SendGrid Settings</h5>
+                                        {workflows.length > 0 && (
+                                            <AccordionItem value="workflow-hooks" className="border bg-card rounded-lg px-4">
+                                                <AccordionTrigger className="text-base font-semibold hover:no-underline">Workflow Hooks</AccordionTrigger>
+                                                <AccordionContent className="pt-4 pb-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="onUserCreated">On User Created Workflow</Label>
+                                                        <Select
+                                                            value={settings.on_user_created_trigger_id || 'none'}
+                                                            onValueChange={(val) => setSettings({ ...settings, on_user_created_trigger_id: val === 'none' ? '' : val })}
+                                                        >
+                                                            <SelectTrigger id="onUserCreated">
+                                                                <SelectValue placeholder="None" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="none">None</SelectItem>
+                                                                {workflows.map((w) => (
+                                                                    <SelectItem key={w.id} value={w.trigger_id}>{w.name} ({w.trigger_id})</SelectItem>
+                                                                ))}
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <p className="text-xs text-muted-foreground">Trigger this workflow when a new user is created (via API or dashboard)</p>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        )}
+
+                                        {workflows.length > 0 && (
+                                            <AccordionItem value="inbound-webhooks" className="border bg-card rounded-lg px-4">
+                                                <AccordionTrigger className="text-base font-semibold hover:no-underline">Inbound Webhooks (Phase 7)</AccordionTrigger>
+                                                <AccordionContent className="pt-4 pb-4">
+                                                    <p className="text-sm text-muted-foreground mb-4">
+                                                        Receive webhooks from external systems (Stripe, CRM, etc.) and trigger workflows. Use X-API-Key to identify the app.
+                                                    </p>
                                                     <div className="space-y-4">
                                                         <div className="space-y-2">
-                                                            <Label htmlFor="sendgridKey" className="text-xs">SendGrid API Key</Label>
+                                                            <Label htmlFor="inboundWebhookSecret">Webhook Secret (optional)</Label>
                                                             <Input
-                                                                id="sendgridKey"
+                                                                id="inboundWebhookSecret"
                                                                 type="password"
-                                                                className="text-sm"
-                                                                value={settings.email_config?.sendgrid_config?.api_key || ''}
+                                                                value={settings.inbound_webhook_config?.secret || ''}
                                                                 onChange={(e) => setSettings({
                                                                     ...settings,
-                                                                    email_config: {
-                                                                        ...settings.email_config!,
-                                                                        sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
+                                                                    inbound_webhook_config: {
+                                                                        ...settings.inbound_webhook_config,
+                                                                        secret: e.target.value
                                                                     }
+                                                                })}
+                                                                placeholder="Leave empty to skip HMAC verification"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">If set, send X-Webhook-Signature: sha256=&lt;hex&gt; (HMAC-SHA256 of body)</p>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="inboundEventMapping">Event Mapping (JSON)</Label>
+                                                            <Textarea
+                                                                id="inboundEventMapping"
+                                                                className="font-mono text-sm"
+                                                                rows={4}
+                                                                value={eventMappingText}
+                                                                onChange={(e) => {
+                                                                    const raw = e.target.value;
+                                                                    setEventMappingText(raw);
+                                                                    try {
+                                                                        const parsed = JSON.parse(raw || '{}');
+                                                                        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                                                                            setSettings({
+                                                                                ...settings,
+                                                                                inbound_webhook_config: {
+                                                                                    ...settings.inbound_webhook_config,
+                                                                                    event_mapping: parsed
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    } catch { /* allow typing */ }
+                                                                }}
+                                                                placeholder='{"payment.received": "payment_workflow", "order.shipped": "shipping_workflow"}'
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">Map event names to workflow trigger_ids. POST body: {"{ \"event\": \"...\", \"user_id\": \"external_id or email\", \"payload\": {...} }"}</p>
+                                                        </div>
+                                                        <div className="p-3 bg-muted rounded text-xs font-mono">
+                                                            POST /v1/webhooks/inbound<br />
+                                                            Headers: X-API-Key (required), X-Webhook-Signature (if secret set)
+                                                        </div>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        )}
+
+                                        <AccordionItem value="auth-security" className="border bg-card rounded-lg px-4">
+                                            <AccordionTrigger className="text-base font-semibold hover:no-underline">Authentication & Security</AccordionTrigger>
+                                            <AccordionContent className="pt-4 pb-4">
+                                                <div className="space-y-4">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="validationUrl">Validation URL (Zero-Trust API)</Label>
+                                                        <Input
+                                                            id="validationUrl"
+                                                            type="url"
+                                                            value={settings.validation_url || ''}
+                                                            onChange={(e) => setSettings({ ...settings, validation_url: e.target.value })}
+                                                            placeholder="https://your-bank.com/api/verify-token"
+                                                        />
+                                                        <p className="text-xs text-muted-foreground">
+                                                            If set, FreeRangeNotify will call this URL to verify user tokens before allowing SSE connections.
+                                                        </p>
+                                                    </div>
+
+                                                    {settings.validation_url && (
+                                                        <div className="p-4 border border-border rounded bg-muted space-y-4">
+                                                            <h5 className="font-semibold text-sm text-foreground">Validation Request Configuration</h5>
+
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="validationMethod" className="text-xs">Method</Label>
+                                                                    <Select
+                                                                        value={settings.validation_config?.method || 'POST'}
+                                                                        onValueChange={(value) => setSettings({
+                                                                            ...settings,
+                                                                            validation_config: {
+                                                                                ...settings.validation_config,
+                                                                                method: value,
+                                                                                token_placement: settings.validation_config?.token_placement || 'body_json',
+                                                                                token_key: settings.validation_config?.token_key || 'token',
+                                                                            }
+                                                                        })}
+                                                                    >
+                                                                        <SelectTrigger className="text-sm">
+                                                                            <SelectValue />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            <SelectItem value="POST">POST</SelectItem>
+                                                                            <SelectItem value="GET">GET</SelectItem>
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="tokenPlacement" className="text-xs">Token Placement</Label>
+                                                                    <Select
+                                                                        value={settings.validation_config?.token_placement || 'body_json'}
+                                                                        onValueChange={(value) => setSettings({
+                                                                            ...settings,
+                                                                            validation_config: {
+                                                                                ...settings.validation_config,
+                                                                                method: settings.validation_config?.method || 'POST',
+                                                                                token_placement: value,
+                                                                                token_key: settings.validation_config?.token_key || 'token',
+                                                                            }
+                                                                        })}
+                                                                    >
+                                                                        <SelectTrigger className="text-sm">
+                                                                            <SelectValue />
+                                                                        </SelectTrigger>
+                                                                        <SelectContent>
+                                                                            <SelectItem value="body_json">Body (JSON)</SelectItem>
+                                                                            <SelectItem value="body_form">Body (Form URL Encoded)</SelectItem>
+                                                                            <SelectItem value="header">Header</SelectItem>
+                                                                            <SelectItem value="query">Query Parameter</SelectItem>
+                                                                            <SelectItem value="cookie">Cookie</SelectItem>
+                                                                        </SelectContent>
+                                                                    </Select>
+                                                                </div>
+                                                                <div className="space-y-2 md:col-span-2">
+                                                                    <Label htmlFor="tokenKey" className="text-xs">Token Key Name</Label>
+                                                                    <Input
+                                                                        id="tokenKey"
+                                                                        type="text"
+                                                                        className="text-sm"
+                                                                        value={settings.validation_config?.token_key || 'token'}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            validation_config: {
+                                                                                ...settings.validation_config!,
+                                                                                token_key: e.target.value
+                                                                            }
+                                                                        })}
+                                                                        placeholder="e.g. Authorization, access_token, mat"
+                                                                    />
+                                                                    <p className="text-xs text-muted-foreground">The name of the header, cookie, or field that contains the token.</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="staticHeaders" className="text-xs">Static Headers (e.g., Client-ID, User-Agent)</Label>
+                                                                <Textarea
+                                                                    id="staticHeaders"
+                                                                    className="text-sm font-mono"
+                                                                    rows={3}
+                                                                    placeholder={'Client-ID: 12345\nUser-Agent: MyApp/1.0'}
+                                                                    value={staticHeadersText}
+                                                                    onChange={(e) => {
+                                                                        const newText = e.target.value;
+                                                                        setStaticHeadersText(newText);
+
+                                                                        const lines = newText.split('\n');
+                                                                        const headers: Record<string, string> = {};
+                                                                        lines.forEach(line => {
+                                                                            const parts = line.split(':');
+                                                                            if (parts.length >= 2) {
+                                                                                const key = parts[0].trim();
+                                                                                const val = parts.slice(1).join(':').trim();
+                                                                                if (key) headers[key] = val;
+                                                                            }
+                                                                        });
+                                                                        setSettings({
+                                                                            ...settings,
+                                                                            validation_config: {
+                                                                                ...settings.validation_config!,
+                                                                                static_headers: headers
+                                                                            }
+                                                                        });
+                                                                    }}
+                                                                />
+                                                                <p className="text-xs text-muted-foreground">One header per line. Format: Header-Name: Value</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
+
+                                        <AccordionItem value="email-channel" className="border bg-card rounded-lg px-4">
+                                            <AccordionTrigger className="text-base font-semibold hover:no-underline">Email Channel Configuration</AccordionTrigger>
+                                            <AccordionContent className="pt-4 pb-4">
+                                                <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="emailProvider">Email Provider</Label>
+                                                        <Select
+                                                            value={settings.email_config?.provider_type || 'system'}
+                                                            onValueChange={(value: string) => setSettings({
+                                                                ...settings,
+                                                                email_config: {
+                                                                    ...settings.email_config,
+                                                                    provider_type: value as any
+                                                                }
+                                                            })}
+                                                        >
+                                                            <SelectTrigger id="emailProvider">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="system">System Default (Global SMTP/SendGrid)</SelectItem>
+                                                                <SelectItem value="smtp">Custom SMTP (Direct Gmail, Outlook, etc.)</SelectItem>
+                                                                <SelectItem value="sendgrid">Custom SendGrid API</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Choose how emails are sent for this application.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="dailyEmailLimit">Daily Email Limit</Label>
+                                                        <Input
+                                                            id="dailyEmailLimit"
+                                                            type="number"
+                                                            value={settings.daily_email_limit || 0}
+                                                            onChange={(e) => setSettings({ ...settings, daily_email_limit: parseInt(e.target.value) || 0 })}
+                                                            placeholder="e.g. 100"
+                                                        />
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Maximum number of emails this application can send per day. Set to 0 for unlimited.
+                                                        </p>
+                                                    </div>
+
+                                                    {settings.email_config?.provider_type === 'smtp' && (
+                                                        <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
+                                                            <h5 className="font-semibold text-sm text-foreground mb-2">SMTP Settings</h5>
+                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpHost" className="text-xs">SMTP Host</Label>
+                                                                    <Input
+                                                                        id="smtpHost"
+                                                                        type="text"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.host || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                        placeholder="smtp.gmail.com"
+                                                                    />
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpPort" className="text-xs">SMTP Port</Label>
+                                                                    <Input
+                                                                        id="smtpPort"
+                                                                        type="number"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.port || 587}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpUsername" className="text-xs">Username</Label>
+                                                                    <Input
+                                                                        id="smtpUsername"
+                                                                        type="text"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.username || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpPassword" className="text-xs">Password / App Password</Label>
+                                                                    <Input
+                                                                        id="smtpPassword"
+                                                                        type="password"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.password || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpFromEmail" className="text-xs">From Email Address</Label>
+                                                                    <Input
+                                                                        id="smtpFromEmail"
+                                                                        type="email"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.from_email || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="smtpFromName" className="text-xs">From Display Name</Label>
+                                                                    <Input
+                                                                        id="smtpFromName"
+                                                                        type="text"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.smtp_config?.from_name || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {settings.email_config?.provider_type === 'sendgrid' && (
+                                                        <div className="mt-4 p-4 bg-card border border-border rounded space-y-4">
+                                                            <h5 className="font-semibold text-sm text-foreground mb-2">SendGrid Settings</h5>
+                                                            <div className="space-y-4">
+                                                                <div className="space-y-2">
+                                                                    <Label htmlFor="sendgridKey" className="text-xs">SendGrid API Key</Label>
+                                                                    <Input
+                                                                        id="sendgridKey"
+                                                                        type="password"
+                                                                        className="text-sm"
+                                                                        value={settings.email_config?.sendgrid_config?.api_key || ''}
+                                                                        onChange={(e) => setSettings({
+                                                                            ...settings,
+                                                                            email_config: {
+                                                                                ...settings.email_config!,
+                                                                                sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
+                                                                            }
+                                                                        })}
+                                                                    />
+                                                                </div>
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                                    <div className="space-y-2">
+                                                                        <Label htmlFor="sendgridFromEmail" className="text-xs">From Email Address</Label>
+                                                                        <Input
+                                                                            id="sendgridFromEmail"
+                                                                            type="email"
+                                                                            className="text-sm"
+                                                                            value={settings.email_config?.sendgrid_config?.from_email || ''}
+                                                                            onChange={(e) => setSettings({
+                                                                                ...settings,
+                                                                                email_config: {
+                                                                                    ...settings.email_config!,
+                                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
+                                                                                }
+                                                                            })}
+                                                                        />
+                                                                    </div>
+                                                                    <div className="space-y-2">
+                                                                        <Label htmlFor="sendgridFromName" className="text-xs">From Display Name</Label>
+                                                                        <Input
+                                                                            id="sendgridFromName"
+                                                                            type="text"
+                                                                            className="text-sm"
+                                                                            value={settings.email_config?.sendgrid_config?.from_name || ''}
+                                                                            onChange={(e) => setSettings({
+                                                                                ...settings,
+                                                                                email_config: {
+                                                                                    ...settings.email_config!,
+                                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
+                                                                                }
+                                                                            })}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
+
+                                        <AccordionItem value="whatsapp-channel" className="border bg-card rounded-lg px-4">
+                                            <AccordionTrigger className="text-base font-semibold hover:no-underline">WhatsApp Channel Configuration</AccordionTrigger>
+                                            <AccordionContent className="pt-4 pb-4">
+                                                <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
+                                                    <p className="text-sm text-muted-foreground">
+                                                        Configure per-app Twilio WhatsApp credentials. Leave empty to use system defaults.
+                                                    </p>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="waAccountSid">Twilio Account SID</Label>
+                                                            <Input
+                                                                id="waAccountSid"
+                                                                type="password"
+                                                                className="text-sm"
+                                                                value={settings.whatsapp_config?.account_sid || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    whatsapp_config: {
+                                                                        ...settings.whatsapp_config,
+                                                                        account_sid: e.target.value
+                                                                    } as any
+                                                                })}
+                                                                placeholder="ACxxxxxxxxxxxxx"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="waAuthToken">Twilio Auth Token</Label>
+                                                            <Input
+                                                                id="waAuthToken"
+                                                                type="password"
+                                                                className="text-sm"
+                                                                value={settings.whatsapp_config?.auth_token || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    whatsapp_config: {
+                                                                        ...settings.whatsapp_config,
+                                                                        auth_token: e.target.value
+                                                                    } as any
                                                                 })}
                                                             />
                                                         </div>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                            <div className="space-y-2">
-                                                                <Label htmlFor="sendgridFromEmail" className="text-xs">From Email Address</Label>
-                                                                <Input
-                                                                    id="sendgridFromEmail"
-                                                                    type="email"
-                                                                    className="text-sm"
-                                                                    value={settings.email_config?.sendgrid_config?.from_email || ''}
-                                                                    onChange={(e) => setSettings({
-                                                                        ...settings,
-                                                                        email_config: {
-                                                                            ...settings.email_config!,
-                                                                            sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
-                                                                        }
-                                                                    })}
-                                                                />
-                                                            </div>
-                                                            <div className="space-y-2">
-                                                                <Label htmlFor="sendgridFromName" className="text-xs">From Display Name</Label>
-                                                                <Input
-                                                                    id="sendgridFromName"
-                                                                    type="text"
-                                                                    className="text-sm"
-                                                                    value={settings.email_config?.sendgrid_config?.from_name || ''}
-                                                                    onChange={(e) => setSettings({
-                                                                        ...settings,
-                                                                        email_config: {
-                                                                            ...settings.email_config!,
-                                                                            sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
-                                                                        }
-                                                                    })}
-                                                                />
-                                                            </div>
-                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <Label htmlFor="waFromNumber">WhatsApp From Number</Label>
+                                                        <Input
+                                                            id="waFromNumber"
+                                                            className="text-sm"
+                                                            value={settings.whatsapp_config?.from_number || ''}
+                                                            onChange={(e) => setSettings({
+                                                                ...settings,
+                                                                whatsapp_config: {
+                                                                    ...settings.whatsapp_config,
+                                                                    from_number: e.target.value
+                                                                } as any
+                                                            })}
+                                                            placeholder="+14155238886"
+                                                        />
+                                                        <p className="text-xs text-muted-foreground">
+                                                            Your Twilio WhatsApp-enabled number. The &quot;whatsapp:&quot; prefix is added automatically.
+                                                        </p>
                                                     </div>
                                                 </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
 
-                                    <div>
-                                        <h4 className="text-base font-semibold text-foreground mb-4">WhatsApp Channel Configuration</h4>
-                                        <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
-                                            <p className="text-sm text-muted-foreground">
-                                                Configure per-app Twilio WhatsApp credentials. Leave empty to use system defaults.
-                                            </p>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="waAccountSid">Twilio Account SID</Label>
-                                                    <Input
-                                                        id="waAccountSid"
-                                                        type="password"
-                                                        className="text-sm"
-                                                        value={settings.whatsapp_config?.account_sid || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            whatsapp_config: {
-                                                                ...settings.whatsapp_config,
-                                                                account_sid: e.target.value
-                                                            } as any
-                                                        })}
-                                                        placeholder="ACxxxxxxxxxxxxx"
-                                                    />
+                                        <div className='px-2'>
+                                            <div className="text-base font-semibold hover:no-underline">Default Notification Preferences</div>
+                                            <div className="pt-4 pb-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                    <div className="flex items-center space-x-3">
+                                                        <Checkbox
+                                                            id="emailEnabled"
+                                                            checked={settings.default_preferences?.email_enabled ?? true}
+                                                            onCheckedChange={(checked: boolean) => setSettings({
+                                                                ...settings,
+                                                                default_preferences: {
+                                                                    ...(settings.default_preferences || {}),
+                                                                    email_enabled: !!checked
+                                                                }
+                                                            })}
+                                                        />
+                                                        <Label htmlFor="emailEnabled" className="cursor-pointer">Email Enabled</Label>
+                                                    </div>
+
+                                                    <div className="flex items-center space-x-3">
+                                                        <Checkbox
+                                                            id="pushEnabled"
+                                                            checked={settings.default_preferences?.push_enabled ?? true}
+                                                            onCheckedChange={(checked: boolean) => setSettings({
+                                                                ...settings,
+                                                                default_preferences: {
+                                                                    ...(settings.default_preferences || {}),
+                                                                    push_enabled: !!checked
+                                                                }
+                                                            })}
+                                                        />
+                                                        <Label htmlFor="pushEnabled" className="cursor-pointer">Push Enabled</Label>
+                                                    </div>
+
+                                                    <div className="flex items-center space-x-3">
+                                                        <Checkbox
+                                                            id="smsEnabled"
+                                                            checked={settings.default_preferences?.sms_enabled ?? true}
+                                                            onCheckedChange={(checked: boolean) => setSettings({
+                                                                ...settings,
+                                                                default_preferences: {
+                                                                    ...(settings.default_preferences || {}),
+                                                                    sms_enabled: !!checked
+                                                                }
+                                                            })}
+                                                        />
+                                                        <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
+                                                    </div>
+
+                                                    <div className="flex items-center space-x-3">
+                                                        <Checkbox
+                                                            id="whatsappEnabled"
+                                                            checked={settings.default_preferences?.whatsapp_enabled !== false}
+                                                            onCheckedChange={(checked: boolean) => setSettings({
+                                                                ...settings,
+                                                                default_preferences: {
+                                                                    ...(settings.default_preferences || {}),
+                                                                    whatsapp_enabled: !!checked
+                                                                }
+                                                            })}
+                                                        />
+                                                        <Label htmlFor="whatsappEnabled" className="cursor-pointer">WhatsApp Enabled</Label>
+                                                    </div>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <Label htmlFor="waAuthToken">Twilio Auth Token</Label>
-                                                    <Input
-                                                        id="waAuthToken"
-                                                        type="password"
-                                                        className="text-sm"
-                                                        value={settings.whatsapp_config?.auth_token || ''}
-                                                        onChange={(e) => setSettings({
-                                                            ...settings,
-                                                            whatsapp_config: {
-                                                                ...settings.whatsapp_config,
-                                                                auth_token: e.target.value
-                                                            } as any
-                                                        })}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label htmlFor="waFromNumber">WhatsApp From Number</Label>
-                                                <Input
-                                                    id="waFromNumber"
-                                                    className="text-sm"
-                                                    value={settings.whatsapp_config?.from_number || ''}
-                                                    onChange={(e) => setSettings({
-                                                        ...settings,
-                                                        whatsapp_config: {
-                                                            ...settings.whatsapp_config,
-                                                            from_number: e.target.value
-                                                        } as any
-                                                    })}
-                                                    placeholder="+14155238886"
-                                                />
-                                                <p className="text-xs text-muted-foreground">
-                                                    Your Twilio WhatsApp-enabled number. The &quot;whatsapp:&quot; prefix is added automatically.
-                                                </p>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <div>
-                                        <h4 className="text-base font-semibold text-foreground mb-4">Default Notification Preferences</h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                            <div className="flex items-center space-x-3">
-                                                <Checkbox
-                                                    id="emailEnabled"
-                                                    checked={settings.default_preferences?.email_enabled ?? true}
-                                                    onCheckedChange={(checked: boolean) => setSettings({
-                                                        ...settings,
-                                                        default_preferences: {
-                                                            ...(settings.default_preferences || {}),
-                                                            email_enabled: !!checked
-                                                        }
-                                                    })}
-                                                />
-                                                <Label htmlFor="emailEnabled" className="cursor-pointer">Email Enabled</Label>
-                                            </div>
-
-                                            <div className="flex items-center space-x-3">
-                                                <Checkbox
-                                                    id="pushEnabled"
-                                                    checked={settings.default_preferences?.push_enabled ?? true}
-                                                    onCheckedChange={(checked: boolean) => setSettings({
-                                                        ...settings,
-                                                        default_preferences: {
-                                                            ...(settings.default_preferences || {}),
-                                                            push_enabled: !!checked
-                                                        }
-                                                    })}
-                                                />
-                                                <Label htmlFor="pushEnabled" className="cursor-pointer">Push Enabled</Label>
-                                            </div>
-
-                                            <div className="flex items-center space-x-3">
-                                                <Checkbox
-                                                    id="smsEnabled"
-                                                    checked={settings.default_preferences?.sms_enabled ?? true}
-                                                    onCheckedChange={(checked: boolean) => setSettings({
-                                                        ...settings,
-                                                        default_preferences: {
-                                                            ...(settings.default_preferences || {}),
-                                                            sms_enabled: !!checked
-                                                        }
-                                                    })}
-                                                />
-                                                <Label htmlFor="smsEnabled" className="cursor-pointer">SMS Enabled</Label>
-                                            </div>
-
-                                            <div className="flex items-center space-x-3">
-                                                <Checkbox
-                                                    id="whatsappEnabled"
-                                                    checked={settings.default_preferences?.whatsapp_enabled !== false}
-                                                    onCheckedChange={(checked: boolean) => setSettings({
-                                                        ...settings,
-                                                        default_preferences: {
-                                                            ...(settings.default_preferences || {}),
-                                                            whatsapp_enabled: !!checked
-                                                        }
-                                                    })}
-                                                />
-                                                <Label htmlFor="whatsappEnabled" className="cursor-pointer">WhatsApp Enabled</Label>
-                                            </div>
-                                        </div>
-                                        <div className="flex justify-end pt-4">
-                                            <Button type="submit">Save Configuration</Button>
-                                        </div>
+                                    </Accordion>
+                                    <div className="flex justify-end pt-4">
+                                        <Button type="submit">Save Configuration</Button>
                                     </div>
                                 </form>
                             </CardContent>
