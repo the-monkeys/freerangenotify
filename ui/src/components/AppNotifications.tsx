@@ -615,7 +615,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             <CardContent>
                 {showSendForm && (
                     <Tabs defaultValue="quick" className="mb-8">
-                        <TabsList>
+                        <TabsList >
                             <TabsTrigger value="quick">Quick Send</TabsTrigger>
                             <TabsTrigger value="advanced">Bulk Send</TabsTrigger>
                             <TabsTrigger value="broadcast">Broadcast</TabsTrigger>
