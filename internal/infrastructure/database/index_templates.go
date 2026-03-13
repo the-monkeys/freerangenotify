@@ -654,22 +654,22 @@ func (it *IndexTemplates) GetWorkflowSchedulesTemplate() map[string]interface{} 
 		},
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
-				"id": map[string]interface{}{"type": "keyword"},
-				"app_id": map[string]interface{}{"type": "keyword"},
+				"id":             map[string]interface{}{"type": "keyword"},
+				"app_id":         map[string]interface{}{"type": "keyword"},
 				"environment_id": map[string]interface{}{"type": "keyword"},
 				"name": map[string]interface{}{
-					"type": "text",
+					"type":   "text",
 					"fields": map[string]interface{}{"keyword": map[string]interface{}{"type": "keyword"}},
 				},
 				"workflow_trigger_id": map[string]interface{}{"type": "keyword"},
-				"cron": map[string]interface{}{"type": "keyword"},
-				"target_type": map[string]interface{}{"type": "keyword"},
-				"topic_id": map[string]interface{}{"type": "keyword"},
-				"payload": map[string]interface{}{"type": "object", "enabled": false},
-				"status": map[string]interface{}{"type": "keyword"},
-				"last_run_at": map[string]interface{}{"type": "date"},
-				"created_at": map[string]interface{}{"type": "date"},
-				"updated_at": map[string]interface{}{"type": "date"},
+				"cron":                map[string]interface{}{"type": "keyword"},
+				"target_type":         map[string]interface{}{"type": "keyword"},
+				"topic_id":            map[string]interface{}{"type": "keyword"},
+				"payload":             map[string]interface{}{"type": "object", "enabled": false},
+				"status":              map[string]interface{}{"type": "keyword"},
+				"last_run_at":         map[string]interface{}{"type": "date"},
+				"created_at":          map[string]interface{}{"type": "date"},
+				"updated_at":          map[string]interface{}{"type": "date"},
 			},
 		},
 	}
@@ -966,9 +966,9 @@ func (it *IndexTemplates) GetTenantsTemplate() map[string]interface{} {
 		},
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
-				"id": map[string]interface{}{"type": "keyword"},
-				"name": map[string]interface{}{"type": "keyword"},
-				"slug": map[string]interface{}{"type": "keyword"},
+				"id":         map[string]interface{}{"type": "keyword"},
+				"name":       map[string]interface{}{"type": "keyword"},
+				"slug":       map[string]interface{}{"type": "keyword"},
 				"created_by": map[string]interface{}{"type": "keyword"},
 				"created_at": map[string]interface{}{"type": "date"},
 				"updated_at": map[string]interface{}{"type": "date"},
@@ -986,11 +986,11 @@ func (it *IndexTemplates) GetTenantMembersTemplate() map[string]interface{} {
 		},
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
-				"id": map[string]interface{}{"type": "keyword"},
-				"tenant_id": map[string]interface{}{"type": "keyword"},
-				"user_id": map[string]interface{}{"type": "keyword"},
+				"id":         map[string]interface{}{"type": "keyword"},
+				"tenant_id":  map[string]interface{}{"type": "keyword"},
+				"user_id":    map[string]interface{}{"type": "keyword"},
 				"user_email": map[string]interface{}{"type": "keyword"},
-				"role": map[string]interface{}{"type": "keyword"},
+				"role":       map[string]interface{}{"type": "keyword"},
 				"invited_by": map[string]interface{}{"type": "keyword"},
 				"created_at": map[string]interface{}{"type": "date"},
 				"updated_at": map[string]interface{}{"type": "date"},
@@ -1016,6 +1016,51 @@ func (it *IndexTemplates) GetDashboardNotificationsTemplate() map[string]interfa
 				"data":       map[string]interface{}{"type": "object", "enabled": false},
 				"read_at":    map[string]interface{}{"type": "date"},
 				"created_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
+// GetSubscriptionsTemplate returns the Elasticsearch mapping for hosted subscriptions.
+func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"tenant_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"app_id": map[string]interface{}{
+					"type": "keyword",
+				},
+				"plan": map[string]interface{}{
+					"type": "keyword",
+				},
+				"status": map[string]interface{}{
+					"type": "keyword",
+				},
+				"current_period_start": map[string]interface{}{
+					"type": "date",
+				},
+				"current_period_end": map[string]interface{}{
+					"type": "date",
+				},
+				"metadata": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"created_at": map[string]interface{}{
+					"type": "date",
+				},
+				"updated_at": map[string]interface{}{
+					"type": "date",
+				},
 			},
 		},
 	}

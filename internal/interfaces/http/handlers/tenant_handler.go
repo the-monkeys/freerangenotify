@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -204,6 +206,78 @@ func (h *TenantHandler) InviteMember(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"success": true,
 		"data":    member,
+	})
+}
+
+// GetBilling handles GET /v1/tenants/:id/billing
+func (h *TenantHandler) GetBilling(c *fiber.Ctx) error {
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
+	tenantID := c.Params("id")
+	if tenantID == "" {
+		return errors.BadRequest("tenant id is required")
+	}
+
+	hasAccess, _, err := h.service.HasAccess(c.Context(), tenantID, userID)
+	if err != nil || !hasAccess {
+		return errors.Forbidden("You do not have access to this tenant")
+	}
+
+	t, err := h.service.GetByID(c.Context(), tenantID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"billing_tier":   t.BillingTier,
+			"valid_until":    t.ValidUntil,
+			"max_apps":       t.MaxApps,
+			"max_throughput": t.MaxThroughput,
+		},
+	})
+}
+
+// Checkout handles POST /v1/tenants/:id/billing/checkout
+func (h *TenantHandler) Checkout(c *fiber.Ctx) error {
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
+	tenantID := c.Params("id")
+	if tenantID == "" {
+		return errors.BadRequest("tenant id is required")
+	}
+
+	hasAccess, role, err := h.service.HasAccess(c.Context(), tenantID, userID)
+	if err != nil || !hasAccess {
+		return errors.Forbidden("You do not have access to this tenant")
+	}
+	if role != "owner" && role != "admin" {
+		return errors.Forbidden("Only owners and admins can manage billing")
+	}
+
+	// This is the Mock Payment Provider logic phase
+	// Real implementation will call h.paymentProvider.CreateCheckoutSession
+
+	// For now, securely upgrade the tenant (mock payment success)
+	err = h.service.UpgradeBilling(c.Context(), tenantID, "pro", time.Now().Add(365*24*time.Hour), 100, 500)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "checkout session created (mock)",
+		"data": fiber.Map{
+			"checkout_url": "mock_success", // Real implementation: checkoutSession.URL
+			"tier":         "pro",
+		},
 	})
 }
 

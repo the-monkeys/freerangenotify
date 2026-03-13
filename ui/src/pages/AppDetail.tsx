@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { applicationsAPI, providersAPI, workflowsAPI } from '../services/api';
-import type { Application, ApplicationSettings, Workflow as WorkflowType } from '../types';
+import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI } from '../services/api';
+import type { Application, ApplicationSettings, Workflow as WorkflowType, Tenant } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
@@ -77,6 +77,7 @@ const AppDetail: React.FC = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const [app, setApp] = useState<Application | null>(null);
     const [loading, setLoading] = useState(true);
+    const [tenants, setTenants] = useState<Tenant[]>([]);
 
     const tabParam = searchParams.get('tab') as TabId | null;
     const activeTab: TabId = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
@@ -89,6 +90,7 @@ const AppDetail: React.FC = () => {
     const [appName, setAppName] = useState('');
     const [description, setDescription] = useState('');
     const [webhookUrl, setWebhookUrl] = useState('');
+    const [tenantId, setTenantId] = useState('');
     const [settings, setSettings] = useState<ApplicationSettings>({});
     const [webhooks, setWebhooks] = useState<Record<string, string>>({});
 
@@ -135,6 +137,7 @@ const AppDetail: React.FC = () => {
                 setAppName(appData.app_name);
                 setDescription(appData.description || '');
                 setWebhookUrl(appData.webhook_url || '');
+                setTenantId(appData.tenant_id || '');
                 setSettings(appData.settings || {});
                 fetchWebhookEndpoints();
                 localStorage.setItem('last_api_key', appData.api_key);
@@ -143,6 +146,11 @@ const AppDetail: React.FC = () => {
                     .map(([k, v]) => `${k}: ${v}`).join('\n');
                 setStaticHeadersText(text);
                 setEventMappingText(JSON.stringify(appData.settings?.inbound_webhook_config?.event_mapping || {}, null, 2));
+
+                const tData = await tenantsAPI.list();
+                if (!ignore) {
+                    setTenants(Array.isArray(tData) ? tData : []);
+                }
             } catch (error) {
                 console.error('Failed to fetch app details:', error);
             } finally {
@@ -191,6 +199,7 @@ const AppDetail: React.FC = () => {
                 app_name: appName,
                 description: description,
                 webhook_url: webhookUrl,
+                tenant_id: tenantId || undefined,
             });
             setApp(updated);
             toast.success('Application updated successfully!');
@@ -353,6 +362,24 @@ const AppDetail: React.FC = () => {
                                             value={description}
                                             onChange={(e) => setDescription(e.target.value)}
                                         />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="organization">Organization</Label>
+                                        <Select
+                                            value={tenantId}
+                                            onValueChange={(val) => setTenantId(val === 'none' ? '' : val)}
+                                        >
+                                            <SelectTrigger id="organization">
+                                                <SelectValue placeholder="Personal Workspace (No Organization)" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="none">Personal Workspace (None)</SelectItem>
+                                                {tenants.map(t => (
+                                                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <p className="text-xs text-muted-foreground">Moving an app to an organization shares it with all organization members.</p>
                                     </div>
 
                                     <div className="flex justify-end mt-8">
