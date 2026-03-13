@@ -9,8 +9,9 @@ import (
 
 // Config holds CLI configuration
 type Config struct {
-	APIURL string `json:"api_url"`
-	APIKey string `json:"api_key"`
+	APIURL     string `json:"api_url"`
+	APIKey     string `json:"api_key"`
+	AdminToken string `json:"admin_token"`
 }
 
 const configDir = ".frn"
@@ -24,6 +25,9 @@ func LoadConfig() *Config {
 	}
 	if v := os.Getenv("FREERANGE_API_KEY"); v != "" {
 		cfg.APIKey = v
+	}
+	if v := os.Getenv("FREERANGE_ADMIN_TOKEN"); v != "" {
+		cfg.AdminToken = v
 	}
 
 	home, err := os.UserHomeDir()
@@ -44,6 +48,9 @@ func LoadConfig() *Config {
 	}
 	if cfg.APIKey == "" && fileCfg.APIKey != "" {
 		cfg.APIKey = fileCfg.APIKey
+	}
+	if cfg.AdminToken == "" && fileCfg.AdminToken != "" {
+		cfg.AdminToken = fileCfg.AdminToken
 	}
 	return cfg
 }

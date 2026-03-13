@@ -15,14 +15,13 @@ import {
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';

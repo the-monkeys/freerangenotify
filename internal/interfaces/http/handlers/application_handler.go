@@ -225,6 +225,9 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	if req.Description != "" {
 		app.Description = req.Description
 	}
+	if req.TenantID != nil {
+		app.TenantID = *req.TenantID
+	}
 	if req.WebhookURL != "" {
 		app.WebhookURL = req.WebhookURL
 	}

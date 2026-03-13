@@ -20,6 +20,31 @@ type Config struct {
 	Security   SecurityConfig   `mapstructure:"security"`
 	OIDC       OIDCConfig       `mapstructure:"oidc"`
 	Features   FeaturesConfig   `mapstructure:"features"`
+	Licensing  LicensingConfig  `mapstructure:"licensing"`
+}
+
+// LicensingConfig contains licensing controls for hosted and self-hosted deployments.
+type LicensingConfig struct {
+	Enabled            bool                    `mapstructure:"enabled"`
+	DeploymentMode     string                  `mapstructure:"deployment_mode"` // hosted | self_hosted
+	FailMode           string                  `mapstructure:"fail_mode"`       // fail_closed | fail_open
+	CacheTTLSeconds    int                     `mapstructure:"cache_ttl_seconds"`
+	GraceWindowSeconds int                     `mapstructure:"grace_window_seconds"`
+	Hosted             HostedLicensingConfig   `mapstructure:"hosted"`
+	SelfHosted         SelfHostedLicenseConfig `mapstructure:"self_hosted"`
+}
+
+// HostedLicensingConfig contains hosted subscription source settings.
+type HostedLicensingConfig struct {
+	Source string `mapstructure:"source"` // internal_es | webhook_sync
+}
+
+// SelfHostedLicenseConfig contains on-prem license settings.
+type SelfHostedLicenseConfig struct {
+	LicenseKey            string `mapstructure:"license_key"`
+	PublicKeyPEM          string `mapstructure:"public_key_pem"`
+	LicenseServerURL      string `mapstructure:"license_server_url"`
+	VerifyIntervalSeconds int    `mapstructure:"verify_interval_seconds"`
 }
 
 // FeaturesConfig contains feature flags for Phase 1 features.
@@ -106,7 +131,7 @@ type ProvidersConfig struct {
 	Resend   ResendProviderConfig   `mapstructure:"resend"`
 	Postmark PostmarkProviderConfig `mapstructure:"postmark"`
 	Mailgun  MailgunProviderConfig  `mapstructure:"mailgun"`
-	SES      SESProviderConfig     `mapstructure:"ses"`
+	SES      SESProviderConfig      `mapstructure:"ses"`
 	Vonage   VonageProviderConfig   `mapstructure:"vonage"`
 	Teams    TeamsProviderConfig    `mapstructure:"teams"`
 }
@@ -344,6 +369,17 @@ func Load() (*Config, error) {
 	viper.SetDefault("oidc.redirect_url", "http://localhost:8080/v1/auth/sso/callback")
 	viper.SetDefault("oidc.frontend_url", "http://localhost:3000")
 
+	viper.SetDefault("licensing.enabled", false)
+	viper.SetDefault("licensing.deployment_mode", "hosted")
+	viper.SetDefault("licensing.fail_mode", "fail_closed")
+	viper.SetDefault("licensing.cache_ttl_seconds", 300)
+	viper.SetDefault("licensing.grace_window_seconds", 900)
+	viper.SetDefault("licensing.hosted.source", "internal_es")
+	viper.SetDefault("licensing.self_hosted.license_key", "")
+	viper.SetDefault("licensing.self_hosted.public_key_pem", "")
+	viper.SetDefault("licensing.self_hosted.license_server_url", "")
+	viper.SetDefault("licensing.self_hosted.verify_interval_seconds", 300)
+
 	// Configure viper
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -388,6 +424,22 @@ func (c *Config) Validate() error {
 
 	if c.Redis.Host == "" {
 		return fmt.Errorf("redis.host is required")
+	}
+
+	if c.Licensing.DeploymentMode != "" && c.Licensing.DeploymentMode != "hosted" && c.Licensing.DeploymentMode != "self_hosted" {
+		return fmt.Errorf("licensing.deployment_mode must be one of: hosted, self_hosted")
+	}
+
+	if c.Licensing.FailMode != "" && c.Licensing.FailMode != "fail_closed" && c.Licensing.FailMode != "fail_open" {
+		return fmt.Errorf("licensing.fail_mode must be one of: fail_closed, fail_open")
+	}
+
+	if c.Licensing.CacheTTLSeconds < 0 {
+		return fmt.Errorf("licensing.cache_ttl_seconds must be >= 0")
+	}
+
+	if c.Licensing.GraceWindowSeconds < 0 {
+		return fmt.Errorf("licensing.grace_window_seconds must be >= 0")
 	}
 
 	return nil
