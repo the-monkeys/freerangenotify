@@ -8,7 +8,7 @@ import AuthLayout from './layouts/AuthLayout';
 import DashboardLayout from './layouts/DashboardLayout';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from './components/ui/sonner';
-import './index.css';
+import './index.css'
 
 // Lazy-loaded pages
 const LandingPage = lazy(() => import('./pages/LandingPage'));

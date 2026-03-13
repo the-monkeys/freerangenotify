@@ -34,12 +34,10 @@ import {
 import { MoreHorizontal, Plus, Workflow as WorkflowIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { timeAgo } from '../../lib/utils';
+import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 
-const statusBadgeVariant: Record<string, string> = {
-    active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
-    draft: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-    inactive: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-};
+
 
 interface WorkflowsListProps {
     apiKey?: string;
@@ -67,7 +65,7 @@ const WorkflowsList: React.FC<WorkflowsListProps> = ({ apiKey: propApiKey, embed
     const { data, loading, refetch } = useApiQuery(
         () => workflowsAPI.list(apiKey!, 100, 0),
         [apiKey],
-        { 
+        {
             enabled: !!apiKey,
             cacheKey: `workflows-list-${apiKey}`
         }
@@ -301,22 +299,13 @@ const WorkflowsList: React.FC<WorkflowsListProps> = ({ apiKey: propApiKey, embed
                                                 </code>
                                             </TableCell>
                                             <TableCell onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        role="switch"
-                                                        aria-checked={w.status === 'active'}
-                                                        onClick={() => handleToggleStatus(w)}
-                                                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${w.status === 'active' ? 'bg-primary' : 'bg-input'}`}
-                                                    >
-                                                        <span
-                                                            className={`pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform ${w.status === 'active' ? 'translate-x-4' : 'translate-x-0'}`}
-                                                        />
-                                                    </button>
-                                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider ${statusBadgeVariant[w.status] || ''}`}>
-                                                        {w.status}
-                                                    </span>
+                                                <div className='flex items-center gap-2'>
+
+
+                                                    <Switch checked={w.status === 'active'} onCheckedChange={() => handleToggleStatus(w)} > </Switch>
+                                                    <Badge variant={"outline"} > {w.status}</Badge>
                                                 </div>
+
                                             </TableCell>
                                             <TableCell className="hidden md:table-cell">{w.steps?.length ?? 0}</TableCell>
                                             <TableCell className="hidden md:table-cell">v{w.version}</TableCell>
