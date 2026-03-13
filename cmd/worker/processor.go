@@ -15,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -39,18 +40,19 @@ type ProcessorConfig struct {
 
 // NotificationProcessor processes notifications from the queue
 type NotificationProcessor struct {
-	queue           queue.Queue
-	notifRepo       notification.Repository
-	userRepo        user.Repository
-	appRepo         application.Repository
-	templateRepo    template.Repository
-	providerManager *providers.Manager
-	redisClient     *redis.Client
-	logger          *zap.Logger
-	config          ProcessorConfig
-	metrics         *metrics.NotificationMetrics
-	digestManager   *orchestrator.DigestManager // Phase 1: optional digest support
-	throttle        *limiter.SubscriberThrottle // Phase 2: optional per-subscriber throttle
+	queue            queue.Queue
+	notifRepo        notification.Repository
+	userRepo         user.Repository
+	appRepo          application.Repository
+	templateRepo     template.Repository
+	licensingChecker license.Checker
+	providerManager  *providers.Manager
+	redisClient      *redis.Client
+	logger           *zap.Logger
+	config           ProcessorConfig
+	metrics          *metrics.NotificationMetrics
+	digestManager    *orchestrator.DigestManager // Phase 1: optional digest support
+	throttle         *limiter.SubscriberThrottle // Phase 2: optional per-subscriber throttle
 
 	wg       sync.WaitGroup
 	stopChan chan struct{}
@@ -74,6 +76,7 @@ func NewNotificationProcessor(
 	userRepo user.Repository,
 	appRepo application.Repository,
 	templateRepo template.Repository,
+	licensingChecker license.Checker,
 	providerManager *providers.Manager,
 	redisClient *redis.Client,
 	logger *zap.Logger,
@@ -81,17 +84,18 @@ func NewNotificationProcessor(
 	metrics *metrics.NotificationMetrics,
 ) *NotificationProcessor {
 	return &NotificationProcessor{
-		queue:           q,
-		notifRepo:       notifRepo,
-		userRepo:        userRepo,
-		appRepo:         appRepo,
-		templateRepo:    templateRepo,
-		providerManager: providerManager,
-		redisClient:     redisClient,
-		logger:          logger,
-		config:          config,
-		metrics:         metrics,
-		stopChan:        make(chan struct{}),
+		queue:            q,
+		notifRepo:        notifRepo,
+		userRepo:         userRepo,
+		appRepo:          appRepo,
+		templateRepo:     templateRepo,
+		licensingChecker: licensingChecker,
+		providerManager:  providerManager,
+		redisClient:      redisClient,
+		logger:           logger,
+		config:           config,
+		metrics:          metrics,
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -534,8 +538,46 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
-	// TODO: Route to appropriate provider based on channel
-	// For now, simulate sending
+	if p.licensingChecker != nil && p.licensingChecker.Enabled() {
+		appForCheck, appErr := p.appRepo.GetByID(ctx, notif.AppID)
+		if appErr != nil || appForCheck == nil {
+			logger.Error("Failed to load app for licensing check",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("app_id", notif.AppID),
+				zap.Error(appErr))
+			p.handleFailure(ctx, notif, item, "license check failed: app not found")
+			return
+		}
+
+		decision, checkErr := p.licensingChecker.Check(ctx, appForCheck)
+		if checkErr != nil {
+			logger.Error("Licensing check errored",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("app_id", notif.AppID),
+				zap.Error(checkErr))
+			p.handleFailure(ctx, notif, item, "license check failed")
+			return
+		}
+
+		if !decision.Allowed {
+			errorReason := decision.Reason
+			if errorReason == "" {
+				errorReason = "license_required"
+			}
+
+			logger.Warn("Notification blocked by licensing",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("app_id", notif.AppID),
+				zap.String("mode", string(decision.Mode)),
+				zap.String("state", string(decision.State)),
+				zap.String("reason", errorReason),
+				zap.String("source", decision.Source))
+
+			p.handleLicenseBlocked(ctx, notif, errorReason)
+			return
+		}
+	}
+
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
 		logger.Error("Failed to send notification", zap.Error(err))
@@ -576,6 +618,29 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	// Handle Recurrence
 	if notif.Recurrence != nil {
 		p.handleRecurrence(ctx, notif)
+	}
+}
+
+func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif *notification.Notification, reason string) {
+	notif.Status = notification.StatusFailed
+	notif.ErrorMessage = reason
+	now := time.Now()
+	notif.FailedAt = &now
+
+	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed); err != nil {
+		p.logger.Error("Failed to update status to failed for license block",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	if err := p.notifRepo.Update(ctx, notif); err != nil {
+		p.logger.Error("Failed to persist license-blocked notification state",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "failed")
+
+	if p.metrics != nil {
+		p.metrics.RecordDeliveryFailure(string(notif.Channel), "licensing", reason)
 	}
 }
 

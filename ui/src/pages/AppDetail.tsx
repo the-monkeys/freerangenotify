@@ -380,6 +380,25 @@ const AppDetail: React.FC = () => {
                                             />
                                         </div>
 
+                                        <div className="space-y-2">
+                                            <Label htmlFor="organization">Organization</Label>
+                                            <Select
+                                                value={tenantId || 'none'}
+                                                onValueChange={(val) => setTenantId(val === 'none' ? '' : val)}
+                                            >
+                                                <SelectTrigger id="organization">
+                                                    <SelectValue placeholder="Personal Workspace (No Organization)" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">Personal Workspace (None)</SelectItem>
+                                                    {tenants.map((t) => (
+                                                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">Moving an app to an organization shares it with all organization members.</p>
+                                        </div>
+
                                         <div className="flex justify-end mt-8">
                                             <Button type="submit">Save Overview</Button>
                                         </div>

@@ -8,12 +8,17 @@ import (
 // Tenant represents an organization at the platform level.
 // Applications can belong to a tenant; tenant members get access to all apps in the tenant.
 type Tenant struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Slug      string    `json:"slug"`
-	CreatedBy string    `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Slug          string    `json:"slug"`
+	CreatedBy     string    `json:"created_by"`
+	BillingTier   string    `json:"billing_tier"`
+	LicenseKey    string    `json:"license_key"`
+	ValidUntil    time.Time `json:"valid_until"`
+	MaxApps       int       `json:"max_apps"`
+	MaxThroughput int       `json:"max_throughput"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // TenantMember links a user to a tenant with a role.
@@ -82,4 +87,5 @@ type Service interface {
 	UpdateMemberRole(ctx context.Context, tenantID, memberID string, req UpdateMemberRoleRequest, userID string) (*TenantMember, error)
 	RemoveMember(ctx context.Context, tenantID, memberID string, userID string) error
 	HasAccess(ctx context.Context, tenantID, userID string) (bool, string, error) // hasAccess, role, error
+	UpgradeBilling(ctx context.Context, id string, tier string, validUntil time.Time, maxApps int, maxThroughput int) error
 }

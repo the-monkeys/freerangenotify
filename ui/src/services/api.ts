@@ -1061,6 +1061,16 @@ export const tenantsAPI = {
   removeMember: async (id: string, memberId: string) => {
     await api.delete(`/tenants/${id}/members/${memberId}`);
   },
+
+  getBilling: async (id: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/tenants/${id}/billing`);
+    return data.data;
+  },
+
+  checkoutBilling: async (id: string, tier: string = 'pro') => {
+    const { data } = await api.post<ApiResponse<any>>(`/tenants/${id}/billing/checkout`, { tier });
+    return data;
+  }
 };
 
 // ============= Custom Provider APIs =============

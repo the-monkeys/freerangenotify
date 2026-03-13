@@ -50,10 +50,10 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		"refresh_tokens":        im.templates.GetRefreshTokensTemplate,
 
 		// Phase 1 additions (additive only — existing indices untouched)
-		"workflows":            im.templates.GetWorkflowsTemplate,
-		"workflow_executions":  im.templates.GetWorkflowExecutionsTemplate,
-		"workflow_schedules":   im.templates.GetWorkflowSchedulesTemplate,
-		"digest_rules":         im.templates.GetDigestRulesTemplate,
+		"workflows":           im.templates.GetWorkflowsTemplate,
+		"workflow_executions": im.templates.GetWorkflowExecutionsTemplate,
+		"workflow_schedules":  im.templates.GetWorkflowSchedulesTemplate,
+		"digest_rules":        im.templates.GetDigestRulesTemplate,
 
 		// Phase 2 additions
 		"topics":              im.templates.GetTopicsTemplate,
@@ -68,11 +68,12 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		"app_resource_links": im.templates.GetResourceLinksTemplate,
 
 		// Phase C1: Tenant/organization support
-		"tenants":         im.templates.GetTenantsTemplate,
+		"tenants":        im.templates.GetTenantsTemplate,
 		"tenant_members": im.templates.GetTenantMembersTemplate,
 
 		// Platform dashboard notifications (in-app + SSE for org invites, etc.)
 		"dashboard_notifications": im.templates.GetDashboardNotificationsTemplate,
+		"subscriptions":           im.templates.GetSubscriptionsTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

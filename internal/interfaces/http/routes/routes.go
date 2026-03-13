@@ -74,6 +74,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		authOpts = append(authOpts, middleware.WithAuthService(c.AuthService))
 	}
 	apiAuth := middleware.APIKeyAuth(c.ApplicationService, c.Logger, authOpts...)
+	licenseCheck := middleware.LicenseCheck(c.LicensingChecker, c.Logger)
 
 	// DashboardRBAC restricts viewers to read-only when they access API-key
 	// routes through the dashboard (JWT + X-API-Key). Pure SDK calls (API key
@@ -115,13 +116,16 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// SSE token endpoint (secure — generates short-lived tokens for SSE connections)
 	v1.Post("/sse/tokens", apiAuth, c.SSEHandler.CreateToken)
 
+	// License status endpoint (API key protected)
+	v1.Get("/license/status", apiAuth, c.LicensingHandler.GetStatus)
+
 	// Presence management
 	presence := v1.Group("/presence")
 	presence.Use(apiAuth)
 	presence.Post("/check-in", c.PresenceHandler.CheckIn)
 
 	// Quick-send (simplified notification endpoint)
-	v1.Post("/quick-send", apiAuth, c.QuickSendHandler.Send)
+	v1.Post("/quick-send", apiAuth, licenseCheck, c.QuickSendHandler.Send)
 
 	// Media upload (for WhatsApp file attachments)
 	v1.Post("/media/upload", apiAuth, c.MediaHandler.Upload)
@@ -129,10 +133,10 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Notification routes
 	notifications := v1.Group("/notifications")
 	applyAuth(notifications)
-	notifications.Post("/", c.NotificationHandler.Send)
-	notifications.Post("/bulk", c.NotificationHandler.SendBulk)
-	notifications.Post("/broadcast", c.NotificationHandler.Broadcast)
-	notifications.Post("/batch", c.NotificationHandler.SendBatch)
+	notifications.Post("/", licenseCheck, c.NotificationHandler.Send)
+	notifications.Post("/bulk", licenseCheck, c.NotificationHandler.SendBulk)
+	notifications.Post("/broadcast", licenseCheck, c.NotificationHandler.Broadcast)
+	notifications.Post("/batch", licenseCheck, c.NotificationHandler.SendBatch)
 	notifications.Get("/", c.NotificationHandler.List)
 	notifications.Get("/unread/count", c.NotificationHandler.GetUnreadCount)
 	notifications.Get("/unread", c.NotificationHandler.ListUnread)
@@ -180,14 +184,14 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		workflows.Get("/executions", c.WorkflowHandler.ListExecutions)
 		workflows.Get("/executions/:id", c.WorkflowHandler.GetExecution)
 		workflows.Post("/executions/:id/cancel", c.WorkflowHandler.CancelExecution)
-		workflows.Post("/trigger", c.WorkflowHandler.Trigger)
-		workflows.Post("/trigger-by-topic", c.WorkflowHandler.TriggerByTopic)
+		workflows.Post("/trigger", licenseCheck, c.WorkflowHandler.Trigger)
+		workflows.Post("/trigger-by-topic", licenseCheck, c.WorkflowHandler.TriggerByTopic)
 		// Phase 6: Schedules (before /:id to avoid collision)
 		if c.ScheduleHandler != nil {
-			workflows.Post("/schedules", c.ScheduleHandler.Create)
+			workflows.Post("/schedules", licenseCheck, c.ScheduleHandler.Create)
 			workflows.Get("/schedules", c.ScheduleHandler.List)
 			workflows.Get("/schedules/:id", c.ScheduleHandler.Get)
-			workflows.Put("/schedules/:id", c.ScheduleHandler.Update)
+			workflows.Put("/schedules/:id", licenseCheck, c.ScheduleHandler.Update)
 			workflows.Delete("/schedules/:id", c.ScheduleHandler.Delete)
 		}
 		workflows.Get("/:id", c.WorkflowHandler.Get)
@@ -199,7 +203,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	if c.InboundWebhookHandler != nil {
 		webhooks := v1.Group("/webhooks")
 		applyAuth(webhooks)
-		webhooks.Post("/inbound", c.InboundWebhookHandler.Receive)
+		webhooks.Post("/inbound", licenseCheck, c.InboundWebhookHandler.Receive)
 	}
 
 	// ── Phase 1: Digest rules routes (feature-gated) ──
@@ -256,6 +260,8 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		tenants.Post("/:id/members", c.TenantHandler.InviteMember)
 		tenants.Put("/:id/members/:memberId", c.TenantHandler.UpdateMemberRole)
 		tenants.Delete("/:id/members/:memberId", c.TenantHandler.RemoveMember)
+		tenants.Get("/:id/billing", c.TenantHandler.GetBilling)
+		tenants.Post("/:id/billing/checkout", c.TenantHandler.Checkout)
 	}
 
 	// Application management routes (JWT protected for admin dashboard)
@@ -303,6 +309,17 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Provider health (JWT-protected)
 	adminAuth.Get("/providers/health", c.AdminHandler.GetProviderHealth)
+
+	// Licensing management
+	licensing := adminAuth.Group("/licensing")
+	licensing.Post("/subscriptions", c.LicensingHandler.CreateSubscription)
+	licensing.Put("/subscriptions/:id", c.LicensingHandler.UpdateSubscription)
+	licensing.Get("/subscriptions/:id", c.LicensingHandler.GetSubscription)
+	licensing.Get("/subscriptions", c.LicensingHandler.ListSubscriptions)
+	licensing.Post("/request", c.LicensingHandler.RequestLicense)
+	licensing.Post("/activate", c.LicensingHandler.ActivateLicense)
+	licensing.Get("/", c.LicensingHandler.GetLicense)
+	licensing.Post("/validate", c.LicensingHandler.ValidateLicense)
 
 	// Webhook playground
 	adminAuth.Post("/playground/webhook", c.PlaygroundHandler.CreatePlayground)

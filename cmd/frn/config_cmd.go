@@ -9,7 +9,7 @@ import (
 )
 
 func newConfigCmd() *cobra.Command {
-	var setAPIURL, setAPIKey string
+	var setAPIURL, setAPIKey, setAdminToken string
 	var show bool
 
 	cmd := &cobra.Command{
@@ -23,6 +23,7 @@ func newConfigCmd() *cobra.Command {
 				fmt.Fprintf(os.Stdout, "Config file: %s\n", ConfigPath())
 				fmt.Fprintf(os.Stdout, "API URL: %s\n", maskEmpty(cfg.APIURL, "(not set)"))
 				fmt.Fprintf(os.Stdout, "API Key: %s\n", maskSecret(cfg.APIKey))
+				fmt.Fprintf(os.Stdout, "Admin Token: %s\n", maskSecret(cfg.AdminToken))
 				return nil
 			}
 
@@ -35,11 +36,16 @@ func newConfigCmd() *cobra.Command {
 				cfg.APIKey = setAPIKey
 				modified = true
 			}
+			if setAdminToken != "" {
+				cfg.AdminToken = setAdminToken
+				modified = true
+			}
 
 			if !modified {
 				// Show current config
 				cfg.APIURL = maskEmpty(cfg.APIURL, "(not set)")
 				cfg.APIKey = maskSecret(cfg.APIKey)
+				cfg.AdminToken = maskSecret(cfg.AdminToken)
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
 				return enc.Encode(cfg)
@@ -56,6 +62,7 @@ func newConfigCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&show, "show", false, "Show config with file path")
 	cmd.Flags().StringVar(&setAPIURL, "set-api-url", "", "Set API URL")
 	cmd.Flags().StringVar(&setAPIKey, "set-api-key", "", "Set API key")
+	cmd.Flags().StringVar(&setAdminToken, "set-admin-token", "", "Set admin JWT token")
 	return cmd
 }
 

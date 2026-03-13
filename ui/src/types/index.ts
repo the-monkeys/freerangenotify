@@ -132,6 +132,7 @@ export interface CreateApplicationRequest {
 export interface UpdateApplicationRequest {
     app_name?: string;
     description?: string;
+    tenant_id?: string;
     webhook_url?: string;
     webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
@@ -758,8 +759,20 @@ export interface Tenant {
     name: string;
     slug: string;
     created_by: string;
+    billing_tier?: string;
+    license_key?: string;
+    valid_until?: string;
+    max_apps?: number;
+    max_throughput?: number;
     created_at: string;
     updated_at: string;
+}
+
+export interface TenantBilling {
+    billing_tier: string;
+    valid_until: string;
+    max_apps: number;
+    max_throughput: number;
 }
 
 export interface TenantMember {
