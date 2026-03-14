@@ -389,46 +389,6 @@ const AppDetail: React.FC = () => {
                             </>
                         )}
 
-                        {activeTab === 'digest-rules' && app && (
-                            <DigestRulesList apiKey={app.api_key} />
-                        )}
-
-                        {activeTab === 'workflows' && app && (
-                            <WorkflowsList apiKey={app.api_key} />
-                        )}
-
-                        {activeTab === 'schedules' && app && (
-                            <SchedulesList apiKey={app.api_key} />
-                        )}
-
-                        {activeTab === 'topics' && app && (
-                            <TopicsList apiKey={app.api_key} />
-                        )}
-
-                        {activeTab === 'team' && app && (
-                            <AppTeam appId={app.app_id} />
-                        )}
-
-                        {activeTab === 'providers' && app && (
-                            <AppProviders appId={app.app_id} />
-                        )}
-
-                        {activeTab === 'import' && app && (
-                            <AppImport appId={app.app_id} appName={app.app_name} />
-                        )}
-
-                        {activeTab === 'environments' && app && (
-                            <AppEnvironments
-                                appId={app.app_id}
-                                currentApiKey={app.api_key}
-                                onApiKeyChange={(newKey) => {
-                                    setApp({ ...app, api_key: newKey });
-                                    localStorage.setItem('last_api_key', newKey);
-                                    toast.success('Switched environment');
-                                }}
-                            />
-                        )}
-
                         {activeTab === 'settings' && (
                             <Card>
                                 <CardHeader>
