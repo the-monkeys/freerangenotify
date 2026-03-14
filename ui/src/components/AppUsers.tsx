@@ -11,7 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Pagination } from './Pagination';
+import ConfirmDeleteDialog from './ConfirmDeleteDialog';
 import { toast } from 'sonner';
+import { Edit, Trash2 } from 'lucide-react';
 
 const getBrowserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -50,6 +52,8 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [editingUser, setEditingUser] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
+    const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
     const { 
         data: usersData, 
@@ -161,14 +165,22 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         setShowAddForm(true);
     };
 
-    const handleDeleteUser = async (userId: string) => {
-        if (!window.confirm('Delete this user?')) return;
+    const handleDeleteUser = (user: User) => {
+        setDeleteTarget(user);
+    };
+
+    const handleConfirmDeleteUser = async () => {
+        if (!deleteTarget) return;
+        setDeleteLoading(true);
         try {
-            await usersAPI.delete(apiKey, userId);
+            await usersAPI.delete(apiKey, deleteTarget.user_id);
             fetchUsers();
+            setDeleteTarget(null);
         } catch (error) {
             console.error('Failed to delete user:', error);
             toast.error(extractErrorMessage(error, 'Failed to delete user'));
+        } finally {
+            setDeleteLoading(false);
         }
     };
 
@@ -454,13 +466,13 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                                 onClick={() => handleEditClick(user)}
                                                 className="text-foreground hover:underline font-semibold mr-4"
                                             >
-                                                Edit
+                                                <Edit className="h-4 w-4 inline" />
                                             </button>
                                             <button
-                                                onClick={() => handleDeleteUser(user.user_id)}
+                                                onClick={() => handleDeleteUser(user)}
                                                 className="text-red-600 hover:underline font-semibold"
                                             >
-                                                Delete
+                                                <Trash2 className="h-4 w-4 inline" />
                                             </button>
                                         </TableCell>
                                     </TableRow>
@@ -474,6 +486,17 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                     totalItems={totalCount}
                     pageSize={pageSize}
                     onPageChange={setPage}
+                />
+
+                <ConfirmDeleteDialog
+                    open={!!deleteTarget}
+                    onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+                    title="Delete User"
+                    description={deleteTarget ? `Delete user ${deleteTarget.email || deleteTarget.user_id}?` : 'Delete this user?'}
+                    confirmLabel="Delete"
+                    confirmVariant="destructive"
+                    loading={deleteLoading}
+                    onConfirm={handleConfirmDeleteUser}
                 />
             </CardContent>
         </Card>

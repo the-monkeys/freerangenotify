@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { useApiQuery } from '../hooks/use-api-query';
+import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 
 type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
 
@@ -112,6 +113,8 @@ const AppDetail: React.FC = () => {
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+    const [confirmAction, setConfirmAction] = useState<'regenerate-key' | 'delete-app' | null>(null);
+    const [confirmLoading, setConfirmLoading] = useState(false);
 
     const { data: workflowsData } = useApiQuery(
         () => workflowsAPI.list(app!.api_key, 100, 0),
@@ -208,24 +211,33 @@ const AppDetail: React.FC = () => {
     };
 
     const handleRegenerateKey = async () => {
-        if (!id || !window.confirm('Are you sure? The old key will immediately stop working.')) return;
+        if (!id) return;
+        setConfirmLoading(true);
         try {
             await applicationsAPI.regenerateKey(id);
             fetchAppDetails();
             toast.success('API Key regenerated successfully!');
+            setConfirmAction(null);
         } catch (error) {
             console.error('Failed to regenerate key:', error);
             toast.error('Failed to regenerate API key');
+        } finally {
+            setConfirmLoading(false);
         }
     };
 
     const handleDeleteApp = async () => {
-        if (!id || !window.confirm('Are you sure? This cannot be undone.')) return;
+        if (!id) return;
+        setConfirmLoading(true);
         try {
             await applicationsAPI.delete(id);
+            setConfirmAction(null);
             navigate('/');
         } catch (error) {
             console.error('Failed to delete application:', error);
+            toast.error('Failed to delete application');
+        } finally {
+            setConfirmLoading(false);
         }
     };
 
@@ -1177,7 +1189,7 @@ const AppDetail: React.FC = () => {
                                                 <Button
                                                     type="button"
                                                     variant="secondary"
-                                                    onClick={handleRegenerateKey}
+                                                    onClick={() => setConfirmAction('regenerate-key')}
                                                 >
                                                     Regenerate
                                                 </Button>
@@ -1197,11 +1209,37 @@ const AppDetail: React.FC = () => {
                                         <p className="mb-4 text-muted-foreground text-sm">
                                             Deleting this application will remove all associated data. This action is irreversible.
                                         </p>
-                                        <Button onClick={handleDeleteApp} variant="destructive">
+                                        <Button onClick={() => setConfirmAction('delete-app')} variant="destructive">
                                             Delete Application
                                         </Button>
                                     </CardContent>
                                 </Card>
+
+                                <ConfirmDeleteDialog
+                                    open={confirmAction === 'regenerate-key'}
+                                    onOpenChange={(open) => {
+                                        if (!open) setConfirmAction(null);
+                                    }}
+                                    title="Regenerate API Key"
+                                    description="Are you sure? The old key will immediately stop working."
+                                    confirmLabel="Regenerate"
+                                    confirmVariant="default"
+                                    loading={confirmLoading}
+                                    onConfirm={handleRegenerateKey}
+                                />
+
+                                <ConfirmDeleteDialog
+                                    open={confirmAction === 'delete-app'}
+                                    onOpenChange={(open) => {
+                                        if (!open) setConfirmAction(null);
+                                    }}
+                                    title="Delete Application"
+                                    description="Are you sure? This cannot be undone."
+                                    confirmLabel="Delete Application"
+                                    confirmVariant="destructive"
+                                    loading={confirmLoading}
+                                    onConfirm={handleDeleteApp}
+                                />
                             </div>
                         )}
                     </div>
