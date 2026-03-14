@@ -97,8 +97,8 @@ const LandingPage: React.FC = () => {
                     <div className="relative max-w-7xl mx-auto px-4 sm:px-8 py-16 sm:py-24 md:py-28">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
                             <motion.div
-                                initial={{ opacity: 0, y: 18 }}
-                                animate={{ opacity: 1, y: 0 }}
+                                initial={{ opacity: 0, x: -24 }}
+                                animate={{ opacity: 1, x: 0 }}
                                 transition={{ duration: 0.55, ease: 'easeOut' }}
                                 className="max-w-3xl lg:col-span-7"
                             >
@@ -109,7 +109,7 @@ const LandingPage: React.FC = () => {
                                     Ship Notifications
                                     <br />
                                     Without{' '}
-                                    <span className="inline-block min-w-[11ch] sm:min-w-[16ch] text-accent">
+                                    <span className="inline-block min-w-[11ch] sm:min-w-[16ch] text-accent/80 dark:text-accent">
                                         {typedText}
                                         <span className="ml-1 inline-block h-[0.95em] w-[1.5px] align-[-0.08em] bg-accent animate-pulse" />
                                     </span>
@@ -139,8 +139,8 @@ const LandingPage: React.FC = () => {
                         </div>
 
                         <motion.div
-                            initial={{ opacity: 0, y: 14 }}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.5, delay: 0.12, ease: 'easeOut' }}
                             className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-12 sm:mt-14"
                         >
@@ -168,8 +168,8 @@ const LandingPage: React.FC = () => {
 
                 {/* Capabilities Section */}
                 <motion.section
-                    initial={{ opacity: 0, y: 14 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true, amount: 0.25 }}
                     transition={{ duration: 0.45, ease: 'easeOut' }}
                     className="py-14 sm:py-20"
@@ -201,8 +201,8 @@ const LandingPage: React.FC = () => {
 
                 {/* Showcase Section */}
                 <motion.section
-                    initial={{ opacity: 0, y: 14 }}
-                    whileInView={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true, amount: 0.25 }}
                     transition={{ duration: 0.45, ease: 'easeOut' }}
                     className="relative overflow-hidden py-14 sm:py-20 border-y border-border/60"
@@ -226,8 +226,8 @@ const LandingPage: React.FC = () => {
                             {showcaseProducts.map((product, index) => (
                                 <motion.div
                                     key={product.name}
-                                    initial={{ opacity: 0, y: 12 }}
-                                    whileInView={{ opacity: 1, y: 0 }}
+                                    initial={{ opacity: 0, x: -16 }}
+                                    whileInView={{ opacity: 1, x: 0 }}
                                     viewport={{ once: true, amount: 0.3 }}
                                     transition={{ duration: 0.35, delay: index * 0.08, ease: 'easeOut' }}
                                 >
