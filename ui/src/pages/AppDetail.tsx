@@ -252,7 +252,7 @@ const AppDetail: React.FC = () => {
     if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
 
     return (
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
             <>
                 {/* Tabs — mobile dropdown */}
                 <Card size="sm" className="mb-6 bg-card/60 shadow-sm md:hidden">
