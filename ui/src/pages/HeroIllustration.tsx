@@ -128,8 +128,8 @@ const HeroIllustration: React.FC = () => {
                 {/* ── Inbox card ──────────────────────────────────── */}
                 <motion.div
                     className="relative flex flex-col w-120 h-120 rounded-[18px] border border-black/9 dark:border-white/9 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-xl shadow-[0_1px_2px_rgba(0,0,0,0.04),0_3px_16px_rgba(0,0,0,0.04)] overflow-hidden"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, x: -22 }}
+                    animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
                 >
                     {/* subtle corner tint */}
@@ -159,8 +159,8 @@ const HeroIllustration: React.FC = () => {
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[7px] text-[12.5px] font-medium tracking-tight border-none cursor-pointer transition-colors duration-150 ${activeTab === tab
-                                        ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
-                                        : 'bg-transparent text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'
+                                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100'
+                                    : 'bg-transparent text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'
                                     }`}
                             >
                                 {tab}
@@ -184,24 +184,24 @@ const HeroIllustration: React.FC = () => {
                                 {visibleMessages.map((message: Message, index: number) => (
                                     <motion.div
                                         key={message.title}
-                                        initial={{ opacity: 0, x: 10 }}
+                                        initial={{ opacity: 0, x: -12 }}
                                         animate={{ opacity: 1, x: 0 }}
                                         transition={{ duration: 0.26, delay: index * 0.05, ease: 'easeOut' }}
                                         className={`group/row flex items-start gap-3 px-4 py-3.5 border-b border-black/5.5 dark:border-white/5.5 last:border-b-0 transition-colors duration-150 ${message.unread
-                                                ? 'hover:bg-neutral-50 dark:hover:bg-neutral-900 cursor-default'
-                                                : ''
+                                            ? 'hover:bg-neutral-50 dark:hover:bg-neutral-900 cursor-default'
+                                            : ''
                                             }`}
                                     >
                                         {/* unread dot */}
                                         <div className={`mt-2 shrink-0 size-1.5 rounded-full transition-shadow duration-200 ${message.unread
-                                                ? 'bg-[#ff5542] shadow-[0_0_0_3px_rgba(255,85,66,0.09)] group-hover/row:shadow-[0_0_0_4px_rgba(255,85,66,0.20)]'
-                                                : 'bg-black/9 dark:bg-white/9'
+                                            ? 'bg-[#ff5542] shadow-[0_0_0_3px_rgba(255,85,66,0.09)] group-hover/row:shadow-[0_0_0_4px_rgba(255,85,66,0.20)]'
+                                            : 'bg-black/9 dark:bg-white/9'
                                             }`} />
 
                                         {/* avatar */}
                                         <div className={`shrink-0 inline-flex items-center justify-center size-9 rounded-[9px] bg-neutral-100 dark:bg-neutral-800 border text-xs font-semibold text-neutral-500 dark:text-neutral-400 transition-colors duration-150 ${message.unread
-                                                ? 'border-black/6 dark:border-white/6 group-hover/row:border-[rgba(255,85,66,0.22)]'
-                                                : 'border-black/6 dark:border-white/6'
+                                            ? 'border-black/6 dark:border-white/6 group-hover/row:border-[rgba(255,85,66,0.22)]'
+                                            : 'border-black/6 dark:border-white/6'
                                             }`}>
                                             {message.title.charAt(0)}
                                         </div>
@@ -210,8 +210,8 @@ const HeroIllustration: React.FC = () => {
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-baseline justify-between gap-2 mb-0.5">
                                                 <p className={`text-[13px] tracking-tight truncate transition-colors duration-150 ${message.unread
-                                                        ? 'font-semibold text-neutral-900 dark:text-neutral-100 group-hover/row:text-[#ff5542]'
-                                                        : 'font-medium text-neutral-700 dark:text-neutral-300'
+                                                    ? 'font-semibold text-neutral-900 dark:text-neutral-100 group-hover/row:text-[#ff5542]'
+                                                    : 'font-medium text-neutral-700 dark:text-neutral-300'
                                                     }`}>
                                                     {message.title}
                                                 </p>
@@ -231,12 +231,12 @@ const HeroIllustration: React.FC = () => {
                 {/* ── Phone mockup ────────────────────────────────── */}
                 <motion.div
                     className="absolute -right-12 -bottom-8"
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    initial={{ opacity: 0, x: -20, scale: 0.95 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
                     transition={{ duration: 0.55, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
                 >
                     {/* outer aluminium shell */}
-                    <div className="relative rounded-[40px] bg-linear-to-b from-[#2c2c2c] to-[#1c1c1c] p-[3.5px] shadow-[0_12px_56px_rgba(0,0,0,0.28),0_2px_12px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.09)]">
+                    <div className="relative rounded-[40px] bg-linear-to-b from-neutral-300 to-neutral-500 dark:from-[#2c2c2c] dark:to-[#1c1c1c] p-[3.5px] shadow-[0_12px_56px_rgba(0,0,0,0.18),0_2px_12px_rgba(0,0,0,0.12),inset_0_1px_0_rgba(255,255,255,0.35)] dark:shadow-[0_12px_56px_rgba(0,0,0,0.28),0_2px_12px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.09)]">
 
                         {/* physical side buttons */}
                         {/* mute */}
@@ -249,21 +249,21 @@ const HeroIllustration: React.FC = () => {
                         <div className="absolute right-[-3.5px] top-[28%] w-[3.5px] h-[13%] rounded-r-sm bg-[#262626] shadow-[1px_0_2px_rgba(0,0,0,0.5)]" />
 
                         {/* inner bezel ring */}
-                        <div className="rounded-[37px] overflow-hidden bg-black">
+                        <div className="rounded-[37px] overflow-hidden bg-neutral-200 dark:bg-black">
                             {/* screen */}
-                            <div className="relative flex flex-col bg-[#0f1013] overflow-hidden min-h-120">
+                            <div className="relative flex flex-col bg-neutral-100 dark:bg-[#0f1013] overflow-hidden min-h-120">
                                 {/* wallpaper glow */}
-                                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_-10%,rgba(255,85,66,0.13)_0%,transparent_52%)] z-0" />
+                                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_-10%,rgba(255,85,66,0.10)_0%,transparent_52%)] dark:bg-[radial-gradient(ellipse_at_50%_-10%,rgba(255,85,66,0.13)_0%,transparent_52%)] z-0" />
 
                                 {/* dynamic island */}
                                 <div className="relative z-10 flex justify-center pt-2.5 pb-1">
-                                    <div className="w-9 h-2 rounded-full bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.05)]" />
+                                    <div className="w-9 h-2 rounded-full bg-neutral-900 dark:bg-black shadow-[0_0_0_1px_rgba(0,0,0,0.08)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.05)]" />
                                 </div>
 
                                 {/* status bar */}
                                 <div className="relative z-10 flex items-center justify-between px-4 pb-1.5">
-                                    <span className="text-[11px] font-bold text-white/85 font-mono tracking-tight">{new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
-                                    <div className="flex items-center gap-1 text-white/70">
+                                    <span className="text-[11px] font-bold text-neutral-700 dark:text-white/85 font-mono tracking-tight">{new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <div className="flex items-center gap-1 text-neutral-500 dark:text-white/70">
                                         <Signal className="h-2.5 w-2.5" />
                                         <Wifi className="h-2.5 w-2.5" />
                                         <Battery className="h-2.5 w-2.5" />
@@ -272,17 +272,17 @@ const HeroIllustration: React.FC = () => {
 
                                 {/* date strip */}
                                 <div className="relative z-10 text-center pb-3">
-                                    <p className="text-[9.5px] uppercase tracking-[0.08em] text-white/28 font-normal">
+                                    <p className="text-[9.5px] uppercase tracking-[0.08em] text-neutral-500/70 dark:text-white/28 font-normal">
                                         {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase()}
                                     </p>
                                 </div>
 
                                 {/* notification center label */}
                                 <div className="relative z-10 flex items-center justify-between px-3 pb-2">
-                                    <span className="text-[9.5px] font-semibold uppercase tracking-[0.06em] text-white/35">
+                                    <span className="text-[9.5px] font-semibold uppercase tracking-[0.06em] text-neutral-500 dark:text-white/35">
                                         Notifications
                                     </span>
-                                    <span className="text-[9px] font-medium text-white/25">Clear all</span>
+                                    <span className="text-[9px] font-medium text-neutral-400 dark:text-white/25">Clear all</span>
                                 </div>
 
                                 {/* notification cards */}
@@ -292,33 +292,33 @@ const HeroIllustration: React.FC = () => {
                                         return (
                                             <motion.div
                                                 key={item.app}
-                                                initial={{ opacity: 0, y: -14, scale: 0.96 }}
-                                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                initial={{ opacity: 0, x: -14, scale: 0.96 }}
+                                                animate={{ opacity: 1, x: 0, scale: 1 }}
                                                 transition={{
                                                     duration: 0.44,
                                                     delay: 1.0 + index * 0.65,
                                                     ease: [0.22, 1, 0.36, 1],
                                                 }}
                                                 className={`rounded-[14px] px-3 py-2.5 backdrop-blur-2xl border shadow-[0_1px_8px_rgba(0,0,0,0.28)] ${item.accent
-                                                        ? 'bg-[rgba(255,85,66,0.17)] border-[rgba(255,85,66,0.24)]'
-                                                        : 'bg-[rgba(36,36,40,0.82)] border-white/[0.07]'
+                                                    ? 'bg-orange-100/75 border-orange-300/70 dark:bg-[rgba(255,85,66,0.17)] dark:border-[rgba(255,85,66,0.24)]'
+                                                    : 'bg-white/80 border-black/10 dark:bg-[rgba(36,36,40,0.82)] dark:border-white/[0.07]'
                                                     }`}
                                             >
                                                 <div className="flex items-center justify-between mb-1">
                                                     <div className="flex items-center gap-1.5">
                                                         <span className={`inline-flex items-center justify-center size-4 rounded-lg ${item.accent
-                                                                ? 'bg-[rgba(255,85,66,0.30)] text-[#ff8572]'
-                                                                : 'bg-white/10 text-white/50'
+                                                            ? 'bg-orange-200 text-orange-700 dark:bg-[rgba(255,85,66,0.30)] dark:text-[#ff8572]'
+                                                            : 'bg-black/5 text-neutral-500 dark:bg-white/10 dark:text-white/50'
                                                             }`}>
                                                             <Icon className="h-2 w-2" />
                                                         </span>
-                                                        <span className="text-[10px] font-semibold tracking-wide text-white/50">
+                                                        <span className="text-[10px] font-semibold tracking-wide text-neutral-500 dark:text-white/50">
                                                             {item.app}
                                                         </span>
                                                     </div>
-                                                    <span className="text-[8.5px] font-mono text-white/25">{item.time}</span>
+                                                    <span className="text-[8.5px] font-mono text-neutral-400 dark:text-white/25">{item.time}</span>
                                                 </div>
-                                                <p className="text-[10.5px] leading-[1.45] text-white/82 line-clamp-2">
+                                                <p className="text-[10.5px] leading-[1.45] text-neutral-700 dark:text-white/82 line-clamp-2">
                                                     {item.text}
                                                 </p>
                                             </motion.div>
@@ -328,7 +328,7 @@ const HeroIllustration: React.FC = () => {
 
                                 {/* home indicator */}
                                 <div className="relative z-10 flex justify-center py-2.5">
-                                    <div className="w-9 h-2 rounded-full bg-white/20" />
+                                    <div className="w-9 h-2 rounded-full bg-neutral-400/70 dark:bg-white/20" />
                                 </div>
                             </div>
                         </div>

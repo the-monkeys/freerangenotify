@@ -15,11 +15,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Pagination } from './Pagination';
 import TemplateEditor from './TemplateEditor';
 import { SlidePanel } from './ui/slide-panel';
-import ConfirmDialog from './ConfirmDialog';
 import TemplateDiffViewer from './templates/TemplateDiffViewer';
 import TemplateTestPanel from './templates/TemplateTestPanel';
 import TemplateControlsPanel from './templates/TemplateControlsPanel';
 import SkeletonTable from './SkeletonTable';
+import ConfirmDeleteDialog from './ConfirmDeleteDialog';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 
@@ -85,6 +85,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [controlsTemplate, setControlsTemplate] = useState<Template | null>(null);
     const [rollbackTarget, setRollbackTarget] = useState<{ template: Template; version: TemplateVersion } | null>(null);
     const [rollbackLoading, setRollbackLoading] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
+    const [deleteLoading, setDeleteLoading] = useState(false);
 
 
     const resetForm = () => {
@@ -150,12 +152,22 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     };
 
     const handleDeleteTemplate = async (id: string) => {
-        if (!window.confirm('Delete this template?')) return;
+        const target = templates.find((tmpl) => tmpl.id === id);
+        if (!target) return;
+        setDeleteTarget(target);
+    };
+
+    const handleConfirmDeleteTemplate = async () => {
+        if (!deleteTarget) return;
+        setDeleteLoading(true);
         try {
-            await templatesAPI.delete(apiKey, id);
+            await templatesAPI.delete(apiKey, deleteTarget.id);
             fetchTemplates();
+            setDeleteTarget(null);
         } catch (error) {
             console.error('Failed to delete template:', error);
+        } finally {
+            setDeleteLoading(false);
         }
     };
 
@@ -722,14 +734,25 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     />
                 )}
 
+                <ConfirmDeleteDialog
+                    open={!!deleteTarget}
+                    onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+                    title="Delete Template"
+                    description={deleteTarget ? `Delete template \"${deleteTarget.name}\"?` : 'Delete this template?'}
+                    confirmLabel="Delete"
+                    confirmVariant="destructive"
+                    loading={deleteLoading}
+                    onConfirm={handleConfirmDeleteTemplate}
+                />
+
                 {/* Rollback Confirmation Dialog */}
-                <ConfirmDialog
+                <ConfirmDeleteDialog
                     open={!!rollbackTarget}
                     onOpenChange={(open) => { if (!open) setRollbackTarget(null); }}
                     title="Confirm Rollback"
                     description={rollbackTarget ? `Roll back "${rollbackTarget.template.name}" to version ${rollbackTarget.version.version}? This will replace the current template content.` : ''}
                     confirmLabel="Rollback"
-                    variant="destructive"
+                    confirmVariant="destructive"
                     loading={rollbackLoading}
                     onConfirm={handleConfirmRollback}
                 />

@@ -4,7 +4,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Skeleton } from '../../components/ui/skeleton';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // Vite's import.meta.glob with ?raw loads .md files as strings at build time.
 // `eager: false` makes them lazy-loaded chunks.
@@ -18,6 +20,7 @@ function resolveModule(slug: string): (() => Promise<string>) | undefined {
 
 const DocsPage: React.FC = () => {
     const { slug } = useParams<{ slug: string }>();
+    const { theme } = useTheme();
     const [content, setContent] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [notFound, setNotFound] = useState(false);
@@ -107,10 +110,25 @@ const DocsPage: React.FC = () => {
                         if (match) {
                             return (
                                 <SyntaxHighlighter
-                                    style={oneLight}
+                                    style={theme === 'dark' ? oneDark : oneLight}
                                     language={match[1]}
                                     PreTag="div"
-                                    className="rounded-lg text-xs my-4 border border-border !bg-muted"
+                                    className="my-4 overflow-x-auto"
+                                    customStyle={{
+                                        margin: 0,
+                                        padding: '1rem',
+                                        borderRadius: '0.5rem',
+                                        border: '1px solid var(--border)',
+                                        background: theme === 'dark' ? '#0f172a' : '#f8fafc',
+                                        fontSize: '0.75rem',
+                                        lineHeight: 1.5,
+                                    }}
+                                    codeTagProps={{
+                                        style: {
+                                            background: 'transparent',
+                                            fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+                                        },
+                                    }}
                                 >
                                     {String(children).replace(/\n$/, '')}
                                 </SyntaxHighlighter>
