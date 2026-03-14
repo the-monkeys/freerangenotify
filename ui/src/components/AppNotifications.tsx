@@ -15,17 +15,18 @@ import {
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Ban, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
+import { WhatsAppPreview } from './WhatsAppPreview';
 import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
 
@@ -798,7 +799,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                             </div>
                         </TabsContent>
 
-                        {/* ── Advanced Send Tab ── */}
+                        {/* ── Bulk Send Tab ── */}
                         <TabsContent value="advanced">
                             <form onSubmit={handleSendNotification} className="bg-muted p-6 rounded border border-border space-y-4">
                                 <p className="text-sm text-muted-foreground mb-2">Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
@@ -957,95 +958,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             ) : (
                                                 <div className="space-y-3">
                                                     {/* WhatsApp chat preview */}
-                                                    <p className="text-xs text-muted-foreground">WhatsApp Preview</p>
-                                                    <div
-                                                        className="rounded-xl p-4 max-w-[380px] mx-auto"
-                                                        style={{
-                                                            backgroundColor: '#0b141a',
-                                                            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'200\' height=\'200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'p\' width=\'40\' height=\'40\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'20\' cy=\'20\' r=\'1\' fill=\'%23ffffff08\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\'200\' height=\'200\' fill=\'url(%23p)\'/%3E%3C/svg%3E")',
-                                                        }}
-                                                    >
-                                                        {/* Message bubble */}
-                                                        <div className="flex justify-end">
-                                                            <div
-                                                                className="relative rounded-lg overflow-hidden shadow-md"
-                                                                style={{
-                                                                    backgroundColor: '#005c4b',
-                                                                    maxWidth: '300px',
-                                                                    minWidth: '180px',
-                                                                }}
-                                                            >
-                                                                {/* Image preview */}
-                                                                {mediaPreviewUrl && mediaFileType.startsWith('image/') && (
-                                                                    <div className="p-1 pb-0">
-                                                                        <img
-                                                                            src={mediaPreviewUrl}
-                                                                            alt="Media"
-                                                                            className="w-full rounded-md object-cover"
-                                                                            style={{ maxHeight: '220px' }}
-                                                                        />
-                                                                    </div>
-                                                                )}
-                                                                {/* Video preview */}
-                                                                {mediaPreviewUrl && mediaFileType.startsWith('video/') && (
-                                                                    <div className="p-1 pb-0">
-                                                                        <video
-                                                                            src={mediaPreviewUrl}
-                                                                            className="w-full rounded-md"
-                                                                            style={{ maxHeight: '220px' }}
-                                                                            controls={false}
-                                                                            muted
-                                                                        />
-                                                                        <div className="absolute top-3 left-3 bg-black/60 rounded-full p-1.5">
-                                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                                {/* PDF preview */}
-                                                                {mediaFileType === 'application/pdf' && (
-                                                                    <div className="flex items-center gap-3 m-1 p-3 rounded-md" style={{ backgroundColor: '#025144' }}>
-                                                                        <div className="shrink-0 flex items-center justify-center h-10 w-10 rounded bg-red-500/20">
-                                                                            <FileText className="h-6 w-6 text-red-400" />
-                                                                        </div>
-                                                                        <div className="min-w-0">
-                                                                            <p className="text-sm font-medium text-white truncate">Document.pdf</p>
-                                                                            <p className="text-xs text-white/50">PDF document</p>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {/* Message text */}
-                                                                <div className="px-2 pt-1.5 pb-1">
-                                                                    {formData.data?.title && (
-                                                                        <p className="text-[13px] font-semibold text-white leading-tight">
-                                                                            {formData.data.title as string}
-                                                                        </p>
-                                                                    )}
-                                                                    {formData.data?.body && (
-                                                                        <p className="text-[13px] text-white/90 leading-snug mt-0.5">
-                                                                            {formData.data.body as string}
-                                                                        </p>
-                                                                    )}
-                                                                    {!formData.data?.title && !formData.data?.body && formData.template_id && (
-                                                                        <p className="text-[13px] text-white/70 italic leading-snug">
-                                                                            {templates.find(t => t.id === formData.template_id)?.name || 'Template message'}
-                                                                        </p>
-                                                                    )}
-                                                                    {/* Timestamp + read receipts */}
-                                                                    <div className="flex justify-end items-center gap-1 mt-0.5">
-                                                                        <span className="text-[11px] text-white/40">
-                                                                            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                        </span>
-                                                                        <svg width="16" height="11" viewBox="0 0 16 11" fill="none" className="text-[#53bdeb]">
-                                                                            <path d="M11.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.011-2.175a.463.463 0 0 0-.352-.153.457.457 0 0 0-.352.762l2.342 2.534a.463.463 0 0 0 .353.153h.026a.462.462 0 0 0 .346-.193l6.525-8.058a.487.487 0 0 0 .1-.339.457.457 0 0 0-.102-.243z" fill="currentColor" />
-                                                                            <path d="M14.757.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-1.2-1.298-.048.06-.096.084 1.327 1.436a.463.463 0 0 0 .353.153h.026a.462.462 0 0 0 .346-.193l6.525-8.058a.487.487 0 0 0-.358-.582v.686z" fill="currentColor" />
-                                                                        </svg>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <WhatsAppPreview
+                                                        title={formData.data?.title as string}
+                                                        body={formData.data?.body as string}
+                                                        templateName={templates.find(t => t.id === formData.template_id)?.name}
+                                                        mediaUrl={mediaPreviewUrl || String((formData as any).media_url || '')}
+                                                        mediaType={mediaFileType}
+                                                        buttons={templates.find(t => t.id === formData.template_id)?.metadata?.buttons}
+                                                    />
                                                     <Button
+                                                        className='bg-red-400 dark:bg-red-400 text-white'
                                                         variant="outline"
                                                         size="sm"
                                                         onClick={() => {
