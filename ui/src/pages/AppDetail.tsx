@@ -727,13 +727,16 @@ const AppDetail: React.FC = () => {
                                                             <Label htmlFor="emailProvider">Email Provider</Label>
                                                             <Select
                                                                 value={settings.email_config?.provider_type || 'system'}
-                                                                onValueChange={(value: string) => setSettings({
-                                                                    ...settings,
-                                                                    email_config: {
+                                                                onValueChange={(value: string) => {
+                                                                    const updated: any = {
                                                                         ...settings.email_config,
-                                                                        provider_type: value as any
+                                                                        provider_type: value as any,
+                                                                    };
+                                                                    if (value === 'smtp' && !updated.smtp) {
+                                                                        updated.smtp = { port: 587 };
                                                                     }
-                                                                })}
+                                                                    setSettings({ ...settings, email_config: updated });
+                                                                }}
                                                             >
                                                                 <SelectTrigger id="emailProvider">
                                                                     <SelectValue />
@@ -773,12 +776,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpHost"
                                                                             type="text"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.host || ''}
+                                                                            value={settings.email_config?.smtp?.host || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, host: e.target.value } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, host: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                             placeholder="smtp.gmail.com"
@@ -790,12 +793,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpPort"
                                                                             type="number"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.port || 587}
+                                                                            value={settings.email_config?.smtp?.port || 587}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, port: parseInt(e.target.value) || 587 } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, port: parseInt(e.target.value) || 587 } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -806,12 +809,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpUsername"
                                                                             type="text"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.username || ''}
+                                                                            value={settings.email_config?.smtp?.username || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, username: e.target.value } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, username: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -822,12 +825,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpPassword"
                                                                             type="password"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.password || ''}
+                                                                            value={settings.email_config?.smtp?.password || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, password: e.target.value } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, password: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -838,12 +841,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpFromEmail"
                                                                             type="email"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.from_email || ''}
+                                                                            value={settings.email_config?.smtp?.from_email || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, from_email: e.target.value } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, from_email: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -854,12 +857,12 @@ const AppDetail: React.FC = () => {
                                                                             id="smtpFromName"
                                                                             type="text"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.smtp_config?.from_name || ''}
+                                                                            value={settings.email_config?.smtp?.from_name || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    smtp_config: { ...settings.email_config?.smtp_config, from_name: e.target.value } as any
+                                                                                    smtp: { ...settings.email_config?.smtp, from_name: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -878,12 +881,12 @@ const AppDetail: React.FC = () => {
                                                                             id="sendgridKey"
                                                                             type="password"
                                                                             className="text-sm"
-                                                                            value={settings.email_config?.sendgrid_config?.api_key || ''}
+                                                                            value={settings.email_config?.sendgrid?.api_key || ''}
                                                                             onChange={(e) => setSettings({
                                                                                 ...settings,
                                                                                 email_config: {
                                                                                     ...settings.email_config!,
-                                                                                    sendgrid_config: { ...settings.email_config?.sendgrid_config, api_key: e.target.value } as any
+                                                                                    sendgrid: { ...settings.email_config?.sendgrid, api_key: e.target.value } as any
                                                                                 }
                                                                             })}
                                                                         />
@@ -895,12 +898,12 @@ const AppDetail: React.FC = () => {
                                                                                 id="sendgridFromEmail"
                                                                                 type="email"
                                                                                 className="text-sm"
-                                                                                value={settings.email_config?.sendgrid_config?.from_email || ''}
+                                                                                value={settings.email_config?.sendgrid?.from_email || ''}
                                                                                 onChange={(e) => setSettings({
                                                                                     ...settings,
                                                                                     email_config: {
                                                                                         ...settings.email_config!,
-                                                                                        sendgrid_config: { ...settings.email_config?.sendgrid_config, from_email: e.target.value } as any
+                                                                                        sendgrid: { ...settings.email_config?.sendgrid, from_email: e.target.value } as any
                                                                                     }
                                                                                 })}
                                                                             />
@@ -911,12 +914,12 @@ const AppDetail: React.FC = () => {
                                                                                 id="sendgridFromName"
                                                                                 type="text"
                                                                                 className="text-sm"
-                                                                                value={settings.email_config?.sendgrid_config?.from_name || ''}
+                                                                                value={settings.email_config?.sendgrid?.from_name || ''}
                                                                                 onChange={(e) => setSettings({
                                                                                     ...settings,
                                                                                     email_config: {
                                                                                         ...settings.email_config!,
-                                                                                        sendgrid_config: { ...settings.email_config?.sendgrid_config, from_name: e.target.value } as any
+                                                                                        sendgrid: { ...settings.email_config?.sendgrid, from_name: e.target.value } as any
                                                                                     }
                                                                                 })}
                                                                             />
