@@ -414,6 +414,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     // Advanced/Broadcast: detect variables from selected template
     const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
     const formVariables = formSelectedTemplate?.variables || [];
+    const parsedFormData = useMemo(() => {
+        try {
+            return parseCustomData(dataInput) || {};
+        } catch {
+            return {};
+        }
+    }, [dataInput]);
 
     // Helper: get sample_data from template metadata
     const getSampleData = (template: Template | undefined): Record<string, string> => {
@@ -608,7 +615,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                             variant={showSendForm ? "outline" : "default"}
                             onClick={() => setShowSendForm(!showSendForm)}
                         >
-                            {showSendForm ? 'Hide Send Form' : 'Send Notification'}
+                            {showSendForm ? 'Hide Send Form' : 'Create Notification'}
                         </Button>
                     </div>
                 </div>
@@ -640,6 +647,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     <div className="space-y-2">
                                         <Label htmlFor="quickTemplate">Template</Label>
                                         <Select value={quickTemplateId} onValueChange={(value) => {
+
                                             setQuickTemplateId(value);
                                             // Pre-fill variables with sample_data
                                             const selected = templates.find(t => t.id === value);
@@ -706,6 +714,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 })}
                                             </div>
                                         )}
+                                    </div>
+                                )}
+                                {quickSelectedTemplate?.channel === 'whatsapp' && (
+                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
+                                        <WhatsAppPreview
+                                            templateName={quickSelectedTemplate?.name}
+                                            buttons={quickSelectedTemplate?.metadata?.buttons}
+                                            data={quickData}
+                                            templateContent={{
+                                                title: quickSelectedTemplate?.metadata?.title_template || quickSelectedTemplate?.subject,
+                                                body: quickSelectedTemplate?.metadata?.body_template || quickSelectedTemplate?.body
+                                            }}
+                                        />
                                     </div>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -841,8 +863,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="email">Email</SelectItem>
-                                                <SelectItem value="push">Push</SelectItem>
-                                                <SelectItem value="sms">SMS</SelectItem>
+                                                {/* <SelectItem value="push">Push</SelectItem>
+                                                <SelectItem value="sms">SMS</SelectItem> */}
                                                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                 <SelectItem value="webhook">Webhook</SelectItem>
                                                 <SelectItem value="in_app">In-App</SelectItem>
@@ -912,76 +934,97 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                                     {/* WhatsApp Media Upload */}
                                     {formData.channel === 'whatsapp' && (
-                                        <div className="space-y-3 md:col-span-2">
-                                            <Label>Media Attachment (optional)</Label>
-                                            {!(formData as any).media_url ? (
+                                        <div className="space-y-4 md:col-span-2">
+                                            {/* Real-time WhatsApp Preview */}
+                                            {formData.template_id && (
                                                 <div className="space-y-2">
-                                                    <label
-                                                        htmlFor="mediaUpload"
-                                                        className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
-                                                    >
-                                                        <UploadCloud className="h-8 w-8 text-muted-foreground" />
-                                                        <span className="text-sm font-medium">Click to upload image or file</span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB
-                                                        </span>
-                                                        <input
-                                                            id="mediaUpload"
-                                                            type="file"
-                                                            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
-                                                            className="hidden"
-                                                            onChange={async (e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (!file) return;
-                                                                if (file.size > 16 * 1024 * 1024) {
-                                                                    toast.error('File too large (max 16 MB)');
-                                                                    return;
-                                                                }
-                                                                // Create local preview immediately
-                                                                const localUrl = URL.createObjectURL(file);
-                                                                setMediaPreviewUrl(localUrl);
-                                                                setMediaFileType(file.type);
-                                                                try {
-                                                                    toast.info('Uploading media...');
-                                                                    const result = await mediaAPI.upload(apiKey, file);
-                                                                    setFormData({ ...formData, media_url: result.url } as any);
-                                                                    toast.success('Media uploaded');
-                                                                } catch (err) {
-                                                                    setMediaPreviewUrl('');
-                                                                    setMediaFileType('');
-                                                                    toast.error('Upload failed: ' + extractErrorMessage(err));
-                                                                }
-                                                            }}
-                                                        />
-                                                    </label>
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-3">
-                                                    {/* WhatsApp chat preview */}
+                                                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
                                                     <WhatsAppPreview
-                                                        title={formData.data?.title as string}
-                                                        body={formData.data?.body as string}
-                                                        templateName={templates.find(t => t.id === formData.template_id)?.name}
+                                                        templateName={formSelectedTemplate?.name}
                                                         mediaUrl={mediaPreviewUrl || String((formData as any).media_url || '')}
                                                         mediaType={mediaFileType}
-                                                        buttons={templates.find(t => t.id === formData.template_id)?.metadata?.buttons}
-                                                    />
-                                                    <Button
-                                                        className='bg-red-400 dark:bg-red-400 text-white'
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => {
-                                                            if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
-                                                            setMediaPreviewUrl('');
-                                                            setMediaFileType('');
-                                                            setFormData({ ...formData, media_url: '' } as any);
+                                                        buttons={formSelectedTemplate?.metadata?.buttons}
+                                                        data={parsedFormData}
+                                                        templateContent={{
+                                                            title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
+                                                            body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
                                                         }}
-                                                    >
-                                                        <X className="h-3.5 w-3.5 mr-1" />
-                                                        Remove media
-                                                    </Button>
+                                                    />
                                                 </div>
                                             )}
+
+                                            <div className="space-y-2">
+                                                <Label>Media Attachment (optional)</Label>
+                                                {!(formData as any).media_url ? (
+                                                    <div className="space-y-2">
+                                                        <label
+                                                            htmlFor="mediaUpload"
+                                                            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                        >
+                                                            <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                                                            <span className="text-sm font-medium">Click to upload image or file</span>
+                                                            <span className="text-xs text-muted-foreground">
+                                                                JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB
+                                                            </span>
+                                                            <input
+
+                                                                id="mediaUpload"
+                                                                type="file"
+                                                                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
+                                                                className="hidden"
+                                                                onChange={async (e) => {
+                                                                    const file = e.target.files?.[0];
+                                                                    if (!file) return;
+                                                                    if (file.size > 16 * 1024 * 1024) {
+                                                                        toast.error('File too large (max 16 MB)');
+                                                                        return;
+                                                                    }
+                                                                    // Create local preview immediately
+                                                                    const localUrl = URL.createObjectURL(file);
+                                                                    setMediaPreviewUrl(localUrl);
+                                                                    setMediaFileType(file.type);
+                                                                    try {
+                                                                        toast.info('Uploading media...');
+                                                                        const result = await mediaAPI.upload(apiKey, file);
+                                                                        setFormData({ ...formData, media_url: result.url } as any);
+                                                                        toast.success('Media uploaded');
+                                                                    } catch (err) {
+                                                                        setMediaPreviewUrl('');
+                                                                        setMediaFileType('');
+                                                                        toast.error('Upload failed: ' + extractErrorMessage(err));
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </label>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2 bg-primary/10 rounded">
+                                                                <UploadCloud className="h-4 w-4 text-primary" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-sm font-medium">Media Uploaded</p>
+                                                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">{(formData as any).media_url}</p>
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            className='bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200'
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+                                                                setMediaPreviewUrl('');
+                                                                setMediaFileType('');
+                                                                setFormData({ ...formData, media_url: '' } as any);
+                                                            }}
+                                                        >
+                                                            <X className="h-3.5 w-3.5 mr-1" />
+                                                            Remove
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
 
@@ -1306,8 +1349,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         <SelectItem value="email">Email</SelectItem>
-                                                        <SelectItem value="push">Push</SelectItem>
-                                                        <SelectItem value="sms">SMS</SelectItem>
+                                                        {/* <SelectItem value="push">Push</SelectItem>
+                                                        <SelectItem value="sms">SMS</SelectItem> */}
                                                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                         <SelectItem value="in_app">In-App</SelectItem>
                                                         <SelectItem value="sse">SSE</SelectItem>
@@ -1383,6 +1426,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 </div>
                                             )}
                                         </div>
+
+                                        {formData.channel === 'whatsapp' && formData.template_id && (
+                                            <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
+                                                <WhatsAppPreview
+                                                    templateName={formSelectedTemplate?.name}
+                                                    buttons={formSelectedTemplate?.metadata?.buttons}
+                                                    data={parsedFormData}
+                                                    templateContent={{
+                                                        title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
+                                                        body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
+                                                    }}
+                                                />
+                                            </div>
+                                        )}
 
                                         {workflows.length > 0 && (
                                             <div className="space-y-2">
@@ -1622,8 +1680,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                             <SelectContent>
                                 <SelectItem value="all">All</SelectItem>
                                 <SelectItem value="email">Email</SelectItem>
-                                <SelectItem value="push">Push</SelectItem>
-                                <SelectItem value="sms">SMS</SelectItem>
+                                {/* <SelectItem value="push">Push</SelectItem>
+                                <SelectItem value="sms">SMS</SelectItem> */}
                                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                 <SelectItem value="webhook">Webhook</SelectItem>
                                 <SelectItem value="in_app">In-App</SelectItem>

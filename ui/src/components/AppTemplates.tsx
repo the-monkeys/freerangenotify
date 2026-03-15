@@ -365,8 +365,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="email">Email</SelectItem>
-                                        <SelectItem value="push">Push</SelectItem>
-                                        <SelectItem value="sms">SMS</SelectItem>
+                                        {/* <SelectItem value="push">Push</SelectItem>
+                                        <SelectItem value="sms">SMS</SelectItem> */}
                                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                         <SelectItem value="webhook">Webhook</SelectItem>
                                         <SelectItem value="in_app">In-App</SelectItem>

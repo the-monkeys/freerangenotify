@@ -27,7 +27,50 @@ interface WhatsAppPreviewProps {
     senderName?: string;
     isVerified?: boolean;
     buttons?: WhatsAppButton[];
+    data?: Record<string, any>;
+    templateContent?: {
+        title?: string;
+        body?: string;
+    };
 }
+
+// Helper function to render text with variable highlights and values
+const renderTextWithVariables = (text: string | undefined, data?: Record<string, any>) => {
+    if (!text) return null;
+
+
+
+    // Split text by variable patterns like {{varName}}
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    const varPattern = /{\{([^}]+)\}\}/g;
+    let match;
+
+    while ((match = varPattern.exec(text)) !== null) {
+        // Add text before variable
+        if (match.index > lastIndex) {
+            parts.push(text.slice(lastIndex, match.index));
+        }
+
+        const varName = match[1].trim();
+        const value = data && data[varName] !== undefined ? data[varName] : null;
+
+        // Add variable with highlight, showing value if available
+        parts.push(
+            <span key={match.index} className="px-1 py-0.5 rounded font-medium ">
+                {value !== null && value !== '' ? value : match[0]}
+            </span>
+        );
+        lastIndex = varPattern.lastIndex;
+    }
+
+    // Add remaining text
+    if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? <>{parts}</> : text;
+};
 
 export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
     title,
@@ -37,7 +80,9 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
     mediaType = '',
     senderName = "Notification Bot",
     isVerified = true,
-    buttons = []
+    buttons = [],
+    data = {},
+    templateContent
 }) => {
     const isImage = mediaType.startsWith('image/') || (mediaUrl && /\.(jpg|jpeg|png|webp|gif)$/i.test(mediaUrl));
     const isVideo = mediaType.startsWith('video/') || (mediaUrl && /\.(mp4|mov|webm)$/i.test(mediaUrl));
@@ -45,8 +90,11 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
 
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
+    const displayTitle = templateContent?.title || title;
+    const displayBody = templateContent?.body || body;
+
     return (
-        <div className="flex justify-center w-full">
+        <div className="flex justify-end w-full">
             <div className="w-full max-w-[380px] rounded-xl overflow-hidden shadow-lg border border-border bg-[#efe7de] dark:bg-[#0b141a] flex flex-col h-[400px] relative">
 
                 {/* Wallpaper Pattern */}
@@ -154,16 +202,16 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
 
                             {/* Text Content */}
                             <div className={`px-2.5 pb-1.5 pt-2 relative`}>
-                                {title && (
+                                {displayTitle && (
                                     <p className="text-[14.2px] font-bold text-[#111b21] dark:text-[#e9edef] leading-tight mb-1">
-                                        {title}
+                                        {renderTextWithVariables(displayTitle, data)}
                                     </p>
                                 )}
-                                {body ? (
+                                {displayBody ? (
                                     <p className="text-[14.2px] text-[#111b21] dark:text-[#e9edef] leading-[19px] whitespace-pre-wrap">
-                                        {body}
+                                        {renderTextWithVariables(displayBody, data)}
                                     </p>
-                                ) : templateName && !title ? (
+                                ) : templateName && !displayTitle ? (
                                     <p className="text-[14.2px] text-[#667781] dark:text-[#8696a0] italic leading-snug">
                                         {templateName}
                                     </p>
@@ -192,14 +240,14 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
                                 </div>
                             )}
 
-                            {/* Fallback Template CTA */}
+                            {/* Fallback Template CTA
                             {templateName && buttons.length === 0 && (
                                 <div className="border-t border-[#d1d7db] dark:border-[#3b4a53]">
                                     <button className="w-full py-2.5 flex items-center justify-center gap-2 text-[14px] font-semibold text-[#00a884] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                                         View details
                                     </button>
                                 </div>
-                            )}
+                            )} */}
                         </div>
                     </div>
                 </div>
