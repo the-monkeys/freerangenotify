@@ -1,7 +1,7 @@
 {
   "name": "freerange-notify-ui",
   "private": true,
-  "version": "0.2.2-alpha",
+  "version": "0.2.3-alpha",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
