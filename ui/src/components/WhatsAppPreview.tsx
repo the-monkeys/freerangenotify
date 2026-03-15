@@ -18,12 +18,16 @@ interface WhatsAppButton {
     type: 'quick_reply' | 'url' | 'phone';
 }
 
+interface WhatsAppMedia {
+    url: string;
+    type: string;
+}
+
 interface WhatsAppPreviewProps {
     title?: string;
     body?: string;
     templateName?: string;
-    mediaUrl?: string;
-    mediaType?: string;
+    mediaFiles?: WhatsAppMedia[];
     senderName?: string;
     isVerified?: boolean;
     buttons?: WhatsAppButton[];
@@ -76,18 +80,13 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
     title,
     body,
     templateName,
-    mediaUrl,
-    mediaType = '',
+    mediaFiles = [],
     senderName = "Notification Bot",
     isVerified = true,
     buttons = [],
     data = {},
     templateContent
 }) => {
-    const isImage = mediaType.startsWith('image/') || (mediaUrl && /\.(jpg|jpeg|png|webp|gif)$/i.test(mediaUrl));
-    const isVideo = mediaType.startsWith('video/') || (mediaUrl && /\.(mp4|mov|webm)$/i.test(mediaUrl));
-    const isPdf = mediaType === 'application/pdf' || (mediaUrl && /\.pdf$/i.test(mediaUrl));
-
     const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const displayTitle = templateContent?.title || title;
@@ -148,108 +147,127 @@ export const WhatsAppPreview: React.FC<WhatsAppPreviewProps> = ({
                         </span>
                     </div>
 
-                    {/* Received Message Bubble */}
-                    <div className="flex justify-start mb-2 relative group">
-                        {/* Bubble Tail */}
-                        <div className="absolute -left-[6px] -top-[1px] text-white dark:text-[#202c33] drop-shadow-[0_1px_rgba(0,0,0,0.13)]">
-                            <svg width="8" height="13" viewBox="0 0 8 13">
-                                <path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"></path>
-                            </svg>
-                        </div>
+                    {/* Media Bubbles */}
+                    {mediaFiles.map((media, idx) => {
+                        const isImage = media.type.startsWith('image/') || (media.url && /\.(jpg|jpeg|png|webp|gif)$/i.test(media.url));
+                        const isVideo = media.type.startsWith('video/') || (media.url && /\.(mp4|mov|webm)$/i.test(media.url));
+                        const isPdf = media.type === 'application/pdf' || (media.url && /\.pdf$/i.test(media.url));
 
-                        <div className="relative  rounded-r-lg rounded-bl-lg drop-shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] bg-white dark:bg-[#202c33] max-w-[85%] min-w-[140px] overflow-hidden">
+                        return (
+                            <div key={idx} className="flex justify-start mb-2 relative group">
+                                {/* Bubble Tail (Only for the first message in a potential sequence) */}
 
-                            {/* Media Section */}
-                            {mediaUrl && (
-                                <div className="p-1 pb-0">
-                                    <div className="relative rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800">
-                                        {isImage && (
-                                            <img
-                                                src={mediaUrl}
-                                                alt="Media"
-                                                className="w-full object-cover"
-                                                style={{ maxHeight: '250px' }}
-                                            />
-                                        )}
-                                        {isVideo && (
-                                            <div className="relative">
-                                                <video
-                                                    src={mediaUrl}
-                                                    className="w-full"
+                                <div className="absolute -left-[9px] -top-[0.5px] text-white dark:text-[#202c33] drop-shadow-[0_1px_rgba(0,0,0,0.13)] z-0">
+                                    <svg width="11" height="16" viewBox="0 0 8 13">
+                                        <path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"></path>
+                                    </svg>
+                                </div>
+
+
+                                <div className={`relative rounded-r-lg rounded-bl-lg drop-shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] bg-white dark:bg-[#202c33] max-w-[85%] min-w-[140px] overflow-hidden`}>
+                                    <div className="p-1 pb-0">
+                                        <div className="relative rounded-md overflow-hidden bg-slate-100 dark:bg-slate-800">
+                                            {isImage && (
+                                                <img
+                                                    src={media.url}
+                                                    alt={`Media ${idx}`}
+                                                    className="w-full object-cover"
                                                     style={{ maxHeight: '250px' }}
                                                 />
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <div className="bg-black/40 rounded-full p-2.5 backdrop-blur-sm">
-                                                        <Play className="w-6 h-6 text-white fill-white ml-0.5" />
+                                            )}
+                                            {isVideo && (
+                                                <div className="relative">
+                                                    <video
+                                                        src={media.url}
+                                                        className="w-full"
+                                                        style={{ maxHeight: '250px' }}
+                                                    />
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <div className="bg-black/40 rounded-full p-2.5 backdrop-blur-sm">
+                                                            <Play className="w-6 h-6 text-white fill-white ml-0.5" />
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        )}
-                                        {isPdf && (
-                                            <div className="flex items-center gap-3 p-3 bg-[#f0f2f5] dark:bg-[#2a3942] border-b border-[#d1d7db] dark:border-[#3b4a53]">
-                                                <div className="shrink-0 flex items-center justify-center p-2 rounded bg-red-500/10">
-                                                    <FileText className="h-6 w-6 text-red-500" />
+                                            )}
+                                            {isPdf && (
+                                                <div className="flex items-center gap-3 p-3 bg-[#f0f2f5] dark:bg-[#2a3942]">
+                                                    <div className="shrink-0 flex items-center justify-center p-2 rounded bg-red-500/10">
+                                                        <FileText className="h-6 w-6 text-red-500" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-[14px] font-semibold text-[#111b21] dark:text-[#e9edef] truncate">Document.pdf</p>
+                                                        <p className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-0.5 uppercase font-medium">PDF</p>
+                                                    </div>
                                                 </div>
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="text-[14px] font-semibold text-[#111b21] dark:text-[#e9edef] truncate">Document.pdf</p>
-                                                    <p className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-0.5 uppercase font-medium">PDF</p>
-                                                </div>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end items-center px-2 py-1">
+                                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
+                                            {timeString}
+                                        </span>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        );
+                    })}
 
-                            {/* Text Content */}
-                            <div className={`px-2.5 pb-1.5 pt-2 relative`}>
-                                {displayTitle && (
-                                    <p className="text-[14.2px] font-bold text-[#111b21] dark:text-[#e9edef] leading-tight mb-1">
-                                        {renderTextWithVariables(displayTitle, data)}
-                                    </p>
-                                )}
-                                {displayBody ? (
-                                    <p className="text-[14.2px] text-[#111b21] dark:text-[#e9edef] leading-[19px] whitespace-pre-wrap">
-                                        {renderTextWithVariables(displayBody, data)}
-                                    </p>
-                                ) : templateName && !displayTitle ? (
-                                    <p className="text-[14.2px] text-[#667781] dark:text-[#8696a0] italic leading-snug">
-                                        {templateName}
-                                    </p>
-                                ) : null}
+                    {/* Text and Buttons Bubble */}
+                    {(displayTitle || displayBody || buttons.length > 0) && (
+                        <div className="flex justify-start mb-2 relative group">
+                            {/* Bubble Tail (If it's the only message or the start of text) */}
 
-                                <div className="flex justify-end items-center mt-1 -mb-1">
-                                    <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
-                                        {timeString}
-                                    </span>
-                                </div>
+
+                            <div className="absolute -left-[9px] -top-[0.5px] text-white dark:text-[#202c33] drop-shadow-[0_1px_rgba(0,0,0,0.13)] z-0">
+                                <svg width="11" height="16" viewBox="0 0 8 13">
+                                    <path fill="currentColor" d="M1.533 3.568L8 12.193V1H2.812C1.042 1 .474 2.156 1.533 3.568z"></path>
+                                </svg>
                             </div>
 
-                            {/* Dynamic Buttons */}
-                            {buttons.length > 0 && (
-                                <div className="border-t border-[#d1d7db] dark:border-[#3b4a53]">
-                                    {buttons.map((btn, idx) => (
-                                        <button
-                                            key={idx}
-                                            className="w-full py-2.5 flex items-center justify-center gap-2 text-[14px] font-semibold text-[#00a884] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors border-b last:border-b-0 border-[#d1d7db] dark:border-[#3b4a53]"
-                                        >
-                                            {btn.type === 'url' && <ExternalLink className="w-3.5 h-3.5" />}
-                                            {btn.type === 'phone' && <PhoneCall className="w-3.5 h-3.5" />}
-                                            {btn.text}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
 
-                            {/* Fallback Template CTA
-                            {templateName && buttons.length === 0 && (
-                                <div className="border-t border-[#d1d7db] dark:border-[#3b4a53]">
-                                    <button className="w-full py-2.5 flex items-center justify-center gap-2 text-[14px] font-semibold text-[#00a884] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                                        View details
-                                    </button>
+                            <div className={`relative rounded-r-lg rounded-bl-lg drop-shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] bg-white dark:bg-[#202c33] max-w-[85%] min-w-[140px] overflow-hidden`}>
+                                {/* Text Content */}
+                                <div className={`px-2.5 pb-1.5 pt-2 relative`}>
+                                    {displayTitle && (
+                                        <p className="text-[14.2px] font-bold text-[#111b21] dark:text-[#e9edef] leading-tight mb-1">
+                                            {renderTextWithVariables(displayTitle, data)}
+                                        </p>
+                                    )}
+                                    {displayBody ? (
+                                        <p className="text-[14.2px] text-[#111b21] dark:text-[#e9edef] leading-[19px] whitespace-pre-wrap">
+                                            {renderTextWithVariables(displayBody, data)}
+                                        </p>
+                                    ) : templateName && !displayTitle ? (
+                                        <p className="text-[14.2px] text-[#667781] dark:text-[#8696a0] italic leading-snug">
+                                            {templateName}
+                                        </p>
+                                    ) : null}
+
+                                    <div className="flex justify-end items-center mt-1 -mb-1">
+                                        <span className="text-[11px] text-[#667781] dark:text-[#8696a0]">
+                                            {timeString}
+                                        </span>
+                                    </div>
                                 </div>
-                            )} */}
+
+                                {/* Dynamic Buttons */}
+                                {buttons.length > 0 && (
+                                    <div className="border-t border-[#d1d7db] dark:border-[#3b4a53]">
+                                        {buttons.map((btn, idx) => (
+                                            <button
+                                                key={idx}
+                                                className="w-full py-2.5 flex items-center justify-center gap-2 text-[14px] font-semibold text-[#00a884] hover:bg-slate-50 dark:hover:bg-white/5 transition-colors border-b last:border-b-0 border-[#d1d7db] dark:border-[#3b4a53]"
+                                            >
+                                                {btn.type === 'url' && <ExternalLink className="w-3.5 h-3.5" />}
+                                                {btn.type === 'phone' && <PhoneCall className="w-3.5 h-3.5" />}
+                                                {btn.text}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Chat Footer */}

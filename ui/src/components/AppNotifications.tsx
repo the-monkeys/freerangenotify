@@ -160,9 +160,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [broadcastWorkflowTriggerId, setBroadcastWorkflowTriggerId] = useState('');
     const [broadcastTopicKey, setBroadcastTopicKey] = useState('');
-    // Local blob URL for WhatsApp media preview (survives regardless of server URL accessibility)
-    const [mediaPreviewUrl, setMediaPreviewUrl] = useState<string>('');
-    const [mediaFileType, setMediaFileType] = useState<string>('');
+    // Local blob URLs for WhatsApp media preview
+    const [mediaFiles, setMediaFiles] = useState<{ url: string; previewUrl: string; type: string; name: string }[]>([]);
 
     // Inbox selection & actions state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -941,8 +940,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
                                                     <WhatsAppPreview
                                                         templateName={formSelectedTemplate?.name}
-                                                        mediaUrl={mediaPreviewUrl || String((formData as any).media_url || '')}
-                                                        mediaType={mediaFileType}
+                                                        mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
                                                         buttons={formSelectedTemplate?.metadata?.buttons}
                                                         data={parsedFormData}
                                                         templateContent={{
@@ -955,8 +953,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                                             <div className="space-y-2">
                                                 <Label>Media Attachment (optional)</Label>
-                                                {!(formData as any).media_url ? (
-                                                    <div className="space-y-2">
+                                                <div className="space-y-3">
+                                                    {mediaFiles.length < 5 && (
                                                         <label
                                                             htmlFor="mediaUpload"
                                                             className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -964,66 +962,90 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                             <UploadCloud className="h-8 w-8 text-muted-foreground" />
                                                             <span className="text-sm font-medium">Click to upload image or file</span>
                                                             <span className="text-xs text-muted-foreground">
-                                                                JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB
+                                                                JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB (Limit: 5 files)
                                                             </span>
                                                             <input
-
+                                                                multiple
                                                                 id="mediaUpload"
                                                                 type="file"
                                                                 accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
                                                                 className="hidden"
                                                                 onChange={async (e) => {
-                                                                    const file = e.target.files?.[0];
-                                                                    if (!file) return;
-                                                                    if (file.size > 16 * 1024 * 1024) {
-                                                                        toast.error('File too large (max 16 MB)');
-                                                                        return;
+                                                                    const files = Array.from(e.target.files || []);
+                                                                    if (files.length === 0) return;
+
+                                                                    const remainingLimit = 5 - mediaFiles.length;
+                                                                    const filesToUpload = files.slice(0, remainingLimit);
+
+                                                                    if (files.length > remainingLimit) {
+                                                                        toast.warning(`Only ${remainingLimit} more file(s) can be added.`);
                                                                     }
-                                                                    // Create local preview immediately
-                                                                    const localUrl = URL.createObjectURL(file);
-                                                                    setMediaPreviewUrl(localUrl);
-                                                                    setMediaFileType(file.type);
-                                                                    try {
-                                                                        toast.info('Uploading media...');
-                                                                        const result = await mediaAPI.upload(apiKey, file);
-                                                                        setFormData({ ...formData, media_url: result.url } as any);
-                                                                        toast.success('Media uploaded');
-                                                                    } catch (err) {
-                                                                        setMediaPreviewUrl('');
-                                                                        setMediaFileType('');
-                                                                        toast.error('Upload failed: ' + extractErrorMessage(err));
+
+                                                                    for (const file of filesToUpload) {
+                                                                        if (file.size > 16 * 1024 * 1024) {
+                                                                            toast.error(`${file.name} is too large (max 16 MB)`);
+                                                                            continue;
+                                                                        }
+
+                                                                        const localUrl = URL.createObjectURL(file);
+                                                                        try {
+                                                                            toast.info(`Uploading ${file.name}...`);
+                                                                            const result = await mediaAPI.upload(apiKey, file);
+                                                                            setMediaFiles(prev => {
+                                                                                const next = [...prev, {
+                                                                                    url: result.url,
+                                                                                    previewUrl: localUrl,
+                                                                                    type: file.type,
+                                                                                    name: file.name
+                                                                                }];
+                                                                                // Sync the first file's URL to formData for API compatibility
+                                                                                if (next.length === 1) {
+                                                                                    setFormData(fd => ({ ...fd, media_url: result.url } as any));
+                                                                                }
+                                                                                return next;
+                                                                            });
+                                                                        } catch (err) {
+                                                                            URL.revokeObjectURL(localUrl);
+                                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+                                                                        }
                                                                     }
+                                                                    toast.success('Upload complete');
                                                                 }}
                                                             />
                                                         </label>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="p-2 bg-primary/10 rounded">
-                                                                <UploadCloud className="h-4 w-4 text-primary" />
+                                                    )}
+
+                                                    {mediaFiles.map((file, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="p-2 bg-primary/10 rounded">
+                                                                    <UploadCloud className="h-4 w-4 text-primary" />
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-medium truncate max-w-[150px]">{file.name}</p>
+                                                                    <p className="text-xs text-muted-foreground truncate max-w-[200px]">{file.url}</p>
+                                                                </div>
                                                             </div>
-                                                            <div>
-                                                                <p className="text-sm font-medium">Media Uploaded</p>
-                                                                <p className="text-xs text-muted-foreground truncate max-w-[200px]">{(formData as any).media_url}</p>
-                                                            </div>
+                                                            <Button
+                                                                className='bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200'
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+                                                                    const newFiles = mediaFiles.filter((_, i) => i !== idx);
+                                                                    setMediaFiles(newFiles);
+                                                                    // Update primary media_url
+                                                                    setFormData(prev => ({
+                                                                        ...prev,
+                                                                        media_url: newFiles.length > 0 ? newFiles[0].url : ''
+                                                                    } as any));
+                                                                }}
+                                                            >
+                                                                <X className="h-3.5 w-3.5" />
+                                                            </Button>
                                                         </div>
-                                                        <Button
-                                                            className='bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200'
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => {
-                                                                if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
-                                                                setMediaPreviewUrl('');
-                                                                setMediaFileType('');
-                                                                setFormData({ ...formData, media_url: '' } as any);
-                                                            }}
-                                                        >
-                                                            <X className="h-3.5 w-3.5 mr-1" />
-                                                            Remove
-                                                        </Button>
-                                                    </div>
-                                                )}
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -1432,6 +1454,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
                                                 <WhatsAppPreview
                                                     templateName={formSelectedTemplate?.name}
+                                                    mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
                                                     buttons={formSelectedTemplate?.metadata?.buttons}
                                                     data={parsedFormData}
                                                     templateContent={{
@@ -2266,6 +2289,7 @@ const UserMultiSelect: React.FC<{
                                     <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs text-foreground">
                                         {user.email || user.user_id}
                                         <button
+                                            id='remove-btn'
                                             type="button"
                                             className="text-muted-foreground hover:text-foreground"
                                             onClick={() => toggleUser(user.user_id)}
