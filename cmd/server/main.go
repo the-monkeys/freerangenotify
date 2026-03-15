@@ -29,7 +29,7 @@ import (
 <<<<<<< HEAD
 // @version 0.1.22-alpha
 =======
-// @version 0.1.21-alpha
+// @version 0.1.22-alpha
 >>>>>>> 2b213d4dc4dd8d0f5c7df6075a4908c180c0fbcc
 // @description High-performance notification service with multi-channel delivery support
 // @termsOfService http://swagger.io/terms/
