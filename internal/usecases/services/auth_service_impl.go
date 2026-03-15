@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"net/smtp"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/jwt"
 	"go.uber.org/zap"
@@ -25,6 +27,8 @@ type authService struct {
 	membershipRepo      auth.MembershipRepository
 	jwtManager          *jwt.Manager
 	notificationService notification.Service
+	otpRepo             repository.OTPRepository
+	otpSender           *OTPEmailSender
 	logger              *zap.Logger
 }
 
@@ -34,6 +38,8 @@ func NewAuthService(
 	membershipRepo auth.MembershipRepository,
 	jwtManager *jwt.Manager,
 	notificationService notification.Service,
+	otpRepo repository.OTPRepository,
+	otpSender *OTPEmailSender,
 	logger *zap.Logger,
 ) auth.Service {
 	return &authService{
@@ -41,18 +47,20 @@ func NewAuthService(
 		membershipRepo:      membershipRepo,
 		jwtManager:          jwtManager,
 		notificationService: notificationService,
+		otpRepo:             otpRepo,
+		otpSender:           otpSender,
 		logger:              logger,
 	}
 }
 
-// Register registers a new admin user
+// Register initiates registration by sending an OTP to the user's email.
+// The account is NOT created until the OTP is verified via VerifyRegistrationOTP.
 func (s *authService) Register(ctx context.Context, req *auth.RegisterRequest) (*auth.AuthResponse, error) {
 	// Check if user already exists
 	existingUser, err := s.repo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing user: %w", err)
 	}
-
 	if existingUser != nil {
 		return nil, errors.BadRequest("User with this email already exists")
 	}
@@ -63,72 +71,38 @@ func (s *authService) Register(ctx context.Context, req *auth.RegisterRequest) (
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create user
-	user := &auth.AdminUser{
-		UserID:       uuid.New().String(),
+	// Generate 6-digit OTP
+	otpCode, err := generateOTP(6)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	// Store pending registration in Redis
+	pending := &auth.PendingRegistration{
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
 		FullName:     req.FullName,
-		IsActive:     true,
+		OTPCode:      otpCode,
 		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		Attempts:     0,
 	}
 
-	if err := s.repo.CreateUser(ctx, user); err != nil {
-		// Race condition: another request may have created a user with the same email
-		// between our check and our create. Re-check.
-		rechecked, recheckErr := s.repo.GetUserByEmail(ctx, req.Email)
-		if recheckErr == nil && rechecked != nil && rechecked.UserID != user.UserID {
-			return nil, errors.BadRequest("User with this email already exists")
-		}
-		return nil, fmt.Errorf("failed to create user: %w", err)
+	if err := s.otpRepo.StorePendingRegistration(ctx, pending); err != nil {
+		return nil, fmt.Errorf("failed to store pending registration: %w", err)
 	}
 
-	// Double-check: if a duplicate was created in a race, detect it and remove ours
-	duplicateUser, _ := s.repo.GetUserByEmail(ctx, req.Email)
-	if duplicateUser != nil && duplicateUser.UserID != user.UserID {
-		// Another user was created first (has earlier created_at). Remove our duplicate.
-		_ = s.repo.DeleteUser(ctx, user.UserID)
-		return nil, errors.BadRequest("User with this email already exists")
+	// Send OTP email
+	if err := s.otpSender.SendOTP(req.Email, otpCode); err != nil {
+		s.logger.Error("Failed to send OTP email", zap.String("email", req.Email), zap.Error(err))
+		// Don't fail the request — the OTP is stored, user can resend
 	}
 
-	// Generate tokens
-	tokens, err := s.generateTokenPair(ctx, user)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate tokens: %w", err)
-	}
-
-	s.logger.Info("User registered successfully",
-		zap.String("user_id", user.UserID),
-		zap.String("email", user.Email),
+	s.logger.Info("Registration OTP sent",
+		zap.String("email", req.Email),
 	)
 
-	// Claim any pending team invitations sent to this email
-	if s.membershipRepo != nil {
-		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
-			s.logger.Warn("Failed to claim pending memberships on register",
-				zap.String("email", user.Email), zap.Error(err))
-		} else {
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H2-claim-on-register",
-				"internal/usecases/services/auth_service_impl.go:Register",
-				"claimed pending memberships on register",
-				map[string]any{
-					"user_id": user.UserID,
-					"email":   user.Email,
-				},
-			)
-		}
-	}
-
-	// Don't return password hash
-	user.PasswordHash = ""
-
-	return &auth.AuthResponse{
-		User:   user,
-		Tokens: tokens,
-	}, nil
+	// Return nil AuthResponse — the frontend uses the HTTP status + OTPResponse DTO
+	return nil, nil
 }
 
 // Login authenticates a user
@@ -596,6 +570,145 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
 	)
 
 	return nil
+}
+
+// VerifyRegistrationOTP verifies the OTP and creates the user account.
+func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.VerifyOTPRequest) (*auth.AuthResponse, error) {
+	pending, err := s.otpRepo.GetPendingRegistration(ctx, req.Email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending registration: %w", err)
+	}
+	if pending == nil {
+		return nil, errors.BadRequest("No pending registration found. Please register again.")
+	}
+
+	// Check OTP match
+	if pending.OTPCode != req.OTPCode {
+		attempts, incErr := s.otpRepo.IncrementAttempts(ctx, req.Email)
+		if incErr != nil {
+			s.logger.Error("Failed to increment OTP attempts", zap.Error(incErr))
+		}
+		if attempts >= 5 {
+			return nil, errors.BadRequest("Too many failed attempts. Please register again.")
+		}
+		return nil, errors.BadRequest("Invalid verification code")
+	}
+
+	// OTP is correct — create the actual user
+	user := &auth.AdminUser{
+		UserID:       uuid.New().String(),
+		Email:        pending.Email,
+		PasswordHash: pending.PasswordHash,
+		FullName:     pending.FullName,
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		rechecked, recheckErr := s.repo.GetUserByEmail(ctx, req.Email)
+		if recheckErr == nil && rechecked != nil && rechecked.UserID != user.UserID {
+			return nil, errors.BadRequest("User with this email already exists")
+		}
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Race condition guard
+	duplicateUser, _ := s.repo.GetUserByEmail(ctx, req.Email)
+	if duplicateUser != nil && duplicateUser.UserID != user.UserID {
+		_ = s.repo.DeleteUser(ctx, user.UserID)
+		return nil, errors.BadRequest("User with this email already exists")
+	}
+
+	// Delete the pending registration from Redis
+	_ = s.otpRepo.DeletePendingRegistration(ctx, req.Email)
+
+	// Generate tokens
+	tokens, err := s.generateTokenPair(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+	}
+
+	s.logger.Info("User registered successfully via OTP verification",
+		zap.String("user_id", user.UserID),
+		zap.String("email", user.Email),
+	)
+
+	// Claim any pending team invitations
+	if s.membershipRepo != nil {
+		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+			s.logger.Warn("Failed to claim pending memberships on register",
+				zap.String("email", user.Email), zap.Error(err))
+		} else {
+			agentdebug.Log(
+				"pre-fix-rbac",
+				"H2-claim-on-register",
+				"internal/usecases/services/auth_service_impl.go:VerifyRegistrationOTP",
+				"claimed pending memberships on register",
+				map[string]any{
+					"user_id": user.UserID,
+					"email":   user.Email,
+				},
+			)
+		}
+	}
+
+	user.PasswordHash = ""
+
+	return &auth.AuthResponse{
+		User:   user,
+		Tokens: tokens,
+	}, nil
+}
+
+// ResendRegistrationOTP regenerates and resends the OTP for a pending registration.
+func (s *authService) ResendRegistrationOTP(ctx context.Context, req *auth.ResendOTPRequest) error {
+	pending, err := s.otpRepo.GetPendingRegistration(ctx, req.Email)
+	if err != nil {
+		return fmt.Errorf("failed to get pending registration: %w", err)
+	}
+	if pending == nil {
+		return errors.BadRequest("No pending registration found. Please register again.")
+	}
+
+	// Rate limit: 30-second cooldown
+	if time.Since(pending.CreatedAt) < 30*time.Second {
+		return errors.BadRequest("Please wait before requesting a new code")
+	}
+
+	// Generate new OTP
+	otpCode, err := generateOTP(6)
+	if err != nil {
+		return fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	// Update pending registration with new OTP and reset timestamp
+	pending.OTPCode = otpCode
+	pending.CreatedAt = time.Now()
+	pending.Attempts = 0
+
+	if err := s.otpRepo.StorePendingRegistration(ctx, pending); err != nil {
+		return fmt.Errorf("failed to update pending registration: %w", err)
+	}
+
+	// Send new OTP email
+	if err := s.otpSender.SendOTP(req.Email, otpCode); err != nil {
+		s.logger.Error("Failed to resend OTP email", zap.String("email", req.Email), zap.Error(err))
+		return fmt.Errorf("failed to send verification email: %w", err)
+	}
+
+	s.logger.Info("Registration OTP resent", zap.String("email", req.Email))
+	return nil
+}
+
+// generateOTP generates a cryptographically secure numeric OTP of the given length.
+func generateOTP(length int) (string, error) {
+	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(length)), nil)
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%0*d", length, n), nil
 }
 
 // SSOLogin handles authentication via Single Sign-On (OIDC)

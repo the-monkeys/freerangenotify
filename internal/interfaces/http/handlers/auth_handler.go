@@ -38,7 +38,7 @@ func NewAuthHandler(authService auth.Service, validator *validator.Validator, lo
 // @Accept json
 // @Produce json
 // @Param request body dto.RegisterRequest true "Registration details"
-// @Success 201 {object} dto.AuthResponse
+// @Success 200 {object} dto.OTPResponse
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Router /v1/auth/register [post]
@@ -58,9 +58,46 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		FullName: req.FullName,
 	}
 
-	response, err := h.authService.Register(c.Context(), authReq)
+	_, err := h.authService.Register(c.Context(), authReq)
 	if err != nil {
 		h.logger.Error("Failed to register user", zap.Error(err))
+		return err
+	}
+
+	return c.Status(fiber.StatusOK).JSON(dto.OTPResponse{
+		Message:   "Verification code sent to your email",
+		ExpiresIn: 600,
+	})
+}
+
+// VerifyOTP handles OTP verification and completes registration
+// @Summary Verify registration OTP
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body dto.VerifyOTPRequest true "OTP verification details"
+// @Success 201 {object} dto.AuthResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/auth/verify-otp [post]
+func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
+	var req dto.VerifyOTPRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.VerifyOTPRequest{
+		Email:   req.Email,
+		OTPCode: req.OTPCode,
+	}
+
+	response, err := h.authService.VerifyRegistrationOTP(c.Context(), authReq)
+	if err != nil {
+		h.logger.Error("Failed to verify OTP", zap.Error(err))
 		return err
 	}
 
@@ -77,6 +114,41 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		AccessToken:  response.Tokens.AccessToken,
 		RefreshToken: response.Tokens.RefreshToken,
 		ExpiresAt:    response.Tokens.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// ResendOTP handles OTP resend requests
+// @Summary Resend registration OTP
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body dto.ResendOTPRequest true "Email to resend OTP to"
+// @Success 200 {object} dto.OTPResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/auth/resend-otp [post]
+func (h *AuthHandler) ResendOTP(c *fiber.Ctx) error {
+	var req dto.ResendOTPRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.ResendOTPRequest{
+		Email: req.Email,
+	}
+
+	if err := h.authService.ResendRegistrationOTP(c.Context(), authReq); err != nil {
+		h.logger.Error("Failed to resend OTP", zap.Error(err))
+		return err
+	}
+
+	return c.Status(fiber.StatusOK).JSON(dto.OTPResponse{
+		Message:   "Verification code resent to your email",
+		ExpiresIn: 600,
 	})
 }
 

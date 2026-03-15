@@ -33,6 +33,8 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	// Authentication routes (public)
 	auth := v1.Group("/auth")
 	auth.Post("/register", c.AuthHandler.Register)
+	auth.Post("/verify-otp", c.AuthHandler.VerifyOTP)
+	auth.Post("/resend-otp", c.AuthHandler.ResendOTP)
 	auth.Post("/login", c.AuthHandler.Login)
 	auth.Post("/refresh", c.AuthHandler.RefreshToken)
 	auth.Post("/forgot-password", c.AuthHandler.ForgotPassword)
