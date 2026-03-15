@@ -26,7 +26,7 @@ import (
 )
 
 // @title FreeRangeNotify API
-// @version 0.1.22-alpha
+// @version 0.1.23-alpha
 // @description High-performance notification service with multi-channel delivery support
 // @termsOfService http://swagger.io/terms/
 
