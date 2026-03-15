@@ -37,10 +37,11 @@ type RefreshTokenRequest struct {
 
 // AuthResponse represents authentication response DTO
 type AuthResponse struct {
-	User         *AdminUserResponse `json:"user"`
-	AccessToken  string             `json:"access_token"`
-	RefreshToken string             `json:"refresh_token"`
-	ExpiresAt    string             `json:"expires_at"`
+	User                *AdminUserResponse `json:"user"`
+	AccessToken         string             `json:"access_token"`
+	RefreshToken        string             `json:"refresh_token"`
+	ExpiresAt           string             `json:"expires_at"`
+	RequireTrialWelcome bool               `json:"require_trial_welcome"`
 }
 
 // AdminUserResponse represents admin user data in response

@@ -145,6 +145,7 @@ features:
   workflow_enabled: true
   digest_enabled: true
   sse_hmac_enforced: true
+  trial_welcome_enabled: true
   # Phase 2
   topics_enabled: true
   throttle_enabled: false

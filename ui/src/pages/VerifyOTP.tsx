@@ -91,9 +91,9 @@ const VerifyOTP: React.FC = () => {
 
         setLoading(true);
         try {
-            await verifyOTP(email, otpCode);
+            const { requireTrialWelcome } = await verifyOTP(email, otpCode);
             toast.success('Account created successfully!');
-            navigate('/apps');
+            navigate(requireTrialWelcome ? '/welcome' : '/apps', { replace: true });
         } catch (error: any) {
             const message = error.response?.data?.error?.message || 'Invalid verification code';
             toast.error(message);

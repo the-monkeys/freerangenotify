@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -29,6 +30,7 @@ type authService struct {
 	notificationService notification.Service
 	otpRepo             repository.OTPRepository
 	otpSender           *OTPEmailSender
+	subscriptionRepo    license.Repository
 	logger              *zap.Logger
 }
 
@@ -40,6 +42,7 @@ func NewAuthService(
 	notificationService notification.Service,
 	otpRepo repository.OTPRepository,
 	otpSender *OTPEmailSender,
+	subscriptionRepo license.Repository,
 	logger *zap.Logger,
 ) auth.Service {
 	return &authService{
@@ -49,6 +52,7 @@ func NewAuthService(
 		notificationService: notificationService,
 		otpRepo:             otpRepo,
 		otpSender:           otpSender,
+		subscriptionRepo:    subscriptionRepo,
 		logger:              logger,
 	}
 }
@@ -622,6 +626,32 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 
 	// Delete the pending registration from Redis
 	_ = s.otpRepo.DeletePendingRegistration(ctx, req.Email)
+
+	// Provision 30-day free trial subscription for the new user.
+	// The user's own ID serves as their personal workspace tenant ID.
+	if s.subscriptionRepo != nil {
+		now := time.Now().UTC()
+		sub := &license.Subscription{
+			ID:                 uuid.New().String(),
+			TenantID:           user.UserID,
+			Plan:               "free_trial",
+			Status:             license.SubscriptionStatusTrial,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+			Metadata: map[string]interface{}{
+				"message_limit":      10000,
+				"messages_sent":      0,
+				"trial_activated_at": now.Format(time.RFC3339),
+			},
+		}
+		if err := s.subscriptionRepo.Create(ctx, sub); err != nil {
+			// Non-fatal: log and continue. User can have trial manually activated.
+			s.logger.Error("Failed to provision free trial subscription",
+				zap.String("user_id", user.UserID),
+				zap.Error(err),
+			)
+		}
+	}
 
 	// Generate tokens
 	tokens, err := s.generateTokenPair(ctx, user)

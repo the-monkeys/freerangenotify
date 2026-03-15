@@ -64,6 +64,9 @@ security:
       - "${FRONTEND_URL}"
       - "${ADMIN_PANEL_URL}"
 
+features:
+  trial_welcome_enabled: true
+
 licensing:
   enabled: true
   deployment_mode: "hosted"   # hosted | self_hosted

@@ -1073,6 +1073,24 @@ export const tenantsAPI = {
   }
 };
 
+// ============= Billing APIs (user-facing, JWT auth) =============
+export const billingAPI = {
+  getUsage: async () => {
+    const { data } = await api.get('/billing/usage');
+    return data;
+  },
+
+  getSubscription: async () => {
+    const { data } = await api.get('/billing/subscription');
+    return data;
+  },
+
+  acceptTrial: async () => {
+    const { data } = await api.post('/billing/accept-trial');
+    return data;
+  },
+};
+
 // ============= Custom Provider APIs =============
 export const providersAPI = {
   register: async (appId: string, payload: RegisterProviderRequest) => {

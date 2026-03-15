@@ -16,6 +16,7 @@ const LandingPage = lazy(() => import('./pages/LandingPage'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
+const Welcome = lazy(() => import('./pages/Welcome'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const SSOCallback = lazy(() => import('./pages/SSOCallback'));
@@ -66,6 +67,7 @@ const App: React.FC = () => {
                       <Route path="/login" element={<Login />} />
                       <Route path="/register" element={<Register />} />
                       <Route path="/verify-otp" element={<VerifyOTP />} />
+                      <Route path="/welcome" element={<Welcome />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/reset-password" element={<ResetPassword />} />
                     </Route>

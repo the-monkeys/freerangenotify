@@ -7,7 +7,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
-  verifyOTP: (email: string, otpCode: string) => Promise<void>;
+  verifyOTP: (email: string, otpCode: string) => Promise<{ requireTrialWelcome: boolean }>;
   resendOTP: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
@@ -75,11 +75,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       email,
       otp_code: otpCode,
     });
-    const { user, access_token, refresh_token } = response.data;
+    const { user, access_token, refresh_token, require_trial_welcome } = response.data;
 
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
     setUser(user);
+
+    return { requireTrialWelcome: !!require_trial_welcome };
   };
 
   const resendOTP = async (email: string) => {

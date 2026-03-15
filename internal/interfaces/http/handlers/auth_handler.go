@@ -8,6 +8,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -20,14 +21,16 @@ import (
 type AuthHandler struct {
 	authService auth.Service
 	validator   *validator.Validator
+	config      *config.Config
 	logger      *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService auth.Service, validator *validator.Validator, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(authService auth.Service, validator *validator.Validator, cfg *config.Config, logger *zap.Logger) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		validator:   validator,
+		config:      cfg,
 		logger:      logger,
 	}
 }
@@ -111,9 +114,10 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 			UpdatedAt:   response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			LastLoginAt: formatTimePtr(response.User.LastLoginAt),
 		},
-		AccessToken:  response.Tokens.AccessToken,
-		RefreshToken: response.Tokens.RefreshToken,
-		ExpiresAt:    response.Tokens.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccessToken:         response.Tokens.AccessToken,
+		RefreshToken:        response.Tokens.RefreshToken,
+		ExpiresAt:           response.Tokens.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		RequireTrialWelcome: h.config != nil && h.config.Features.TrialWelcomeEnabled,
 	})
 }
 

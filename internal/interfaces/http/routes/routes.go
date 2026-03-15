@@ -242,6 +242,13 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth := admin.Group("")
 	adminAuth.Use(jwtAuth)
 
+	// Billing routes (JWT-protected, user-facing)
+	billing := v1.Group("/billing")
+	billing.Use(jwtAuth)
+	billing.Get("/usage", c.BillingHandler.GetUsage)
+	billing.Get("/subscription", c.BillingHandler.GetSubscription)
+	billing.Post("/accept-trial", c.BillingHandler.AcceptTrial)
+
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)

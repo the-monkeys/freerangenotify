@@ -795,6 +795,40 @@ export interface InviteTenantMemberRequest {
     role: 'admin' | 'member';
 }
 
+// ============= Billing Types =============
+export interface BillingSubscription {
+    id: string;
+    tenant_id: string;
+    plan: string;
+    status: 'trial' | 'active' | 'expired' | 'canceled';
+    current_period_start: string;
+    current_period_end: string;
+    metadata?: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingUsage {
+    plan: string;
+    status: 'trial' | 'active' | 'expired' | 'canceled' | 'none';
+    messages_sent: number;
+    message_limit: number;
+    usage_percent: number;
+    current_period_start: string;
+    current_period_end: string;
+    days_remaining: number;
+}
+
+export interface AcceptTrialResponse {
+    accepted: boolean;
+    plan: string;
+    status: string;
+    message_limit: number;
+    current_period_end: string;
+    days_remaining: number;
+    trial_accepted_at: string;
+}
+
 // ============= Custom Provider Types =============
 export interface CustomProvider {
     provider_id: string;

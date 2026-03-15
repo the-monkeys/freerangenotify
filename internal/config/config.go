@@ -54,6 +54,8 @@ type FeaturesConfig struct {
 	WorkflowEnabled bool `mapstructure:"workflow_enabled" yaml:"workflow_enabled"`
 	DigestEnabled   bool `mapstructure:"digest_enabled" yaml:"digest_enabled"`
 	SSEHMACEnforced bool `mapstructure:"sse_hmac_enforced" yaml:"sse_hmac_enforced"`
+	// Registration/Billing UX
+	TrialWelcomeEnabled bool `mapstructure:"trial_welcome_enabled" yaml:"trial_welcome_enabled"`
 	// Phase 2
 	TopicsEnabled   bool `mapstructure:"topics_enabled" yaml:"topics_enabled"`
 	ThrottleEnabled bool `mapstructure:"throttle_enabled" yaml:"throttle_enabled"`
@@ -361,6 +363,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("features.workflow_enabled", false)
 	viper.SetDefault("features.digest_enabled", false)
 	viper.SetDefault("features.sse_hmac_enforced", false)
+	viper.SetDefault("features.trial_welcome_enabled", true)
 
 	viper.SetDefault("oidc.enabled", false)
 	viper.SetDefault("oidc.issuer", "https://identity.monkeys.support")

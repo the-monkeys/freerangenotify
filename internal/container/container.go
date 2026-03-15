@@ -91,6 +91,7 @@ type Container struct {
 	PlaygroundHandler            *handlers.PlaygroundHandler
 	AnalyticsHandler             *handlers.AnalyticsHandler
 	LicensingHandler             *handlers.LicensingHandler
+	BillingHandler               *handlers.BillingHandler
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -282,7 +283,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
 	otpRepo := repository.NewOTPRepository(redisClient)
 	otpSender := services.NewOTPEmailSender(cfg.Providers.SMTP, logger)
-	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, otpRepo, otpSender, logger)
+	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, otpRepo, otpSender, repos.Subscription, logger)
 
 	// Initialize tenant/organization support (C1)
 	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
@@ -388,6 +389,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.AuthHandler = handlers.NewAuthHandler(
 		container.AuthService,
 		container.Validator,
+		cfg,
 		logger,
 	)
 	container.HealthHandler = handlers.NewHealthHandler(
@@ -400,6 +402,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		repos.Subscription,
 		logger,
 	)
+	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, logger)
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
 		container.ApplicationService,
