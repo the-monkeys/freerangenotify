@@ -542,6 +542,9 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		settings.ValidationConfig = req.ValidationConfig
 	}
 	if req.EmailConfig != nil {
+		if req.EmailConfig.SMTP != nil && req.EmailConfig.SMTP.Port == 0 {
+			req.EmailConfig.SMTP.Port = 587
+		}
 		settings.EmailConfig = req.EmailConfig
 	}
 	if req.DailyEmailLimit != nil {

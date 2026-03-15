@@ -88,8 +88,8 @@ export interface DefaultPreferences {
 
 export interface EmailConfig {
     provider_type: 'system' | 'smtp' | 'sendgrid';
-    smtp_config?: SMTPConfig;
-    sendgrid_config?: SendGridConfig;
+    smtp?: SMTPConfig;
+    sendgrid?: SendGridConfig;
 }
 
 export interface SMTPConfig {
