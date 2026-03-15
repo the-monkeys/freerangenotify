@@ -89,6 +89,13 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" validate:"required,min=8"`
 }
 
+// DeleteAccountRequest represents a self-service account deletion request.
+// confirm_text must be exactly "DELETE MY ACCOUNT".
+type DeleteAccountRequest struct {
+	Password    string `json:"password" validate:"required,min=8"`
+	ConfirmText string `json:"confirm_text" validate:"required"`
+}
+
 // TokenPair represents access and refresh tokens
 type TokenPair struct {
 	AccessToken  string    `json:"access_token"`
@@ -136,6 +143,7 @@ type Service interface {
 	ForgotPassword(ctx context.Context, req *ForgotPasswordRequest) error
 	ResetPassword(ctx context.Context, req *ResetPasswordRequest) error
 	ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error
+	DeleteOwnAccount(ctx context.Context, userID string, req *DeleteAccountRequest) error
 
 	// User operations
 	GetCurrentUser(ctx context.Context, userID string) (*AdminUser, error)

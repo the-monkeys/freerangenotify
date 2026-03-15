@@ -30,6 +30,12 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password" validate:"required,min=8"`
 }
 
+// DeleteAccountRequest represents a self-service account deletion request.
+type DeleteAccountRequest struct {
+	Password    string `json:"password" validate:"required,min=8"`
+	ConfirmText string `json:"confirm_text" validate:"required"`
+}
+
 // RefreshTokenRequest represents a refresh token request DTO
 type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`

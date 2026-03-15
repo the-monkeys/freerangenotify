@@ -278,16 +278,29 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize membership repo early — needed by AuthService to claim
 	// pending team invitations on login/register regardless of RBAC toggle.
 	container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
+	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
+	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
 
 	// Initialize auth repository and service
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
 	otpRepo := repository.NewOTPRepository(redisClient)
 	otpSender := services.NewOTPEmailSender(cfg.Providers.SMTP, logger)
-	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, otpRepo, otpSender, repos.Subscription, logger)
+	container.AuthService = services.NewAuthService(
+		authRepo,
+		container.MembershipRepo,
+		container.JWTManager,
+		container.NotificationService,
+		otpRepo,
+		otpSender,
+		repos.Subscription,
+		repos.Application,
+		tenantRepo,
+		tenantMemberRepo,
+		dbManager.Client.GetClient(),
+		logger,
+	)
 
 	// Initialize tenant/organization support (C1)
-	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
-	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
 	dashboardNotifier := infrastructure.NewDashboardNotifier(
 		repos.DashboardNotification,
 		container.SSEBroadcaster,

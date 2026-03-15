@@ -367,6 +367,45 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 	})
 }
 
+// DeleteOwnAccount handles self-service account deletion with cascade cleanup.
+// @Summary Delete current account and all owned data
+// @Tags Auth
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body dto.DeleteAccountRequest true "Password and confirmation text"
+// @Success 200 {object} dto.MessageResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/auth/me [delete]
+func (h *AuthHandler) DeleteOwnAccount(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	var req dto.DeleteAccountRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.DeleteAccountRequest{
+		Password:    req.Password,
+		ConfirmText: req.ConfirmText,
+	}
+
+	if err := h.authService.DeleteOwnAccount(c.Context(), userID, authReq); err != nil {
+		h.logger.Error("Failed to delete own account", zap.String("user_id", userID), zap.Error(err))
+		return err
+	}
+
+	return c.JSON(dto.MessageResponse{
+		Message: "Account and owned data deleted successfully",
+	})
+}
+
 // GetCurrentUser returns the current authenticated user
 // @Summary Get current user
 // @Tags Auth

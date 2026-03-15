@@ -251,6 +251,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
+	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
 

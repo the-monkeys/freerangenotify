@@ -102,14 +102,15 @@ const Login: React.FC = () => {
             type="button"
             variant="outline"
             className="w-full border-border text-foreground hover:bg-muted flex items-center justify-center gap-2"
-            onClick={() => {
-              // Determine API base URL
-              const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/v1';
-              window.location.href = `${apiUrl}/auth/sso/login`;
-            }}
+            disabled
+          // onClick={() => {
+          //   // Determine API base URL
+          //   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080/v1';
+          //   window.location.href = `${apiUrl}/auth/sso/login`;
+          // }}
           >
             <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = 'https://monkeys.support/favicon.ico'; }} />
-            Log in with Monkeys Identity
+            Monkeys Identity (Upcoming)
           </Button>
         </form>
         <div className="mt-6 text-center text-sm">

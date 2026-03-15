@@ -1123,6 +1123,10 @@ export const authExtendedAPI = {
   changePassword: async (payload: { old_password: string; new_password: string }) => {
     await api.post('/admin/change-password', payload);
   },
+
+  deleteOwnAccount: async (payload: { password: string; confirm_text: string }) => {
+    await api.delete('/admin/me', { data: payload });
+  },
 };
 
 // ============= Media Upload APIs =============
