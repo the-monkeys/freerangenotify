@@ -25,6 +25,15 @@ const Footer: React.FC = () => {
                             <Button asChild variant="link" size="sm">
                                 <Link to="/docs">Docs</Link>
                             </Button>
+                            <Button asChild variant="link" size="sm">
+                                <Link to="/terms">Terms of Service</Link>
+                            </Button>
+                            <Button asChild variant="link" size="sm">
+                                <Link to="/privacy">Privacy Policy</Link>
+                            </Button>
+                            <Button asChild variant="link" size="sm">
+                                <Link to="/acceptable-use">Acceptable Use</Link>
+                            </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">
                             &copy; {currentYear} BUDDHICINTAKA PVT. LTD. All rights reserved.

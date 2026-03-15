@@ -65,3 +65,20 @@ type TokenPairResponse struct {
 type MessageResponse struct {
 	Message string `json:"message"`
 }
+
+// VerifyOTPRequest represents a request to verify a registration OTP
+type VerifyOTPRequest struct {
+	Email   string `json:"email" validate:"required,email"`
+	OTPCode string `json:"otp_code" validate:"required,len=6"`
+}
+
+// ResendOTPRequest represents a request to resend a registration OTP
+type ResendOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+// OTPResponse represents the response after initiating or resending an OTP
+type OTPResponse struct {
+	Message   string `json:"message"`
+	ExpiresIn int    `json:"expires_in"`
+}

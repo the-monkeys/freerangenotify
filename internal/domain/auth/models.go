@@ -27,6 +27,28 @@ type PasswordResetToken struct {
 	CreatedAt time.Time `json:"created_at" es:"created_at"`
 }
 
+// PendingRegistration holds registration data while awaiting OTP verification.
+// Stored in Redis with key "otp:register:<email>" and a 10-minute TTL.
+type PendingRegistration struct {
+	Email        string    `json:"email"`
+	PasswordHash string    `json:"password_hash"`
+	FullName     string    `json:"full_name"`
+	OTPCode      string    `json:"otp_code"`
+	CreatedAt    time.Time `json:"created_at"`
+	Attempts     int       `json:"attempts"`
+}
+
+// VerifyOTPRequest represents a request to verify a registration OTP
+type VerifyOTPRequest struct {
+	Email   string `json:"email" validate:"required,email"`
+	OTPCode string `json:"otp_code" validate:"required,len=6"`
+}
+
+// ResendOTPRequest represents a request to resend a registration OTP
+type ResendOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
 // RefreshToken represents a refresh token for JWT
 type RefreshToken struct {
 	TokenID   string    `json:"token_id" es:"token_id"`
@@ -121,6 +143,10 @@ type Service interface {
 
 	// SSO
 	SSOLogin(ctx context.Context, email, name string) (*AuthResponse, error)
+
+	// OTP verification
+	VerifyRegistrationOTP(ctx context.Context, req *VerifyOTPRequest) (*AuthResponse, error)
+	ResendRegistrationOTP(ctx context.Context, req *ResendOTPRequest) error
 }
 
 // ─── Phase 2: RBAC Types ───────────────────────────────────────────────

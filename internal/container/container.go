@@ -239,7 +239,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Initialize auth repository and service
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
-	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, logger)
+	otpRepo := repository.NewOTPRepository(redisClient)
+	otpSender := services.NewOTPEmailSender(cfg.Providers.SMTP, logger)
+	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, otpRepo, otpSender, logger)
 
 	// Initialize tenant/organization support (C1)
 	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)

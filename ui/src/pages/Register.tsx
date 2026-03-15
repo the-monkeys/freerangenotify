@@ -36,8 +36,8 @@ const Register: React.FC = () => {
 
     try {
       await register(email, password, fullName);
-      toast.success('Account created successfully!');
-      navigate('/apps');
+      toast.success('Verification code sent to your email!');
+      navigate('/verify-otp', { state: { email } });
     } catch (error: any) {
       toast.error(error.response?.data?.error?.message || 'Registration failed. Please try again.');
     } finally {

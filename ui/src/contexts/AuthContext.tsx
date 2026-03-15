@@ -7,6 +7,8 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
+  verifyOTP: (email: string, otpCode: string) => Promise<void>;
+  resendOTP: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchCurrentUser: () => Promise<void>;
   isAuthenticated: boolean;
@@ -60,16 +62,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const register = async (email: string, password: string, fullName: string) => {
-    const response = await api.post('/auth/register', {
+    await api.post('/auth/register', {
       email,
       password,
       full_name: fullName,
+    });
+    // No tokens returned — user must verify OTP first
+  };
+
+  const verifyOTP = async (email: string, otpCode: string) => {
+    const response = await api.post('/auth/verify-otp', {
+      email,
+      otp_code: otpCode,
     });
     const { user, access_token, refresh_token } = response.data;
 
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
     setUser(user);
+  };
+
+  const resendOTP = async (email: string) => {
+    await api.post('/auth/resend-otp', { email });
   };
 
   const logout = async () => {
@@ -91,6 +105,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loading,
         login,
         register,
+        verifyOTP,
+        resendOTP,
         logout,
         fetchCurrentUser,
         isAuthenticated: !!user,

@@ -15,9 +15,13 @@ import './index.css'
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const VerifyOTP = lazy(() => import('./pages/VerifyOTP'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const SSOCallback = lazy(() => import('./pages/SSOCallback'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const AcceptableUsePolicy = lazy(() => import('./pages/AcceptableUsePolicy'));
 const AppsList = lazy(() => import('./pages/AppsList'));
 const TenantsList = lazy(() => import('./pages/TenantsList'));
 const TenantDetail = lazy(() => import('./pages/TenantDetail'));
@@ -61,6 +65,7 @@ const App: React.FC = () => {
                     <Route element={<AuthLayout />}>
                       <Route path="/login" element={<Login />} />
                       <Route path="/register" element={<Register />} />
+                      <Route path="/verify-otp" element={<VerifyOTP />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/reset-password" element={<ResetPassword />} />
                     </Route>
@@ -95,6 +100,9 @@ const App: React.FC = () => {
                     </Route>
 
                     {/* Catch-all redirect */}
+                    <Route path="/terms" element={<TermsOfService />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/acceptable-use" element={<AcceptableUsePolicy />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>
