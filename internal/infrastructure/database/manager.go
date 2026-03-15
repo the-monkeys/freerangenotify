@@ -8,6 +8,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -25,11 +26,12 @@ type DatabaseManager struct {
 
 // Repositories holds all repository instances
 type Repositories struct {
-	Application            application.Repository
-	User                   user.Repository
-	Notification           notification.Repository
-	Template               template.Repository
-	DashboardNotification  dashboard_notification.Repository
+	Application           application.Repository
+	User                  user.Repository
+	Notification          notification.Repository
+	Template              template.Repository
+	DashboardNotification dashboard_notification.Repository
+	Subscription          license.Repository
 	// Analytics repository will be added later
 }
 
@@ -51,6 +53,7 @@ func NewDatabaseManager(cfg *config.Config, logger *zap.Logger) (*DatabaseManage
 		Notification:          repository.NewNotificationRepository(client.GetClient(), logger),
 		Template:              NewTemplateRepository(client, logger),
 		DashboardNotification: repository.NewDashboardNotificationRepository(client.GetClient(), logger),
+		Subscription:          repository.NewSubscriptionRepository(client.GetClient(), logger),
 	}
 
 	return &DatabaseManager{
@@ -159,7 +162,7 @@ func (dm *DatabaseManager) Stats(ctx context.Context) (map[string]interface{}, e
 	stats["cluster"] = clusterHealth
 
 	// Get index statistics
-	indices := []string{"applications", "users", "notifications", "templates", "analytics"}
+	indices := []string{"applications", "users", "notifications", "templates", "analytics", "subscriptions"}
 	indexStats := make(map[string]interface{})
 
 	for _, index := range indices {

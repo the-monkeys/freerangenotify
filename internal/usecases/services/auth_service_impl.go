@@ -1,9 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/smtp"
@@ -11,10 +13,15 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/jwt"
@@ -29,6 +36,11 @@ type authService struct {
 	notificationService notification.Service
 	otpRepo             repository.OTPRepository
 	otpSender           *OTPEmailSender
+	subscriptionRepo    license.Repository
+	appRepo             application.Repository
+	tenantRepo          tenant.Repository
+	tenantMemberRepo    tenant.MemberRepository
+	esClient            *elasticsearch.Client
 	logger              *zap.Logger
 }
 
@@ -40,6 +52,11 @@ func NewAuthService(
 	notificationService notification.Service,
 	otpRepo repository.OTPRepository,
 	otpSender *OTPEmailSender,
+	subscriptionRepo license.Repository,
+	appRepo application.Repository,
+	tenantRepo tenant.Repository,
+	tenantMemberRepo tenant.MemberRepository,
+	esClient *elasticsearch.Client,
 	logger *zap.Logger,
 ) auth.Service {
 	return &authService{
@@ -49,6 +66,11 @@ func NewAuthService(
 		notificationService: notificationService,
 		otpRepo:             otpRepo,
 		otpSender:           otpSender,
+		subscriptionRepo:    subscriptionRepo,
+		appRepo:             appRepo,
+		tenantRepo:          tenantRepo,
+		tenantMemberRepo:    tenantMemberRepo,
+		esClient:            esClient,
 		logger:              logger,
 	}
 }
@@ -374,6 +396,167 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req *au
 	return nil
 }
 
+// DeleteOwnAccount deletes the authenticated user's account and owned data.
+// Safety constraints:
+// 1) self-scope only (userID from JWT)
+// 2) password re-auth required
+// 3) explicit destructive confirmation text required
+func (s *authService) DeleteOwnAccount(ctx context.Context, userID string, req *auth.DeleteAccountRequest) error {
+	if req == nil {
+		return errors.BadRequest("Invalid request")
+	}
+	if req.ConfirmText != "DELETE MY ACCOUNT" {
+		return errors.BadRequest("Confirmation text mismatch")
+	}
+
+	adminUser, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get account: %w", err)
+	}
+	if adminUser == nil {
+		return errors.NotFound("user", "User not found")
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(adminUser.PasswordHash), []byte(req.Password)); err != nil {
+		return errors.Unauthorized("Invalid password")
+	}
+
+	if err := s.repo.RevokeAllUserTokens(ctx, userID); err != nil {
+		s.logger.Warn("Failed to revoke tokens during account deletion", zap.String("user_id", userID), zap.Error(err))
+	}
+
+	tenantIDs := []string{userID} // personal workspace scope
+	if s.tenantRepo != nil {
+		tOwned, err := s.tenantRepo.ListByCreatedBy(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to list owned organizations: %w", err)
+		}
+		for _, t := range tOwned {
+			if t != nil && t.ID != "" {
+				tenantIDs = append(tenantIDs, t.ID)
+			}
+		}
+	}
+
+	appIDs := make(map[string]struct{})
+	if s.appRepo != nil {
+		ownedApps, err := s.appRepo.List(ctx, application.ApplicationFilter{AdminUserID: userID, Limit: 5000})
+		if err != nil {
+			return fmt.Errorf("failed to list owned applications: %w", err)
+		}
+		for _, app := range ownedApps {
+			if app != nil && app.AppID != "" {
+				appIDs[app.AppID] = struct{}{}
+			}
+		}
+
+		tenantApps, err := s.appRepo.List(ctx, application.ApplicationFilter{TenantIDs: tenantIDs, Limit: 5000})
+		if err == nil {
+			for _, app := range tenantApps {
+				if app != nil && app.AppID != "" {
+					appIDs[app.AppID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	appIDList := make([]string, 0, len(appIDs))
+	for id := range appIDs {
+		appIDList = append(appIDList, id)
+	}
+
+	// Purge app-scoped data first.
+	if len(appIDList) > 0 {
+		indicesByApp := []string{
+			"notifications",
+			"users",
+			"templates",
+			"workflows",
+			"workflow_executions",
+			"workflow_schedules",
+			"digest_rules",
+			"topics",
+			"topic_subscribers",
+			"environments",
+			"resource_links",
+			"audits",
+			"audit_logs",
+		}
+		for _, indexName := range indicesByApp {
+			if err := s.deleteByTerms(ctx, indexName, "app_id", appIDList); err != nil {
+				s.logger.Warn("failed to purge index by app scope",
+					zap.String("index", indexName),
+					zap.String("user_id", userID),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
+	// Purge tenant-scoped data.
+	if len(tenantIDs) > 0 {
+		_ = s.deleteByTerms(ctx, "tenant_members", "tenant_id", tenantIDs)
+		_ = s.deleteByTerms(ctx, "subscriptions", "tenant_id", tenantIDs)
+	}
+
+	// Purge user-scoped membership and dashboard records.
+	_ = s.deleteByTerm(ctx, "memberships", "user_id", userID)
+	_ = s.deleteByTerm(ctx, "dashboard_notifications", "user_id", userID)
+	_ = s.deleteByTerm(ctx, "dashboard_notifications", "recipient_id", userID)
+
+	// Delete applications after child records are purged.
+	if s.appRepo != nil {
+		for _, appID := range appIDList {
+			if err := s.appRepo.Delete(ctx, appID); err != nil {
+				s.logger.Warn("Failed to delete app during account purge", zap.String("app_id", appID), zap.Error(err))
+			}
+		}
+	}
+
+	// Delete owned tenants.
+	if s.tenantRepo != nil {
+		tOwned, _ := s.tenantRepo.ListByCreatedBy(ctx, userID)
+		for _, t := range tOwned {
+			if t != nil && t.ID != "" {
+				if err := s.tenantRepo.Delete(ctx, t.ID); err != nil {
+					s.logger.Warn("Failed to delete tenant during account purge", zap.String("tenant_id", t.ID), zap.Error(err))
+				}
+			}
+		}
+	}
+
+	// Remove user from any remaining tenant memberships.
+	if s.tenantMemberRepo != nil {
+		memberships, err := s.tenantMemberRepo.ListByUser(ctx, userID)
+		if err == nil {
+			for _, m := range memberships {
+				if m != nil && m.ID != "" {
+					if err := s.tenantMemberRepo.Delete(ctx, m.ID); err != nil {
+						s.logger.Warn("Failed to delete tenant member row", zap.String("membership_id", m.ID), zap.Error(err))
+					}
+				}
+			}
+		}
+	}
+
+	if err := s.repo.DeleteUser(ctx, userID); err != nil {
+		return fmt.Errorf("failed to delete auth user: %w", err)
+	}
+
+	if s.otpSender != nil {
+		if err := s.otpSender.SendAccountDeleted(adminUser.Email, adminUser.FullName); err != nil {
+			s.logger.Warn("Failed to send account deletion confirmation email",
+				zap.String("user_id", userID),
+				zap.String("email", adminUser.Email),
+				zap.Error(err),
+			)
+		}
+	}
+
+	s.logger.Info("Account and owned data deleted", zap.String("user_id", userID), zap.Int("apps_purged", len(appIDList)))
+	return nil
+}
+
 // GetCurrentUser gets the current authenticated user
 func (s *authService) GetCurrentUser(ctx context.Context, userID string) (*auth.AdminUser, error) {
 	user, err := s.repo.GetUserByID(ctx, userID)
@@ -411,6 +594,55 @@ func (s *authService) ValidateToken(ctx context.Context, token string) (*auth.Ad
 	user.PasswordHash = ""
 
 	return user, nil
+}
+
+func (s *authService) deleteByTerm(ctx context.Context, indexName, field, value string) error {
+	if value == "" {
+		return nil
+	}
+	return s.deleteByQuery(ctx, indexName, map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{field: value},
+		},
+	})
+}
+
+func (s *authService) deleteByTerms(ctx context.Context, indexName, field string, values []string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	return s.deleteByQuery(ctx, indexName, map[string]interface{}{
+		"query": map[string]interface{}{
+			"terms": map[string]interface{}{field: values},
+		},
+	})
+}
+
+func (s *authService) deleteByQuery(ctx context.Context, indexName string, query map[string]interface{}) error {
+	if s.esClient == nil || indexName == "" {
+		return nil
+	}
+	body, err := json.Marshal(query)
+	if err != nil {
+		return fmt.Errorf("marshal delete query: %w", err)
+	}
+	req := esapi.DeleteByQueryRequest{
+		Index:             []string{indexName},
+		Body:              bytes.NewReader(body),
+		Refresh:           esapi.BoolPtr(true),
+		Conflicts:         "proceed",
+		AllowNoIndices:    esapi.BoolPtr(true),
+		IgnoreUnavailable: esapi.BoolPtr(true),
+	}
+	res, err := req.Do(ctx, s.esClient)
+	if err != nil {
+		return fmt.Errorf("delete-by-query request failed: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() && res.StatusCode != 404 {
+		return fmt.Errorf("delete-by-query failed for %s: %s", indexName, res.Status())
+	}
+	return nil
 }
 
 // generateTokenPair generates access and refresh tokens for a user
@@ -622,6 +854,32 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 
 	// Delete the pending registration from Redis
 	_ = s.otpRepo.DeletePendingRegistration(ctx, req.Email)
+
+	// Provision 30-day free trial subscription for the new user.
+	// The user's own ID serves as their personal workspace tenant ID.
+	if s.subscriptionRepo != nil {
+		now := time.Now().UTC()
+		sub := &license.Subscription{
+			ID:                 uuid.New().String(),
+			TenantID:           user.UserID,
+			Plan:               "free_trial",
+			Status:             license.SubscriptionStatusTrial,
+			CurrentPeriodStart: now,
+			CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+			Metadata: map[string]interface{}{
+				"message_limit":      10000,
+				"messages_sent":      0,
+				"trial_activated_at": now.Format(time.RFC3339),
+			},
+		}
+		if err := s.subscriptionRepo.Create(ctx, sub); err != nil {
+			// Non-fatal: log and continue. User can have trial manually activated.
+			s.logger.Error("Failed to provision free trial subscription",
+				zap.String("user_id", user.UserID),
+				zap.Error(err),
+			)
+		}
+	}
 
 	// Generate tokens
 	tokens, err := s.generateTokenPair(ctx, user)

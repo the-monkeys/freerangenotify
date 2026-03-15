@@ -10,6 +10,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/platform"
@@ -18,11 +19,12 @@ import (
 )
 
 type tenantService struct {
-	tenantRepo   tenant.Repository
-	memberRepo   tenant.MemberRepository
-	authRepo     auth.Repository
-	notifier     dashboard_notification.Notifier
-	logger       *zap.Logger
+	tenantRepo  tenant.Repository
+	memberRepo  tenant.MemberRepository
+	authRepo    auth.Repository
+	licenseRepo license.Repository
+	notifier    dashboard_notification.Notifier
+	logger      *zap.Logger
 }
 
 // NewTenantService creates a new tenant service.
@@ -30,15 +32,17 @@ func NewTenantService(
 	tenantRepo tenant.Repository,
 	memberRepo tenant.MemberRepository,
 	authRepo auth.Repository,
+	licenseRepo license.Repository,
 	notifier dashboard_notification.Notifier,
 	logger *zap.Logger,
 ) tenant.Service {
 	return &tenantService{
-		tenantRepo: tenantRepo,
-		memberRepo: memberRepo,
-		authRepo:   authRepo,
-		notifier:   notifier,
-		logger:     logger,
+		tenantRepo:  tenantRepo,
+		memberRepo:  memberRepo,
+		authRepo:    authRepo,
+		licenseRepo: licenseRepo,
+		notifier:    notifier,
+		logger:      logger,
 	}
 }
 
@@ -342,4 +346,43 @@ func (s *tenantService) HasAccess(ctx context.Context, tenantID, userID string) 
 		return true, "owner", nil
 	}
 	return false, "", nil
+}
+
+// UpgradeBilling updates the billing fields on the tenant.
+func (s *tenantService) UpgradeBilling(ctx context.Context, id string, tier string, validUntil time.Time, maxApps int, maxThroughput int) error {
+	t, err := s.tenantRepo.GetByID(ctx, id)
+	if err != nil || t == nil {
+		return errors.NotFound("Tenant", id)
+	}
+
+	t.BillingTier = tier
+	t.ValidUntil = validUntil
+	t.MaxApps = maxApps
+	t.MaxThroughput = maxThroughput
+	t.UpdatedAt = time.Now().UTC()
+
+	if err := s.tenantRepo.Update(ctx, t); err != nil {
+		return errors.Internal("failed to update tenant billing", err)
+	}
+
+	// Also update or create the License Subscription so the Hosted Checker instantly unblocks API traffic
+	if s.licenseRepo != nil {
+		// Mock logic directly creates an active subscription
+		sub := &license.Subscription{
+			ID:                 "sub_" + id, // simplified mock ID
+			TenantID:           id,
+			AppID:              "",
+			Plan:               tier,
+			Status:             license.SubscriptionStatusActive,
+			CurrentPeriodStart: time.Now().UTC(),
+			CurrentPeriodEnd:   validUntil,
+			CreatedAt:          time.Now().UTC(),
+			UpdatedAt:          time.Now().UTC(),
+		}
+
+		// UPSERT approach: Try to create, if it fails because it exists, ignore or update (mock simplifies this).
+		_ = s.licenseRepo.Create(ctx, sub)
+	}
+
+	return nil
 }

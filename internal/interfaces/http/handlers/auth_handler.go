@@ -8,6 +8,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -20,14 +21,16 @@ import (
 type AuthHandler struct {
 	authService auth.Service
 	validator   *validator.Validator
+	config      *config.Config
 	logger      *zap.Logger
 }
 
 // NewAuthHandler creates a new auth handler
-func NewAuthHandler(authService auth.Service, validator *validator.Validator, logger *zap.Logger) *AuthHandler {
+func NewAuthHandler(authService auth.Service, validator *validator.Validator, cfg *config.Config, logger *zap.Logger) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		validator:   validator,
+		config:      cfg,
 		logger:      logger,
 	}
 }
@@ -111,9 +114,10 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 			UpdatedAt:   response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			LastLoginAt: formatTimePtr(response.User.LastLoginAt),
 		},
-		AccessToken:  response.Tokens.AccessToken,
-		RefreshToken: response.Tokens.RefreshToken,
-		ExpiresAt:    response.Tokens.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		AccessToken:         response.Tokens.AccessToken,
+		RefreshToken:        response.Tokens.RefreshToken,
+		ExpiresAt:           response.Tokens.ExpiresAt.Format("2006-01-02T15:04:05Z07:00"),
+		RequireTrialWelcome: h.config != nil && h.config.Features.TrialWelcomeEnabled,
 	})
 }
 
@@ -360,6 +364,45 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 
 	return c.JSON(dto.MessageResponse{
 		Message: "Password has been changed successfully",
+	})
+}
+
+// DeleteOwnAccount handles self-service account deletion with cascade cleanup.
+// @Summary Delete current account and all owned data
+// @Tags Auth
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body dto.DeleteAccountRequest true "Password and confirmation text"
+// @Success 200 {object} dto.MessageResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 500 {object} map[string]interface{}
+// @Router /v1/auth/me [delete]
+func (h *AuthHandler) DeleteOwnAccount(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	var req dto.DeleteAccountRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.DeleteAccountRequest{
+		Password:    req.Password,
+		ConfirmText: req.ConfirmText,
+	}
+
+	if err := h.authService.DeleteOwnAccount(c.Context(), userID, authReq); err != nil {
+		h.logger.Error("Failed to delete own account", zap.String("user_id", userID), zap.Error(err))
+		return err
+	}
+
+	return c.JSON(dto.MessageResponse{
+		Message: "Account and owned data deleted successfully",
 	})
 }
 

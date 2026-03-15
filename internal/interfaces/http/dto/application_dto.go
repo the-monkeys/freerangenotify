@@ -16,6 +16,7 @@ type CreateApplicationRequest struct {
 type UpdateApplicationRequest struct {
 	AppName     string                `json:"app_name" validate:"omitempty,min=3,max=100"`
 	Description string                `json:"description" validate:"omitempty,max=500"`
+	TenantID    *string               `json:"tenant_id,omitempty"`
 	WebhookURL  string                `json:"webhook_url" validate:"omitempty,url"`
 	Webhooks    map[string]string     `json:"webhooks,omitempty"`
 	Settings    *application.Settings `json:"settings,omitempty"`

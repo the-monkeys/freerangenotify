@@ -5,6 +5,7 @@ import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
+import DeleteAccountDialog from './DeleteAccountDialog';
 import {
     Sidebar as AppSidebar,
     SidebarContent,
@@ -52,10 +53,16 @@ const SidebarNav: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
     const { isMobile, setOpenMobile } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+    const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
     const handleLogout = async () => {
         await logout();
-        navigate('/login');
+        navigate('/login', { replace: true });
+    };
+
+    const handleDeleted = async () => {
+        await logout();
+        navigate('/register', { replace: true });
     };
 
     const sections = [...new Set(navItems.map(item => item.section))];
@@ -125,6 +132,7 @@ const SidebarNav: React.FC = () => {
                     <UserMenu
                         user={{ full_name: user?.full_name, email: user?.email }}
                         onChangePassword={() => setChangePasswordOpen(true)}
+                        onDeleteProfile={() => setDeleteAccountOpen(true)}
                         onLogout={handleLogout}
                     />
                 </div>
@@ -132,6 +140,13 @@ const SidebarNav: React.FC = () => {
                 <ChangePasswordDialog
                     open={changePasswordOpen}
                     onOpenChange={setChangePasswordOpen}
+                />
+
+                <DeleteAccountDialog
+                    open={deleteAccountOpen}
+                    onOpenChange={setDeleteAccountOpen}
+                    userEmail={user?.email}
+                    onDeleted={handleDeleted}
                 />
             </SidebarFooter>
         </>

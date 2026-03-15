@@ -132,6 +132,7 @@ export interface CreateApplicationRequest {
 export interface UpdateApplicationRequest {
     app_name?: string;
     description?: string;
+    tenant_id?: string;
     webhook_url?: string;
     webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
@@ -758,8 +759,20 @@ export interface Tenant {
     name: string;
     slug: string;
     created_by: string;
+    billing_tier?: string;
+    license_key?: string;
+    valid_until?: string;
+    max_apps?: number;
+    max_throughput?: number;
     created_at: string;
     updated_at: string;
+}
+
+export interface TenantBilling {
+    billing_tier: string;
+    valid_until: string;
+    max_apps: number;
+    max_throughput: number;
 }
 
 export interface TenantMember {
@@ -780,6 +793,40 @@ export interface CreateTenantRequest {
 export interface InviteTenantMemberRequest {
     email: string;
     role: 'admin' | 'member';
+}
+
+// ============= Billing Types =============
+export interface BillingSubscription {
+    id: string;
+    tenant_id: string;
+    plan: string;
+    status: 'trial' | 'active' | 'expired' | 'canceled';
+    current_period_start: string;
+    current_period_end: string;
+    metadata?: Record<string, unknown>;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BillingUsage {
+    plan: string;
+    status: 'trial' | 'active' | 'expired' | 'canceled' | 'none';
+    messages_sent: number;
+    message_limit: number;
+    usage_percent: number;
+    current_period_start: string;
+    current_period_end: string;
+    days_remaining: number;
+}
+
+export interface AcceptTrialResponse {
+    accepted: boolean;
+    plan: string;
+    status: string;
+    message_limit: number;
+    current_period_end: string;
+    days_remaining: number;
+    trial_accepted_at: string;
 }
 
 // ============= Custom Provider Types =============

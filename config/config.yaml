@@ -145,6 +145,7 @@ features:
   workflow_enabled: true
   digest_enabled: true
   sse_hmac_enforced: true
+  trial_welcome_enabled: true
   # Phase 2
   topics_enabled: true
   throttle_enabled: false
@@ -155,3 +156,17 @@ features:
   snooze_enabled: true
   # Phase 6
   multi_environment_enabled: true
+
+licensing:
+  enabled: false
+  deployment_mode: "hosted"   # hosted | self_hosted
+  fail_mode: "fail_closed"    # fail_closed | fail_open
+  cache_ttl_seconds: 300
+  grace_window_seconds: 900
+  hosted:
+    source: "internal_es"     # internal_es | webhook_sync
+  self_hosted:
+    license_key: "${FREERANGE_LICENSING_SELF_HOSTED_LICENSE_KEY:-}"
+    public_key_pem: "${FREERANGE_LICENSING_SELF_HOSTED_PUBLIC_KEY_PEM:-}"
+    license_server_url: "${FREERANGE_LICENSING_SELF_HOSTED_LICENSE_SERVER_URL:-}"
+    verify_interval_seconds: 300

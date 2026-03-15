@@ -1061,6 +1061,34 @@ export const tenantsAPI = {
   removeMember: async (id: string, memberId: string) => {
     await api.delete(`/tenants/${id}/members/${memberId}`);
   },
+
+  getBilling: async (id: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/tenants/${id}/billing`);
+    return data.data;
+  },
+
+  checkoutBilling: async (id: string, tier: string = 'pro') => {
+    const { data } = await api.post<ApiResponse<any>>(`/tenants/${id}/billing/checkout`, { tier });
+    return data;
+  }
+};
+
+// ============= Billing APIs (user-facing, JWT auth) =============
+export const billingAPI = {
+  getUsage: async () => {
+    const { data } = await api.get('/billing/usage');
+    return data;
+  },
+
+  getSubscription: async () => {
+    const { data } = await api.get('/billing/subscription');
+    return data;
+  },
+
+  acceptTrial: async () => {
+    const { data } = await api.post('/billing/accept-trial');
+    return data;
+  },
 };
 
 // ============= Custom Provider APIs =============
@@ -1094,6 +1122,10 @@ export const presenceAPI = {
 export const authExtendedAPI = {
   changePassword: async (payload: { old_password: string; new_password: string }) => {
     await api.post('/admin/change-password', payload);
+  },
+
+  deleteOwnAccount: async (payload: { password: string; confirm_text: string }) => {
+    await api.delete('/admin/me', { data: payload });
   },
 };
 

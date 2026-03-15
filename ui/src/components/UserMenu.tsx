@@ -1,4 +1,5 @@
 import { ChevronUp, Lock, LogOut } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,10 +13,11 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 interface Props {
     user: { full_name?: string; email?: string };
     onChangePassword: () => void;
+    onDeleteProfile: () => void;
     onLogout: () => void;
 }
 
-export default function UserMenu({ user, onChangePassword, onLogout }: Props) {
+export default function UserMenu({ user, onChangePassword, onDeleteProfile, onLogout }: Props) {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -47,6 +49,13 @@ export default function UserMenu({ user, onChangePassword, onLogout }: Props) {
                 <DropdownMenuItem onClick={onChangePassword}>
                     <Lock className="h-4 w-4 mr-2" />
                     Change Password
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    onClick={onDeleteProfile}
+                    className="text-destructive focus:text-destructive"
+                >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete My Profile
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

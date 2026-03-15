@@ -14,6 +14,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
+	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/schedule"
@@ -69,6 +70,7 @@ type Container struct {
 	TemplateService     *usecases.TemplateService
 	PresenceService     usecases.PresenceService
 	PresenceRepository  user.PresenceRepository
+	LicensingChecker    license.Checker
 	AuthService         auth.Service
 
 	// JWT
@@ -88,6 +90,8 @@ type Container struct {
 	QuickSendHandler             *handlers.QuickSendHandler
 	PlaygroundHandler            *handlers.PlaygroundHandler
 	AnalyticsHandler             *handlers.AnalyticsHandler
+	LicensingHandler             *handlers.LicensingHandler
+	BillingHandler               *handlers.BillingHandler
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -151,9 +155,10 @@ type Container struct {
 // NewContainer creates a new dependency injection container
 func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container := &Container{
-		Config:    cfg,
-		Logger:    logger,
-		Validator: validator.New(),
+		Config:           cfg,
+		Logger:           logger,
+		Validator:        validator.New(),
+		LicensingChecker: license.NewNoopChecker(),
 	}
 
 	// Initialize database
@@ -189,6 +194,43 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
+
+	// Initialize licensing checker
+	if cfg.Licensing.Enabled {
+		cacheTTL := time.Duration(cfg.Licensing.CacheTTLSeconds) * time.Second
+		grace := time.Duration(cfg.Licensing.GraceWindowSeconds) * time.Second
+
+		switch cfg.Licensing.DeploymentMode {
+		case string(license.ModeSelfHosted):
+			checker, checkerErr := license.NewSelfHostedChecker(license.SelfHostedOptions{
+				CacheTTL:     cacheTTL,
+				GraceWindow:  grace,
+				FailMode:     cfg.Licensing.FailMode,
+				LicenseKey:   cfg.Licensing.SelfHosted.LicenseKey,
+				PublicKeyPEM: cfg.Licensing.SelfHosted.PublicKeyPEM,
+			})
+			if checkerErr != nil {
+				return nil, fmt.Errorf("failed to initialize self-hosted licensing checker: %w", checkerErr)
+			}
+			container.LicensingChecker = checker
+			logger.Info("Self-hosted licensing checker initialized")
+
+		case string(license.ModeHosted):
+			checker, checkerErr := license.NewHostedChecker(repos.Subscription, license.HostedOptions{
+				CacheTTL:    cacheTTL,
+				GraceWindow: grace,
+				FailMode:    cfg.Licensing.FailMode,
+			})
+			if checkerErr != nil {
+				return nil, fmt.Errorf("failed to initialize hosted licensing checker: %w", checkerErr)
+			}
+			container.LicensingChecker = checker
+			logger.Info("Hosted licensing checker initialized")
+
+		default:
+			return nil, fmt.Errorf("unsupported licensing deployment mode: %s", cfg.Licensing.DeploymentMode)
+		}
+	}
 
 	// Initialize SSE broadcaster
 	container.SSEBroadcaster = sse.NewBroadcaster(repos.Notification, logger)
@@ -236,23 +278,36 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	// Initialize membership repo early — needed by AuthService to claim
 	// pending team invitations on login/register regardless of RBAC toggle.
 	container.MembershipRepo = repository.NewMembershipRepository(dbManager.Client.GetClient(), logger)
+	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
+	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
 
 	// Initialize auth repository and service
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
 	otpRepo := repository.NewOTPRepository(redisClient)
 	otpSender := services.NewOTPEmailSender(cfg.Providers.SMTP, logger)
-	container.AuthService = services.NewAuthService(authRepo, container.MembershipRepo, container.JWTManager, container.NotificationService, otpRepo, otpSender, logger)
+	container.AuthService = services.NewAuthService(
+		authRepo,
+		container.MembershipRepo,
+		container.JWTManager,
+		container.NotificationService,
+		otpRepo,
+		otpSender,
+		repos.Subscription,
+		repos.Application,
+		tenantRepo,
+		tenantMemberRepo,
+		dbManager.Client.GetClient(),
+		logger,
+	)
 
 	// Initialize tenant/organization support (C1)
-	tenantRepo := repository.NewTenantRepository(dbManager.Client.GetClient(), logger)
-	tenantMemberRepo := repository.NewTenantMemberRepository(dbManager.Client.GetClient(), logger)
 	dashboardNotifier := infrastructure.NewDashboardNotifier(
 		repos.DashboardNotification,
 		container.SSEBroadcaster,
 		redisClient,
 		logger,
 	)
-	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, dashboardNotifier, logger)
+	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 
@@ -347,6 +402,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.AuthHandler = handlers.NewAuthHandler(
 		container.AuthService,
 		container.Validator,
+		cfg,
 		logger,
 	)
 	container.HealthHandler = handlers.NewHealthHandler(
@@ -354,6 +410,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.RedisClient,
 		logger,
 	)
+	container.LicensingHandler = handlers.NewLicensingHandler(
+		container.LicensingChecker,
+		repos.Subscription,
+		logger,
+	)
+	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, logger)
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
 		container.ApplicationService,
