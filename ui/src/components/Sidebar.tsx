@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { Sheet, SheetContent } from './ui/sheet';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
-
-interface SidebarProps {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-}
+import {
+    Sidebar as AppSidebar,
+    SidebarContent,
+    SidebarFooter,
+    SidebarGroup,
+    SidebarGroupContent,
+    SidebarGroupLabel,
+    SidebarHeader,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    useSidebar,
+} from './ui/sidebar';
 
 interface NavItem {
     label: string;
@@ -30,10 +37,20 @@ const navItems: NavItem[] = [
     { label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs', section: 'ADMIN' },
 ];
 
-const SidebarNav: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
+const isNavItemActive = (pathname: string, to: string): boolean => {
+    if (pathname === to) {
+        return true;
+    }
+
+    return pathname.startsWith(`${to}/`);
+};
+
+const SidebarNav: React.FC = () => {
+    const location = useLocation();
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
+    const { isMobile, setOpenMobile } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
     const handleLogout = async () => {
@@ -43,86 +60,91 @@ const SidebarNav: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
 
     const sections = [...new Set(navItems.map(item => item.section))];
 
+    const handleItemNavigate = () => {
+        if (isMobile) {
+            setOpenMobile(false);
+        }
+    };
+
     return (
-        <div className="flex flex-col h-full">
-            {/* Logo */}
-            <Link to="/" className="px-4 py-5 flex items-center gap-2.5 border-b border-sidebar-border no-underline hover:no-underline">
-                <Bell className="h-5 w-5 text-accent" />
-                <span className="text-sm font-semibold text-sidebar-foreground tracking-tight">
-                    FreeRange <span className="font-normal text-muted-foreground">Notify</span>
-                </span>
-            </Link>
+        <>
+            <SidebarHeader className="px-3 py-4">
+                <Link
+                    to="/"
+                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 no-underline transition-colors hover:bg-sidebar-accent/50 hover:no-underline group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                >
+                    <Bell className="h-5 w-5 text-accent" />
+                    <span className="text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
+                        FreeRange <span className="font-normal text-muted-foreground">Notify</span>
+                    </span>
+                </Link>
+            </SidebarHeader>
 
-            {/* Navigation */}
-            <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto">
+            <SidebarContent className="">
                 {sections.map(section => (
-                    <div key={section}>
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground px-3 mb-2">
+                    <SidebarGroup key={section} className="">
+                        <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground/90">
                             {section}
-                        </p>
-                        <ul className="space-y-0.5">
-                            {navItems
-                                .filter(item => item.section === section)
-                                .map(item => (
-                                    <li key={item.to}>
-                                        <NavLink
-                                            to={item.to}
-                                            onClick={onNavigate}
-                                            className={({ isActive }) =>
-                                                `flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors ${isActive
-                                                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium border-l-[3px] border-accent'
-                                                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
-                                                }`
-                                            }
-                                        >
-                                            {item.icon}
-                                            {item.label}
-                                        </NavLink>
-                                    </li>
-                                ))}
-                        </ul>
-                    </div>
+                        </SidebarGroupLabel>
+                        <SidebarGroupContent>
+                            <SidebarMenu>
+                                {navItems
+                                    .filter(item => item.section === section)
+                                    .map(item => (
+                                        <SidebarMenuItem key={item.to}>
+                                            <SidebarMenuButton
+                                                asChild
+                                                isActive={isNavItemActive(location.pathname, item.to)}
+                                                tooltip={item.label}
+                                            >
+                                                <NavLink to={item.to} onClick={handleItemNavigate} className={"p-0"}>
+                                                    {item.icon}
+                                                    <span>{item.label}</span>
+                                                </NavLink>
+                                            </SidebarMenuButton>
+                                        </SidebarMenuItem>
+                                    ))}
+                            </SidebarMenu>
+                        </SidebarGroupContent>
+                    </SidebarGroup>
                 ))}
-            </nav>
+            </SidebarContent>
 
-            {/* Theme toggle + User section */}
-            <div className="border-t border-sidebar-border px-4 py-3 space-y-2">
+            <SidebarFooter className="">
                 <button
                     onClick={toggleTheme}
-                    className="flex items-center gap-3 w-full px-3 py-2 text-sm rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+                    className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
                 >
                     {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                    {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                    <span className="group-data-[collapsible=icon]:hidden">
+                        {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                    </span>
                 </button>
-                <UserMenu
-                    user={{ full_name: user?.full_name, email: user?.email }}
-                    onChangePassword={() => setChangePasswordOpen(true)}
-                    onLogout={handleLogout}
-                />
+
+                <div className="pt-1">
+                    <UserMenu
+                        user={{ full_name: user?.full_name, email: user?.email }}
+                        onChangePassword={() => setChangePasswordOpen(true)}
+                        onLogout={handleLogout}
+                    />
+                </div>
+
                 <ChangePasswordDialog
                     open={changePasswordOpen}
                     onOpenChange={setChangePasswordOpen}
                 />
-            </div>
-        </div>
+            </SidebarFooter>
+        </>
     );
 };
 
-const Sidebar: React.FC<SidebarProps> = ({ open, onOpenChange }) => {
+const Sidebar: React.FC = () => {
     return (
-        <>
-            {/* Desktop sidebar — always visible */}
-            <aside className="hidden md:flex w-60 flex-col bg-sidebar border-r border-sidebar-border shrink-0">
+        <AppSidebar side="left" variant="sidebar" collapsible="icon" className="">
+            <div className="flex h-full flex-col bg-sidebar">
                 <SidebarNav />
-            </aside>
-
-            {/* Mobile sidebar — sheet slide-in */}
-            <Sheet open={open} onOpenChange={onOpenChange}>
-                <SheetContent side="left" className="w-60 p-0 bg-sidebar">
-                    <SidebarNav onNavigate={() => onOpenChange(false)} />
-                </SheetContent>
-            </Sheet>
-        </>
+            </div>
+        </AppSidebar>
     );
 };
 

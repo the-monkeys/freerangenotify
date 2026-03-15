@@ -7,6 +7,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { Avatar, AvatarFallback } from './ui/avatar';
 
 interface Props {
     user: { full_name?: string; email?: string };
@@ -19,7 +20,12 @@ export default function UserMenu({ user, onChangePassword, onLogout }: Props) {
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <button className="flex items-center justify-between w-full text-left rounded-md hover:bg-sidebar-accent/50 transition-colors p-1 -m-1">
-                    <div className="min-w-0 flex-1">
+                    <Avatar className="size-8">
+                        <AvatarFallback>
+                            {user.full_name ? user.full_name.charAt(0) : 'U'}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 ml-2">
                         <p className="text-xs font-medium text-sidebar-foreground truncate">
                             {user.full_name || user.email || 'User'}
                         </p>

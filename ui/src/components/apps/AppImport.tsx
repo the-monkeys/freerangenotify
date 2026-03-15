@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Badge } from '../ui/badge';
+import ConfirmDeleteDialog from '../ConfirmDeleteDialog';
 import { toast } from 'sonner';
 import { Link2, Unlink, Loader2, ArrowRight, Trash2, ShieldAlert } from 'lucide-react';
 
@@ -41,6 +42,8 @@ const AppImport: React.FC<AppImportProps> = ({ appId, appName }) => {
     const [importing, setImporting] = useState(false);
     const [links, setLinks] = useState<LinkRecord[]>([]);
     const [loadingLinks, setLoadingLinks] = useState(true);
+    const [removeAllOpen, setRemoveAllOpen] = useState(false);
+    const [removeAllLoading, setRemoveAllLoading] = useState(false);
 
     useEffect(() => {
         loadApps();
@@ -104,14 +107,21 @@ const AppImport: React.FC<AppImportProps> = ({ appId, appName }) => {
         }
     };
 
-    const handleUnlinkAll = async () => {
-        if (!window.confirm('Remove all resource links? Resources in the source app are not affected.')) return;
+    const handleUnlinkAll = () => {
+        setRemoveAllOpen(true);
+    };
+
+    const handleConfirmUnlinkAll = async () => {
+        setRemoveAllLoading(true);
         try {
             await applicationsAPI.removeAllLinks(appId);
             setLinks([]);
             toast.success('All links removed');
+            setRemoveAllOpen(false);
         } catch (err) {
             toast.error(extractErrorMessage(err, 'Failed to remove links'));
+        } finally {
+            setRemoveAllLoading(false);
         }
     };
 
@@ -298,6 +308,17 @@ const AppImport: React.FC<AppImportProps> = ({ appId, appName }) => {
                     )}
                 </CardContent>
             </Card>
+
+            <ConfirmDeleteDialog
+                open={removeAllOpen}
+                onOpenChange={setRemoveAllOpen}
+                title="Remove All Resource Links"
+                description="Remove all resource links? Resources in the source app are not affected."
+                confirmLabel="Remove All"
+                confirmVariant="destructive"
+                loading={removeAllLoading}
+                onConfirm={handleConfirmUnlinkAll}
+            />
         </div>
     );
 };
