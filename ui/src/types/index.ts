@@ -354,6 +354,7 @@ export interface UpdateTemplateRequest {
 
 export interface RenderTemplateRequest {
     data: Record<string, any>;
+    editable?: boolean;
 }
 
 export interface RenderTemplateResponse {
@@ -893,17 +894,24 @@ export interface UnreadCountResponse {
 // ============= Template Advanced Types =============
 export interface TemplateRollbackRequest {
     target_version: number;
+    version?: number;
+}
+
+export interface TemplateDiffChange {
+    field: string;
+    from: any;
+    to: any;
 }
 
 export interface TemplateDiffResponse {
     from_version: number;
     to_version: number;
-    changes: Record<string, { old: any; new: any }>;
+    changes: TemplateDiffChange[] | Record<string, { old: any; new: any }>;
 }
 
 export interface TemplateTestRequest {
-    user_id: string;
-    variables?: Record<string, any>;
+    to_email: string;
+    sample_data?: Record<string, any>;
 }
 
 export interface ContentControl {
@@ -919,7 +927,8 @@ export interface ContentControl {
 
 export interface TemplateControlsResponse {
     controls: ContentControl[];
-    values: Record<string, any>;
+    values?: Record<string, any>;
+    control_values?: Record<string, any>;
 }
 
 export interface UpdateControlsRequest {

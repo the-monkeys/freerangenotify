@@ -160,6 +160,12 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 	if req.Metadata != nil {
 		tmpl.Metadata = req.Metadata
 	}
+	if req.Controls != nil {
+		tmpl.Controls = *req.Controls
+	}
+	if req.ControlValues != nil {
+		tmpl.ControlValues = req.ControlValues
+	}
 	if req.Status != nil && *req.Status != "" {
 		validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
 		if !validStatuses[*req.Status] {
@@ -213,8 +219,10 @@ func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter
 	return templates, nil
 }
 
-// Render renders a template with provided data
-func (s *TemplateService) Render(ctx context.Context, templateID, appID string, data map[string]interface{}) (string, error) {
+// Render renders a template with provided data.
+// When editable is true, text-content variables are wrapped in contenteditable
+// spans so the frontend preview can support inline editing.
+func (s *TemplateService) Render(ctx context.Context, templateID, appID string, data map[string]interface{}, editable bool) (string, error) {
 	// Get template
 	tmpl, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
@@ -231,8 +239,13 @@ func (s *TemplateService) Render(ctx context.Context, templateID, appID string, 
 		return "", fmt.Errorf("template is not active")
 	}
 
+	body := tmpl.Body
+	if editable {
+		body = wrapEditableVariables(body)
+	}
+
 	// Render template
-	rendered, err := s.renderTemplate(tmpl.Body, data)
+	rendered, err := s.renderTemplate(body, data)
 	if err != nil {
 		s.logger.Error("Failed to render template",
 			zap.String("id", templateID),
@@ -488,6 +501,86 @@ func (s *TemplateService) validateTemplateVariables(body string, variables []str
 	}
 
 	return nil
+}
+
+// wrapEditableVariables preprocesses a template body so that {{.varName}}
+// placeholders appearing in HTML text content are wrapped in
+// <span contenteditable data-frn-var="varName" class="frn-editable">...</span>.
+// Variables inside HTML attributes (e.g. href="{{.url}}") are left untouched.
+func wrapEditableVariables(body string) string {
+	varPattern := regexp.MustCompile(`\{\{\s*\.?(\w+)\s*\}\}`)
+
+	matches := varPattern.FindAllStringSubmatchIndex(body, -1)
+	if len(matches) == 0 {
+		return body
+	}
+
+	// Go template keywords that are not variable references.
+	keywords := map[string]bool{
+		"if": true, "else": true, "end": true, "range": true,
+		"with": true, "define": true, "template": true, "block": true,
+		"nil": true, "not": true, "and": true, "or": true,
+		"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+		"print": true, "printf": true, "println": true, "len": true,
+		"index": true, "call": true, "html": true, "js": true, "urlquery": true,
+	}
+
+	var result strings.Builder
+	result.Grow(len(body) + len(matches)*80) // pre-allocate
+	lastEnd := 0
+
+	for _, match := range matches {
+		start := match[0]
+		end := match[1]
+		varNameStart := match[2]
+		varNameEnd := match[3]
+		varName := body[varNameStart:varNameEnd]
+
+		result.WriteString(body[lastEnd:start])
+
+		if keywords[varName] || isInsideHTMLTag(body, start) {
+			result.WriteString(body[start:end])
+		} else {
+			result.WriteString(`<span contenteditable="true" data-frn-var="`)
+			result.WriteString(varName)
+			result.WriteString(`" class="frn-editable">`)
+			result.WriteString(body[start:end])
+			result.WriteString(`</span>`)
+		}
+
+		lastEnd = end
+	}
+
+	result.WriteString(body[lastEnd:])
+	return result.String()
+}
+
+// isInsideHTMLTag returns true if the byte at position pos sits between
+// an unmatched '<' and '>' — i.e. inside an HTML tag definition.
+// Template expressions ({{ ... }}) are skipped so that '<' or '>' used as
+// comparison operators inside template actions don't confuse the check.
+func isInsideHTMLTag(body string, pos int) bool {
+	inTag := false
+	for i := 0; i < pos; i++ {
+		// Skip template expressions.
+		if i+1 < len(body) && body[i] == '{' && body[i+1] == '{' {
+			j := i + 2
+			for j+1 < len(body) {
+				if body[j] == '}' && body[j+1] == '}' {
+					i = j + 1
+					break
+				}
+				j++
+			}
+			continue
+		}
+		if body[i] == '<' {
+			inTag = true
+		} else if body[i] == '>' {
+			inTag = false
+		}
+	}
+	return inTag
 }
 
 // renderTemplate renders a Go template with provided data
