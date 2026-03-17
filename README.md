@@ -1,4 +1,4 @@
-# FreeRangeNotify - Universal Notification Service
+# FreeRange Notify - Universal Notification Service
 
 A generic, pluggable notification service built in Go that provides real-time, multi-channel notification capabilities for any application.
 

@@ -288,6 +288,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	authRepo := repository.NewAuthRepository(dbManager.Client.GetClient(), redisClient, logger)
 	otpRepo := repository.NewOTPRepository(redisClient)
 	otpSender := services.NewOTPEmailSender(cfg.Providers.SMTP, logger)
+	dashboardNotifier := infrastructure.NewDashboardNotifier(
+		repos.DashboardNotification,
+		container.SSEBroadcaster,
+		redisClient,
+		logger,
+	)
 	container.AuthService = services.NewAuthService(
 		authRepo,
 		container.MembershipRepo,
@@ -295,6 +301,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.NotificationService,
 		otpRepo,
 		otpSender,
+		dashboardNotifier,
 		repos.Subscription,
 		repos.Application,
 		tenantRepo,
@@ -304,12 +311,6 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 
 	// Initialize tenant/organization support (C1)
-	dashboardNotifier := infrastructure.NewDashboardNotifier(
-		repos.DashboardNotification,
-		container.SSEBroadcaster,
-		redisClient,
-		logger,
-	)
 	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
@@ -421,6 +422,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	container.OpsHandler = handlers.NewOpsHandler(
 		container.AuthService,
 		repos.Subscription,
+		repos.Application,
+		dashboardNotifier,
+		cfg.Providers.SMTP,
 		logger,
 	)
 	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, logger)
