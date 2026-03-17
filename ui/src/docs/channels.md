@@ -1,6 +1,6 @@
 # Delivery Channels
 
-FreeRangeNotify supports six delivery channels. Each channel requires specific configuration in your application's provider settings.
+FreeRangeNotify supports multiple delivery channels. Each channel requires specific configuration in your application's provider settings.
 
 ---
 
@@ -143,6 +143,107 @@ curl -X PUT http://localhost:8080/v1/users/USER_ID \
 
 ---
 
+## WhatsApp (Twilio)
+
+Send WhatsApp messages via Twilio's Programmable Messaging API.
+
+### Configuration
+
+- **Account SID:** Twilio account identifier
+- **Auth Token:** Twilio authentication token
+- **From Number:** Twilio WhatsApp-enabled phone number (e.g., `+14155238886` for sandbox)
+
+### Environment Variables
+
+```env
+FREERANGE_PROVIDERS_WHATSAPP_ENABLED=true
+FREERANGE_PROVIDERS_WHATSAPP_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+FREERANGE_PROVIDERS_WHATSAPP_AUTH_TOKEN=your_auth_token_here
+FREERANGE_PROVIDERS_WHATSAPP_FROM_NUMBER=+14155238886
+FREERANGE_PROVIDERS_WHATSAPP_TIMEOUT=15
+FREERANGE_PROVIDERS_WHATSAPP_MAX_RETRIES=3
+```
+
+### Per-App Configuration
+
+Override global credentials at the application level:
+
+```json
+{
+  "whatsapp": {
+    "enabled": true,
+    "account_sid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "auth_token": "your_auth_token_here",
+    "from_number": "+14155238886"
+  }
+}
+```
+
+### User Setup
+
+Ensure users have a `phone` field with country code:
+
+```bash
+curl -X PUT http://localhost:8080/v1/users/USER_ID \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "+49XXXXXXXXXX"}'
+```
+
+### Message Format
+
+- **Text messages:** Plain text with optional title formatting
+- **Title rendering:** Titles appear as bold text (`*Title*`) followed by body
+- **Media support:** Images, documents, audio, and video via `media_url`
+
+### Number Format
+
+Both sender and recipient phone numbers are automatically prefixed with `whatsapp:` when sent to Twilio's API:
+
+- **From (Sender):** `whatsapp:+14155238886` (configured `from_number` + automatic prefix)
+- **To (Recipient):** `whatsapp:+49XXXXXXXXXX` (user's `phone` field + automatic prefix)
+
+> **Note:** Store phone numbers in configuration and user profiles **without** the `whatsapp:` prefix. The provider automatically adds the prefix during delivery.
+
+### Testing with Sandbox
+
+For development, use Twilio's WhatsApp Sandbox:
+
+1. Log in to [Twilio Console](https://console.twilio.com/)
+2. Go to **Messaging → Try it out → Send an SMS** to find your sandbox number
+3. Send a WhatsApp message to the sandbox number with the join code to activate your account
+4. Use the sandbox number as `FROM_NUMBER` in configuration
+5. Send test notifications to any WhatsApp number with country code
+
+### Sending Notifications
+
+```bash
+curl -X POST http://localhost:8080/v1/notifications/ \
+  -H "X-API-Key: YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "INTERNAL_USER_UUID",
+    "channel": "whatsapp",
+    "title": "Order Update",
+    "body": "Your order #12345 has been shipped",
+    "media_url": "https://example.com/image.jpg"
+  }'
+```
+
+### Troubleshooting
+
+**Error 63007: "Could not find a Channel with the specified From address"**
+- The `from_number` is not configured as a WhatsApp Channel in your Twilio account
+- Verify the number in your Twilio WhatsApp settings (sandbox or production)
+- Ensure you've activated the sandbox account by sending a message to it
+
+**Delivery Failures**
+- Confirm recipient phone numbers include country code
+- Verify `whatsapp_enabled` is not `false` in user preferences
+- Check application and user preference settings in the API
+
+---
+
 ## Server-Sent Events (SSE)
 
 Real-time browser notifications via SSE — no polling, no refresh needed.
@@ -269,19 +370,6 @@ Use a [Teams Incoming Webhook connector](https://learn.microsoft.com/en-us/micro
 }
 ```
 
-### WhatsApp (via Business API)
+### Alternative Custom Integrations
 
-If you have access to the [WhatsApp Business API](https://developers.facebook.com/docs/whatsapp/cloud-api/), point a webhook at your middleware that converts the payload into WhatsApp's API format:
-
-```json
-{
-  "channel": "webhook",
-  "webhook_url": "https://your-middleware.com/whatsapp/send",
-  "data": {
-    "phone": "+15551234567",
-    "template_name": "order_update"
-  }
-}
-```
-
-> **Note:** WhatsApp requires pre-approved message templates. Your middleware should map FreeRangeNotify's payload to WhatsApp's template API.
+For messaging platforms without native provider support, use the **Webhook** channel to deliver notifications to your custom middleware.
