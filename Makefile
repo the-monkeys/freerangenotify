@@ -6,6 +6,7 @@
 help:
 	@echo "Available targets:"
 	@echo "  build              - Build the application binary"
+	@echo "  build-selfhosted   - Build self-hosted binaries with compile-time licensing locks"
 	@echo "  run                - Run the application locally"
 	@echo "  test               - Run all tests (unit + integration)"
 	@echo "  test-unit          - Run unit tests only"
@@ -29,6 +30,12 @@ build:
 	go build -o bin/sse_receiver ./cmd/sse_receiver
 	go build -o bin/migrate ./cmd/migrate
 	go build -o bin/frn ./cmd/frn
+
+# Build self-hosted binaries with compile-time security constraints
+build-selfhosted:
+	@echo "Building self-hosted binaries..."
+	go build -tags selfhosted -o bin/server-selfhosted ./cmd/server
+	go build -tags selfhosted -o bin/worker-selfhosted ./cmd/worker
 
 # Run the application locally
 run:

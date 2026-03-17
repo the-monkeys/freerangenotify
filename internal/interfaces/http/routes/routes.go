@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/container"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
@@ -26,6 +28,9 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 	// Admin routes
 	setupAdminRoutes(v1, c)
+
+	// Ops routes (feature-gated, hosted-only)
+	setupOpsRoutes(v1, c)
 }
 
 // setupPublicRoutes configures public routes
@@ -320,8 +325,12 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Licensing management
 	licensing := adminAuth.Group("/licensing")
-	licensing.Post("/subscriptions", c.LicensingHandler.CreateSubscription)
-	licensing.Put("/subscriptions/:id", c.LicensingHandler.UpdateSubscription)
+	// Backward compatibility: keep legacy write endpoints only until ops mode is enabled.
+	// Once ops mode is enabled, write operations are available exclusively via /v1/ops/*.
+	if c.Config == nil || !c.Config.Security.OpsEnabled {
+		licensing.Post("/subscriptions", c.LicensingHandler.CreateSubscription)
+		licensing.Put("/subscriptions/:id", c.LicensingHandler.UpdateSubscription)
+	}
 	licensing.Get("/subscriptions/:id", c.LicensingHandler.GetSubscription)
 	licensing.Get("/subscriptions", c.LicensingHandler.ListSubscriptions)
 	licensing.Post("/request", c.LicensingHandler.RequestLicense)
@@ -376,6 +385,46 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// ── Phase 2: Audit middleware (feature-gated, applied to protected routes) ──
 	if c.AuditService != nil {
 		// Applied at the app level for state-changing requests
+	}
+}
+
+// setupOpsRoutes configures privileged machine-to-machine operational routes.
+// These routes are disabled by default and only enabled when explicitly configured.
+func setupOpsRoutes(v1 fiber.Router, c *container.Container) {
+	if !opsRoutesAvailable() {
+		return
+	}
+
+	if c == nil || c.Config == nil {
+		return
+	}
+
+	if !c.Config.Security.OpsEnabled {
+		return
+	}
+
+	if c.Config.Licensing.DeploymentMode != "hosted" {
+		return
+	}
+
+	if c.LicensingHandler == nil {
+		return
+	}
+
+	ops := v1.Group("/ops")
+	opsWindow := time.Duration(c.Config.Security.OpsRateLimitWindowSeconds) * time.Second
+	ops.Use(middleware.OpsRateLimit(c.Limiter, c.Config.Security.OpsRateLimit, opsWindow, c.Logger))
+	tolerance := time.Duration(c.Config.Security.OpsTimestampToleranceSeconds) * time.Second
+	ops.Use(middleware.OpsAuth(c.Config.Security.OpsSecret, tolerance, c.Logger))
+
+	// Backward-compatible first step: expose subscription create/update on ops plane
+	// while existing admin routes remain unchanged until deprecation cutover.
+	ops.Post("/subscriptions", c.LicensingHandler.CreateSubscription)
+	ops.Put("/subscriptions/:id", c.LicensingHandler.UpdateSubscription)
+
+	if c.OpsHandler != nil {
+		ops.Post("/subscriptions/renew", c.OpsHandler.RenewSubscription)
+		ops.Delete("/users/:user_id", c.OpsHandler.DeleteAccount)
 	}
 }
 

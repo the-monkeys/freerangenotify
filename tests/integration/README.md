@@ -42,7 +42,7 @@ The integration tests verify the complete functionality of all API endpoints by 
 
 ## Running Tests
 
-### Run all integration tests
+### Run all integration tests (current-contract suites)
 ```powershell
 # Make sure services are running
 docker-compose up -d
@@ -50,7 +50,15 @@ docker-compose up -d
 # Wait for services to be ready (or tests will wait automatically)
 Start-Sleep -Seconds 10
 
-# Run tests
+# Run tests (legacy suites are skipped unless INTEGRATION_LEGACY=true)
+go test -v ./tests/integration/...
+```
+
+### Run legacy integration suites (older API contract)
+```powershell
+$env:INTEGRATION_LEGACY="true"
+# Required when legacy suites touch /v1/apps (JWT protected)
+$env:INTEGRATION_ADMIN_TOKEN="<admin_jwt>"
 go test -v ./tests/integration/...
 ```
 
@@ -80,6 +88,13 @@ go tool cover -html=coverage.out -o coverage.html
 $env:INTEGRATION_TESTS="false"
 go test ./...
 ```
+
+### Environment variables
+- `INTEGRATION_TESTS=false`: skip all integration tests
+- `INTEGRATION_LEGACY=true`: run legacy suites (`Application`, `User`, `TemplateHTTP`, `NotificationHTTP`)
+- `INTEGRATION_ADMIN_TOKEN`: admin JWT used for legacy `/v1/apps` requests if no Authorization header is explicitly set
+- `FREERANGE_ADMIN_TOKEN`: fallback for `INTEGRATION_ADMIN_TOKEN`
+
 
 ## Test Structure
 

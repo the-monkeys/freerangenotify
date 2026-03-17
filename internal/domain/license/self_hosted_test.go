@@ -6,6 +6,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -67,6 +69,75 @@ func TestSelfHostedChecker_ExpiredKey(t *testing.T) {
 	assert.Equal(t, "license_expired", decision.Reason)
 }
 
+func TestSelfHostedChecker_ModeMismatch(t *testing.T) {
+	privateKey, publicPEM := generateRSAKeyPair(t)
+	licenseKey := signLicenseTokenWithMode(t, privateKey, time.Now().UTC().Add(-time.Minute), time.Now().UTC().Add(2*time.Hour), "hosted")
+
+	checker, err := NewSelfHostedChecker(SelfHostedOptions{
+		LicenseKey:   licenseKey,
+		PublicKeyPEM: publicPEM,
+		CacheTTL:     5 * time.Minute,
+		FailMode:     FailModeClosed,
+	})
+	require.NoError(t, err)
+
+	decision, err := checker.Check(context.Background(), nil)
+	require.NoError(t, err)
+	assert.False(t, decision.Allowed)
+	assert.Equal(t, StateInvalid, decision.State)
+	assert.Equal(t, "license_mode_mismatch", decision.Reason)
+}
+
+func TestSelfHostedChecker_RemoteRejectsLocallyValidLicense(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"valid":false,"reason":"license_revoked"}`))
+	}))
+	defer server.Close()
+
+	privateKey, publicPEM := generateRSAKeyPair(t)
+	licenseKey := signLicenseTokenWithMode(t, privateKey, time.Now().UTC().Add(-time.Minute), time.Now().UTC().Add(2*time.Hour), "self_hosted")
+
+	checker, err := NewSelfHostedChecker(SelfHostedOptions{
+		LicenseKey:       licenseKey,
+		PublicKeyPEM:     publicPEM,
+		LicenseServerURL: server.URL,
+		VerifyInterval:   time.Second,
+		CacheTTL:         time.Minute,
+		FailMode:         FailModeClosed,
+	})
+	require.NoError(t, err)
+
+	decision, err := checker.Check(context.Background(), nil)
+	require.NoError(t, err)
+	assert.False(t, decision.Allowed)
+	assert.Equal(t, StateInvalid, decision.State)
+	assert.Equal(t, "license_revoked", decision.Reason)
+}
+
+func TestSelfHostedChecker_RemoteOnlyValidationAllowed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"valid":true}`))
+	}))
+	defer server.Close()
+
+	checker, err := NewSelfHostedChecker(SelfHostedOptions{
+		LicenseKey:       "opaque-license-token",
+		LicenseServerURL: server.URL,
+		VerifyInterval:   time.Second,
+		CacheTTL:         time.Minute,
+		FailMode:         FailModeClosed,
+	})
+	require.NoError(t, err)
+
+	decision, err := checker.Check(context.Background(), nil)
+	require.NoError(t, err)
+	assert.True(t, decision.Allowed)
+	assert.Equal(t, StateActive, decision.State)
+	assert.Equal(t, "license_active", decision.Reason)
+}
+
 func generateRSAKeyPair(t *testing.T) (*rsa.PrivateKey, string) {
 	t.Helper()
 
@@ -87,6 +158,22 @@ func signLicenseToken(t *testing.T, priv *rsa.PrivateKey, notBefore, expiresAt t
 		"nbf":  notBefore.Unix(),
 		"exp":  expiresAt.Unix(),
 		"plan": "enterprise",
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	signed, err := token.SignedString(priv)
+	require.NoError(t, err)
+	return signed
+}
+
+func signLicenseTokenWithMode(t *testing.T, priv *rsa.PrivateKey, notBefore, expiresAt time.Time, mode string) string {
+	t.Helper()
+
+	claims := jwt.MapClaims{
+		"nbf":  notBefore.Unix(),
+		"exp":  expiresAt.Unix(),
+		"plan": "enterprise",
+		"mode": mode,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

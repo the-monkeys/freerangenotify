@@ -19,6 +19,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/container"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
+	"github.com/the-monkeys/freerangenotify/internal/platform/licenseheartbeat"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -183,6 +184,11 @@ func main() {
 	// Create address
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
+	runtimeCtx, runtimeCancel := context.WithCancel(context.Background())
+	defer runtimeCancel()
+	startSelfHostedLicenseRuntime(runtimeCtx, cfg, c.LicensingChecker, zapLogger)
+	licenseheartbeat.New(cfg, zapLogger).Start(runtimeCtx)
+
 	// Start server in a goroutine
 	go func() {
 		log.Printf("Starting %s server on %s", cfg.App.Name, addr)
@@ -197,6 +203,7 @@ func main() {
 	<-quit
 
 	log.Println("Shutting down server...")
+	runtimeCancel()
 
 	// Cleanup database connections
 	if err := c.DatabaseManager.Close(); err != nil {

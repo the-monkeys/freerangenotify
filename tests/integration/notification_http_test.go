@@ -14,6 +14,7 @@ type NotificationHTTPTestSuite struct {
 }
 
 func TestNotificationHTTPSuite(t *testing.T) {
+	requireLegacyIntegrationEnabled(t, "NotificationHTTPSuite")
 	suite.Run(t, new(NotificationHTTPTestSuite))
 }
 
