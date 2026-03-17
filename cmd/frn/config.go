@@ -12,6 +12,7 @@ type Config struct {
 	APIURL     string `json:"api_url"`
 	APIKey     string `json:"api_key"`
 	AdminToken string `json:"admin_token"`
+	OpsSecret  string `json:"ops_secret"`
 }
 
 const configDir = ".frn"
@@ -28,6 +29,9 @@ func LoadConfig() *Config {
 	}
 	if v := os.Getenv("FREERANGE_ADMIN_TOKEN"); v != "" {
 		cfg.AdminToken = v
+	}
+	if v := os.Getenv("FREERANGE_OPS_SECRET"); v != "" {
+		cfg.OpsSecret = v
 	}
 
 	home, err := os.UserHomeDir()
@@ -51,6 +55,9 @@ func LoadConfig() *Config {
 	}
 	if cfg.AdminToken == "" && fileCfg.AdminToken != "" {
 		cfg.AdminToken = fileCfg.AdminToken
+	}
+	if cfg.OpsSecret == "" && fileCfg.OpsSecret != "" {
+		cfg.OpsSecret = fileCfg.OpsSecret
 	}
 	return cfg
 }

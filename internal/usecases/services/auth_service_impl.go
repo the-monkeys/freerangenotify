@@ -11,6 +11,7 @@ import (
 	"net/smtp"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -420,6 +421,32 @@ func (s *authService) DeleteOwnAccount(ctx context.Context, userID string, req *
 	if err := bcrypt.CompareHashAndPassword([]byte(adminUser.PasswordHash), []byte(req.Password)); err != nil {
 		return errors.Unauthorized("Invalid password")
 	}
+
+	return s.deleteAccountCascade(ctx, userID, adminUser)
+}
+
+// DeleteAccountByAdmin deletes a user account and owned data without password challenge.
+// This path is intended strictly for privileged backend operations.
+func (s *authService) DeleteAccountByAdmin(ctx context.Context, userID, reason string) error {
+	adminUser, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get account: %w", err)
+	}
+	if adminUser == nil {
+		return errors.NotFound("user", "User not found")
+	}
+
+	if strings.TrimSpace(reason) != "" {
+		s.logger.Info("Admin-initiated account deletion requested",
+			zap.String("user_id", userID),
+			zap.String("reason", reason),
+		)
+	}
+
+	return s.deleteAccountCascade(ctx, userID, adminUser)
+}
+
+func (s *authService) deleteAccountCascade(ctx context.Context, userID string, adminUser *auth.AdminUser) error {
 
 	if err := s.repo.RevokeAllUserTokens(ctx, userID); err != nil {
 		s.logger.Warn("Failed to revoke tokens during account deletion", zap.String("user_id", userID), zap.Error(err))

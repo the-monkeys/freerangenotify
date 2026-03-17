@@ -41,10 +41,12 @@ type HostedLicensingConfig struct {
 
 // SelfHostedLicenseConfig contains on-prem license settings.
 type SelfHostedLicenseConfig struct {
-	LicenseKey            string `mapstructure:"license_key"`
-	PublicKeyPEM          string `mapstructure:"public_key_pem"`
-	LicenseServerURL      string `mapstructure:"license_server_url"`
-	VerifyIntervalSeconds int    `mapstructure:"verify_interval_seconds"`
+	LicenseKey               string `mapstructure:"license_key"`
+	PublicKeyPEM             string `mapstructure:"public_key_pem"`
+	LicenseServerURL         string `mapstructure:"license_server_url"`
+	VerifyIntervalSeconds    int    `mapstructure:"verify_interval_seconds"`
+	HeartbeatURL             string `mapstructure:"heartbeat_url"`
+	HeartbeatIntervalSeconds int    `mapstructure:"heartbeat_interval_seconds"`
 }
 
 // FeaturesConfig contains feature flags for Phase 1 features.
@@ -279,14 +281,19 @@ type MonitoringConfig struct {
 
 // SecurityConfig contains security-related configuration
 type SecurityConfig struct {
-	JWTSecret            string     `mapstructure:"jwt_secret"`
-	JWTAccessExpiration  int        `mapstructure:"jwt_access_expiration"`  // in minutes
-	JWTRefreshExpiration int        `mapstructure:"jwt_refresh_expiration"` // in minutes
-	APIKeyHeader         string     `mapstructure:"api_key_header"`
-	RateLimit            int        `mapstructure:"rate_limit"`
-	RateLimitWindow      int        `mapstructure:"rate_limit_window"`
-	SubscriberHMAC       bool       `mapstructure:"subscriber_hmac"`
-	CORS                 CORSConfig `mapstructure:"cors"`
+	JWTSecret                    string     `mapstructure:"jwt_secret"`
+	JWTAccessExpiration          int        `mapstructure:"jwt_access_expiration"`  // in minutes
+	JWTRefreshExpiration         int        `mapstructure:"jwt_refresh_expiration"` // in minutes
+	APIKeyHeader                 string     `mapstructure:"api_key_header"`
+	RateLimit                    int        `mapstructure:"rate_limit"`
+	RateLimitWindow              int        `mapstructure:"rate_limit_window"`
+	OpsEnabled                   bool       `mapstructure:"ops_enabled"`
+	OpsSecret                    string     `mapstructure:"ops_secret"`
+	OpsTimestampToleranceSeconds int        `mapstructure:"ops_timestamp_tolerance_seconds"`
+	OpsRateLimit                 int        `mapstructure:"ops_rate_limit"`
+	OpsRateLimitWindowSeconds    int        `mapstructure:"ops_rate_limit_window_seconds"`
+	SubscriberHMAC               bool       `mapstructure:"subscriber_hmac"`
+	CORS                         CORSConfig `mapstructure:"cors"`
 }
 
 // CORSConfig contains CORS configuration
@@ -355,6 +362,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("security.jwt_refresh_expiration", 10080) // 7 days
 	viper.SetDefault("security.rate_limit", 1000)
 	viper.SetDefault("security.rate_limit_window", 3600)
+	viper.SetDefault("security.ops_enabled", false)
+	viper.SetDefault("security.ops_secret", "")
+	viper.SetDefault("security.ops_timestamp_tolerance_seconds", 300)
+	viper.SetDefault("security.ops_rate_limit", 30)
+	viper.SetDefault("security.ops_rate_limit_window_seconds", 60)
 
 	viper.SetDefault("providers.smtp.host", "")
 	viper.SetDefault("providers.smtp.port", 587)
@@ -382,6 +394,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("licensing.self_hosted.public_key_pem", "")
 	viper.SetDefault("licensing.self_hosted.license_server_url", "")
 	viper.SetDefault("licensing.self_hosted.verify_interval_seconds", 300)
+	viper.SetDefault("licensing.self_hosted.heartbeat_url", "")
+	viper.SetDefault("licensing.self_hosted.heartbeat_interval_seconds", 21600)
 
 	// Configure viper
 	viper.SetConfigName("config")
@@ -406,6 +420,16 @@ func Load() (*Config, error) {
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if overrides := LicensingOverrides(); overrides != nil {
+		config.Licensing.Enabled = overrides.Enabled
+		if overrides.DeploymentMode != "" {
+			config.Licensing.DeploymentMode = overrides.DeploymentMode
+		}
+		if overrides.FailMode != "" {
+			config.Licensing.FailMode = overrides.FailMode
+		}
 	}
 
 	return &config, nil
@@ -443,6 +467,36 @@ func (c *Config) Validate() error {
 
 	if c.Licensing.GraceWindowSeconds < 0 {
 		return fmt.Errorf("licensing.grace_window_seconds must be >= 0")
+	}
+
+	if c.Licensing.SelfHosted.VerifyIntervalSeconds < 0 {
+		return fmt.Errorf("licensing.self_hosted.verify_interval_seconds must be >= 0")
+	}
+
+	if c.Licensing.SelfHosted.HeartbeatIntervalSeconds < 0 {
+		return fmt.Errorf("licensing.self_hosted.heartbeat_interval_seconds must be >= 0")
+	}
+
+	if c.Licensing.Enabled && c.Licensing.DeploymentMode == "self_hosted" {
+		if strings.TrimSpace(c.Licensing.SelfHosted.LicenseServerURL) == "" && strings.TrimSpace(c.Licensing.SelfHosted.PublicKeyPEM) == "" {
+			return fmt.Errorf("self-hosted licensing requires licensing.self_hosted.license_server_url or licensing.self_hosted.public_key_pem")
+		}
+	}
+
+	if c.Security.OpsEnabled && strings.TrimSpace(c.Security.OpsSecret) == "" {
+		return fmt.Errorf("security.ops_secret is required when security.ops_enabled=true")
+	}
+
+	if c.Security.OpsTimestampToleranceSeconds < 0 {
+		return fmt.Errorf("security.ops_timestamp_tolerance_seconds must be >= 0")
+	}
+
+	if c.Security.OpsRateLimit < 0 {
+		return fmt.Errorf("security.ops_rate_limit must be >= 0")
+	}
+
+	if c.Security.OpsRateLimitWindowSeconds < 0 {
+		return fmt.Errorf("security.ops_rate_limit_window_seconds must be >= 0")
 	}
 
 	return nil

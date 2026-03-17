@@ -15,6 +15,7 @@ type TemplateHTTPTestSuite struct {
 }
 
 func TestTemplateHTTPSuite(t *testing.T) {
+	requireLegacyIntegrationEnabled(t, "TemplateHTTPSuite")
 	suite.Run(t, new(TemplateHTTPTestSuite))
 }
 

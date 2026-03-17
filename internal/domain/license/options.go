@@ -22,4 +22,6 @@ type SelfHostedOptions struct {
 	FailMode     string
 	LicenseKey   string
 	PublicKeyPEM string
+	LicenseServerURL string
+	VerifyInterval   time.Duration
 }

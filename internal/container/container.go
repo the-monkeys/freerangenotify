@@ -91,6 +91,7 @@ type Container struct {
 	PlaygroundHandler            *handlers.PlaygroundHandler
 	AnalyticsHandler             *handlers.AnalyticsHandler
 	LicensingHandler             *handlers.LicensingHandler
+	OpsHandler                   *handlers.OpsHandler
 	BillingHandler               *handlers.BillingHandler
 
 	// Quick-Send
@@ -203,11 +204,13 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		switch cfg.Licensing.DeploymentMode {
 		case string(license.ModeSelfHosted):
 			checker, checkerErr := license.NewSelfHostedChecker(license.SelfHostedOptions{
-				CacheTTL:     cacheTTL,
-				GraceWindow:  grace,
-				FailMode:     cfg.Licensing.FailMode,
-				LicenseKey:   cfg.Licensing.SelfHosted.LicenseKey,
-				PublicKeyPEM: cfg.Licensing.SelfHosted.PublicKeyPEM,
+				CacheTTL:         cacheTTL,
+				GraceWindow:      grace,
+				FailMode:         cfg.Licensing.FailMode,
+				LicenseKey:       cfg.Licensing.SelfHosted.LicenseKey,
+				PublicKeyPEM:     cfg.Licensing.SelfHosted.PublicKeyPEM,
+				LicenseServerURL: cfg.Licensing.SelfHosted.LicenseServerURL,
+				VerifyInterval:   time.Duration(cfg.Licensing.SelfHosted.VerifyIntervalSeconds) * time.Second,
 			})
 			if checkerErr != nil {
 				return nil, fmt.Errorf("failed to initialize self-hosted licensing checker: %w", checkerErr)
@@ -412,6 +415,11 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 	container.LicensingHandler = handlers.NewLicensingHandler(
 		container.LicensingChecker,
+		repos.Subscription,
+		logger,
+	)
+	container.OpsHandler = handlers.NewOpsHandler(
+		container.AuthService,
 		repos.Subscription,
 		logger,
 	)

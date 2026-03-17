@@ -19,26 +19,36 @@ import (
 )
 
 type installConfig struct {
-	InstallDir      string
-	DeploymentMode  string
-	Elasticsearch   string
-	RedisHost       string
-	RedisPort       string
-	ServerPort      string
-	LicenseKey      string
-	StartAfterSetup bool
-	SkipPreflight   bool
+	InstallDir            string
+	DeploymentMode        string
+	Elasticsearch         string
+	ElasticsearchUsername string
+	ElasticsearchPassword string
+	RedisHost             string
+	RedisPort             string
+	RedisPassword         string
+	ServerPort            string
+	LicenseKey            string
+	LicenseVerifyURL      string
+	ServerBinaryURL       string
+	WorkerBinaryURL       string
+	LegacyDocker          bool
+	StartAfterSetup       bool
+	SkipPreflight         bool
 }
 
 func newInstallCmd() *cobra.Command {
 	cfg := installConfig{
-		InstallDir:      ".",
-		DeploymentMode:  "self_hosted",
-		Elasticsearch:   "http://localhost:9200",
-		RedisHost:       "localhost",
-		RedisPort:       "6379",
-		ServerPort:      "8080",
-		StartAfterSetup: true,
+		InstallDir:       ".",
+		DeploymentMode:   "self_hosted",
+		Elasticsearch:    "http://localhost:9200",
+		RedisHost:        "localhost",
+		RedisPort:        "6379",
+		ServerPort:       "8080",
+		LicenseVerifyURL: "https://api.freerangenotify.com/v1/license/verify",
+		ServerBinaryURL:  "https://releases.freerangenotify.com/latest/server-selfhosted-linux-amd64",
+		WorkerBinaryURL:  "https://releases.freerangenotify.com/latest/worker-selfhosted-linux-amd64",
+		StartAfterSetup:  true,
 	}
 
 	var yes bool
@@ -48,7 +58,7 @@ func newInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install and bootstrap a self-hosted FreeRangeNotify stack",
-		Long:  "Generates deployment files, validates prerequisites, patches licensing config, and optionally starts docker compose.",
+		Long:  "Installs hosted/self-hosted deployments. Self-hosted mode downloads binaries + config + systemd units. Legacy docker mode remains available.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := applyInstallSetters(&cfg, setKV); err != nil {
 				return err
@@ -74,6 +84,13 @@ func newInstallCmd() *cobra.Command {
 
 			if err := os.MkdirAll(cfg.InstallDir, 0755); err != nil {
 				return fmt.Errorf("create install dir: %w", err)
+			}
+
+			if cfg.DeploymentMode == "self_hosted" && !cfg.LegacyDocker {
+				if err := runSelfHostedInstall(cfg); err != nil {
+					return err
+				}
+				return nil
 			}
 
 			if !cfg.SkipPreflight {
@@ -120,10 +137,17 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cfg.InstallDir, "dir", cfg.InstallDir, "Install directory")
 	cmd.Flags().StringVar(&cfg.DeploymentMode, "deployment-mode", cfg.DeploymentMode, "Deployment mode: hosted or self_hosted")
 	cmd.Flags().StringVar(&cfg.Elasticsearch, "elasticsearch", cfg.Elasticsearch, "Elasticsearch base URL")
+	cmd.Flags().StringVar(&cfg.ElasticsearchUsername, "elasticsearch-username", cfg.ElasticsearchUsername, "Elasticsearch username")
+	cmd.Flags().StringVar(&cfg.ElasticsearchPassword, "elasticsearch-password", cfg.ElasticsearchPassword, "Elasticsearch password")
 	cmd.Flags().StringVar(&cfg.RedisHost, "redis-host", cfg.RedisHost, "Redis host")
 	cmd.Flags().StringVar(&cfg.RedisPort, "redis-port", cfg.RedisPort, "Redis port")
+	cmd.Flags().StringVar(&cfg.RedisPassword, "redis-password", cfg.RedisPassword, "Redis password")
 	cmd.Flags().StringVar(&cfg.ServerPort, "server-port", cfg.ServerPort, "Server port")
 	cmd.Flags().StringVar(&cfg.LicenseKey, "license-key", "", "Signed self-hosted license token")
+	cmd.Flags().StringVar(&cfg.LicenseVerifyURL, "license-verify-url", cfg.LicenseVerifyURL, "Remote endpoint for self-hosted license verification")
+	cmd.Flags().StringVar(&cfg.ServerBinaryURL, "server-binary-url", cfg.ServerBinaryURL, "URL for self-hosted server binary")
+	cmd.Flags().StringVar(&cfg.WorkerBinaryURL, "worker-binary-url", cfg.WorkerBinaryURL, "URL for self-hosted worker binary")
+	cmd.Flags().BoolVar(&cfg.LegacyDocker, "legacy-docker", false, "Use legacy Docker/Compose install flow")
 	cmd.Flags().BoolVar(&cfg.StartAfterSetup, "start", cfg.StartAfterSetup, "Start stack after generating files")
 	cmd.Flags().BoolVar(&cfg.SkipPreflight, "skip-preflight", false, "Skip docker/connectivity checks")
 
@@ -146,14 +170,28 @@ func applyInstallSetters(cfg *installConfig, kvPairs []string) error {
 			cfg.DeploymentMode = val
 		case "elasticsearch", "elasticsearch_url", "database_urls":
 			cfg.Elasticsearch = val
+		case "elasticsearch_username", "database_username":
+			cfg.ElasticsearchUsername = val
+		case "elasticsearch_password", "database_password":
+			cfg.ElasticsearchPassword = val
 		case "redis_host":
 			cfg.RedisHost = val
 		case "redis_port":
 			cfg.RedisPort = val
+		case "redis_password":
+			cfg.RedisPassword = val
 		case "server_port":
 			cfg.ServerPort = val
 		case "license_key":
 			cfg.LicenseKey = val
+		case "license_verify_url":
+			cfg.LicenseVerifyURL = val
+		case "server_binary_url":
+			cfg.ServerBinaryURL = val
+		case "worker_binary_url":
+			cfg.WorkerBinaryURL = val
+		case "legacy_docker":
+			cfg.LegacyDocker = strings.EqualFold(val, "true") || val == "1" || strings.EqualFold(val, "yes")
 		case "start":
 			cfg.StartAfterSetup = strings.EqualFold(val, "true") || val == "1" || strings.EqualFold(val, "yes")
 		case "skip_preflight":
@@ -169,11 +207,20 @@ func applyInstallEnvMap(cfg *installConfig, env map[string]string) {
 	if v := env["FREERANGE_DATABASE_URLS"]; v != "" {
 		cfg.Elasticsearch = v
 	}
+	if v := env["FREERANGE_DATABASE_USERNAME"]; v != "" {
+		cfg.ElasticsearchUsername = v
+	}
+	if v := env["FREERANGE_DATABASE_PASSWORD"]; v != "" {
+		cfg.ElasticsearchPassword = v
+	}
 	if v := env["FREERANGE_REDIS_HOST"]; v != "" {
 		cfg.RedisHost = v
 	}
 	if v := env["FREERANGE_REDIS_PORT"]; v != "" {
 		cfg.RedisPort = v
+	}
+	if v := env["FREERANGE_REDIS_PASSWORD"]; v != "" {
+		cfg.RedisPassword = v
 	}
 	if v := env["FREERANGE_SERVER_PORT"]; v != "" {
 		cfg.ServerPort = v
@@ -184,6 +231,15 @@ func applyInstallEnvMap(cfg *installConfig, env map[string]string) {
 	if v := env["FREERANGE_LICENSING_SELF_HOSTED_LICENSE_KEY"]; v != "" {
 		cfg.LicenseKey = v
 	}
+	if v := env["FREERANGE_LICENSE_VERIFY_URL"]; v != "" {
+		cfg.LicenseVerifyURL = v
+	}
+	if v := env["FREERANGE_SERVER_BINARY_URL"]; v != "" {
+		cfg.ServerBinaryURL = v
+	}
+	if v := env["FREERANGE_WORKER_BINARY_URL"]; v != "" {
+		cfg.WorkerBinaryURL = v
+	}
 }
 
 func promptInstallConfig(cfg *installConfig) error {
@@ -192,12 +248,18 @@ func promptInstallConfig(cfg *installConfig) error {
 	cfg.InstallDir = promptValue(reader, "Install directory", cfg.InstallDir)
 	cfg.DeploymentMode = promptValue(reader, "Deployment mode (hosted/self_hosted)", cfg.DeploymentMode)
 	cfg.Elasticsearch = promptValue(reader, "Elasticsearch URL", cfg.Elasticsearch)
+	cfg.ElasticsearchUsername = promptValue(reader, "Elasticsearch username (optional)", cfg.ElasticsearchUsername)
+	cfg.ElasticsearchPassword = promptValue(reader, "Elasticsearch password (optional)", cfg.ElasticsearchPassword)
 	cfg.RedisHost = promptValue(reader, "Redis host", cfg.RedisHost)
 	cfg.RedisPort = promptValue(reader, "Redis port", cfg.RedisPort)
+	cfg.RedisPassword = promptValue(reader, "Redis password (optional)", cfg.RedisPassword)
 	cfg.ServerPort = promptValue(reader, "Server port", cfg.ServerPort)
 
 	if cfg.DeploymentMode == "self_hosted" && cfg.LicenseKey == "" {
 		cfg.LicenseKey = promptValue(reader, "Self-hosted license key (optional now, can attach later)", "")
+		cfg.LicenseVerifyURL = promptValue(reader, "License verify URL", cfg.LicenseVerifyURL)
+		cfg.ServerBinaryURL = promptValue(reader, "Server binary URL", cfg.ServerBinaryURL)
+		cfg.WorkerBinaryURL = promptValue(reader, "Worker binary URL", cfg.WorkerBinaryURL)
 	}
 
 	confirm := strings.ToLower(promptValue(reader, "Proceed with installation? (yes/no)", "yes"))
@@ -230,7 +292,7 @@ func runPreflightChecks(cfg installConfig) error {
 		return fmt.Errorf("docker compose preflight failed: %w", err)
 	}
 
-	if err := checkElasticsearch(cfg.Elasticsearch); err != nil {
+	if err := checkElasticsearch(cfg.Elasticsearch, cfg.ElasticsearchUsername, cfg.ElasticsearchPassword); err != nil {
 		return fmt.Errorf("elasticsearch preflight failed: %w", err)
 	}
 
@@ -256,7 +318,7 @@ func checkCommand(name string, args ...string) error {
 	return nil
 }
 
-func checkElasticsearch(rawURL string) error {
+func checkElasticsearch(rawURL, username, password string) error {
 	if strings.TrimSpace(rawURL) == "" {
 		return errors.New("empty URL")
 	}
@@ -273,7 +335,15 @@ func checkElasticsearch(rawURL string) error {
 
 	target := strings.TrimRight(u, "/") + "/_cluster/health"
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(target)
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(username) != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -332,8 +402,11 @@ func writeInstallEnv(cfg installConfig) error {
 	}
 
 	merged["FREERANGE_DATABASE_URLS"] = cfg.Elasticsearch
+	merged["FREERANGE_DATABASE_USERNAME"] = cfg.ElasticsearchUsername
+	merged["FREERANGE_DATABASE_PASSWORD"] = cfg.ElasticsearchPassword
 	merged["FREERANGE_REDIS_HOST"] = cfg.RedisHost
 	merged["FREERANGE_REDIS_PORT"] = cfg.RedisPort
+	merged["FREERANGE_REDIS_PASSWORD"] = cfg.RedisPassword
 	merged["FREERANGE_SERVER_PORT"] = cfg.ServerPort
 	if cfg.DeploymentMode == "self_hosted" {
 		merged["FREERANGE_LICENSING_ENABLED"] = "true"
