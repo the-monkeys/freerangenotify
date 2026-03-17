@@ -20,6 +20,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
@@ -37,6 +38,7 @@ type authService struct {
 	notificationService notification.Service
 	otpRepo             repository.OTPRepository
 	otpSender           *OTPEmailSender
+	notifier            dashboard_notification.Notifier
 	subscriptionRepo    license.Repository
 	appRepo             application.Repository
 	tenantRepo          tenant.Repository
@@ -53,6 +55,7 @@ func NewAuthService(
 	notificationService notification.Service,
 	otpRepo repository.OTPRepository,
 	otpSender *OTPEmailSender,
+	notifier dashboard_notification.Notifier,
 	subscriptionRepo license.Repository,
 	appRepo application.Repository,
 	tenantRepo tenant.Repository,
@@ -67,6 +70,7 @@ func NewAuthService(
 		notificationService: notificationService,
 		otpRepo:             otpRepo,
 		otpSender:           otpSender,
+		notifier:            notifier,
 		subscriptionRepo:    subscriptionRepo,
 		appRepo:             appRepo,
 		tenantRepo:          tenantRepo,
@@ -145,6 +149,8 @@ func (s *authService) Login(ctx context.Context, req *auth.LoginRequest) (*auth.
 		return nil, errors.Unauthorized("Account is deactivated")
 	}
 
+	wasFirstLogin := user.LastLoginAt.IsZero()
+
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, errors.Unauthorized("Invalid email or password")
@@ -166,12 +172,18 @@ func (s *authService) Login(ctx context.Context, req *auth.LoginRequest) (*auth.
 		zap.String("email", user.Email),
 	)
 
+	if wasFirstLogin {
+		s.notifyInApp(ctx, user.UserID, "Welcome to FreeRange Notify", "Your first login is complete. Start by creating your first app and template.", "auth_first_login", map[string]interface{}{"event_code": "auth.first_login_success"})
+	}
+
 	// Claim any pending team invitations sent to this email
 	if s.membershipRepo != nil {
-		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+		claimedMemberships, err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID)
+		if err != nil {
 			s.logger.Warn("Failed to claim pending memberships on login",
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
+			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
 			agentdebug.Log(
 				"pre-fix-rbac",
 				"H3-claim-on-login",
@@ -350,6 +362,17 @@ func (s *authService) ResetPassword(ctx context.Context, req *auth.ResetPassword
 		zap.String("email", user.Email),
 	)
 
+	s.notifyInApp(ctx, user.UserID, "Password changed", "Your password was reset successfully.", "security", map[string]interface{}{"event_code": "auth.password_changed", "change_type": "reset"})
+	if s.otpSender != nil {
+		if mailErr := s.otpSender.SendPasswordChanged(user.Email, user.FullName); mailErr != nil {
+			s.logger.Warn("Failed to send password changed confirmation email",
+				zap.String("user_id", user.UserID),
+				zap.String("email", user.Email),
+				zap.Error(mailErr),
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -393,6 +416,17 @@ func (s *authService) ChangePassword(ctx context.Context, userID string, req *au
 		zap.String("user_id", userID),
 		zap.String("email", user.Email),
 	)
+
+	s.notifyInApp(ctx, user.UserID, "Password changed", "Your password was updated successfully.", "security", map[string]interface{}{"event_code": "auth.password_changed", "change_type": "change"})
+	if s.otpSender != nil {
+		if mailErr := s.otpSender.SendPasswordChanged(user.Email, user.FullName); mailErr != nil {
+			s.logger.Warn("Failed to send password changed confirmation email",
+				zap.String("user_id", user.UserID),
+				zap.String("email", user.Email),
+				zap.Error(mailErr),
+			)
+		}
+	}
 
 	return nil
 }
@@ -746,7 +780,7 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
 	}
 
 	if smtpFromName == "" {
-		smtpFromName = "FreeRangeNotify"
+		smtpFromName = "FreeRange Notify"
 	}
 
 	// Build the reset link - get frontend URL from environment or use default
@@ -757,7 +791,7 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
 	resetLink := fmt.Sprintf("%s/reset-password?token=%s", frontendURL, resetToken)
 
 	// HTML email body
-	subject := "Reset Your Password - FreeRangeNotify"
+	subject := "Reset Your Password - FreeRange Notify"
 	emailBody := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
@@ -769,7 +803,7 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
     <div style="background-color: #f8f9fa; border-radius: 10px; padding: 30px; margin-bottom: 20px;">
         <h1 style="color: #2563eb; margin-top: 0;">Password Reset Request</h1>
         <p>Hello,</p>
-        <p>We received a request to reset your password for your FreeRangeNotify account.</p>
+		<p>We received a request to reset your password for your FreeRange Notify account.</p>
         <p>Click the button below to reset your password. This link will expire in <strong>5 minutes</strong>.</p>
         <div style="text-align: center; margin: 30px 0;">
             <a href="%s" 
@@ -790,7 +824,7 @@ func (s *authService) sendPasswordResetEmail(ctx context.Context, user *auth.Adm
         </p>
     </div>
     <div style="text-align: center; color: #6c757d; font-size: 12px;">
-        <p>© 2026 FreeRangeNotify. All rights reserved.</p>
+		<p>© 2026 FreeRange Notify. All rights reserved.</p>
     </div>
 </body>
 </html>
@@ -919,12 +953,25 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 		zap.String("email", user.Email),
 	)
 
+	s.notifyInApp(ctx, user.UserID, "Welcome to FreeRange Notify", "Your account is ready. Start by setting up your first notification flow.", "auth_welcome", map[string]interface{}{"event_code": "auth.registration_completed"})
+	if s.otpSender != nil {
+		if mailErr := s.otpSender.SendWelcome(user.Email, user.FullName); mailErr != nil {
+			s.logger.Warn("Failed to send welcome email",
+				zap.String("user_id", user.UserID),
+				zap.String("email", user.Email),
+				zap.Error(mailErr),
+			)
+		}
+	}
+
 	// Claim any pending team invitations
 	if s.membershipRepo != nil {
-		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+		claimedMemberships, err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID)
+		if err != nil {
 			s.logger.Warn("Failed to claim pending memberships on register",
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
+			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
 			agentdebug.Log(
 				"pre-fix-rbac",
 				"H2-claim-on-register",
@@ -1081,12 +1128,18 @@ func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.A
 		zap.String("email", user.Email),
 	)
 
+	if user.LastLoginAt.IsZero() {
+		s.notifyInApp(ctx, user.UserID, "Welcome to FreeRange Notify", "Your first SSO login is complete. You can now access your dashboard.", "auth_first_login", map[string]interface{}{"event_code": "auth.first_login_success", "auth_method": "sso"})
+	}
+
 	// Claim any pending team invitations sent to this email
 	if s.membershipRepo != nil {
-		if err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID); err != nil {
+		claimedMemberships, err := s.membershipRepo.ClaimByEmail(ctx, user.Email, user.UserID)
+		if err != nil {
 			s.logger.Warn("Failed to claim pending memberships on SSO login",
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
+			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
 			agentdebug.Log(
 				"pre-fix-rbac",
 				"H4-claim-on-sso",
@@ -1107,4 +1160,46 @@ func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.A
 		User:   user,
 		Tokens: tokens,
 	}, nil
+}
+
+func (s *authService) notifyInApp(ctx context.Context, userID, title, body, category string, data map[string]interface{}) {
+	if s.notifier == nil || strings.TrimSpace(userID) == "" {
+		return
+	}
+	if err := s.notifier.NotifyUser(ctx, userID, title, body, category, data); err != nil {
+		s.logger.Warn("Failed to create in-app dashboard notification",
+			zap.String("user_id", userID),
+			zap.String("category", category),
+			zap.Error(err),
+		)
+	}
+}
+
+func (s *authService) notifyInviteAcceptedToInviters(ctx context.Context, user *auth.AdminUser, memberships []*auth.AppMembership) {
+	if s.notifier == nil || user == nil || len(memberships) == 0 {
+		return
+	}
+
+	for _, membership := range memberships {
+		if membership == nil || strings.TrimSpace(membership.InvitedBy) == "" || strings.TrimSpace(membership.AppID) == "" {
+			continue
+		}
+
+		appName := membership.AppID
+		if s.appRepo != nil {
+			if app, err := s.appRepo.GetByID(ctx, membership.AppID); err == nil && app != nil && strings.TrimSpace(app.AppName) != "" {
+				appName = app.AppName
+			}
+		}
+
+		title := "Invite accepted"
+		body := fmt.Sprintf("%s accepted your invite to %s.", strings.TrimSpace(user.Email), appName)
+		s.notifyInApp(ctx, membership.InvitedBy, title, body, "invite_accepted", map[string]interface{}{
+			"event_code":     "org.invite_accepted",
+			"membership_id":  membership.MembershipID,
+			"app_id":         membership.AppID,
+			"accepted_user":  user.UserID,
+			"accepted_email": user.Email,
+		})
+	}
 }

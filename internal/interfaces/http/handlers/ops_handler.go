@@ -1,11 +1,17 @@
 package handlers
 
 import (
+	"fmt"
+	"net/smtp"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"go.uber.org/zap"
 )
@@ -14,11 +20,14 @@ import (
 type OpsHandler struct {
 	authService auth.Service
 	subRepo     license.Repository
+	appRepo     application.Repository
+	notifier    dashboard_notification.Notifier
+	smtp        config.SMTPConfig
 	logger      *zap.Logger
 }
 
-func NewOpsHandler(authService auth.Service, subRepo license.Repository, logger *zap.Logger) *OpsHandler {
-	return &OpsHandler{authService: authService, subRepo: subRepo, logger: logger}
+func NewOpsHandler(authService auth.Service, subRepo license.Repository, appRepo application.Repository, notifier dashboard_notification.Notifier, smtp config.SMTPConfig, logger *zap.Logger) *OpsHandler {
+	return &OpsHandler{authService: authService, subRepo: subRepo, appRepo: appRepo, notifier: notifier, smtp: smtp, logger: logger}
 }
 
 // RenewSubscription handles POST /v1/ops/subscriptions/renew.
@@ -123,10 +132,100 @@ func (h *OpsHandler) RenewSubscription(c *fiber.Ctx) error {
 		h.logger.Info("Ops renew updated existing subscription", zap.String("subscription_id", sub.ID), zap.String("tenant_id", tenantID), zap.String("app_id", req.AppID))
 	}
 
+	h.notifySubscriptionRenewed(c, sub, req.UserID, req.Months)
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data":    sub,
 	})
+}
+
+func (h *OpsHandler) notifySubscriptionRenewed(c *fiber.Ctx, sub *license.Subscription, requestUserID string, months int) {
+	if sub == nil {
+		return
+	}
+
+	ownerIDs := make(map[string]struct{})
+	if strings.TrimSpace(requestUserID) != "" {
+		ownerIDs[strings.TrimSpace(requestUserID)] = struct{}{}
+	}
+	if strings.TrimSpace(sub.TenantID) != "" && h.authService != nil {
+		if _, err := h.authService.GetCurrentUser(c.Context(), sub.TenantID); err == nil {
+			ownerIDs[strings.TrimSpace(sub.TenantID)] = struct{}{}
+		}
+	}
+	if strings.TrimSpace(sub.AppID) != "" && h.appRepo != nil {
+		if app, err := h.appRepo.GetByID(c.Context(), sub.AppID); err == nil && app != nil && strings.TrimSpace(app.AdminUserID) != "" {
+			ownerIDs[strings.TrimSpace(app.AdminUserID)] = struct{}{}
+		}
+	}
+
+	if len(ownerIDs) == 0 {
+		return
+	}
+
+	for userID := range ownerIDs {
+		if h.notifier != nil {
+			title := "Subscription renewed"
+			body := fmt.Sprintf("Your subscription was renewed for %d month(s). New end date: %s", months, sub.CurrentPeriodEnd.Format("2006-01-02"))
+			if err := h.notifier.NotifyUser(c.Context(), userID, title, body, "billing_subscription_renewed", map[string]interface{}{
+				"event_code":         "billing.subscription_renewed",
+				"subscription_id":    sub.ID,
+				"tenant_id":          sub.TenantID,
+				"app_id":             sub.AppID,
+				"current_period_end": sub.CurrentPeriodEnd.Format(time.RFC3339),
+				"months":             months,
+			}); err != nil {
+				h.logger.Warn("Failed to create subscription renewed in-app notification", zap.String("user_id", userID), zap.Error(err))
+			}
+		}
+
+		if h.authService != nil {
+			adminUser, err := h.authService.GetCurrentUser(c.Context(), userID)
+			if err != nil || adminUser == nil || strings.TrimSpace(adminUser.Email) == "" {
+				continue
+			}
+			if err := h.sendSubscriptionRenewedEmail(adminUser.Email, adminUser.FullName, months, sub.CurrentPeriodEnd); err != nil {
+				h.logger.Warn("Failed to send subscription renewed email", zap.String("user_id", userID), zap.String("email", adminUser.Email), zap.Error(err))
+			}
+		}
+	}
+}
+
+func (h *OpsHandler) sendSubscriptionRenewedEmail(toEmail, fullName string, months int, end time.Time) error {
+	if strings.TrimSpace(h.smtp.Host) == "" || strings.TrimSpace(h.smtp.FromEmail) == "" {
+		return nil
+	}
+
+	name := strings.TrimSpace(fullName)
+	if name == "" {
+		name = "there"
+	}
+
+	subject := "Subscription renewed"
+	body := fmt.Sprintf("<p>Hi %s,</p><p>Your subscription has been renewed for %d month(s).</p><p>Next renewal date: <strong>%s</strong></p>", name, months, end.Format("2006-01-02"))
+
+	fromName := strings.TrimSpace(h.smtp.FromName)
+	if fromName == "" {
+		fromName = "FreeRange Notify"
+	}
+	msg := fmt.Sprintf("From: %s <%s>\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s", fromName, h.smtp.FromEmail, toEmail, subject, body)
+
+	port := h.smtp.Port
+	if port == 0 {
+		port = 587
+	}
+	addr := fmt.Sprintf("%s:%d", h.smtp.Host, port)
+
+	var auth smtp.Auth
+	if strings.TrimSpace(h.smtp.Username) != "" && strings.TrimSpace(h.smtp.Password) != "" {
+		auth = smtp.PlainAuth("", h.smtp.Username, h.smtp.Password, h.smtp.Host)
+	}
+
+	if err := smtp.SendMail(addr, auth, h.smtp.FromEmail, []string{toEmail}, []byte(msg)); err != nil {
+		return fmt.Errorf("send subscription renewed email: %w", err)
+	}
+	return nil
 }
 
 // DeleteAccount handles DELETE /v1/ops/users/:user_id.

@@ -1,4 +1,4 @@
-# Makefile for FreeRangeNotify
+# Makefile for FreeRange Notify
 
 .PHONY: help build run test test-integration test-unit clean docker-up docker-down docker-logs
 

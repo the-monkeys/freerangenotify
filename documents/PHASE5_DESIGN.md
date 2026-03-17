@@ -80,7 +80,7 @@ Mark multiple notifications as read, archive them, or mark all unread as read fo
 An HMAC-SHA256 hash that authenticates an SSE connection. The backend signs `userId` with the application's API key. The client passes this hash when connecting, and the SSE handler validates it to prevent impersonation. The SDK needs a method to obtain this hash, and the backend needs an endpoint to generate it.
 
 ### Complete SDK
-An SDK that covers **every** API endpoint exposed by FreeRangeNotify. Not just `Send` and `CreateUser` — the full surface: notifications (send, list, get, mark-read, snooze, archive, cancel, retry, broadcast, bulk), users (CRUD, devices, preferences), templates (CRUD, versions, rollback, diff, render, test, library), workflows (CRUD, trigger, executions), topics (CRUD, subscribers), presence (check-in), and analytics (summary).
+An SDK that covers **every** API endpoint exposed by FreeRange Notify. Not just `Send` and `CreateUser` — the full surface: notifications (send, list, get, mark-read, snooze, archive, cancel, retry, broadcast, bulk), users (CRUD, devices, preferences), templates (CRUD, versions, rollback, diff, render, test, library), workflows (CRUD, trigger, executions), topics (CRUD, subscribers), presence (check-in), and analytics (summary).
 
 ---
 
