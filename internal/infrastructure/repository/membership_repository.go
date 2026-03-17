@@ -126,7 +126,7 @@ func (r *MembershipRepository) Delete(ctx context.Context, id string) error {
 	return r.base.Delete(ctx, id)
 }
 
-func (r *MembershipRepository) ClaimByEmail(ctx context.Context, email, actualUserID string) error {
+func (r *MembershipRepository) ClaimByEmail(ctx context.Context, email, actualUserID string) ([]*auth.AppMembership, error) {
 	// Find pending memberships where user_id is still the email (unclaimed invite)
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -142,8 +142,10 @@ func (r *MembershipRepository) ClaimByEmail(ctx context.Context, email, actualUs
 
 	result, err := r.base.Search(ctx, query)
 	if err != nil {
-		return fmt.Errorf("failed to search pending memberships: %w", err)
+		return nil, fmt.Errorf("failed to search pending memberships: %w", err)
 	}
+
+	claimed := make([]*auth.AppMembership, 0, len(result.Hits))
 
 	for _, hit := range result.Hits {
 		m, err := r.unmarshal(hit)
@@ -151,11 +153,12 @@ func (r *MembershipRepository) ClaimByEmail(ctx context.Context, email, actualUs
 			continue
 		}
 		m.UserID = actualUserID
-		if err := r.base.Update(ctx, m.MembershipID, m); err != nil {
-			return fmt.Errorf("failed to claim membership %s: %w", m.MembershipID, err)
+		if err := r.Update(ctx, m); err != nil {
+			return nil, fmt.Errorf("failed to claim membership %s: %w", m.MembershipID, err)
 		}
+		claimed = append(claimed, m)
 	}
-	return nil
+	return claimed, nil
 }
 
 func (r *MembershipRepository) unmarshal(raw map[string]interface{}) (*auth.AppMembership, error) {

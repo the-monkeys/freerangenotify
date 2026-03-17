@@ -240,8 +240,8 @@ type MembershipRepository interface {
 	// ClaimByEmail links pending invitations to an actual user ID.
 	// It finds memberships where user_email matches and user_id still holds the
 	// email (i.e. the invite hasn't been claimed yet) and updates user_id to the
-	// real UUID.
-	ClaimByEmail(ctx context.Context, email, actualUserID string) error
+	// real UUID. Returns the memberships that were claimed in this call.
+	ClaimByEmail(ctx context.Context, email, actualUserID string) ([]*AppMembership, error)
 }
 
 // TeamService defines the business logic interface for team/membership management.
