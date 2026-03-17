@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { templatesAPI } from '../../services/api';
-import type { TemplateVersion, TemplateDiffResponse } from '../../types';
+import type { TemplateVersion, TemplateDiffResponse, TemplateDiffChange } from '../../types';
 import { extractErrorMessage } from '../../lib/utils';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
@@ -57,6 +57,22 @@ const TemplateDiffViewer: React.FC<TemplateDiffViewerProps> = ({
         return String(val);
     };
 
+    const normalizedChanges = (): Array<{ field: string; old: any; newer: any }> => {
+        if (!diff) return [];
+        if (Array.isArray(diff.changes)) {
+            return (diff.changes as TemplateDiffChange[]).map((c) => ({
+                field: c.field,
+                old: c.from,
+                newer: c.to,
+            }));
+        }
+        return Object.entries(diff.changes || {}).map(([field, change]) => ({
+            field,
+            old: change.old,
+            newer: change.new,
+        }));
+    };
+
     return (
         <SlidePanel
             open={open}
@@ -104,22 +120,22 @@ const TemplateDiffViewer: React.FC<TemplateDiffViewerProps> = ({
                 {/* Diff display */}
                 {diff && (
                     <div className="space-y-4">
-                        {Object.keys(diff.changes).length === 0 ? (
+                        {normalizedChanges().length === 0 ? (
                             <p className="text-sm text-muted-foreground text-center py-8">
                                 No differences between v{diff.from_version} and v{diff.to_version}.
                             </p>
                         ) : (
-                            Object.entries(diff.changes).map(([field, change]) => (
-                                <div key={field} className="space-y-1">
-                                    <p className="text-sm font-medium text-foreground">{field}</p>
+                            normalizedChanges().map((change) => (
+                                <div key={change.field} className="space-y-1">
+                                    <p className="text-sm font-medium text-foreground">{change.field}</p>
                                     <div className="bg-red-50 border-l-2 border-red-400 px-3 py-2 rounded-r">
                                         <pre className="whitespace-pre-wrap text-xs text-red-800 font-mono">
-                                            − {renderValue(change.old)}
+                                            - {renderValue(change.old)}
                                         </pre>
                                     </div>
                                     <div className="bg-green-50 border-l-2 border-green-400 px-3 py-2 rounded-r">
                                         <pre className="whitespace-pre-wrap text-xs text-green-800 font-mono">
-                                            + {renderValue(change.new)}
+                                            + {renderValue(change.newer)}
                                         </pre>
                                     </div>
                                 </div>

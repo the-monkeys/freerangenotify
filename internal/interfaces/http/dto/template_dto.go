@@ -81,7 +81,8 @@ type ListTemplatesResponse struct {
 
 // RenderTemplateRequest represents a request to render a template
 type RenderTemplateRequest struct {
-	Data map[string]interface{} `json:"data" validate:"required"`
+	Data     map[string]interface{} `json:"data" validate:"required"`
+	Editable bool                   `json:"editable,omitempty"`
 } // @name RenderTemplateRequest
 
 // RenderTemplateResponse represents the response for template rendering
@@ -102,8 +103,9 @@ type CreateVersionRequest struct {
 
 // RollbackRequest represents a request to rollback a template to a specific version
 type RollbackRequest struct {
-	Version   int    `json:"version" validate:"required,min=1"`
-	UpdatedBy string `json:"updated_by"`
+	Version       int    `json:"version,omitempty" validate:"omitempty,min=1"`
+	TargetVersion int    `json:"target_version,omitempty" validate:"omitempty,min=1"`
+	UpdatedBy     string `json:"updated_by"`
 } // @name RollbackRequest
 
 // SendTestRequest represents a request to send a test email for a template

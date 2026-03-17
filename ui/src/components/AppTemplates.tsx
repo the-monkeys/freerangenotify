@@ -17,6 +17,7 @@ import TemplateEditor from './TemplateEditor';
 import TemplateDiffViewer from './templates/TemplateDiffViewer';
 import TemplateTestPanel from './templates/TemplateTestPanel';
 import TemplateControlsPanel from './templates/TemplateControlsPanel';
+import EditablePreviewPanel from './templates/EditablePreviewPanel';
 import SkeletonTable from './SkeletonTable';
 import ConfirmDeleteDialog from './ConfirmDeleteDialog';
 import { toast } from 'sonner';
@@ -86,6 +87,32 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [rollbackLoading, setRollbackLoading] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const [savingDefaults, setSavingDefaults] = useState<Record<string, boolean>>({});
+
+    const getPreviewStorageKey = (templateId: string) => `frn:template-preview-data:${appId}:${templateId}`;
+
+    const updatePreviewData = (templateId: string, data: string) => {
+        setActivePreviews((prev) => ({
+            ...prev,
+            [templateId]: { ...(prev[templateId] || { rendered: '', loading: false }), data }
+        }));
+        try {
+            localStorage.setItem(getPreviewStorageKey(templateId), data);
+        } catch {
+            // Ignore storage failures (private mode/quota).
+        }
+    };
+
+    const updatePreviewVariable = (templateId: string, variable: string, value: string) => {
+        const current = activePreviews[templateId]?.data || '{}';
+        try {
+            const parsed = JSON.parse(current) as Record<string, any>;
+            const next = { ...parsed, [variable]: value };
+            updatePreviewData(templateId, JSON.stringify(next, null, 2));
+        } catch {
+            // Keep current data untouched when JSON is invalid.
+        }
+    };
 
 
     const resetForm = () => {
@@ -170,32 +197,46 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
-    const buildDefaultPreviewData = (tmpl: Template): string => {
-        if (tmpl.metadata?.sample_data) {
-            return JSON.stringify(tmpl.metadata.sample_data, null, 2);
-        }
-
-        if (tmpl.variables?.length) {
-            const generated: Record<string, string> = {};
-            for (const variable of tmpl.variables) {
-                generated[variable] = variable;
+    const togglePreview = (tmplId: string) => {
+        if (activePreviews[tmplId]) {
+            const newPreviews = { ...activePreviews };
+            delete newPreviews[tmplId];
+            setActivePreviews(newPreviews);
+        } else {
+            const tmpl = templates.find(t => t.id === tmplId);
+            let defaultData = '{}';
+            let hasPersistedData = false;
+            try {
+                const persisted = localStorage.getItem(getPreviewStorageKey(tmplId));
+                if (persisted) {
+                    defaultData = persisted;
+                    hasPersistedData = true;
+                }
+            } catch {
+                // Ignore storage failures and continue with generated defaults.
             }
-            return JSON.stringify(generated, null, 2);
-        }
-
-        return '{}';
-    };
-
-    const openPreviewDialog = (tmpl: Template) => {
-        if (!activePreviews[tmpl.id]) {
-            setActivePreviews((prev) => ({
-                ...prev,
-                [tmpl.id]: {
-                    data: buildDefaultPreviewData(tmpl),
-                    rendered: '',
-                    loading: false,
-                },
-            }));
+            if (!hasPersistedData && tmpl?.metadata?.sample_data) {
+                defaultData = JSON.stringify(tmpl.metadata.sample_data, null, 2);
+            } else if (!hasPersistedData && tmpl?.name) {
+                // Generate sample data from variables
+                if (tmpl.variables?.length) {
+                    const generated: Record<string, string> = {};
+                    for (const v of tmpl.variables) {
+                        generated[v] = v;
+                    }
+                    defaultData = JSON.stringify(generated, null, 2);
+                }
+            } else if (!hasPersistedData && tmpl?.variables?.length) {
+                const generated: Record<string, string> = {};
+                for (const v of tmpl.variables) {
+                    generated[v] = v;
+                }
+                defaultData = JSON.stringify(generated, null, 2);
+            }
+            setActivePreviews({
+                ...activePreviews,
+                [tmplId]: { data: defaultData, rendered: '', loading: false }
+            });
         }
         setPreviewTemplate(tmpl);
     };
@@ -218,7 +259,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         });
 
         try {
-            const resp = await templatesAPI.render(apiKey, tmplId, { data: parsedData });
+            const resp = await templatesAPI.render(apiKey, tmplId, { data: parsedData, editable: true });
             setActivePreviews({
                 ...activePreviews,
                 [tmplId]: { ...preview, rendered: resp.rendered_body, loading: false }
@@ -230,6 +271,69 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 ...activePreviews,
                 [tmplId]: { ...preview, loading: false }
             });
+        }
+    };
+
+    const handleSavePreviewDefaults = async (tmpl: Template) => {
+        const preview = activePreviews[tmpl.id];
+        if (!preview) return;
+
+        let parsedData: Record<string, any> = {};
+        try {
+            parsedData = JSON.parse(preview.data || '{}');
+        } catch {
+            toast.error('Preview JSON must be valid before saving defaults');
+            return;
+        }
+
+        setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: true }));
+        try {
+            await templatesAPI.update(apiKey, tmpl.id, {
+                metadata: {
+                    ...(tmpl.metadata || {}),
+                    sample_data: parsedData,
+                },
+            });
+            try {
+                localStorage.setItem(getPreviewStorageKey(tmpl.id), JSON.stringify(parsedData, null, 2));
+            } catch {
+                // Ignore storage failures.
+            }
+            toast.success('Saved as template defaults');
+            fetchTemplates();
+        } catch (error) {
+            toast.error(extractErrorMessage(error, 'Failed to save template defaults'));
+        } finally {
+            setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: false }));
+        }
+    };
+
+    const handleResetPreviewDefaults = async (tmpl: Template) => {
+        setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: true }));
+        try {
+            const nextMetadata = { ...(tmpl.metadata || {}) } as Record<string, any>;
+            delete nextMetadata.sample_data;
+            await templatesAPI.update(apiKey, tmpl.id, { metadata: nextMetadata });
+
+            try {
+                localStorage.removeItem(getPreviewStorageKey(tmpl.id));
+            } catch {
+                // Ignore storage failures.
+            }
+
+            // Regenerate quick defaults from variables for immediate UX feedback.
+            const generated: Record<string, string> = {};
+            for (const v of tmpl.variables || []) {
+                generated[v] = '';
+            }
+            updatePreviewData(tmpl.id, JSON.stringify(generated, null, 2));
+
+            toast.success('Template defaults reset');
+            fetchTemplates();
+        } catch (error) {
+            toast.error(extractErrorMessage(error, 'Failed to reset template defaults'));
+        } finally {
+            setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: false }));
         }
     };
 
@@ -326,6 +430,13 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 </div>
             </CardHeader>
             <CardContent>
+                <div className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">Actions:</span>{' '}
+                    Preview renders content with sample data, Compare shows version differences, Test sends a delivery test,
+                    Controls edits business-safe fields, Save Version snapshots current content, Edit modifies template source,
+                    and Delete permanently removes the template.
+                </div>
+
                 {showAddForm && (
                     <form onSubmit={handleCreateTemplate} className="mb-8 bg-muted p-6 rounded border border-border space-y-4">
                         <h4 className="text-lg font-semibold mb-2">{editingTemplate ? 'Edit Template' : 'Create Template'}</h4>
@@ -539,6 +650,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => openPreviewDialog(tmpl)}
                                                 variant="secondary"
                                                 size="sm"
+                                                title={activePreviews[tmpl.id] ? 'Close preview panel for this template' : 'Render and preview this template with sample data'}
                                             >
                                                 Preview
                                             </Button>
@@ -546,6 +658,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => openDiffViewer(tmpl)}
                                                 variant="outline"
                                                 size="sm"
+                                                title="Compare two saved versions to see field-level changes"
                                             >
                                                 Compare
                                             </Button>
@@ -553,6 +666,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => setTestTemplate(tmpl)}
                                                 variant="outline"
                                                 size="sm"
+                                                title="Send a test notification/email using this template"
                                             >
                                                 Test
                                             </Button>
@@ -560,6 +674,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => setControlsTemplate(tmpl)}
                                                 variant="outline"
                                                 size="sm"
+                                                title="Edit business-safe content controls without changing raw template HTML"
                                             >
                                                 Controls
                                             </Button>
@@ -568,6 +683,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 variant="outline"
                                                 size="sm"
                                                 disabled={savingVersion}
+                                                title="Create an immutable version snapshot of the current template"
                                             >
                                                 {savingVersion ? 'Saving...' : 'Save Version'}
                                             </Button>
@@ -575,6 +691,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => handleEditTemplate(tmpl)}
                                                 variant="outline"
                                                 size="sm"
+                                                title="Edit template content, variables, and metadata"
                                             >
                                                 Edit
                                             </Button>
@@ -582,12 +699,102 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                                 onClick={() => handleDeleteTemplate(tmpl.id)}
                                                 variant="destructive"
                                                 size="sm"
+                                                title="Permanently delete this template"
                                             >
                                                 Delete
                                             </Button>
                                         </div>
                                     </div>
 
+                                    {activePreviews[tmpl.id] && (
+                                        <div className="mt-4 border-t border-border pt-4">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-xs text-muted-foreground font-semibold">PREVIEW DATA (JSON)</div>
+                                                        {(() => {
+                                                            try {
+                                                                JSON.parse(activePreviews[tmpl.id].data || '{}');
+                                                                return <span className="text-[10px] text-emerald-600 font-medium">&#10003; Valid</span>;
+                                                            } catch {
+                                                                return <span className="text-[10px] text-red-500 font-medium">&#10007; Invalid JSON</span>;
+                                                            }
+                                                        })()}
+                                                    </div>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="text-xs h-6 px-2"
+                                                        onClick={() => {
+                                                            try {
+                                                                const formatted = JSON.stringify(JSON.parse(activePreviews[tmpl.id].data), null, 2);
+                                                                updatePreviewData(tmpl.id, formatted);
+                                                            } catch {
+                                                                // Invalid JSON — leave as-is
+                                                            }
+                                                        }}
+                                                    >
+                                                        Format JSON
+                                                    </Button>
+                                                </div>
+                                                <Textarea
+                                                    className={`h-[120px] font-mono text-xs ${(() => {
+                                                        try { JSON.parse(activePreviews[tmpl.id].data || '{}'); return 'border-border'; }
+                                                        catch { return 'border-red-400 focus-visible:ring-red-400'; }
+                                                    })()}`}
+                                                    value={activePreviews[tmpl.id].data}
+                                                    onChange={(e) => updatePreviewData(tmpl.id, e.target.value)}
+                                                    onBlur={() => {
+                                                        try {
+                                                            const formatted = JSON.stringify(JSON.parse(activePreviews[tmpl.id].data), null, 2);
+                                                            updatePreviewData(tmpl.id, formatted);
+                                                        } catch {
+                                                            // Keep invalid JSON as-is so user can fix it
+                                                        }
+                                                    }}
+                                                    placeholder='{"name": "Jack"}'
+                                                    spellCheck={false}
+                                                />
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        className="flex-1 text-xs"
+                                                        onClick={() => handleRenderPreview(tmpl.id)}
+                                                        disabled={activePreviews[tmpl.id].loading}
+                                                    >
+                                                        {activePreviews[tmpl.id].loading ? 'Rendering...' : 'Render Preview'}
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="text-xs"
+                                                        onClick={() => handleSavePreviewDefaults(tmpl)}
+                                                        disabled={!!savingDefaults[tmpl.id]}
+                                                        title="Save current preview data as template defaults for future sessions"
+                                                    >
+                                                        {savingDefaults[tmpl.id] ? 'Saving...' : 'Save as Default'}
+                                                    </Button>
+                                                    <Button
+                                                        variant="outline"
+                                                        className="text-xs"
+                                                        onClick={() => handleResetPreviewDefaults(tmpl)}
+                                                        disabled={!!savingDefaults[tmpl.id]}
+                                                        title="Remove saved template defaults and reset preview values"
+                                                    >
+                                                        Reset Defaults
+                                                    </Button>
+                                                    {activePreviews[tmpl.id].rendered && (
+                                                        <Button
+                                                            variant="outline"
+                                                            className="text-xs"
+                                                            onClick={() => setSlidePreview({ templateId: tmpl.id, templateName: tmpl.name, channel: tmpl.channel })}
+                                                        >
+                                                            View Output →
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </CardContent>
                             </Card>
                         ))}
@@ -601,98 +808,17 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     onPageChange={setPage}
                 />
 
-                {/* Preview Dialog */}
-                <Dialog open={!!previewTemplate} onOpenChange={(open) => { if (!open) setPreviewTemplate(null); }}>
-                    <DialogContent className="overflow-y-auto">
-                        <DialogHeader>
-                            <DialogTitle>Template Preview: {previewTemplate?.name}</DialogTitle>
-                        </DialogHeader>
-
-                        {previewTemplate && activePreviews[previewTemplate.id] && (
-                            <div className="space-y-5">
-                                <div className="rounded border border-border bg-muted/30 p-4">
-                                    <div className="mb-2 text-xs font-semibold text-muted-foreground">VARIABLES</div>
-                                    {previewTemplate.variables && previewTemplate.variables.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                            {previewTemplate.variables.map((variable) => (
-                                                <Badge key={variable} variant="outline" className="text-xs">
-                                                    {variable}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground">No variables declared for this template.</p>
-                                    )}
-                                </div>
-
-                                <div className="grid gap-4 lg:grid-cols-2">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Label className="text-xs text-muted-foreground font-semibold">PREVIEW DATA (JSON)</Label>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs h-6 px-2"
-                                                onClick={() => {
-                                                    try {
-                                                        const formatted = JSON.stringify(JSON.parse(activePreviews[previewTemplate.id].data), null, 2);
-                                                        setActivePreviews((prev) => ({
-                                                            ...prev,
-                                                            [previewTemplate.id]: { ...prev[previewTemplate.id], data: formatted },
-                                                        }));
-                                                    } catch {
-                                                        // Invalid JSON; leave as-is.
-                                                    }
-                                                }}
-                                            >
-                                                Format JSON
-                                            </Button>
-                                        </div>
-                                        <Textarea
-                                            className="h-65 font-mono text-xs"
-                                            value={activePreviews[previewTemplate.id].data}
-                                            onChange={(e) => setActivePreviews((prev) => ({
-                                                ...prev,
-                                                [previewTemplate.id]: { ...prev[previewTemplate.id], data: e.target.value },
-                                            }))}
-                                            placeholder='{"name": "Jack"}'
-                                        />
-                                        <Button
-                                            className="w-full text-xs"
-                                            onClick={() => handleRenderPreview(previewTemplate.id)}
-                                            disabled={activePreviews[previewTemplate.id].loading}
-                                        >
-                                            {activePreviews[previewTemplate.id].loading ? 'Rendering...' : 'Render Preview'}
-                                        </Button>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <Label className="text-xs text-muted-foreground font-semibold">RENDERED OUTPUT</Label>
-                                        {activePreviews[previewTemplate.id].rendered ? (
-                                            previewTemplate.channel === 'email' ? (
-                                                <iframe
-                                                    srcDoc={activePreviews[previewTemplate.id].rendered}
-                                                    sandbox=""
-                                                    className="h-80 w-full rounded border bg-white"
-                                                    title="Rendered Preview"
-                                                />
-                                            ) : (
-                                                <div className="h-80 overflow-y-auto rounded border border-border bg-muted p-4 text-sm text-foreground whitespace-pre-wrap">
-                                                    {activePreviews[previewTemplate.id].rendered}
-                                                </div>
-                                            )
-                                        ) : (
-                                            <div className="flex h-80 items-center justify-center rounded border border-dashed border-border bg-muted/40 text-sm italic text-muted-foreground">
-                                                No rendered output yet. Click "Render Preview" to generate output.
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </DialogContent>
-                </Dialog>
+                {/* Rendered Output Slide Panel — inline-editable preview */}
+                <EditablePreviewPanel
+                    slidePreview={slidePreview}
+                    templates={templates}
+                    activePreviews={activePreviews}
+                    savingDefaults={savingDefaults}
+                    onClose={() => setSlidePreview(null)}
+                    onRenderPreview={handleRenderPreview}
+                    onSaveDefaults={handleSavePreviewDefaults}
+                    onVariableEdit={updatePreviewVariable}
+                />
 
                 {/* Template Diff Viewer */}
                 {diffTemplate && (

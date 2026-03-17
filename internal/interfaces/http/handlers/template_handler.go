@@ -389,7 +389,7 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	rendered, err := h.service.Render(c.Context(), id, appID, req.Data)
+	rendered, err := h.service.Render(c.Context(), id, appID, req.Data, req.Editable)
 	if err != nil {
 		h.logger.Error("Failed to render template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -703,18 +703,23 @@ func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	if req.Version < 1 {
+	version := req.Version
+	if version < 1 {
+		version = req.TargetVersion
+	}
+
+	if version < 1 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error":   "Invalid version",
-			"message": "Version must be >= 1",
+			"message": "version (or target_version) must be >= 1",
 		})
 	}
 
-	tmpl, err := h.service.Rollback(c.Context(), id, appID, req.Version, req.UpdatedBy)
+	tmpl, err := h.service.Rollback(c.Context(), id, appID, version, req.UpdatedBy)
 	if err != nil {
 		h.logger.Error("Failed to rollback template",
 			zap.String("id", id),
-			zap.Int("version", req.Version),
+			zap.Int("version", version),
 			zap.Error(err))
 
 		if strings.Contains(err.Error(), "not found") {
@@ -883,7 +888,7 @@ func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 		})
 	}
 
-	rendered, err := h.service.Render(c.Context(), id, appID, sampleData)
+	rendered, err := h.service.Render(c.Context(), id, appID, sampleData, false)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   "Failed to render template",
@@ -971,6 +976,7 @@ func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"controls":       controls,
 		"control_values": controlValues,
+		"values":         controlValues,
 	})
 }
 
@@ -999,12 +1005,23 @@ func (h *TemplateHandler) UpdateControls(c *fiber.Ctx) error {
 		})
 	}
 
-	var values template.ControlValues
-	if err := c.BodyParser(&values); err != nil {
+	var raw map[string]interface{}
+	if err := c.BodyParser(&raw); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error":   "Invalid request body",
 			"message": err.Error(),
 		})
+	}
+
+	values := template.ControlValues{}
+	if wrapped, ok := raw["control_values"].(map[string]interface{}); ok {
+		for k, v := range wrapped {
+			values[k] = v
+		}
+	} else {
+		for k, v := range raw {
+			values[k] = v
+		}
 	}
 
 	tmpl, err := h.service.GetByID(c.Context(), id, appID)
