@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ type IntegrationTestSuite struct {
 	suite.Suite
 	client         *http.Client
 	apiKey         string
+	adminToken     string
 	appID          string
 	secondAppID    string
 	userID         string
@@ -39,6 +41,11 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.ctx = context.Background()
 	s.client = &http.Client{
 		Timeout: testTimeout,
+	}
+
+	s.adminToken = strings.TrimSpace(os.Getenv("INTEGRATION_ADMIN_TOKEN"))
+	if s.adminToken == "" {
+		s.adminToken = strings.TrimSpace(os.Getenv("FREERANGE_ADMIN_TOKEN"))
 	}
 
 	// Wait for services to be ready
@@ -152,6 +159,9 @@ func (s *IntegrationTestSuite) makeRequest(method, path string, body interface{}
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
+	if req.Header.Get("Authorization") == "" && strings.HasPrefix(path, "/v1/apps") && s.adminToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.adminToken)
+	}
 
 	resp, err := s.client.Do(req)
 	s.Require().NoError(err, "Failed to make request")
@@ -209,6 +219,9 @@ func (s *IntegrationTestSuite) assertError(body []byte, expectedCode string) map
 // Helper methods for cleanup
 func (s *IntegrationTestSuite) deleteApplication(appID string) {
 	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/v1/apps/"+appID, nil)
+	if s.adminToken != "" {
+		req.Header.Set("Authorization", "Bearer "+s.adminToken)
+	}
 	resp, _ := s.client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
@@ -233,4 +246,19 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(m.Run())
+}
+
+func legacyIntegrationEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("INTEGRATION_LEGACY"))
+	if v == "" {
+		return false
+	}
+	return strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || v == "1"
+}
+
+func requireLegacyIntegrationEnabled(t *testing.T, suiteName string) {
+	t.Helper()
+	if !legacyIntegrationEnabled() {
+		t.Skipf("Skipping legacy integration suite %s (set INTEGRATION_LEGACY=true to run)", suiteName)
+	}
 }

@@ -74,6 +74,16 @@ func (h *HostedChecker) Check(ctx context.Context, app *application.Application)
 		return Decision{Allowed: false, Mode: ModeHosted, State: StateInvalid, Reason: "subscription_check_unavailable", Source: "fail_closed", CheckedAt: now}, nil
 	}
 
+	// Fall back to the app owner's personal subscription when the app's tenant (org)
+	// has no subscription of its own — e.g. the trial provisioned at registration is
+	// keyed to the user ID, not the org ID.
+	if sub == nil && app.AdminUserID != "" && app.AdminUserID != app.TenantID {
+		sub, err = h.repo.GetActiveSubscription(ctx, app.AdminUserID, "", now)
+		if err != nil {
+			sub = nil
+		}
+	}
+
 	if sub == nil {
 		d := Decision{Allowed: false, Mode: ModeHosted, State: StateUnlicensed, Reason: "subscription_required", Source: "live", CheckedAt: now}
 		h.setCache(key, d, now)

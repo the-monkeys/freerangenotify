@@ -17,20 +17,26 @@ import (
 
 type selfHostedClaims struct {
 	Plan string `json:"plan,omitempty"`
+	Mode string `json:"mode,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // SelfHostedChecker validates locally attached signed license keys.
 type SelfHostedChecker struct {
-	opts SelfHostedOptions
+	opts   SelfHostedOptions
+	remote remoteVerifier
 
-	mu    sync.RWMutex
-	cache *decisionCacheEntry
+	mu                sync.RWMutex
+	cache             *decisionCacheEntry
+	lastRemoteCheckAt time.Time
 }
 
 func NewSelfHostedChecker(opts SelfHostedOptions) (Checker, error) {
 	if opts.CacheTTL <= 0 {
 		opts.CacheTTL = 5 * time.Minute
+	}
+	if opts.VerifyInterval <= 0 {
+		opts.VerifyInterval = 5 * time.Minute
 	}
 	if opts.GraceWindow < 0 {
 		opts.GraceWindow = 0
@@ -38,24 +44,31 @@ func NewSelfHostedChecker(opts SelfHostedOptions) (Checker, error) {
 	if opts.FailMode == "" {
 		opts.FailMode = FailModeClosed
 	}
-	return &SelfHostedChecker{opts: opts}, nil
+
+	checker := &SelfHostedChecker{opts: opts}
+	checker.remote = newHTTPRemoteVerifier(opts.LicenseServerURL, 10*time.Second)
+	return checker, nil
 }
 
 func (s *SelfHostedChecker) Enabled() bool { return true }
 
 func (s *SelfHostedChecker) Mode() Mode { return ModeSelfHosted }
 
-func (s *SelfHostedChecker) Check(_ context.Context, _ *application.Application) (Decision, error) {
+func (s *SelfHostedChecker) Check(ctx context.Context, _ *application.Application) (Decision, error) {
 	now := time.Now().UTC()
 
 	if cached, ok := s.getCache(); ok && now.Sub(cached.fetchedAt) <= s.opts.CacheTTL {
-		d := cached.decision
-		d.Source = "cache"
-		d.CheckedAt = now
-		return d, nil
+		if s.shouldRunRemoteVerification(now) {
+			// Skip cache to enforce periodic remote verification cadence.
+		} else {
+			d := cached.decision
+			d.Source = "cache"
+			d.CheckedAt = now
+			return d, nil
+		}
 	}
 
-	decision, err := s.evaluate(now)
+	decision, err := s.evaluate(ctx, now)
 	if err != nil {
 		if s.opts.FailMode == FailModeOpen {
 			decision = Decision{Allowed: true, Mode: ModeSelfHosted, State: StateGrace, Reason: "license_validation_error", Source: "fail_open", CheckedAt: now}
@@ -68,10 +81,69 @@ func (s *SelfHostedChecker) Check(_ context.Context, _ *application.Application)
 	return decision, nil
 }
 
-func (s *SelfHostedChecker) evaluate(now time.Time) (Decision, error) {
+func (s *SelfHostedChecker) evaluate(ctx context.Context, now time.Time) (Decision, error) {
 	if s.opts.LicenseKey == "" {
 		return Decision{Allowed: false, Mode: ModeSelfHosted, State: StateUnlicensed, Reason: "license_required", Source: "local", CheckedAt: now}, nil
 	}
+
+	if s.opts.PublicKeyPEM == "" && s.remote == nil {
+		return Decision{}, fmt.Errorf("self-hosted license validation requires public_key_pem or license_server_url")
+	}
+
+	decision := Decision{Allowed: true, Mode: ModeSelfHosted, State: StateActive, Reason: "remote_validation_required", Source: "remote", CheckedAt: now}
+	if s.opts.PublicKeyPEM != "" {
+		localDecision, err := s.evaluateLocal(now)
+		if err != nil {
+			return Decision{}, err
+		}
+		if !localDecision.Allowed {
+			return localDecision, nil
+		}
+		decision = localDecision
+	}
+
+	if s.remote == nil {
+		return decision, nil
+	}
+
+	if !s.shouldRunRemoteVerification(now) {
+		if decision.Source == "local" {
+			decision.Source = "local+remote_cached"
+		}
+		return decision, nil
+	}
+
+	result, remoteErr := s.remote.Verify(ctx, s.opts.LicenseKey)
+	s.markRemoteVerification(now)
+	if remoteErr != nil {
+		if s.opts.FailMode == FailModeOpen {
+			return Decision{Allowed: true, Mode: ModeSelfHosted, State: StateGrace, Reason: "remote_verification_unavailable", Source: "fail_open_remote", CheckedAt: now, ValidUntil: decision.ValidUntil}, nil
+		}
+		return Decision{Allowed: false, Mode: ModeSelfHosted, State: StateInvalid, Reason: "remote_verification_unavailable", Source: "remote", CheckedAt: now, ValidUntil: decision.ValidUntil}, nil
+	}
+
+	if !result.Allowed {
+		reason := strings.TrimSpace(result.Reason)
+		if reason == "" {
+			reason = "remote_rejected"
+		}
+		return Decision{Allowed: false, Mode: ModeSelfHosted, State: StateInvalid, Reason: reason, Source: "remote", CheckedAt: now, ValidUntil: result.ValidUntil}, nil
+	}
+
+	if result.ValidUntil != nil {
+		decision.ValidUntil = result.ValidUntil
+	}
+	if decision.Source == "local" {
+		decision.Source = "local+remote"
+	} else {
+		decision.Source = "remote"
+	}
+	decision.Reason = "license_active"
+	decision.CheckedAt = now
+	return decision, nil
+}
+
+func (s *SelfHostedChecker) evaluateLocal(now time.Time) (Decision, error) {
 	if s.opts.PublicKeyPEM == "" {
 		return Decision{}, fmt.Errorf("self-hosted license validation requires public_key_pem")
 	}
@@ -117,6 +189,10 @@ func (s *SelfHostedChecker) evaluate(now time.Time) (Decision, error) {
 		return Decision{Allowed: false, Mode: ModeSelfHosted, State: StateInvalid, Reason: "license_missing_expiry", Source: "local", CheckedAt: now}, nil
 	}
 
+	if claims.Mode != "" && claims.Mode != string(ModeSelfHosted) {
+		return Decision{Allowed: false, Mode: ModeSelfHosted, State: StateInvalid, Reason: "license_mode_mismatch", Source: "local", CheckedAt: now}, nil
+	}
+
 	validUntil := claims.ExpiresAt.Time.UTC()
 	if now.After(validUntil) {
 		if s.opts.FailMode == FailModeOpen && now.Before(validUntil.Add(s.opts.GraceWindow)) {
@@ -130,6 +206,30 @@ func (s *SelfHostedChecker) evaluate(now time.Time) (Decision, error) {
 	}
 
 	return Decision{Allowed: true, Mode: ModeSelfHosted, State: StateActive, Reason: "license_active", Source: "local", CheckedAt: now, ValidUntil: &validUntil}, nil
+}
+
+func (s *SelfHostedChecker) shouldRunRemoteVerification(now time.Time) bool {
+	if s.remote == nil {
+		return false
+	}
+	if s.opts.VerifyInterval <= 0 {
+		return true
+	}
+
+	s.mu.RLock()
+	last := s.lastRemoteCheckAt
+	s.mu.RUnlock()
+
+	if last.IsZero() {
+		return true
+	}
+	return now.Sub(last) >= s.opts.VerifyInterval
+}
+
+func (s *SelfHostedChecker) markRemoteVerification(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastRemoteCheckAt = now
 }
 
 func parseRSAPublicKeyFromPEM(pemValue string) (*rsa.PublicKey, error) {
@@ -172,6 +272,7 @@ func (s *SelfHostedChecker) SetLicenseKey(licenseKey string) {
 	defer s.mu.Unlock()
 	s.opts.LicenseKey = strings.TrimSpace(licenseKey)
 	s.cache = nil
+	s.lastRemoteCheckAt = time.Time{}
 }
 
 // ClearCache forces the next Check call to re-evaluate the license.
@@ -179,4 +280,5 @@ func (s *SelfHostedChecker) ClearCache() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cache = nil
+	s.lastRemoteCheckAt = time.Time{}
 }

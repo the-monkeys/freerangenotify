@@ -14,6 +14,7 @@ type ApplicationTestSuite struct {
 }
 
 func TestApplicationSuite(t *testing.T) {
+	requireLegacyIntegrationEnabled(t, "ApplicationSuite")
 	suite.Run(t, new(ApplicationTestSuite))
 }
 

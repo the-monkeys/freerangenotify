@@ -17,6 +17,7 @@ func main() {
 	root.AddCommand(newSendCmd())
 	root.AddCommand(newHealthCmd())
 	root.AddCommand(newConfigCmd())
+	root.AddCommand(newAdminCmd())
 	root.AddCommand(newLicenseCmd())
 	root.AddCommand(newInstallCmd())
 	root.AddCommand(newVersionCmd())

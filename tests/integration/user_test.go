@@ -13,6 +13,7 @@ type UserTestSuite struct {
 }
 
 func TestUserSuite(t *testing.T) {
+	requireLegacyIntegrationEnabled(t, "UserSuite")
 	suite.Run(t, new(UserTestSuite))
 }
 

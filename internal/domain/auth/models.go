@@ -144,6 +144,7 @@ type Service interface {
 	ResetPassword(ctx context.Context, req *ResetPasswordRequest) error
 	ChangePassword(ctx context.Context, userID string, req *ChangePasswordRequest) error
 	DeleteOwnAccount(ctx context.Context, userID string, req *DeleteAccountRequest) error
+	DeleteAccountByAdmin(ctx context.Context, userID, reason string) error
 
 	// User operations
 	GetCurrentUser(ctx context.Context, userID string) (*AdminUser, error)
