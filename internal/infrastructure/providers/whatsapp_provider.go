@@ -21,7 +21,7 @@ type WhatsAppConfig struct {
 	Config            // Common: Timeout, MaxRetries, RetryDelay
 	AccountSID string // Twilio Account SID
 	AuthToken  string // Twilio Auth Token
-	FromNumber string // WhatsApp sender number (e.g. whatsapp:+14155238886)
+	FromNumber string // WhatsApp sender number (e.g. +14155238886, will be prefixed with whatsapp: at send time)
 }
 
 // WhatsAppProvider delivers notifications via WhatsApp using the Twilio Messages API.
@@ -35,9 +35,9 @@ type WhatsAppProvider struct {
 func NewWhatsAppProvider(config WhatsAppConfig, logger *zap.Logger) (*WhatsAppProvider, error) {
 	// Allow per-app-only mode: global creds can be empty when per-app override is used at send time.
 	// Ensure from number has whatsapp: prefix
-	if config.FromNumber != "" && !strings.HasPrefix(config.FromNumber, "whatsapp:") {
-		config.FromNumber = "whatsapp:" + config.FromNumber
-	}
+	// if config.FromNumber != "" && !strings.HasPrefix(config.FromNumber, "whatsapp:") {
+	// 	config.FromNumber = "whatsapp:" + config.FromNumber
+	// }
 
 	timeout := config.Timeout
 	if timeout == 0 {
@@ -73,9 +73,6 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 			authToken = appCfg.AuthToken
 			if appCfg.FromNumber != "" {
 				fromNumber = appCfg.FromNumber
-				if !strings.HasPrefix(fromNumber, "whatsapp:") {
-					fromNumber = "whatsapp:" + fromNumber
-				}
 			}
 			p.logger.Debug("Using per-app WhatsApp config",
 				zap.String("notification_id", notif.NotificationID),
@@ -110,7 +107,10 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		accountSID,
 	)
 
-	// Ensure whatsapp: prefix on recipient
+	// Apply whatsapp: prefix to both sender and recipient (required by Twilio API)
+    if !strings.HasPrefix(fromNumber, "whatsapp:") {
+        fromNumber = "whatsapp:" + fromNumber
+    }
 	toNumber := usr.Phone
 	if !strings.HasPrefix(toNumber, "whatsapp:") {
 		toNumber = "whatsapp:" + toNumber
