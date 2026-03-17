@@ -45,9 +45,10 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
             const res = await templatesAPI.getControls(apiKey, templateId);
             setControls(res.controls || []);
             // Merge API values with defaults
+            const apiValues = res.control_values || res.values || {};
             const merged: Record<string, any> = {};
             for (const ctrl of (res.controls || [])) {
-                merged[ctrl.key] = res.values?.[ctrl.key] ?? ctrl.default ?? '';
+                merged[ctrl.key] = apiValues?.[ctrl.key] ?? ctrl.default ?? '';
             }
             setValues(merged);
         } catch (err: any) {
