@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-    client := frn.NewClient("YOUR_API_KEY", frn.WithBaseURL("http://localhost:8080/v1"))
+    client := frn.NewClient("YOUR_API_KEY", frn.WithBaseURL("https://freerangenotify.monkeys.support/v1"))
 
     // Send a notification
     resp, err := client.Notifications.Send(&frn.NotificationRequest{
@@ -75,7 +75,7 @@ import { FreeRangeNotify } from '@freerangenotify/js';
 
 const client = new FreeRangeNotify({
   apiKey: 'YOUR_API_KEY',
-  baseURL: 'http://localhost:8080/v1',
+  baseURL: 'https://freerangenotify.monkeys.support/v1',
 });
 
 // Send a notification
@@ -139,7 +139,7 @@ function App() {
     <FreeRangeProvider
       apiKey="YOUR_API_KEY"
       userId="current-user-uuid"
-      baseURL="http://localhost:8080/v1"
+      baseURL="https://freerangenotify.monkeys.support/v1"
     >
       <YourApp />
     </FreeRangeProvider>

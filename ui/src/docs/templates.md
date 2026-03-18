@@ -70,7 +70,7 @@ Clone from the **Template Library** tab in your application.
 Test your template with sample data before sending:
 
 ```bash
-curl -X POST http://localhost:8080/v1/templates/TEMPLATE_ID/render \
+curl -X POST https://freerangenotify.monkeys.support/v1/templates/TEMPLATE_ID/render \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"data": {"user_name": "Test User", "order_id": "ORD-00001"}}'

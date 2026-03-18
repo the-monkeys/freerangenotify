@@ -7,7 +7,7 @@ Topics enable fan-out notifications — send one message and deliver it to all s
 Topics are identified by a unique `topic_key` and belong to an application.
 
 ```bash
-curl -X POST http://localhost:8080/v1/topics/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/topics/ \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -22,23 +22,23 @@ curl -X POST http://localhost:8080/v1/topics/ \
 ### Subscribe a User
 
 ```bash
-curl -X POST http://localhost:8080/v1/topics/TOPIC_ID/subscribers \
+curl -X POST https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "USER_UUID"}'
+  -d '{"user_id": "YOUR_USER_ID"}'
 ```
 
 ### Unsubscribe a User
 
 ```bash
-curl -X DELETE http://localhost:8080/v1/topics/TOPIC_ID/subscribers/USER_UUID \
+curl -X DELETE https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers/YOUR_USER_ID \
   -H "X-API-Key: YOUR_API_KEY"
 ```
 
 ### List Subscribers
 
 ```bash
-curl http://localhost:8080/v1/topics/TOPIC_ID/subscribers \
+curl https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers \
   -H "X-API-Key: YOUR_API_KEY"
 ```
 
@@ -47,7 +47,7 @@ curl http://localhost:8080/v1/topics/TOPIC_ID/subscribers \
 Send a notification to all users subscribed to a topic:
 
 ```bash
-curl -X POST http://localhost:8080/v1/notifications/broadcast \
+curl -X POST https://freerangenotify.monkeys.support/v1/notifications/broadcast \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{

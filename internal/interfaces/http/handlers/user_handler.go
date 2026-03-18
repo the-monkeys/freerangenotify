@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
@@ -620,9 +621,23 @@ func (h *UserHandler) GetSubscriberHash(c *fiber.Ctx) error {
 		return errors.BadRequest("user_id is required")
 	}
 
-	// Verify user belongs to this app before generating hash
-	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+	appID, err := h.getAppID(c)
+	if err != nil {
 		return err
+	}
+
+	// Resolve external_id → internal UUID (same pattern as SSE token creation)
+	if _, parseErr := uuid.Parse(userID); parseErr != nil {
+		u, lookupErr := h.service.GetByExternalID(c.Context(), appID, userID)
+		if lookupErr != nil {
+			return errors.NotFound("user", userID)
+		}
+		userID = u.UserID
+	} else {
+		// Verify user belongs to this app
+		if _, err := h.verifyUserOwnership(c, userID); err != nil {
+			return err
+		}
 	}
 
 	app, ok := c.Locals("app").(*application.Application)
