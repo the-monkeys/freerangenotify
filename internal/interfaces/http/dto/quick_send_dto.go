@@ -9,9 +9,9 @@ type QuickSendRequest struct {
 	// If recipient doesn't exist as a user, auto-creates one (email only).
 	To string `json:"to" validate:"required"`
 
-	// Channel: push, email, sms, webhook, in_app, sse.
+	// Channel: push, email, sms, webhook, in_app, sse, whatsapp.
 	// Optional if Template is specified (inferred from template).
-	Channel string `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse"`
+	Channel string `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse whatsapp"`
 
 	// Template reference: name (string) or UUID.
 	// Optional if Subject+Body are provided (inline content).

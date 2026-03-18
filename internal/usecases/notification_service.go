@@ -1012,6 +1012,8 @@ func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User
 		userPref = u.Preferences.PushEnabled
 	case notification.ChannelSMS:
 		userPref = u.Preferences.SMSEnabled
+	case "whatsapp":
+		userPref = u.Preferences.WhatsAppEnabled
 	}
 
 	if userPref != nil {
@@ -1029,6 +1031,8 @@ func (s *NotificationService) isChannelEnabled(ctx context.Context, u *user.User
 			appPref = app.Settings.DefaultPreferences.PushEnabled
 		case notification.ChannelSMS:
 			appPref = app.Settings.DefaultPreferences.SMSEnabled
+		case "whatsapp":
+			appPref = app.Settings.DefaultPreferences.WhatsAppEnabled
 		}
 
 		if appPref != nil {
