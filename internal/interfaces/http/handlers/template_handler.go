@@ -389,7 +389,7 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	rendered, err := h.service.Render(c.Context(), id, appID, req.Data, req.Editable)
+	rendered, attrVars, err := h.service.Render(c.Context(), id, appID, req.Data, req.Editable)
 	if err != nil {
 		h.logger.Error("Failed to render template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -405,7 +405,8 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(dto.RenderTemplateResponse{
-		RenderedBody: rendered,
+		RenderedBody:       rendered,
+		AttributeVariables: attrVars,
 	})
 }
 
@@ -888,7 +889,7 @@ func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 		})
 	}
 
-	rendered, err := h.service.Render(c.Context(), id, appID, sampleData, false)
+	rendered, _, err := h.service.Render(c.Context(), id, appID, sampleData, false)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   "Failed to render template",

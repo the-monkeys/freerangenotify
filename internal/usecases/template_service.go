@@ -221,26 +221,29 @@ func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter
 
 // Render renders a template with provided data.
 // When editable is true, text-content variables are wrapped in contenteditable
-// spans so the frontend preview can support inline editing.
-func (s *TemplateService) Render(ctx context.Context, templateID, appID string, data map[string]interface{}, editable bool) (string, error) {
+// spans so the frontend preview can support inline editing. Attribute variables
+// (inside HTML tags like src=, href=) are returned separately for sidebar editing.
+func (s *TemplateService) Render(ctx context.Context, templateID, appID string, data map[string]interface{}, editable bool) (string, []templateDomain.AttributeVar, error) {
 	// Get template
 	tmpl, err := s.repo.GetByID(ctx, templateID)
 	if err != nil {
-		return "", fmt.Errorf("template not found: %w", err)
+		return "", nil, fmt.Errorf("template not found: %w", err)
 	}
 
 	// Verify ownership
 	if tmpl.AppID != appID {
-		return "", fmt.Errorf("template not found")
+		return "", nil, fmt.Errorf("template not found")
 	}
 
 	// Check if template is active
 	if tmpl.Status != "active" {
-		return "", fmt.Errorf("template is not active")
+		return "", nil, fmt.Errorf("template is not active")
 	}
 
 	body := tmpl.Body
+	var attrVars []templateDomain.AttributeVar
 	if editable {
+		attrVars = classifyAttributeVariables(body)
 		body = wrapEditableVariables(body)
 	}
 
@@ -250,10 +253,10 @@ func (s *TemplateService) Render(ctx context.Context, templateID, appID string, 
 		s.logger.Error("Failed to render template",
 			zap.String("id", templateID),
 			zap.Error(err))
-		return "", fmt.Errorf("failed to render template: %w", err)
+		return "", nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	return rendered, nil
+	return rendered, attrVars, nil
 }
 
 // CreateVersion creates a new version of a template
@@ -581,6 +584,87 @@ func isInsideHTMLTag(body string, pos int) bool {
 		}
 	}
 	return inTag
+}
+
+// classifyAttributeVariables scans a template body and returns variables that
+// appear inside HTML attributes (src=, href=, etc.) — these cannot be edited
+// inline via contenteditable and need a separate sidebar UI.
+// Each variable is classified as "image" (inside <img src>), "url" (inside href),
+// or "attribute" (any other HTML attribute).
+func classifyAttributeVariables(body string) []templateDomain.AttributeVar {
+	varPattern := regexp.MustCompile(`\{\{\s*\.?(\w+)\s*\}\}`)
+	matches := varPattern.FindAllStringSubmatchIndex(body, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	keywords := map[string]bool{
+		"if": true, "else": true, "end": true, "range": true,
+		"with": true, "define": true, "template": true, "block": true,
+		"nil": true, "not": true, "and": true, "or": true,
+		"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+		"print": true, "printf": true, "println": true, "len": true,
+		"index": true, "call": true, "html": true, "js": true, "urlquery": true,
+	}
+
+	seen := make(map[string]bool)
+	var result []templateDomain.AttributeVar
+
+	for _, match := range matches {
+		start := match[0]
+		varNameStart := match[2]
+		varNameEnd := match[3]
+		varName := body[varNameStart:varNameEnd]
+
+		if keywords[varName] || seen[varName] {
+			continue
+		}
+		if !isInsideHTMLTag(body, start) {
+			continue // text-content variable — handled inline by contenteditable
+		}
+
+		seen[varName] = true
+		varType := classifyAttrVarType(body, start)
+		result = append(result, templateDomain.AttributeVar{
+			Name: varName,
+			Type: varType,
+		})
+	}
+
+	return result
+}
+
+// classifyAttrVarType determines the type of an attribute variable by looking
+// at the surrounding HTML context. Returns "image", "url", or "attribute".
+func classifyAttrVarType(body string, pos int) string {
+	// Find the opening '<' of the current tag
+	tagStart := strings.LastIndex(body[:pos], "<")
+	if tagStart < 0 {
+		return "attribute"
+	}
+	tagContent := strings.ToLower(body[tagStart:pos])
+
+	// Check if inside an <img> tag's src attribute
+	if strings.HasPrefix(tagContent, "<img") && strings.Contains(tagContent, "src") {
+		return "image"
+	}
+	// Check for background-image in style attributes
+	if strings.Contains(tagContent, "background-image") || strings.Contains(tagContent, "background:") {
+		return "image"
+	}
+	// Check if inside an href attribute
+	if strings.Contains(tagContent, "href") {
+		return "url"
+	}
+	// Check if inside a src attribute on non-img tags (video, source, etc.)
+	if strings.Contains(tagContent, "src") {
+		return "url"
+	}
+	// Check for action attribute (forms)
+	if strings.Contains(tagContent, "action") {
+		return "url"
+	}
+	return "attribute"
 }
 
 // renderTemplate renders a Go template with provided data

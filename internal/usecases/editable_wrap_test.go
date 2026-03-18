@@ -2,6 +2,8 @@ package usecases
 
 import (
 	"testing"
+
+	templateDomain "github.com/the-monkeys/freerangenotify/internal/domain/template"
 )
 
 func TestWrapEditableVariables_TextContent(t *testing.T) {
@@ -76,14 +78,52 @@ func TestIsInsideHTMLTag(t *testing.T) {
 		want bool
 	}{
 		{`<a href="X">text</a>`, 9, true},   // inside <a href="X">
-		{`<a href="X">text</a>`, 13, false},  // "text" is outside tag
-		{`<p>{{.name}}</p>`, 3, false},        // {{.name}} is text content
-		{`<img src="{{.url}}"/>`, 10, true},   // inside <img src="...">
+		{`<a href="X">text</a>`, 13, false}, // "text" is outside tag
+		{`<p>{{.name}}</p>`, 3, false},      // {{.name}} is text content
+		{`<img src="{{.url}}"/>`, 10, true}, // inside <img src="...">
 	}
 	for _, tt := range tests {
 		got := isInsideHTMLTag(tt.body, tt.pos)
 		if got != tt.want {
 			t.Errorf("isInsideHTMLTag(%q, %d) = %v, want %v", tt.body, tt.pos, got, tt.want)
 		}
+	}
+}
+
+func TestClassifyAttributeVariables(t *testing.T) {
+	body := `<img src="{{.logo_url}}" alt="Logo"><a href="{{.cta_link}}">Click {{.cta_text}}</a><p style="color:{{.text_color}}">Hello {{.username}}</p>`
+	got := classifyAttributeVariables(body)
+
+	// Expected: logo_url (image), cta_link (url), text_color (attribute)
+	// NOT expected: cta_text (text content), username (text content)
+	want := []templateDomain.AttributeVar{
+		{Name: "logo_url", Type: "image"},
+		{Name: "cta_link", Type: "url"},
+		{Name: "text_color", Type: "attribute"},
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("classifyAttributeVariables: got %d vars, want %d\ngot: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Name != w.Name || got[i].Type != w.Type {
+			t.Errorf("var[%d]: got {%s, %s}, want {%s, %s}", i, got[i].Name, got[i].Type, w.Name, w.Type)
+		}
+	}
+}
+
+func TestClassifyAttributeVariables_NoAttributes(t *testing.T) {
+	body := `<h1>{{.headline}}</h1><p>{{.body}}</p>`
+	got := classifyAttributeVariables(body)
+	if len(got) != 0 {
+		t.Errorf("expected no attribute vars, got %+v", got)
+	}
+}
+
+func TestClassifyAttributeVariables_BackgroundImage(t *testing.T) {
+	body := `<div style="background-image: url({{.bg_image}})"><p>{{.text}}</p></div>`
+	got := classifyAttributeVariables(body)
+	if len(got) != 1 || got[0].Name != "bg_image" || got[0].Type != "image" {
+		t.Errorf("expected [{bg_image image}], got %+v", got)
 	}
 }
