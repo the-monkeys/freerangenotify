@@ -359,6 +359,12 @@ export interface RenderTemplateRequest {
 
 export interface RenderTemplateResponse {
     rendered_body: string;
+    attribute_variables?: AttributeVar[];
+}
+
+export interface AttributeVar {
+    name: string;
+    type: 'image' | 'url' | 'attribute';
 }
 
 export interface CreateTemplateVersionRequest {

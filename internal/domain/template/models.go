@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// AttributeVar represents a template variable found inside an HTML attribute
+// (e.g. src=, href=) that cannot be edited inline via contenteditable.
+type AttributeVar struct {
+	Name string `json:"name"`
+	Type string `json:"type"` // "image", "url", "attribute"
+}
+
 // TemplateControl defines a single editable field for non-technical users.
 // Controls are stored on the template and rendered as a form by the dashboard.
 type TemplateControl struct {
@@ -99,7 +106,7 @@ type Service interface {
 	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*Template, error)
 	Delete(ctx context.Context, id, appID string) error
 	List(ctx context.Context, filter Filter) ([]*Template, error)
-	Render(ctx context.Context, templateID, appID string, variables map[string]interface{}) (string, error)
+	Render(ctx context.Context, templateID, appID string, variables map[string]interface{}, editable bool) (string, []AttributeVar, error)
 	CreateVersion(ctx context.Context, templateID, appID, updatedBy string) (*Template, error)
 	GetVersions(ctx context.Context, appID, name, locale string) ([]*Template, error)
 	GetByVersion(ctx context.Context, appID, name, locale string, version int) (*Template, error)
