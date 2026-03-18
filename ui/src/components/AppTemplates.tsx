@@ -14,7 +14,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Pagination } from './Pagination';
 import TemplateEditor from './TemplateEditor';
-import { SlidePanel } from './ui/slide-panel';
 import TemplateDiffViewer from './templates/TemplateDiffViewer';
 import TemplateTestPanel from './templates/TemplateTestPanel';
 import TemplateControlsPanel from './templates/TemplateControlsPanel';
@@ -70,8 +69,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     // Collapsed body state
     const [expandedBodies, setExpandedBodies] = useState<Record<string, boolean>>({});
 
-    // Slide panel state for rendered output
-    const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
+    // Preview dialog state
+    const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
 
     // Version history state
     const [versionHistoryTemplate, setVersionHistoryTemplate] = useState<Template | null>(null);
@@ -171,37 +170,34 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
-    const togglePreview = (tmplId: string) => {
-        if (activePreviews[tmplId]) {
-            const newPreviews = { ...activePreviews };
-            delete newPreviews[tmplId];
-            setActivePreviews(newPreviews);
-        } else {
-            const tmpl = templates.find(t => t.id === tmplId);
-            let defaultData = '{}';
-            if (tmpl?.metadata?.sample_data) {
-                defaultData = JSON.stringify(tmpl.metadata.sample_data, null, 2);
-            } else if (tmpl?.name) {
-                // Generate sample data from variables
-                if (tmpl.variables?.length) {
-                    const generated: Record<string, string> = {};
-                    for (const v of tmpl.variables) {
-                        generated[v] = v;
-                    }
-                    defaultData = JSON.stringify(generated, null, 2);
-                }
-            } else if (tmpl?.variables?.length) {
-                const generated: Record<string, string> = {};
-                for (const v of tmpl.variables) {
-                    generated[v] = v;
-                }
-                defaultData = JSON.stringify(generated, null, 2);
-            }
-            setActivePreviews({
-                ...activePreviews,
-                [tmplId]: { data: defaultData, rendered: '', loading: false }
-            });
+    const buildDefaultPreviewData = (tmpl: Template): string => {
+        if (tmpl.metadata?.sample_data) {
+            return JSON.stringify(tmpl.metadata.sample_data, null, 2);
         }
+
+        if (tmpl.variables?.length) {
+            const generated: Record<string, string> = {};
+            for (const variable of tmpl.variables) {
+                generated[variable] = variable;
+            }
+            return JSON.stringify(generated, null, 2);
+        }
+
+        return '{}';
+    };
+
+    const openPreviewDialog = (tmpl: Template) => {
+        if (!activePreviews[tmpl.id]) {
+            setActivePreviews((prev) => ({
+                ...prev,
+                [tmpl.id]: {
+                    data: buildDefaultPreviewData(tmpl),
+                    rendered: '',
+                    loading: false,
+                },
+            }));
+        }
+        setPreviewTemplate(tmpl);
     };
 
     const handleRenderPreview = async (tmplId: string) => {
@@ -227,11 +223,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 ...activePreviews,
                 [tmplId]: { ...preview, rendered: resp.rendered_body, loading: false }
             });
-            // Auto-open the slide panel with the rendered output
-            const tmpl = templates.find(t => t.id === tmplId);
-            if (tmpl) {
-                setSlidePreview({ templateId: tmplId, templateName: tmpl.name, channel: tmpl.channel });
-            }
         } catch (error) {
             console.error('Failed to render preview:', error);
             toast.error('Failed to render preview');
@@ -304,7 +295,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
 
     const openDiffViewer = (tmpl: Template) => {
         // Eagerly load versions for the diff viewer
-        fetchVersionHistory(tmpl);
         setDiffTemplate(tmpl);
     };
 
@@ -498,15 +488,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-xs text-muted-foreground h-6 px-2"
-                                                onClick={() => fetchVersionHistory(tmpl)}
-                                            >
+                                            <Badge variant="outline" className='px-2 py-1' onClick={() => fetchVersionHistory(tmpl)} style={{ cursor: 'pointer' }}>
                                                 v{tmpl.version} · History
-                                            </Button>
-                                            <Badge variant="outline" className="text-xs uppercase bg-muted text-foreground border-foreground">
+                                            </Badge>
+                                            <Badge variant="default" className='uppercase'>
                                                 {tmpl.channel}
                                             </Badge>
                                         </div>
@@ -544,21 +529,18 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             <pre className="whitespace-pre-wrap font-mono text-sm text-foreground m-0 select-text">{tmpl.body}</pre>
                                         </div>
                                         {!expandedBodies[tmpl.id] && (
-                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-muted to-transparent pointer-events-none rounded-b" />
+                                            <div className="absolute bottom-0 left-0 right-0 h-8 bg-linear-to-t from-muted to-transparent pointer-events-none rounded-b" />
                                         )}
                                     </div>
 
-                                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-4">
-                                        <div className="text-sm text-muted-foreground">
-                                            <strong className="text-foreground">Variables:</strong> {tmpl.variables && tmpl.variables.length > 0 ? tmpl.variables.join(', ') : 'None'}
-                                        </div>
+                                    <div className="flex flex-col sm:flex-row sm:justify-end sm:items-center gap-3 mb-4">
                                         <div className="flex gap-2">
                                             <Button
-                                                onClick={() => togglePreview(tmpl.id)}
+                                                onClick={() => openPreviewDialog(tmpl)}
                                                 variant="secondary"
                                                 size="sm"
                                             >
-                                                {activePreviews[tmpl.id] ? 'Close Preview' : 'Preview'}
+                                                Preview
                                             </Button>
                                             <Button
                                                 onClick={() => openDiffViewer(tmpl)}
@@ -606,61 +588,6 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         </div>
                                     </div>
 
-                                    {activePreviews[tmpl.id] && (
-                                        <div className="mt-4 border-t border-border pt-4">
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-xs text-muted-foreground font-semibold">PREVIEW DATA (JSON)</div>
-                                                    <Button
-                                                        type="button"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        className="text-xs h-6 px-2"
-                                                        onClick={() => {
-                                                            try {
-                                                                const formatted = JSON.stringify(JSON.parse(activePreviews[tmpl.id].data), null, 2);
-                                                                setActivePreviews({
-                                                                    ...activePreviews,
-                                                                    [tmpl.id]: { ...activePreviews[tmpl.id], data: formatted }
-                                                                });
-                                                            } catch {
-                                                                // Invalid JSON — leave as-is
-                                                            }
-                                                        }}
-                                                    >
-                                                        Format JSON
-                                                    </Button>
-                                                </div>
-                                                <Textarea
-                                                    className="h-[120px] font-mono text-xs"
-                                                    value={activePreviews[tmpl.id].data}
-                                                    onChange={(e) => setActivePreviews({
-                                                        ...activePreviews,
-                                                        [tmpl.id]: { ...activePreviews[tmpl.id], data: e.target.value }
-                                                    })}
-                                                    placeholder='{"name": "Jack"}'
-                                                />
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        className="flex-1 text-xs"
-                                                        onClick={() => handleRenderPreview(tmpl.id)}
-                                                        disabled={activePreviews[tmpl.id].loading}
-                                                    >
-                                                        {activePreviews[tmpl.id].loading ? 'Rendering...' : 'Render Preview'}
-                                                    </Button>
-                                                    {activePreviews[tmpl.id].rendered && (
-                                                        <Button
-                                                            variant="outline"
-                                                            className="text-xs"
-                                                            onClick={() => setSlidePreview({ templateId: tmpl.id, templateName: tmpl.name, channel: tmpl.channel })}
-                                                        >
-                                                            View Output →
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                 </CardContent>
                             </Card>
                         ))}
@@ -674,32 +601,98 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     onPageChange={setPage}
                 />
 
-                {/* Rendered Output Slide Panel */}
-                <SlidePanel
-                    open={!!slidePreview}
-                    onClose={() => setSlidePreview(null)}
-                    title={slidePreview ? `Rendered: ${slidePreview.templateName}` : 'Preview'}
-                >
-                    {slidePreview && activePreviews[slidePreview.templateId]?.rendered ? (
-                        slidePreview.channel === 'email' ? (
-                            <iframe
-                                srcDoc={activePreviews[slidePreview.templateId].rendered}
-                                sandbox=""
-                                className="w-full border rounded bg-white"
-                                style={{ height: 'calc(100vh - 120px)' }}
-                                title="Rendered Preview"
-                            />
-                        ) : (
-                            <div className="bg-muted min-h-[200px] p-4 rounded border border-border overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
-                                {activePreviews[slidePreview.templateId].rendered}
+                {/* Preview Dialog */}
+                <Dialog open={!!previewTemplate} onOpenChange={(open) => { if (!open) setPreviewTemplate(null); }}>
+                    <DialogContent className="overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle>Template Preview: {previewTemplate?.name}</DialogTitle>
+                        </DialogHeader>
+
+                        {previewTemplate && activePreviews[previewTemplate.id] && (
+                            <div className="space-y-5">
+                                <div className="rounded border border-border bg-muted/30 p-4">
+                                    <div className="mb-2 text-xs font-semibold text-muted-foreground">VARIABLES</div>
+                                    {previewTemplate.variables && previewTemplate.variables.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {previewTemplate.variables.map((variable) => (
+                                                <Badge key={variable} variant="outline" className="text-xs">
+                                                    {variable}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">No variables declared for this template.</p>
+                                    )}
+                                </div>
+
+                                <div className="grid gap-4 lg:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-xs text-muted-foreground font-semibold">PREVIEW DATA (JSON)</Label>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-xs h-6 px-2"
+                                                onClick={() => {
+                                                    try {
+                                                        const formatted = JSON.stringify(JSON.parse(activePreviews[previewTemplate.id].data), null, 2);
+                                                        setActivePreviews((prev) => ({
+                                                            ...prev,
+                                                            [previewTemplate.id]: { ...prev[previewTemplate.id], data: formatted },
+                                                        }));
+                                                    } catch {
+                                                        // Invalid JSON; leave as-is.
+                                                    }
+                                                }}
+                                            >
+                                                Format JSON
+                                            </Button>
+                                        </div>
+                                        <Textarea
+                                            className="h-65 font-mono text-xs"
+                                            value={activePreviews[previewTemplate.id].data}
+                                            onChange={(e) => setActivePreviews((prev) => ({
+                                                ...prev,
+                                                [previewTemplate.id]: { ...prev[previewTemplate.id], data: e.target.value },
+                                            }))}
+                                            placeholder='{"name": "Jack"}'
+                                        />
+                                        <Button
+                                            className="w-full text-xs"
+                                            onClick={() => handleRenderPreview(previewTemplate.id)}
+                                            disabled={activePreviews[previewTemplate.id].loading}
+                                        >
+                                            {activePreviews[previewTemplate.id].loading ? 'Rendering...' : 'Render Preview'}
+                                        </Button>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-muted-foreground font-semibold">RENDERED OUTPUT</Label>
+                                        {activePreviews[previewTemplate.id].rendered ? (
+                                            previewTemplate.channel === 'email' ? (
+                                                <iframe
+                                                    srcDoc={activePreviews[previewTemplate.id].rendered}
+                                                    sandbox=""
+                                                    className="h-80 w-full rounded border bg-white"
+                                                    title="Rendered Preview"
+                                                />
+                                            ) : (
+                                                <div className="h-80 overflow-y-auto rounded border border-border bg-muted p-4 text-sm text-foreground whitespace-pre-wrap">
+                                                    {activePreviews[previewTemplate.id].rendered}
+                                                </div>
+                                            )
+                                        ) : (
+                                            <div className="flex h-80 items-center justify-center rounded border border-dashed border-border bg-muted/40 text-sm italic text-muted-foreground">
+                                                No rendered output yet. Click "Render Preview" to generate output.
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                        )
-                    ) : (
-                        <div className="flex items-center justify-center h-40 text-muted-foreground italic">
-                            No rendered output yet. Click "Render Preview" first.
-                        </div>
-                    )}
-                </SlidePanel>
+                        )}
+                    </DialogContent>
+                </Dialog>
 
                 {/* Template Diff Viewer */}
                 {diffTemplate && (

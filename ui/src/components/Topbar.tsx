@@ -76,7 +76,7 @@ const Topbar: React.FC = () => {
         <header className="h-14 shrink-0 border-b border-border/70 bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/85">
             <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <SidebarTrigger className="size-8 text-muted-foreground hover:bg-muted/70 hover:text-foreground" />
+                    <SidebarTrigger className="p-1 md:hidden" />
 
                     <nav className="flex items-center gap-1 text-sm">
                         {segments.map((segment, i) => {

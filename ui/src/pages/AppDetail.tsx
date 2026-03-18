@@ -311,7 +311,7 @@ const AppDetail: React.FC = () => {
                 <div className="grid gap-6 md:grid-cols-[260px_minmax(0,1fr)]">
                     {/* Options sidebar — desktop */}
                     <aside className="hidden md:block">
-                        <Card size="sm" className="sticky top-20 bg-card/60 shadow-sm backdrop-blur-sm">
+                        <Card size="sm" className="bg-card/60 shadow-sm backdrop-blur-sm">
                             <CardContent className="p-2">
                                 {TAB_GROUPS.map((group) => (
                                     <SidebarGroup key={group.label} className="p-1">
