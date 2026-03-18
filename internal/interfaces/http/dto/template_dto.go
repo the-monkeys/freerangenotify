@@ -87,7 +87,8 @@ type RenderTemplateRequest struct {
 
 // RenderTemplateResponse represents the response for template rendering
 type RenderTemplateResponse struct {
-	RenderedBody string `json:"rendered_body"`
+	RenderedBody       string                  `json:"rendered_body"`
+	AttributeVariables []template.AttributeVar `json:"attribute_variables,omitempty"`
 } // @name RenderTemplateResponse
 
 // CreateVersionRequest represents a request to create a new template version

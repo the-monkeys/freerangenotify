@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
+import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest, AttributeVar } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -393,6 +393,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     // Quick-Send state
     const [quickTo, setQuickTo] = useState('');
+    const [quickToManual, setQuickToManual] = useState(false);
     const [quickTemplateId, setQuickTemplateId] = useState('');
     const [quickData, setQuickData] = useState<Record<string, string>>({});
     const [quickSending, setQuickSending] = useState(false);
@@ -403,6 +404,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
     const [quickPreviewHtml, setQuickPreviewHtml] = useState('');
     const [quickPreviewLoading, setQuickPreviewLoading] = useState(false);
+    const [quickAttrVars, setQuickAttrVars] = useState<AttributeVar[]>([]);
+    const [quickVarsDrawerOpen, setQuickVarsDrawerOpen] = useState(false);
+    const quickRerenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
@@ -435,6 +439,89 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         return result;
     };
 
+    // Auto-select first user when users load and quickTo is empty
+    useEffect(() => {
+        if (!quickTo && !quickToManual && users.length > 0) {
+            setQuickTo(users[0].user_id);
+        }
+    }, [users, quickTo, quickToManual]);
+
+    // Editable preview: CSS + JS injected into iframe for contenteditable spans
+    const EDITABLE_STYLE = `<style>.frn-editable{outline:none;transition:outline .15s,background-color .15s;cursor:text;border-radius:2px;min-width:1ch;display:inline}.frn-editable:hover{outline:2px dashed #3b82f6;background-color:rgba(59,130,246,.05)}.frn-editable:focus{outline:2px solid #3b82f6;background-color:rgba(59,130,246,.08)}</style>`;
+    const EDITABLE_SCRIPT = `<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-frn-var]').forEach(function(el){el.addEventListener('input',function(){window.parent.postMessage({type:'frn-var-edit',variable:el.getAttribute('data-frn-var'),value:el.textContent||''},'*')})})});<\/script>`;
+
+    const injectEditableSupport = (html: string) => {
+        let result = html;
+        if (result.includes('</head>')) {
+            result = result.replace('</head>', EDITABLE_STYLE + '</head>');
+        } else {
+            result = EDITABLE_STYLE + result;
+        }
+        if (result.includes('</body>')) {
+            result = result.replace('</body>', EDITABLE_SCRIPT + '</body>');
+        } else {
+            result = result + EDITABLE_SCRIPT;
+        }
+        return result;
+    };
+
+    // Render editable preview for Quick Send
+    const renderQuickPreview = useCallback(async () => {
+        if (!quickSelectedTemplate) return;
+        setQuickPreviewLoading(true);
+        try {
+            const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
+                data: Object.keys(quickData).length > 0 ? quickData : {},
+                editable: quickSelectedTemplate.channel === 'email',
+            });
+            setQuickPreviewHtml(res.rendered_body || '');
+            setQuickAttrVars(res.attribute_variables || []);
+            setQuickPreviewOpen(true);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, 'Failed to render preview'));
+        } finally {
+            setQuickPreviewLoading(false);
+        }
+    }, [apiKey, quickSelectedTemplate, quickData]);
+
+    // Debounced re-render when attribute variables change in the sidebar
+    const debouncedRerender = useCallback(() => {
+        if (quickRerenderTimer.current) clearTimeout(quickRerenderTimer.current);
+        quickRerenderTimer.current = setTimeout(async () => {
+            if (!quickSelectedTemplate || !quickPreviewOpen) return;
+            try {
+                const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
+                    data: Object.keys(quickData).length > 0 ? quickData : {},
+                    editable: quickSelectedTemplate.channel === 'email',
+                });
+                setQuickPreviewHtml(res.rendered_body || '');
+            } catch { /* silently fail on debounced re-render */ }
+        }, 500);
+    }, [apiKey, quickSelectedTemplate, quickData, quickPreviewOpen]);
+
+    // Handle postMessage from editable preview iframe
+    useEffect(() => {
+        if (!quickPreviewOpen) return;
+        const handler = (e: MessageEvent) => {
+            if (e.data?.type === 'frn-var-edit' && typeof e.data.variable === 'string') {
+                setQuickData(d => ({ ...d, [e.data.variable]: e.data.value ?? '' }));
+            }
+        };
+        window.addEventListener('message', handler);
+        return () => window.removeEventListener('message', handler);
+    }, [quickPreviewOpen]);
+
+    // Handle image upload for attribute variables
+    const handleAttrVarImageUpload = useCallback(async (varName: string, file: File) => {
+        try {
+            const res = await mediaAPI.upload(apiKey, file);
+            setQuickData(d => ({ ...d, [varName]: res.url }));
+            debouncedRerender();
+        } catch (err) {
+            toast.error(extractErrorMessage(err, 'Image upload failed'));
+        }
+    }, [apiKey, debouncedRerender]);
+
     // State for collapsible variables section
     const [varsExpanded, setVarsExpanded] = useState(true);
 
@@ -461,6 +548,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
             setQuickWebhookUrl('');
+            setQuickPreviewOpen(false);
+            setQuickPreviewHtml('');
+            setQuickAttrVars([]);
+            setQuickVarsDrawerOpen(false);
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -639,14 +730,46 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 <p className="text-sm text-muted-foreground">Send a notification using email or user ID and a template name. No UUIDs required.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="quickTo">To (email or user ID)</Label>
-                                        <Input
-                                            id="quickTo"
-                                            value={quickTo}
-                                            onChange={e => setQuickTo(e.target.value)}
-                                            placeholder="john@example.com"
-                                        />
-                                        <p className="text-xs text-muted-foreground">Enter an email address, external_id, or the internal UUID from Users.</p>
+                                        <Label htmlFor="quickTo">To (Recipient)</Label>
+                                        {quickToManual ? (
+                                            <>
+                                                <Input
+                                                    id="quickTo"
+                                                    value={quickTo}
+                                                    onChange={e => setQuickTo(e.target.value)}
+                                                    placeholder="john@example.com or external_id"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="text-xs text-primary hover:underline"
+                                                    onClick={() => { setQuickToManual(false); if (users.length > 0) setQuickTo(users[0].user_id); }}
+                                                >
+                                                    ← Back to user list
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Select value={quickTo} onValueChange={setQuickTo}>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select a user" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {users.map(u => (
+                                                            <SelectItem key={u.user_id} value={u.user_id}>
+                                                                {u.email}{u.external_id ? ` (${u.external_id})` : ''}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectContent>
+                                                </Select>
+                                                <button
+                                                    type="button"
+                                                    className="text-xs text-muted-foreground hover:text-primary hover:underline"
+                                                    onClick={() => { setQuickToManual(true); setQuickTo(''); }}
+                                                >
+                                                    Enter email or ID manually
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                     <div className="space-y-2">
                                         <Label htmlFor="quickTemplate">Template</Label>
@@ -673,7 +796,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </Select>
                                     </div>
                                 </div>
-                                {quickVariables.length > 0 && (
+                                {quickVariables.length > 0 && quickSelectedTemplate?.channel === 'email' && (
+                                    <div className="rounded-md border border-border bg-background p-4 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium flex items-center gap-2">
+                                                Template Variables
+                                                <Badge variant="secondary" className="text-xs">{quickVariables.length}</Badge>
+                                                {quickSelectedTemplate?.metadata?.sample_data && (
+                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Click <strong>Preview</strong> below to see the rendered email and edit variables inline by clicking highlighted text.
+                                        </p>
+                                    </div>
+                                )}
+                                {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && quickSelectedTemplate?.channel !== 'whatsapp' && (
                                     <div className="rounded-md border border-border bg-background">
                                         <button
                                             type="button"
@@ -845,21 +984,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Button
                                             variant="outline"
                                             disabled={quickPreviewLoading || !quickTemplateId}
-                                            onClick={async () => {
-                                                if (!quickSelectedTemplate) return;
-                                                setQuickPreviewLoading(true);
-                                                try {
-                                                    const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
-                                                        data: Object.keys(quickData).length > 0 ? quickData : {},
-                                                    });
-                                                    setQuickPreviewHtml(res.rendered_body || res.body || '');
-                                                    setQuickPreviewOpen(true);
-                                                } catch (err) {
-                                                    toast.error(extractErrorMessage(err, 'Failed to render preview'));
-                                                } finally {
-                                                    setQuickPreviewLoading(false);
-                                                }
-                                            }}
+                                            onClick={renderQuickPreview}
                                         >
                                             <Eye className="w-4 h-4 mr-1" />
                                             {quickPreviewLoading ? 'Rendering...' : 'Preview'}
@@ -870,19 +995,108 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </Button>
                                 </div>
 
-                                <Dialog open={quickPreviewOpen} onOpenChange={setQuickPreviewOpen}>
-                                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-                                        <DialogHeader>
-                                            <DialogTitle>Notification Preview — {quickSelectedTemplate?.name}</DialogTitle>
-                                        </DialogHeader>
-                                        <div className="flex-1 overflow-auto border border-border rounded bg-white">
-                                            <iframe
-                                                srcDoc={quickPreviewHtml}
-                                                title="Notification Preview"
-                                                className="w-full min-h-[400px] border-0"
-                                                sandbox="allow-same-origin"
-                                            />
+                                <Dialog open={quickPreviewOpen} onOpenChange={(open) => { setQuickPreviewOpen(open); if (!open) setQuickVarsDrawerOpen(false); }}>
+                                    <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col p-0">
+                                        {/* Header bar */}
+                                        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+                                            <div>
+                                                <h3 className="text-sm font-semibold">
+                                                    {quickSelectedTemplate?.name}
+                                                </h3>
+                                                {quickSelectedTemplate?.channel === 'email' && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Click any <span className="text-blue-500 font-medium">highlighted</span> text to edit inline
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                {quickSelectedTemplate?.channel === 'email' && quickAttrVars.length > 0 && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant={quickVarsDrawerOpen ? 'default' : 'outline'}
+                                                        onClick={() => setQuickVarsDrawerOpen(!quickVarsDrawerOpen)}
+                                                    >
+                                                        <FileText className="w-3.5 h-3.5 mr-1" />
+                                                        Variables
+                                                        <Badge variant="secondary" className="ml-1 text-xs">{quickAttrVars.length}</Badge>
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={renderQuickPreview}
+                                                    disabled={quickPreviewLoading}
+                                                >
+                                                    {quickPreviewLoading ? 'Refreshing...' : 'Refresh'}
+                                                </Button>
+                                            </div>
                                         </div>
+
+                                        {/* Full-width preview — the hero */}
+                                        <div className="flex-1 min-h-0 relative">
+                                            {quickSelectedTemplate?.channel === 'email' ? (
+                                                <iframe
+                                                    srcDoc={injectEditableSupport(quickPreviewHtml)}
+                                                    title="Editable Preview"
+                                                    className="w-full h-full border-0 bg-white"
+                                                    sandbox="allow-scripts"
+                                                />
+                                            ) : (
+                                                <iframe
+                                                    srcDoc={quickPreviewHtml}
+                                                    title="Notification Preview"
+                                                    className="w-full h-full border-0 bg-white"
+                                                    sandbox="allow-same-origin"
+                                                />
+                                            )}
+                                        </div>
+
+                                        {/* Collapsible variables drawer — slides up from bottom */}
+                                        {quickVarsDrawerOpen && quickAttrVars.length > 0 && (
+                                            <div className="border-t border-border bg-muted/30 shrink-0 max-h-[35vh] overflow-y-auto">
+                                                <div className="px-5 py-3 space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image & URL Variables</p>
+                                                        <button type="button" onClick={() => setQuickVarsDrawerOpen(false)} className="text-muted-foreground hover:text-foreground">
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                        {quickAttrVars.map(av => (
+                                                            <div key={av.name} className="space-y-1">
+                                                                <Label className="text-xs flex items-center gap-1">
+                                                                    {av.type === 'image' ? '🖼️' : '🔗'} {av.name}
+                                                                </Label>
+                                                                <Input
+                                                                    value={quickData[av.name] || ''}
+                                                                    onChange={e => {
+                                                                        setQuickData(d => ({ ...d, [av.name]: e.target.value }));
+                                                                        debouncedRerender();
+                                                                    }}
+                                                                    placeholder={av.type === 'image' ? 'Image URL' : 'https://...'}
+                                                                    className="text-xs h-8"
+                                                                />
+                                                                {av.type === 'image' && (
+                                                                    <label
+                                                                        className="flex items-center justify-center gap-1 text-xs border border-dashed border-border rounded px-2 py-1 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                                        onDragOver={e => e.preventDefault()}
+                                                                        onDrop={e => {
+                                                                            e.preventDefault();
+                                                                            const file = e.dataTransfer.files?.[0];
+                                                                            if (file && file.type.startsWith('image/')) handleAttrVarImageUpload(av.name, file);
+                                                                        }}
+                                                                    >
+                                                                        <UploadCloud className="h-3 w-3" />
+                                                                        Upload
+                                                                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAttrVarImageUpload(av.name, f); }} />
+                                                                    </label>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </DialogContent>
                                 </Dialog>
                             </div>

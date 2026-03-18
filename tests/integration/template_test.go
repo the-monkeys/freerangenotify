@@ -238,7 +238,7 @@ func TestTemplate_Render(t *testing.T) {
 		"Count": 5,
 	}
 
-	rendered, err := service.Render(ctx, tmpl.ID, data)
+	rendered, _, err := service.Render(ctx, tmpl.ID, "app-001", data, false)
 	require.NoError(t, err)
 	assert.Equal(t, "Hello John, you have 5 new messages!", rendered)
 }
@@ -270,7 +270,7 @@ func TestTemplate_RenderInactiveTemplate(t *testing.T) {
 
 	// Try to render inactive template
 	data := map[string]interface{}{"Value": "test"}
-	_, err = service.Render(ctx, tmpl.ID, data)
+	_, _, err = service.Render(ctx, tmpl.ID, "app-001", data, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not active")
 }
@@ -435,11 +435,11 @@ func TestTemplate_MultiLanguage(t *testing.T) {
 	// Render both templates
 	data := map[string]interface{}{"Name": "Maria"}
 
-	enRendered, err := service.Render(ctx, enTmpl.ID, data)
+	enRendered, _, err := service.Render(ctx, enTmpl.ID, "app-001", data, false)
 	require.NoError(t, err)
 	assert.Equal(t, "Welcome Maria!", enRendered)
 
-	esRendered, err := service.Render(ctx, esTmpl.ID, data)
+	esRendered, _, err := service.Render(ctx, esTmpl.ID, "app-001", data, false)
 	require.NoError(t, err)
 	assert.Equal(t, "¡Bienvenido Maria!", esRendered)
 }
