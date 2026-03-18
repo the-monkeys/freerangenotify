@@ -147,11 +147,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     }
     const [showSendForm, setShowSendForm] = useState(false);
 
-    // Report notification count to parent (app-wide, derived from current list)
+    // Notification tab is a send-management view, not an inbox — no unread badge needed.
     useEffect(() => {
-        if (!onUnreadCount) return;
-        onUnreadCount(totalNotifications);
-    }, [totalNotifications, onUnreadCount]);
+        if (onUnreadCount) onUnreadCount(0);
+    }, [onUnreadCount]);
     const [formData, setFormData] = useState<NotificationRequest>(createEmptyForm());
     const [selectedTargets, setSelectedTargets] = useState<string[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
@@ -400,6 +399,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickPriority, setQuickPriority] = useState<string>('normal');
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
+    const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
+    const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
+    const [quickPreviewHtml, setQuickPreviewHtml] = useState('');
+    const [quickPreviewLoading, setQuickPreviewLoading] = useState(false);
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
@@ -447,6 +450,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 priority: quickPriority as any,
                 scheduled_at: quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined,
                 digest_key: selectedDigestRule?.digest_key,
+                webhook_url: quickSelectedTemplate?.channel === 'webhook' && quickWebhookUrl ? quickWebhookUrl : undefined,
             });
             toast.success('Notification sent!');
             setQuickTo('');
@@ -456,6 +460,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduledAt('');
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
+            setQuickWebhookUrl('');
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -729,6 +734,29 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         />
                                     </div>
                                 )}
+                                {quickSelectedTemplate?.channel === 'webhook' && (
+                                    webhooks && Object.keys(webhooks).length > 0 ? (
+                                        <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                            <Label htmlFor="quickWebhookUrl">Webhook Endpoint</Label>
+                                            <Select value={quickWebhookUrl} onValueChange={setQuickWebhookUrl}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select webhook endpoint" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {Object.entries(webhooks).map(([name, url]) => (
+                                                        <SelectItem key={name} value={url}>{name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">The notification will be delivered to this webhook endpoint.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-md border border-dashed border-border bg-muted/30 p-4 text-center mt-2">
+                                            <p className="text-sm text-muted-foreground">No webhook endpoints configured.</p>
+                                            <p className="text-xs text-muted-foreground mt-1">Go to the <strong>Providers</strong> tab to add webhook endpoints.</p>
+                                        </div>
+                                    )
+                                )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="quickPriority">Priority</Label>
@@ -812,11 +840,51 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
-                                <div className="flex justify-end">
+                                <div className="flex justify-end gap-2">
+                                    {quickTemplateId && (
+                                        <Button
+                                            variant="outline"
+                                            disabled={quickPreviewLoading || !quickTemplateId}
+                                            onClick={async () => {
+                                                if (!quickSelectedTemplate) return;
+                                                setQuickPreviewLoading(true);
+                                                try {
+                                                    const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
+                                                        data: Object.keys(quickData).length > 0 ? quickData : {},
+                                                    });
+                                                    setQuickPreviewHtml(res.rendered_body || res.body || '');
+                                                    setQuickPreviewOpen(true);
+                                                } catch (err) {
+                                                    toast.error(extractErrorMessage(err, 'Failed to render preview'));
+                                                } finally {
+                                                    setQuickPreviewLoading(false);
+                                                }
+                                            }}
+                                        >
+                                            <Eye className="w-4 h-4 mr-1" />
+                                            {quickPreviewLoading ? 'Rendering...' : 'Preview'}
+                                        </Button>
+                                    )}
                                     <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
                                         {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
+
+                                <Dialog open={quickPreviewOpen} onOpenChange={setQuickPreviewOpen}>
+                                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                                        <DialogHeader>
+                                            <DialogTitle>Notification Preview — {quickSelectedTemplate?.name}</DialogTitle>
+                                        </DialogHeader>
+                                        <div className="flex-1 overflow-auto border border-border rounded bg-white">
+                                            <iframe
+                                                srcDoc={quickPreviewHtml}
+                                                title="Notification Preview"
+                                                className="w-full min-h-[400px] border-0"
+                                                sandbox="allow-same-origin"
+                                            />
+                                        </div>
+                                    </DialogContent>
+                                </Dialog>
                             </div>
                         </TabsContent>
 
