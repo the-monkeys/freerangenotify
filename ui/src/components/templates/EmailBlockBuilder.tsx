@@ -20,6 +20,8 @@ import { GripVertical, Type, Heading2, Image, MousePointer, Minus, Trash2 } from
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '@/lib/utils';
 
 // ── Block types ──
@@ -173,6 +175,8 @@ interface BlockEditorProps {
 }
 
 function BlockEditor({ block, variables, onUpdate }: BlockEditorProps) {
+    const [variableSearch, setVariableSearch] = useState('');
+
     const update = (key: string, value: string) => {
         onUpdate({ ...block.data, [key]: value });
     };
@@ -186,26 +190,64 @@ function BlockEditor({ block, variables, onUpdate }: BlockEditorProps) {
         }
     };
 
+    const filteredVariables = useMemo(() => {
+        const q = variableSearch.trim().toLowerCase();
+        if (!q) return variables;
+        return variables.filter((v) => v.toLowerCase().includes(q));
+    }, [variableSearch, variables]);
+
+    const variableTargetLabel =
+        block.type === 'button'
+            ? 'button text'
+            : 'content';
+
+    const variablePicker = variables.length > 0 ? (
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs">
+                    Insert variable
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 space-y-2">
+                <Label className="text-xs">Insert into {variableTargetLabel}</Label>
+                <Input
+                    value={variableSearch}
+                    onChange={(e) => setVariableSearch(e.target.value)}
+                    placeholder="Search variable"
+                    className="h-8"
+                />
+                <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    {filteredVariables.map((v) => (
+                        <Button
+                            key={v}
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-full justify-start text-xs font-mono"
+                            onClick={() => insertVariable(v)}
+                        >
+                            {`{{.${v}}}`}
+                        </Button>
+                    ))}
+                    {filteredVariables.length === 0 && (
+                        <p className="px-1 py-2 text-xs text-muted-foreground">No variables match your search.</p>
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
+    ) : null;
+
     switch (block.type) {
         case 'text':
             return (
-                <div className="space-y-1">
+                <div className="space-y-2">
                     <Textarea
-                        className="min-h-[80px] font-sans text-sm font-mono"
+                        className="min-h-20 font-mono text-sm"
                         value={block.data.content || ''}
                         onChange={(e) => update('content', e.target.value)}
                         placeholder="<p>Hello {{.name}}, welcome!</p>"
                     />
-                    {variables.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {variables.map((v) => (
-                                <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-6 px-2"
-                                    onClick={() => insertVariable(v)}>
-                                    {`{{.${v}}}`}
-                                </Button>
-                            ))}
-                        </div>
-                    )}
+                    {variablePicker}
                 </div>
             );
         case 'heading':
@@ -225,16 +267,7 @@ function BlockEditor({ block, variables, onUpdate }: BlockEditorProps) {
                         onChange={(e) => update('content', e.target.value)}
                         placeholder="Heading text"
                     />
-                    {variables.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {variables.map((v) => (
-                                <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-6 px-2"
-                                    onClick={() => update('content', (block.data.content || '') + `{{.${v}}}`)}>
-                                    {`{{.${v}}}`}
-                                </Button>
-                            ))}
-                        </div>
-                    )}
+                    {variablePicker}
                 </div>
             );
         case 'image':
@@ -270,16 +303,7 @@ function BlockEditor({ block, variables, onUpdate }: BlockEditorProps) {
                         value={block.data.url || ''}
                         onChange={(e) => update('url', e.target.value)}
                     />
-                    {variables.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {variables.map((v) => (
-                                <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-6 px-2"
-                                    onClick={() => update('text', (block.data.text || '') + `{{.${v}}}`)}>
-                                    {`{{.${v}}}`}
-                                </Button>
-                            ))}
-                        </div>
-                    )}
+                    {variablePicker}
                 </div>
             );
         case 'divider':
