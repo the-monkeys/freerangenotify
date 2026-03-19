@@ -2,16 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { Menu, X, Bell, Sun, Moon } from 'lucide-react';
-import { useTheme } from '../contexts/ThemeContext';
+import { Menu, X, Bell } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { NotificationBell } from './NotificationBell';
+import UserAvatarMenu from './UserAvatarMenu';
 
 const Header: React.FC = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { isAuthenticated, user, logout } = useAuth();
     const [mobileOpen, setMobileOpen] = useState(false);
-    const { theme, toggleTheme } = useTheme();
 
     const isActive = (path: string) => location.pathname === path;
 
@@ -95,55 +95,33 @@ const Header: React.FC = () => {
                             ))}
                         </ul>
                     </nav>
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={toggleTheme}
-                        className="text-muted-foreground hover:text-foreground"
-                        aria-label="Toggle theme"
-                    >
-                        {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                    </Button>
-
                     {isAuthenticated ? (
                         <>
-                            <div className="text-xs text-muted-foreground hidden xl:block max-w-65 truncate">
-                                {user?.full_name || user?.email}
-                            </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleLogout}
-                            >
-                                Logout
-                            </Button>
+                            <NotificationBell isAuthenticated={isAuthenticated} />
+                            <UserAvatarMenu user={user} onLogout={handleLogout} />
                         </>
                     ) : (
-                        <>
-                            <Button asChild variant="ghost" size="sm" className="text-foreground">
-                                <Link to="/login">
-                                    Login
-                                </Link>
-                            </Button>
-                            <Button asChild size="sm">
-                                <Link to="/register">
-                                    Sign Up
-                                </Link>
-                            </Button>
-                        </>
+                        <Button asChild variant="ghost" size="sm" className="text-foreground">
+                            <Link to="/login">
+                                Login
+                            </Link>
+                        </Button>
                     )}
                 </div>
 
                 <div className="lg:hidden flex items-center gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={toggleTheme}
-                        className="text-muted-foreground"
-                        aria-label="Toggle theme"
-                    >
-                        {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                    </Button>
+                    {isAuthenticated ? (
+                        <>
+                            <NotificationBell isAuthenticated={isAuthenticated} />
+                            <UserAvatarMenu user={user} onLogout={handleLogout} />
+                        </>
+                    ) : (
+                        <Button asChild variant="ghost" size="sm" className="text-foreground">
+                            <Link to="/login" onClick={closeMobile}>
+                                Login
+                            </Link>
+                        </Button>
+                    )}
                     <Button
                         variant="ghost"
                         size="icon-sm"
@@ -181,36 +159,15 @@ const Header: React.FC = () => {
                             </ul>
 
                         </div>
-                        <div className="border-t border-border/70 px-4 py-4">
-                            {isAuthenticated ? (
-                                <div className="space-y-3">
-                                    <div className="text-xs text-muted-foreground px-3 truncate">
-                                        {user?.full_name || user?.email}
-                                    </div>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={handleLogout}
-                                        className="w-full"
-                                    >
-                                        Logout
-                                    </Button>
-                                </div>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <Button asChild variant="outline" size="sm" className="flex-1">
-                                        <Link to="/login" onClick={closeMobile}>
-                                            Login
-                                        </Link>
-                                    </Button>
-                                    <Button asChild size="sm" className="flex-1">
-                                        <Link to="/register" onClick={closeMobile}>
-                                            Sign Up
-                                        </Link>
-                                    </Button>
-                                </div>
-                            )}
-                        </div>
+                        {!isAuthenticated && (
+                            <div className="border-t border-border/70 px-4 py-4">
+                                <Button asChild variant="outline" size="sm" className="w-full">
+                                    <Link to="/login" onClick={closeMobile}>
+                                        Login
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>
