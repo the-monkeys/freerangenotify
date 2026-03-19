@@ -887,6 +887,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     onClose={() => setSlidePreview(null)}
                     onRenderPreview={handleRenderPreview}
                     onSaveDefaults={handleSavePreviewDefaults}
+                    onResetDefaults={handleResetPreviewDefaults}
                     onVariableEdit={updatePreviewVariable}
                 />
 

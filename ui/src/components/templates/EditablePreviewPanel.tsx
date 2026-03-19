@@ -14,6 +14,7 @@ interface EditablePreviewPanelProps {
     onClose: () => void;
     onRenderPreview: (templateId: string) => void;
     onSaveDefaults: (template: Template) => void;
+    onResetDefaults: (template: Template) => void;
     onVariableEdit: (templateId: string, variable: string, value: string) => void;
 }
 
@@ -109,6 +110,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
     onClose,
     onRenderPreview,
     onSaveDefaults,
+    onResetDefaults,
     onVariableEdit,
 }) => {
     const currentTemplate = slidePreview
@@ -198,6 +200,17 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                                 disabled={!!savingDefaults[currentTemplate.id]}
                             >
                                 {savingDefaults[currentTemplate.id] ? 'Saving...' : 'Save Defaults'}
+                            </Button>
+                        )}
+                        {currentTemplate && (
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs h-7 text-muted-foreground"
+                                onClick={() => onResetDefaults(currentTemplate)}
+                                disabled={!!savingDefaults[currentTemplate.id]}
+                            >
+                                Reset
                             </Button>
                         )}
                     </div>
