@@ -22,7 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
@@ -73,6 +73,10 @@ function toISODateOnly(val: string): string {
 function scheduleToISO(datetimeLocal: string, timezone: string): string | undefined {
     return localInTimezoneToISO(datetimeLocal, timezone);
 }
+
+const SEND_FORM_SHELL_CLASS = 'rounded-xl border border-border/80 bg-muted/35 p-5 space-y-4';
+const SEND_FORM_INFO_CLASS = 'text-sm text-muted-foreground';
+const SEND_FORM_SECTION_CLASS = 'rounded-lg border border-border bg-background';
 
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
     const [page, setPage] = useState(1);
@@ -404,6 +408,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
     const [quickPreviewHtml, setQuickPreviewHtml] = useState('');
     const [quickPreviewLoading, setQuickPreviewLoading] = useState(false);
+    const [sendPreviewOpen, setSendPreviewOpen] = useState(false);
+    const [sendPreviewHtml, setSendPreviewHtml] = useState('');
+    const [sendPreviewLoading, setSendPreviewLoading] = useState(false);
+    const [sendPreviewContext, setSendPreviewContext] = useState<'advanced' | 'broadcast'>('advanced');
     const [quickAttrVars, setQuickAttrVars] = useState<AttributeVar[]>([]);
     const [quickVarsDrawerOpen, setQuickVarsDrawerOpen] = useState(false);
     const quickRerenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -521,6 +529,34 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.error(extractErrorMessage(err, 'Image upload failed'));
         }
     }, [apiKey, debouncedRerender]);
+
+    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast') => {
+        if (!formSelectedTemplate?.id) {
+            toast.error('Select a template to preview');
+            return;
+        }
+
+        const customData = parseCustomData(dataInput);
+        if (customData === null) {
+            toast.error('Invalid JSON in custom data');
+            return;
+        }
+
+        setSendPreviewContext(context);
+        setSendPreviewLoading(true);
+        try {
+            const res = await templatesAPI.render(apiKey, formSelectedTemplate.id, {
+                data: customData || {},
+                editable: false,
+            });
+            setSendPreviewHtml(res.rendered_body || '');
+            setSendPreviewOpen(true);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, 'Failed to render preview'));
+        } finally {
+            setSendPreviewLoading(false);
+        }
+    }, [apiKey, formSelectedTemplate, dataInput]);
 
     // State for collapsible variables section
     const [varsExpanded, setVarsExpanded] = useState(true);
@@ -726,8 +762,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                         {/* ── Quick Send Tab ── */}
                         <TabsContent value="quick">
-                            <div className="bg-muted p-6 rounded border border-border space-y-4">
-                                <p className="text-sm text-muted-foreground">Send a notification using email or user ID and a template name. No UUIDs required.</p>
+                            <div className={SEND_FORM_SHELL_CLASS}>
+                                <p className={SEND_FORM_INFO_CLASS}>Send a notification using email or user ID and a template name. No UUIDs required.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="quickTo">To (Recipient)</Label>
@@ -797,7 +833,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </div>
                                 </div>
                                 {quickVariables.length > 0 && quickSelectedTemplate?.channel === 'email' && (
-                                    <div className="rounded-md border border-border bg-background p-4 space-y-2">
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-2`}>
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium flex items-center gap-2">
                                                 Template Variables
@@ -813,7 +849,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </div>
                                 )}
                                 {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && quickSelectedTemplate?.channel !== 'whatsapp' && (
-                                    <div className="rounded-md border border-border bg-background">
+                                    <div className={SEND_FORM_SECTION_CLASS}>
                                         <button
                                             type="button"
                                             className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -940,7 +976,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 )}
 
                                 {/* Schedule toggle */}
-                                <div className="rounded-md border border-border">
+                                <div className={SEND_FORM_SECTION_CLASS}>
                                     <button
                                         type="button"
                                         className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1104,8 +1140,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                         {/* ── Bulk Send Tab ── */}
                         <TabsContent value="advanced">
-                            <form onSubmit={handleSendNotification} className="bg-muted p-6 rounded border border-border space-y-4">
-                                <p className="text-sm text-muted-foreground mb-2">Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
+                            <form onSubmit={handleSendNotification} className={SEND_FORM_SHELL_CLASS}>
+                                <p className={`${SEND_FORM_INFO_CLASS} mb-2`}>Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="recipient">
@@ -1394,7 +1430,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 </div>
 
                                 {formVariables.length > 0 && (
-                                    <div className="rounded-md border border-border bg-background">
+                                    <div className={SEND_FORM_SECTION_CLASS}>
                                         <button
                                             type="button"
                                             className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1450,7 +1486,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 )}
 
                                 {/* Schedule toggle */}
-                                <div className="rounded-md border border-border">
+                                <div className={SEND_FORM_SECTION_CLASS}>
                                     <button
                                         type="button"
                                         className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1604,6 +1640,15 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Button
                                             type="button"
                                             variant="outline"
+                                            onClick={() => renderSendPreview('advanced')}
+                                            disabled={sendPreviewLoading || !formData.template_id}
+                                        >
+                                            <Eye className="h-4 w-4 mr-1" />
+                                            {sendPreviewLoading && sendPreviewContext === 'advanced' ? 'Rendering...' : 'Preview'}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
                                             onClick={() => {
                                                 setFormData(createEmptyForm());
                                                 setSelectedUsers([]);
@@ -1621,13 +1666,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                         {/* ── Broadcast Tab ── */}
                         <TabsContent value="broadcast">
-                            <Card className="border-orange-200 bg-orange-50/30">
+                            <Card className="border-border/80 bg-card/40">
                                 <CardHeader>
-                                    <CardTitle className="text-orange-800 text-lg">Broadcast to All Users</CardTitle>
-                                    <p className="text-sm text-orange-600/80 mt-1">This will send a notification to ALL users of this application.</p>
+                                    <CardTitle className="text-lg">Broadcast to All Users</CardTitle>
+                                    <p className="text-sm text-muted-foreground mt-1">This sends a notification to all users in this application.</p>
                                 </CardHeader>
                                 <CardContent>
                                     <form onSubmit={handleBroadcastSubmit} className="space-y-4">
+                                        <div className="rounded-md border border-amber-300/60 bg-amber-100/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                                            Broadcast impacts every recipient matched by this app or topic filter.
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div className="space-y-2">
                                                 <Label htmlFor="broadcastChannel">Channel</Label>
@@ -1790,7 +1838,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
 
                                         {formVariables.length > 0 && (
-                                            <div className="rounded-md border border-border bg-background">
+                                            <div className={SEND_FORM_SECTION_CLASS}>
                                                 <button
                                                     type="button"
                                                     className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1846,7 +1894,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
 
                                         {/* Schedule toggle */}
-                                        <div className="rounded-md border border-border">
+                                        <div className={SEND_FORM_SECTION_CLASS}>
                                             <button
                                                 type="button"
                                                 className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1895,13 +1943,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </div>
 
                                         <div className="flex justify-end pt-2">
-                                            <Button
-                                                type="submit"
-                                                className="bg-orange-600 hover:bg-orange-700 text-white"
-                                                disabled={isSubmitting}
-                                            >
-                                                {isSubmitting ? 'Processing...' : '🚀 Send Broadcast'}
-                                            </Button>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    onClick={() => renderSendPreview('broadcast')}
+                                                    disabled={sendPreviewLoading || !formData.template_id}
+                                                >
+                                                    <Eye className="h-4 w-4 mr-1" />
+                                                    {sendPreviewLoading && sendPreviewContext === 'broadcast' ? 'Rendering...' : 'Preview'}
+                                                </Button>
+                                                <Button
+                                                    type="submit"
+                                                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                                                    disabled={isSubmitting}
+                                                >
+                                                    {isSubmitting ? 'Processing...' : 'Send Broadcast'}
+                                                </Button>
+                                            </div>
                                         </div>
 
                                         {confirmingBroadcast && (
@@ -2323,6 +2382,40 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     )}
                 </SlidePanel>
 
+                <Dialog open={sendPreviewOpen} onOpenChange={setSendPreviewOpen}>
+                    <DialogContent className="max-w-4xl h-[80vh] overflow-hidden flex flex-col p-0">
+                        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
+                            <div>
+                                <h3 className="text-sm font-semibold">
+                                    {sendPreviewContext === 'advanced' ? 'Bulk Send Preview' : 'Broadcast Preview'}
+                                </h3>
+                                <p className="text-xs text-muted-foreground">Rendered from selected template and current variables.</p>
+                            </div>
+                            {formSelectedTemplate && (
+                                <Badge variant="outline" className="text-xs">{formSelectedTemplate.channel}</Badge>
+                            )}
+                        </div>
+                        <div className="flex-1 min-h-0 p-4 bg-muted/15">
+                            {sendPreviewLoading ? (
+                                <div className="h-full flex items-center justify-center text-muted-foreground">
+                                    <Loader2 className="h-5 w-5 animate-spin" />
+                                </div>
+                            ) : formSelectedTemplate?.channel === 'email' ? (
+                                <iframe
+                                    srcDoc={sendPreviewHtml}
+                                    title="Send Preview"
+                                    className="w-full h-full border-0 rounded-md bg-white"
+                                    sandbox=""
+                                />
+                            ) : (
+                                <div className="h-full overflow-auto rounded-md border border-border bg-background p-4">
+                                    <pre className="text-sm whitespace-pre-wrap wrap-break-word font-mono text-foreground">{sendPreviewHtml}</pre>
+                                </div>
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
                 {/* Batch Send Dialog */}
                 <Dialog open={showBatchSend} onOpenChange={(open) => {
                     setShowBatchSend(open);
@@ -2506,7 +2599,7 @@ const UserMultiSelect: React.FC<{
         <div className="space-y-2">
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" type="button" className="w-full justify-between">
+                    <Button variant="outline" type="button" className="w-full justify-between h-9 rounded-lg">
                         <span className="truncate text-left">{selectorLabel}</span>
                         <span className="text-xs text-muted-foreground">{selectedCount}/{totalUsers}</span>
                     </Button>
@@ -2544,7 +2637,7 @@ const UserMultiSelect: React.FC<{
                                 </button>
                             </div>
                         </div>
-                        <div className="max-h-72 overflow-y-auto rounded border border-border">
+                        <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-card/30">
                             {filteredUsers.length === 0 ? (
                                 <p className="text-muted-foreground text-sm p-3">No users found.</p>
                             ) : (
@@ -2568,10 +2661,9 @@ const UserMultiSelect: React.FC<{
                         {selectedUsers.length > 0 && (
                             <div className="flex flex-wrap gap-2 pt-1">
                                 {selectedUsers.map(user => (
-                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs text-foreground">
+                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-xs text-foreground">
                                         {user.email || user.user_id}
                                         <button
-                                            id='remove-btn'
                                             type="button"
                                             className="text-muted-foreground hover:text-foreground"
                                             onClick={() => toggleUser(user.user_id)}
@@ -2607,13 +2699,13 @@ const WebhookTargetSelect: React.FC<{
             <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Selected {value.length} of {targets.length}</span>
                 <div className="flex gap-2">
-                    <button type="button" className="hover:text-foreground" onClick={() => onChange(targets)}>Select all</button>
-                    <button type="button" className="hover:text-foreground" onClick={() => onChange([])}>Clear</button>
+                    <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => onChange(targets)}>Select all</button>
+                    <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => onChange([])}>Clear</button>
                 </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-border rounded bg-card">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-border rounded-lg bg-card/30">
                 {targets.map(name => (
-                    <div key={name} className="flex items-center space-x-2">
+                    <div key={name} className="flex items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 py-2">
                         <Checkbox
                             id={`webhook-${name}`}
                             checked={value.includes(name)}
