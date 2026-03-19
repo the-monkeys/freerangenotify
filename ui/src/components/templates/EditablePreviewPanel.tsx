@@ -1,6 +1,9 @@
 import React, { useEffect, useCallback } from 'react';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { Separator } from '../ui/separator';
 import type { Template } from '../../types';
 
 interface EditablePreviewPanelProps {
@@ -50,6 +53,17 @@ document.addEventListener('DOMContentLoaded', function() {
 <\/script>`;
 
 /**
+ * Infers the display type for a variable based on its name.
+ * Used to render an appropriate input widget in the sidebar.
+ */
+function inferVariableType(name: string): 'image' | 'url' | 'text' {
+    const n = name.toLowerCase();
+    if (/image|img|logo|photo|avatar|thumbnail|banner|picture/.test(n)) return 'image';
+    if (/url|link|href|src|uri|website/.test(n)) return 'url';
+    return 'text';
+}
+
+/**
  * Injects editable CSS and communication script into the rendered HTML
  * so that contenteditable variable spans are styled and report changes.
  */
@@ -88,6 +102,18 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
         : null;
     const currentPreview = slidePreview ? activePreviews[slidePreview.templateId] : undefined;
 
+    // Parse the current variable values from the stored JSON data string.
+    const parsedVariables: Record<string, string> = (() => {
+        try {
+            return JSON.parse(currentPreview?.data || '{}');
+        } catch {
+            return {};
+        }
+    })();
+
+    const variables = currentTemplate?.variables ?? [];
+    const hasVariables = variables.length > 0;
+
     // Listen for inline-edit messages from the preview iframe.
     const handleMessage = useCallback(
         (e: MessageEvent) => {
@@ -118,9 +144,12 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                 <div className="flex flex-col h-full -m-5">
                     {/* Compact toolbar */}
                     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-muted/30 shrink-0">
-                        <p className="text-xs text-muted-foreground flex-1">
-                            Click any <span className="text-blue-500 font-medium">highlighted</span> text in the preview to edit it directly.
-                        </p>
+                        {!hasVariables && (
+                            <p className="text-xs text-muted-foreground flex-1">
+                                Click any <span className="text-blue-500 font-medium">highlighted</span> text in the preview to edit it directly.
+                            </p>
+                        )}
+                        {hasVariables && <span className="flex-1" />}
                         <Button
                             size="sm"
                             className="text-xs h-7"
@@ -142,26 +171,99 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                         )}
                     </div>
 
-                    {/* Full-width preview */}
-                    <div className="flex-1 min-h-0">
-                        {currentPreview?.rendered ? (
-                            slidePreview.channel === 'email' ? (
-                                <iframe
-                                    srcDoc={injectEditableSupport(currentPreview.rendered)}
-                                    sandbox="allow-scripts"
-                                    className="w-full h-full border-0 bg-white"
-                                    title="Editable Rendered Preview"
-                                />
-                            ) : (
-                                <div className="h-full p-4 overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
-                                    {currentPreview.rendered}
+                    {/* Body: optional variables sidebar + preview */}
+                    <div className="flex flex-1 min-h-0 overflow-hidden">
+                        {/* Variables sidebar */}
+                        {hasVariables && (
+                            <>
+                                <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
+                                    <div className="px-4 py-3 shrink-0">
+                                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variables</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Edit values then click <span className="font-medium">Re-render</span>.
+                                        </p>
+                                    </div>
+                                    <Separator />
+                                    <div className="flex flex-col gap-4 px-4 py-3">
+                                        {variables.map((varName) => {
+                                            const type = inferVariableType(varName);
+                                            const value = parsedVariables[varName] ?? '';
+                                            return (
+                                                <div key={varName} className="flex flex-col gap-1.5">
+                                                    <Label className="text-xs font-medium text-foreground capitalize">
+                                                        {varName.replace(/_/g, ' ')}
+                                                    </Label>
+                                                    {type === 'image' ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <Input
+                                                                type="url"
+                                                                value={value}
+                                                                onChange={(e) =>
+                                                                    onVariableEdit(slidePreview.templateId, varName, e.target.value)
+                                                                }
+                                                                placeholder="https://..."
+                                                                className="h-7 text-xs"
+                                                            />
+                                                            {value && (
+                                                                <img
+                                                                    src={value}
+                                                                    alt={varName}
+                                                                    className="h-14 w-auto rounded border border-border object-contain"
+                                                                    onError={(e) => {
+                                                                        (e.target as HTMLImageElement).style.display = 'none';
+                                                                    }}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    ) : type === 'url' ? (
+                                                        <Input
+                                                            type="url"
+                                                            value={value}
+                                                            onChange={(e) =>
+                                                                onVariableEdit(slidePreview.templateId, varName, e.target.value)
+                                                            }
+                                                            placeholder="https://..."
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    ) : (
+                                                        <Input
+                                                            value={value}
+                                                            onChange={(e) =>
+                                                                onVariableEdit(slidePreview.templateId, varName, e.target.value)
+                                                            }
+                                                            placeholder={varName}
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            )
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground italic">
-                                No rendered output yet. Click "Re-render" above.
-                            </div>
+                            </>
                         )}
+
+                        {/* Preview area */}
+                        <div className="flex-1 min-h-0 min-w-0">
+                            {currentPreview?.rendered ? (
+                                slidePreview.channel === 'email' ? (
+                                    <iframe
+                                        srcDoc={injectEditableSupport(currentPreview.rendered)}
+                                        sandbox="allow-scripts"
+                                        className="w-full h-full border-0 bg-white"
+                                        title="Editable Rendered Preview"
+                                    />
+                                ) : (
+                                    <div className="h-full p-4 overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
+                                        {currentPreview.rendered}
+                                    </div>
+                                )
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground italic">
+                                    No rendered output yet. Click "Re-render" above.
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             ) : (
