@@ -84,7 +84,7 @@ const SidebarNav: React.FC = () => {
 
     return (
         <>
-            <SidebarHeader className="px-2 py-4 flex flex-row items-center justify-between">
+            <SidebarHeader className="p-4 flex flex-row items-center justify-between">
                 <Link
                     to="/"
                     className="group flex flex-1 items-center gap-2.5 rounded-lg no-underline transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
