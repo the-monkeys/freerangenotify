@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, LucideChevronsLeft, LucideChevronsRight } from 'lucide-react';
+import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -10,15 +10,11 @@ import {
     Sidebar as AppSidebar,
     SidebarContent,
     SidebarFooter,
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
     SidebarSeparator,
-    SidebarTrigger,
     useSidebar,
 } from './ui/sidebar';
 
@@ -68,15 +64,22 @@ const SidebarNav: React.FC = () => {
         navigate('/register', { replace: true });
     };
 
+    const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (state === 'collapsed') {
+            e.preventDefault();
+            setOpen(true);
+        }
+    };
+
     const handleItemNavigate = () => {
         if (isMobile) {
             setOpenMobile(false);
             return;
         }
 
-        if (state === 'collapsed') {
-            setOpen(true);
-        }
+        // if (state === 'collapsed') {
+        //     setOpen(true);
+        // }
     };
 
     return (
@@ -84,14 +87,31 @@ const SidebarNav: React.FC = () => {
             <SidebarHeader className="px-2 py-4 flex flex-row items-center justify-between">
                 <Link
                     to="/"
-                    className="flex flex-1 items-center gap-2.5 rounded-lg no-underline transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                    className="group flex flex-1 items-center gap-2.5 rounded-lg no-underline transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                    onClick={handleLogoClick}
                 >
-                    <Bell className="h-5 w-5 text-accent" />
+                    <div className="relative size-5">
+                        <Bell
+                            className={`absolute inset-0 size-5 text-white transition-opacity ${
+                                state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
+                            }`}
+                        />
+                        {state === 'collapsed' && (
+                            <SidebarOpen className="absolute inset-0 size-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+                        )}
+                    </div>
                     <span className="text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
                         FreeRange <span className="font-normal text-muted-foreground">Notify</span>
                     </span>
                 </Link>
-                <SidebarTrigger className={`p-1 ${state === 'collapsed' ? 'hidden' : 'block'}`} onClick={toggleSidebar} />
+                <button
+                    type="button"
+                    onClick={toggleSidebar}
+                    className={`rounded p-1 transition-colors hover:bg-sidebar-accent/50 ${state === 'collapsed' ? 'hidden' : 'block'}`}
+                    aria-label="Collapse sidebar"
+                >
+                    <SidebarClose className="size-5 text-white" />
+                </button>
             </SidebarHeader>
 
             <SidebarContent className="">
