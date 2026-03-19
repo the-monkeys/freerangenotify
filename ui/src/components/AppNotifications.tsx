@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest, AttributeVar } from '../types';
+import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -72,6 +72,23 @@ function toISODateOnly(val: string): string {
 // Convert datetime-local value (YYYY-MM-DDTHH:mm) in given timezone to ISO UTC string
 function scheduleToISO(datetimeLocal: string, timezone: string): string | undefined {
     return localInTimezoneToISO(datetimeLocal, timezone);
+}
+
+/** Sorts template variables by the order they first appear in the template body. */
+function sortVariablesByAppearance(variables: string[], body: string): string[] {
+    return [...variables].sort((a, b) => {
+        const ia = body.indexOf(`{{${a}}}`);
+        const ib = body.indexOf(`{{${b}}}`);
+        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+    });
+}
+
+/** Infers the display type for a variable based on its name. */
+function inferSendVarType(name: string): 'image' | 'url' | 'text' {
+    const n = name.toLowerCase();
+    if (/image|img|logo|photo|avatar|thumbnail|banner|picture/.test(n)) return 'image';
+    if (/url|link|href|src|uri|website/.test(n)) return 'url';
+    return 'text';
 }
 
 const SEND_FORM_SHELL_CLASS = 'rounded-xl border border-border/80 bg-muted/35 p-5 space-y-4';
@@ -412,9 +429,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [sendPreviewHtml, setSendPreviewHtml] = useState('');
     const [sendPreviewLoading, setSendPreviewLoading] = useState(false);
     const [sendPreviewContext, setSendPreviewContext] = useState<'advanced' | 'broadcast'>('advanced');
-    const [quickAttrVars, setQuickAttrVars] = useState<AttributeVar[]>([]);
-    const [quickVarsDrawerOpen, setQuickVarsDrawerOpen] = useState(false);
-    const quickRerenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [sendPreviewData, setSendPreviewData] = useState<Record<string, string>>({});
+    const [sendPreviewShowVars, setSendPreviewShowVars] = useState(false);
+    const [quickPreviewShowVars, setQuickPreviewShowVars] = useState(false);
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
@@ -423,11 +440,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
-    const quickVariables = quickSelectedTemplate?.variables || [];
+    const quickVariables = useMemo(() => {
+        const vars = quickSelectedTemplate?.variables || [];
+        return quickSelectedTemplate?.body ? sortVariablesByAppearance(vars, quickSelectedTemplate.body) : vars;
+    }, [quickSelectedTemplate]);
 
     // Advanced/Broadcast: detect variables from selected template
     const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
-    const formVariables = formSelectedTemplate?.variables || [];
+    const formVariables = useMemo(() => {
+        const vars = formSelectedTemplate?.variables || [];
+        return formSelectedTemplate?.body ? sortVariablesByAppearance(vars, formSelectedTemplate.body) : vars;
+    }, [formSelectedTemplate]);
     const parsedFormData = useMemo(() => {
         try {
             return parseCustomData(dataInput) || {};
@@ -483,7 +506,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 editable: quickSelectedTemplate.channel === 'email',
             });
             setQuickPreviewHtml(res.rendered_body || '');
-            setQuickAttrVars(res.attribute_variables || []);
             setQuickPreviewOpen(true);
         } catch (err) {
             toast.error(extractErrorMessage(err, 'Failed to render preview'));
@@ -492,20 +514,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         }
     }, [apiKey, quickSelectedTemplate, quickData]);
 
-    // Debounced re-render when attribute variables change in the sidebar
-    const debouncedRerender = useCallback(() => {
-        if (quickRerenderTimer.current) clearTimeout(quickRerenderTimer.current);
-        quickRerenderTimer.current = setTimeout(async () => {
-            if (!quickSelectedTemplate || !quickPreviewOpen) return;
-            try {
-                const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
-                    data: Object.keys(quickData).length > 0 ? quickData : {},
-                    editable: quickSelectedTemplate.channel === 'email',
-                });
-                setQuickPreviewHtml(res.rendered_body || '');
-            } catch { /* silently fail on debounced re-render */ }
-        }, 500);
-    }, [apiKey, quickSelectedTemplate, quickData, quickPreviewOpen]);
+    // Sync preview variable edits back to dataInput so Send always uses the latest values
+    useEffect(() => {
+        if (!sendPreviewOpen || Object.keys(sendPreviewData).length === 0) return;
+        setDataInput(JSON.stringify(sendPreviewData, null, 2));
+    }, [sendPreviewData, sendPreviewOpen]);
 
     // Handle postMessage from editable preview iframe
     useEffect(() => {
@@ -519,24 +532,25 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         return () => window.removeEventListener('message', handler);
     }, [quickPreviewOpen]);
 
-    // Handle image upload for attribute variables
-    const handleAttrVarImageUpload = useCallback(async (varName: string, file: File) => {
-        try {
-            const res = await mediaAPI.upload(apiKey, file);
-            setQuickData(d => ({ ...d, [varName]: res.url }));
-            debouncedRerender();
-        } catch (err) {
-            toast.error(extractErrorMessage(err, 'Image upload failed'));
-        }
-    }, [apiKey, debouncedRerender]);
+    // Handle postMessage from editable send preview iframe (email bulk/broadcast)
+    useEffect(() => {
+        if (!sendPreviewOpen || formSelectedTemplate?.channel !== 'email') return;
+        const handler = (e: MessageEvent) => {
+            if (e.data?.type === 'frn-var-edit' && typeof e.data.variable === 'string') {
+                setSendPreviewData(d => ({ ...d, [e.data.variable]: e.data.value ?? '' }));
+            }
+        };
+        window.addEventListener('message', handler);
+        return () => window.removeEventListener('message', handler);
+    }, [sendPreviewOpen, formSelectedTemplate?.channel]);
 
-    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast') => {
+    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast', data?: Record<string, string>) => {
         if (!formSelectedTemplate?.id) {
             toast.error('Select a template to preview');
             return;
         }
 
-        const customData = parseCustomData(dataInput);
+        const customData = data ?? parseCustomData(dataInput);
         if (customData === null) {
             toast.error('Invalid JSON in custom data');
             return;
@@ -544,10 +558,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
         setSendPreviewContext(context);
         setSendPreviewLoading(true);
+        if (!data) {
+            // Initialize sidebar data from the form on first open
+            const init: Record<string, string> = {};
+            for (const [k, v] of Object.entries(customData || {})) init[k] = String(v);
+            setSendPreviewData(init);
+        }
         try {
             const res = await templatesAPI.render(apiKey, formSelectedTemplate.id, {
                 data: customData || {},
-                editable: false,
+                editable: formSelectedTemplate.channel === 'email',
             });
             setSendPreviewHtml(res.rendered_body || '');
             setSendPreviewOpen(true);
@@ -586,8 +606,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickWebhookUrl('');
             setQuickPreviewOpen(false);
             setQuickPreviewHtml('');
-            setQuickAttrVars([]);
-            setQuickVarsDrawerOpen(false);
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -848,7 +866,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </p>
                                     </div>
                                 )}
-                                {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && quickSelectedTemplate?.channel !== 'whatsapp' && (
+                                {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && (
                                     <div className={SEND_FORM_SECTION_CLASS}>
                                         <button
                                             type="button"
@@ -1031,108 +1049,118 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     </Button>
                                 </div>
 
-                                <Dialog open={quickPreviewOpen} onOpenChange={(open) => { setQuickPreviewOpen(open); if (!open) setQuickVarsDrawerOpen(false); }}>
-                                    <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col p-0">
-                                        {/* Header bar */}
-                                        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-                                            <div>
-                                                <h3 className="text-sm font-semibold">
-                                                    {quickSelectedTemplate?.name}
-                                                </h3>
+                                <Dialog open={quickPreviewOpen} onOpenChange={(open) => { setQuickPreviewOpen(open); }}>
+                                    <DialogContent className="max-w-5xl h-[85vh] overflow-hidden flex flex-col p-0">
+                                        {/* Toolbar */}
+                                        <div className="flex items-center gap-3 px-5 py-3 border-b border-border shrink-0">
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-sm font-semibold">{quickSelectedTemplate?.name}</h3>
                                                 {quickSelectedTemplate?.channel === 'email' && (
                                                     <p className="text-xs text-muted-foreground">
                                                         Click any <span className="text-blue-500 font-medium">highlighted</span> text to edit inline
                                                     </p>
                                                 )}
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                {quickSelectedTemplate?.channel === 'email' && quickAttrVars.length > 0 && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant={quickVarsDrawerOpen ? 'default' : 'outline'}
-                                                        onClick={() => setQuickVarsDrawerOpen(!quickVarsDrawerOpen)}
-                                                    >
-                                                        <FileText className="w-3.5 h-3.5 mr-1" />
-                                                        Variables
-                                                        <Badge variant="secondary" className="ml-1 text-xs">{quickAttrVars.length}</Badge>
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={renderQuickPreview}
-                                                    disabled={quickPreviewLoading}
+                                            {quickVariables.length > 0 && (
+                                                <button
+                                                    onClick={() => setQuickPreviewShowVars(v => !v)}
+                                                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                                                 >
-                                                    {quickPreviewLoading ? 'Refreshing...' : 'Refresh'}
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        {/* Full-width preview — the hero */}
-                                        <div className="flex-1 min-h-0 relative">
-                                            {quickSelectedTemplate?.channel === 'email' ? (
-                                                <iframe
-                                                    srcDoc={injectEditableSupport(quickPreviewHtml)}
-                                                    title="Editable Preview"
-                                                    className="w-full h-full border-0 bg-white"
-                                                    sandbox="allow-scripts"
-                                                />
-                                            ) : (
-                                                <iframe
-                                                    srcDoc={quickPreviewHtml}
-                                                    title="Notification Preview"
-                                                    className="w-full h-full border-0 bg-white"
-                                                    sandbox="allow-same-origin"
-                                                />
+                                                    <span className={`inline-block transition-transform duration-200 ${quickPreviewShowVars ? 'rotate-0' : '-rotate-90'}`}>▾</span>
+                                                    {quickPreviewShowVars ? 'Hide Variables' : 'Show Variables'}
+                                                </button>
                                             )}
+                                            <Button
+                                                size="sm"
+                                                className="text-xs h-7"
+                                                onClick={renderQuickPreview}
+                                                disabled={quickPreviewLoading}
+                                            >
+                                                {quickPreviewLoading ? 'Rendering...' : 'Re-render'}
+                                            </Button>
                                         </div>
 
-                                        {/* Collapsible variables drawer — slides up from bottom */}
-                                        {quickVarsDrawerOpen && quickAttrVars.length > 0 && (
-                                            <div className="border-t border-border bg-muted/30 shrink-0 max-h-[35vh] overflow-y-auto">
-                                                <div className="px-5 py-3 space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image & URL Variables</p>
-                                                        <button type="button" onClick={() => setQuickVarsDrawerOpen(false)} className="text-muted-foreground hover:text-foreground">
-                                                            <X className="w-4 h-4" />
-                                                        </button>
+                                        {/* Body: optional variables sidebar + preview */}
+                                        <div className="flex flex-1 min-h-0 overflow-hidden">
+                                            {/* Variables sidebar */}
+                                            {quickVariables.length > 0 && quickPreviewShowVars && (
+                                                <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
+                                                    <div className="px-4 py-3 shrink-0">
+                                                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variables</p>
+                                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                                            Edit values then click <span className="font-medium">Re-render</span>.
+                                                        </p>
                                                     </div>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                        {quickAttrVars.map(av => (
-                                                            <div key={av.name} className="space-y-1">
-                                                                <Label className="text-xs flex items-center gap-1">
-                                                                    {av.type === 'image' ? '🖼️' : '🔗'} {av.name}
-                                                                </Label>
-                                                                <Input
-                                                                    value={quickData[av.name] || ''}
-                                                                    onChange={e => {
-                                                                        setQuickData(d => ({ ...d, [av.name]: e.target.value }));
-                                                                        debouncedRerender();
-                                                                    }}
-                                                                    placeholder={av.type === 'image' ? 'Image URL' : 'https://...'}
-                                                                    className="text-xs h-8"
-                                                                />
-                                                                {av.type === 'image' && (
-                                                                    <label
-                                                                        className="flex items-center justify-center gap-1 text-xs border border-dashed border-border rounded px-2 py-1 cursor-pointer hover:bg-muted/50 transition-colors"
-                                                                        onDragOver={e => e.preventDefault()}
-                                                                        onDrop={e => {
-                                                                            e.preventDefault();
-                                                                            const file = e.dataTransfer.files?.[0];
-                                                                            if (file && file.type.startsWith('image/')) handleAttrVarImageUpload(av.name, file);
-                                                                        }}
-                                                                    >
-                                                                        <UploadCloud className="h-3 w-3" />
-                                                                        Upload
-                                                                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAttrVarImageUpload(av.name, f); }} />
-                                                                    </label>
-                                                                )}
-                                                            </div>
-                                                        ))}
+                                                    <div className="h-px bg-border shrink-0" />
+                                                    <div className="flex flex-col gap-4 px-4 py-3">
+                                                        {quickVariables.map((varName) => {
+                                                            const type = inferSendVarType(varName);
+                                                            const value = quickData[varName] ?? '';
+                                                            return (
+                                                                <div key={varName} className="flex flex-col gap-1.5">
+                                                                    <Label className="text-xs font-medium text-foreground capitalize">
+                                                                        {varName.replace(/_/g, ' ')}
+                                                                    </Label>
+                                                                    {type === 'image' ? (
+                                                                        <div className="flex flex-col gap-1">
+                                                                            <Input
+                                                                                type="url"
+                                                                                value={value}
+                                                                                onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
+                                                                                placeholder="https://..."
+                                                                                className="h-7 text-xs"
+                                                                            />
+                                                                            {value && (
+                                                                                <img
+                                                                                    src={value}
+                                                                                    alt={varName}
+                                                                                    className="h-14 w-auto rounded border border-border object-contain"
+                                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                    ) : type === 'url' ? (
+                                                                        <Input
+                                                                            type="url"
+                                                                            value={value}
+                                                                            onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
+                                                                            placeholder="https://..."
+                                                                            className="h-7 text-xs"
+                                                                        />
+                                                                    ) : (
+                                                                        <Input
+                                                                            value={value}
+                                                                            onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
+                                                                            placeholder={varName}
+                                                                            className="h-7 text-xs"
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
+                                            )}
+
+                                            {/* Preview area */}
+                                            <div className="flex-1 min-h-0 relative">
+                                                {quickSelectedTemplate?.channel === 'email' ? (
+                                                    <iframe
+                                                        srcDoc={injectEditableSupport(quickPreviewHtml)}
+                                                        title="Editable Preview"
+                                                        className="w-full h-full border-0 bg-white"
+                                                        sandbox="allow-scripts"
+                                                    />
+                                                ) : (
+                                                    <iframe
+                                                        srcDoc={quickPreviewHtml}
+                                                        title="Notification Preview"
+                                                        className="w-full h-full border-0 bg-white"
+                                                        sandbox="allow-same-origin"
+                                                    />
+                                                )}
                                             </div>
-                                        )}
+                                        </div>
                                     </DialogContent>
                                 </Dialog>
                             </div>
@@ -1428,62 +1456,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </div>
                                     )}
                                 </div>
-
-                                {formVariables.length > 0 && (
-                                    <div className={SEND_FORM_SECTION_CLASS}>
-                                        <button
-                                            type="button"
-                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                            onClick={() => setVarsExpanded(!varsExpanded)}
-                                        >
-                                            <span className="flex items-center gap-2">
-                                                Template Variables
-                                                <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
-                                                {formSelectedTemplate?.metadata?.sample_data && (
-                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                )}
-                                            </span>
-                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                        </button>
-                                        {varsExpanded && (
-                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {formVariables.map(v => {
-                                                    const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
-                                                    const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
-                                                    const isDateVar = v.toLowerCase() === 'date';
-                                                    return (
-                                                        <div key={v} className="space-y-1">
-                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            {isDateVar ? (
-                                                                <Input
-                                                                    type="date"
-                                                                    value={toISODateOnly(currentVal)}
-                                                                    onChange={e => {
-                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                        parsed[v] = formatDateForTemplate(e.target.value);
-                                                                        setDataInput(JSON.stringify(parsed, null, 2));
-                                                                    }}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            ) : (
-                                                                <Input
-                                                                    value={currentVal}
-                                                                    onChange={e => {
-                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                        parsed[v] = e.target.value;
-                                                                        setDataInput(JSON.stringify(parsed, null, 2));
-                                                                    }}
-                                                                    placeholder={sampleVal ? String(sampleVal) : v}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
 
                                 {/* Schedule toggle */}
                                 <div className={SEND_FORM_SECTION_CLASS}>
@@ -1834,62 +1806,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     </SelectContent>
                                                 </Select>
                                                 <p className="text-xs text-muted-foreground">When set, only subscribers of this topic receive the broadcast or workflow.</p>
-                                            </div>
-                                        )}
-
-                                        {formVariables.length > 0 && (
-                                            <div className={SEND_FORM_SECTION_CLASS}>
-                                                <button
-                                                    type="button"
-                                                    className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                                    onClick={() => setVarsExpanded(!varsExpanded)}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        Template Variables
-                                                        <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
-                                                        {formSelectedTemplate?.metadata?.sample_data && (
-                                                            <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                        )}
-                                                    </span>
-                                                    {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                                </button>
-                                                {varsExpanded && (
-                                                    <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                        {formVariables.map(v => {
-                                                            const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
-                                                            const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
-                                                            const isDateVar = v.toLowerCase() === 'date';
-                                                            return (
-                                                                <div key={v} className="space-y-1">
-                                                                    <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                                    {isDateVar ? (
-                                                                        <Input
-                                                                            type="date"
-                                                                            value={toISODateOnly(currentVal)}
-                                                                            onChange={e => {
-                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                                parsed[v] = formatDateForTemplate(e.target.value);
-                                                                                setDataInput(JSON.stringify(parsed, null, 2));
-                                                                            }}
-                                                                            className={currentVal ? '' : 'text-muted-foreground'}
-                                                                        />
-                                                                    ) : (
-                                                                        <Input
-                                                                            value={currentVal}
-                                                                            onChange={e => {
-                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                                parsed[v] = e.target.value;
-                                                                                setDataInput(JSON.stringify(parsed, null, 2));
-                                                                            }}
-                                                                            placeholder={sampleVal ? String(sampleVal) : v}
-                                                                            className={currentVal ? '' : 'text-muted-foreground'}
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
 
@@ -2383,35 +2299,132 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 </SlidePanel>
 
                 <Dialog open={sendPreviewOpen} onOpenChange={setSendPreviewOpen}>
-                    <DialogContent className="max-w-4xl h-[80vh] overflow-hidden flex flex-col p-0">
-                        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-                            <div>
+                    <DialogContent className="max-w-5xl h-[85vh] overflow-hidden flex flex-col p-0">
+                        {/* Toolbar */}
+                        <div className="flex items-center gap-3 px-5 py-3 border-b border-border shrink-0">
+                            <div className="flex-1 min-w-0">
                                 <h3 className="text-sm font-semibold">
                                     {sendPreviewContext === 'advanced' ? 'Bulk Send Preview' : 'Broadcast Preview'}
                                 </h3>
                                 <p className="text-xs text-muted-foreground">Rendered from selected template and current variables.</p>
                             </div>
+                            {formVariables.length > 0 && (
+                                <button
+                                    onClick={() => setSendPreviewShowVars(v => !v)}
+                                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                    <span className={`inline-block transition-transform duration-200 ${sendPreviewShowVars ? 'rotate-0' : '-rotate-90'}`}>▾</span>
+                                    {sendPreviewShowVars ? 'Hide Variables' : 'Show Variables'}
+                                </button>
+                            )}
+                            {(formSelectedTemplate?.channel === 'email' || formSelectedTemplate?.channel === 'whatsapp') && (
+                                <Button
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={() => renderSendPreview(sendPreviewContext, sendPreviewData)}
+                                    disabled={sendPreviewLoading}
+                                >
+                                    {sendPreviewLoading ? 'Rendering...' : 'Re-render'}
+                                </Button>
+                            )}
                             {formSelectedTemplate && (
                                 <Badge variant="outline" className="text-xs">{formSelectedTemplate.channel}</Badge>
                             )}
                         </div>
-                        <div className="flex-1 min-h-0 p-4 bg-muted/15">
-                            {sendPreviewLoading ? (
-                                <div className="h-full flex items-center justify-center text-muted-foreground">
-                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                </div>
-                            ) : formSelectedTemplate?.channel === 'email' ? (
-                                <iframe
-                                    srcDoc={sendPreviewHtml}
-                                    title="Send Preview"
-                                    className="w-full h-full border-0 rounded-md bg-white"
-                                    sandbox=""
-                                />
-                            ) : (
-                                <div className="h-full overflow-auto rounded-md border border-border bg-background p-4">
-                                    <pre className="text-sm whitespace-pre-wrap wrap-break-word font-mono text-foreground">{sendPreviewHtml}</pre>
+
+                        {/* Body: optional variables sidebar + preview */}
+                        <div className="flex flex-1 min-h-0 overflow-hidden">
+                            {/* Variables sidebar */}
+                            {formVariables.length > 0 && sendPreviewShowVars && (
+                                <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
+                                    <div className="px-4 py-3 shrink-0">
+                                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variables</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            Edit values then click <span className="font-medium">Re-render</span>.
+                                        </p>
+                                    </div>
+                                    <div className="h-px bg-border shrink-0" />
+                                    <div className="flex flex-col gap-4 px-4 py-3">
+                                        {formVariables.map((varName) => {
+                                            const type = inferSendVarType(varName);
+                                            const value = sendPreviewData[varName] ?? '';
+                                            return (
+                                                <div key={varName} className="flex flex-col gap-1.5">
+                                                    <Label className="text-xs font-medium text-foreground capitalize">
+                                                        {varName.replace(/_/g, ' ')}
+                                                    </Label>
+                                                    {type === 'image' ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            <Input
+                                                                type="url"
+                                                                value={value}
+                                                                onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
+                                                                placeholder="https://..."
+                                                                className="h-7 text-xs"
+                                                            />
+                                                            {value && (
+                                                                <img
+                                                                    src={value}
+                                                                    alt={varName}
+                                                                    className="h-14 w-auto rounded border border-border object-contain"
+                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    ) : type === 'url' ? (
+                                                        <Input
+                                                            type="url"
+                                                            value={value}
+                                                            onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
+                                                            placeholder="https://..."
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    ) : (
+                                                        <Input
+                                                            value={value}
+                                                            onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
+                                                            placeholder={varName}
+                                                            className="h-7 text-xs"
+                                                        />
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             )}
+
+                            {/* Preview area */}
+                            <div className="flex-1 min-h-0 min-w-0 bg-muted/15">
+                                {sendPreviewLoading ? (
+                                    <div className="h-full flex items-center justify-center text-muted-foreground">
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                    </div>
+                                ) : formSelectedTemplate?.channel === 'email' ? (
+                                    <iframe
+                                        srcDoc={sendPreviewHtml}
+                                        title="Send Preview"
+                                        className="w-full h-full border-0 bg-white"
+                                        sandbox="allow-scripts"
+                                    />
+                                ) : formSelectedTemplate?.channel === 'whatsapp' ? (
+                                    <div className="h-full overflow-auto p-6 flex items-start justify-center">
+                                        <WhatsAppPreview
+                                            templateName={formSelectedTemplate?.name}
+                                            buttons={formSelectedTemplate?.metadata?.buttons}
+                                            data={sendPreviewData}
+                                            templateContent={{
+                                                title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject,
+                                                body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body,
+                                            }}
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="h-full overflow-auto p-4">
+                                        <pre className="text-sm whitespace-pre-wrap wrap-break-word font-mono text-foreground">{sendPreviewHtml}</pre>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </DialogContent>
                 </Dialog>

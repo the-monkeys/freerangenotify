@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -51,6 +51,20 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 <\/script>`;
+
+/**
+ * Sorts template variables by the order they first appear in the template body.
+ * Variables not found in the body are appended at the end.
+ */
+function sortVariablesByAppearance(variables: string[], body: string): string[] {
+    return [...variables].sort((a, b) => {
+        const posA = body.indexOf(`{{${a}}}`);
+        const posB = body.indexOf(`{{${b}}}`);
+        const ia = posA === -1 ? Infinity : posA;
+        const ib = posB === -1 ? Infinity : posB;
+        return ia - ib;
+    });
+}
 
 /**
  * Infers the display type for a variable based on its name.
@@ -111,8 +125,13 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
         }
     })();
 
-    const variables = currentTemplate?.variables ?? [];
-    const hasVariables = variables.length > 0;
+    const rawVariables = currentTemplate?.variables ?? [];
+    const hasVariables = rawVariables.length > 0;
+    const variables = currentTemplate?.body
+        ? sortVariablesByAppearance(rawVariables, currentTemplate.body)
+        : rawVariables;
+
+    const [showVariables, setShowVariables] = useState(true);
 
     // Listen for inline-edit messages from the preview iframe.
     const handleMessage = useCallback(
@@ -149,7 +168,19 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                                 Click any <span className="text-blue-500 font-medium">highlighted</span> text in the preview to edit it directly.
                             </p>
                         )}
-                        {hasVariables && <span className="flex-1" />}
+                        {hasVariables && (
+                            <button
+                                onClick={() => setShowVariables((v) => !v)}
+                                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors flex-1 text-left"
+                            >
+                                <span
+                                    className={`inline-block transition-transform duration-200 ${showVariables ? 'rotate-0' : '-rotate-90'}`}
+                                >
+                                    ▾
+                                </span>
+                                {showVariables ? 'Hide Variables' : 'Show Variables'}
+                            </button>
+                        )}
                         <Button
                             size="sm"
                             className="text-xs h-7"
@@ -174,7 +205,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                     {/* Body: optional variables sidebar + preview */}
                     <div className="flex flex-1 min-h-0 overflow-hidden">
                         {/* Variables sidebar */}
-                        {hasVariables && (
+                        {hasVariables && showVariables && (
                             <>
                                 <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
                                     <div className="px-4 py-3 shrink-0">
