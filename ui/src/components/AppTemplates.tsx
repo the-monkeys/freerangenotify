@@ -454,8 +454,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="h-7 px-2 text-xs">
-                            {totalCount} total
+                        <Badge variant="outline" className="rounded-sm py-1.5 px-4">
+                            {totalCount} Total
                         </Badge>
                         <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}/templates/library`)}>
                             Browse Library
