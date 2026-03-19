@@ -133,7 +133,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
         ? sortVariablesByAppearance(rawVariables, currentTemplate.body)
         : rawVariables;
 
-    const [showVariables, setShowVariables] = useState(true);
+    const [showVariables, setShowVariables] = useState(false);
 
     // Listen for inline-edit messages from the preview iframe.
     const handleMessage = useCallback(
