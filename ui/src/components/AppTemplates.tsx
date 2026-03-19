@@ -376,6 +376,69 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         }
     };
 
+    const handleSavePreviewDefaults = async (tmpl: Template) => {
+        const preview = activePreviews[tmpl.id];
+        if (!preview) return;
+
+        let parsedData: Record<string, any> = {};
+        try {
+            parsedData = JSON.parse(preview.data || '{}');
+        } catch {
+            toast.error('Preview JSON must be valid before saving defaults');
+            return;
+        }
+
+        setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: true }));
+        try {
+            await templatesAPI.update(apiKey, tmpl.id, {
+                metadata: {
+                    ...(tmpl.metadata || {}),
+                    sample_data: parsedData,
+                },
+            });
+            try {
+                localStorage.setItem(getPreviewStorageKey(tmpl.id), JSON.stringify(parsedData, null, 2));
+            } catch {
+                // Ignore storage failures.
+            }
+            toast.success('Saved as template defaults');
+            fetchTemplates();
+        } catch (error) {
+            toast.error(extractErrorMessage(error, 'Failed to save template defaults'));
+        } finally {
+            setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: false }));
+        }
+    };
+
+    const handleResetPreviewDefaults = async (tmpl: Template) => {
+        setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: true }));
+        try {
+            const nextMetadata = { ...(tmpl.metadata || {}) } as Record<string, any>;
+            delete nextMetadata.sample_data;
+            await templatesAPI.update(apiKey, tmpl.id, { metadata: nextMetadata });
+
+            try {
+                localStorage.removeItem(getPreviewStorageKey(tmpl.id));
+            } catch {
+                // Ignore storage failures.
+            }
+
+            // Regenerate quick defaults from variables for immediate UX feedback.
+            const generated: Record<string, string> = {};
+            for (const v of tmpl.variables || []) {
+                generated[v] = '';
+            }
+            updatePreviewData(tmpl.id, JSON.stringify(generated, null, 2));
+
+            toast.success('Template defaults reset');
+            fetchTemplates();
+        } catch (error) {
+            toast.error(extractErrorMessage(error, 'Failed to reset template defaults'));
+        } finally {
+            setSavingDefaults((prev) => ({ ...prev, [tmpl.id]: false }));
+        }
+    };
+
     const fetchVersionHistory = async (tmpl: Template) => {
         setVersionHistoryTemplate(tmpl);
         setVersionsLoading(true);
