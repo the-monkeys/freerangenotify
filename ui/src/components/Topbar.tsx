@@ -1,9 +1,10 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, RefreshCcw } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { SidebarTrigger } from './ui/sidebar';
+import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 
 function useBreadcrumb(): { label: string; segments: { label: string; path?: string }[] } {
@@ -105,6 +106,17 @@ const Topbar: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.location.reload()}
+                        aria-label="Refresh page"
+                        title="Refresh"
+                        className="text-muted-foreground"
+                    >
+                        <RefreshCcw className="h-4 w-4" />
+                    </Button>
                     <NotificationBell isAuthenticated={!!user} />
                 </div>
             </div>
