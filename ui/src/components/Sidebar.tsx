@@ -92,9 +92,8 @@ const SidebarNav: React.FC = () => {
                 >
                     <div className="relative size-5">
                         <Bell
-                            className={`absolute inset-0 size-5 text-white transition-opacity ${
-                                state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
-                            }`}
+                            className={`absolute inset-0 size-5 text-white transition-opacity ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
+                                }`}
                         />
                         {state === 'collapsed' && (
                             <SidebarOpen className="absolute inset-0 size-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
@@ -114,7 +113,7 @@ const SidebarNav: React.FC = () => {
                 </button>
             </SidebarHeader>
 
-            <SidebarContent className="">
+            <SidebarContent className="overflow-hidden">
                 <SidebarMenu>
                     {mainItems.map((item) => (
                         <SidebarMenuItem key={item.to} className="px-1">
