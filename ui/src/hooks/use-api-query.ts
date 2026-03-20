@@ -9,12 +9,54 @@ interface UseApiQueryResult<T> {
 
 const apiCache: Record<string, { data: any; timestamp: number }> = {};
 
+interface UseApiQueryOptions {
+    enabled?: boolean;
+    cacheKey?: string;
+    staleTime?: number;
+    refetchInterval?: number;
+    refetchOnWindowFocus?: boolean;
+}
+
+type CacheSubscriber = (data: any) => void;
+const cacheSubscribers: Record<string, Set<CacheSubscriber>> = {};
+
+const notifyCacheSubscribers = (key: string, data: any) => {
+    const subs = cacheSubscribers[key];
+    if (!subs || subs.size === 0) return;
+    subs.forEach((subscriber) => subscriber(data));
+};
+
+export function mutateApiQueryCache<T>(
+    cacheKey: string,
+    updater: (current: T | null) => T | null
+): void {
+    if (!cacheKey) return;
+    const current = (apiCache[cacheKey]?.data as T) ?? null;
+    const next = updater(current);
+
+    if (next === null) {
+        delete apiCache[cacheKey];
+        notifyCacheSubscribers(cacheKey, null);
+        return;
+    }
+
+    apiCache[cacheKey] = {
+        data: next,
+        timestamp: Date.now(),
+    };
+    notifyCacheSubscribers(cacheKey, next);
+}
+
 export function useApiQuery<T>(
     fetcher: () => Promise<T>,
     deps: React.DependencyList = [],
-    options?: { enabled?: boolean; cacheKey?: string; staleTime?: number }
+    options?: UseApiQueryOptions
 ): UseApiQueryResult<T> {
-    const { enabled = true, cacheKey, staleTime = 5 * 60 * 1000 } = options || {};
+    const {
+        enabled = true,
+        cacheKey,
+        staleTime = 5 * 60 * 1000,
+    } = options || {};
 
     // Try to get initial data from cache
     const getCachedData = useCallback(() => {
@@ -37,18 +79,18 @@ export function useApiQuery<T>(
                 data: newData,
                 timestamp: Date.now(),
             };
+            notifyCacheSubscribers(cacheKey, newData);
         }
     }, [cacheKey]);
 
     const refetch = useCallback(async () => {
-        setLoading(true);
+        setLoading((prev) => prev || data === null);
         setError(null);
         try {
             const result = await fetcher();
             setData(result);
             updateCache(result);
         } catch (err: any) {
-            setData(null);
             const raw = err?.response?.data?.error;
             const message =
                 (typeof raw === 'string' ? raw : raw?.message) ||
@@ -60,7 +102,7 @@ export function useApiQuery<T>(
             setLoading(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, deps);
+    }, [...deps, data]);
 
     useEffect(() => {
         if (!enabled) {
@@ -72,12 +114,12 @@ export function useApiQuery<T>(
         if (cached) {
             setData(cached);
             setLoading(false);
-            return;
         }
 
         let ignore = false;
         const doFetch = async () => {
-            setLoading(true);
+            // Preserve existing content during background revalidation.
+            setLoading((prev) => !cached || prev);
             setError(null);
             try {
                 const result = await fetcher();
@@ -87,7 +129,6 @@ export function useApiQuery<T>(
                 }
             } catch (err: any) {
                 if (!ignore) {
-                    setData(null);
                     const raw = err?.response?.data?.error;
                     const message =
                         (typeof raw === 'string' ? raw : raw?.message) ||
@@ -105,6 +146,28 @@ export function useApiQuery<T>(
         return () => { ignore = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [...deps, enabled, cacheKey, staleTime]);
+
+    useEffect(() => {
+        if (!cacheKey) return;
+
+        const subscriber: CacheSubscriber = (nextData) => {
+            setData(nextData as T | null);
+        };
+
+        if (!cacheSubscribers[cacheKey]) {
+            cacheSubscribers[cacheKey] = new Set();
+        }
+        cacheSubscribers[cacheKey].add(subscriber);
+
+        return () => {
+            const subs = cacheSubscribers[cacheKey];
+            if (!subs) return;
+            subs.delete(subscriber);
+            if (subs.size === 0) {
+                delete cacheSubscribers[cacheKey];
+            }
+        };
+    }, [cacheKey]);
 
     return { data, loading, error, refetch };
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { useApiQuery } from '../hooks/use-api-query';
+import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
 import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
@@ -92,6 +92,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
     const [filters, setFilters] = useState<{ status?: string; channel?: string; from?: string; to?: string }>({});
+    const notificationsCacheKey = `notifs-${apiKey}-${page}-${JSON.stringify(filters)}`;
 
     // 1. Notifications List
     const {
@@ -101,7 +102,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     } = useApiQuery(
         () => notificationsAPI.list(apiKey, page, pageSize, filters),
         [apiKey, page, pageSize, filters],
-        { cacheKey: `notifs-${apiKey}-${page}-${JSON.stringify(filters)}`, staleTime: 30000 }
+        {
+            cacheKey: notificationsCacheKey,
+            staleTime: 30000,
+        }
     );
 
     const notifications = useMemo(() => notifsData?.notifications || [], [notifsData]);
@@ -180,6 +184,63 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [detailNotif, setDetailNotif] = useState<Notification | null>(null);
     const [bulkActing, setBulkActing] = useState(false);
+
+    const prependOptimisticNotifications = useCallback((entries: Notification[]) => {
+        if (entries.length === 0) return;
+
+        mutateApiQueryCache<{ notifications: Notification[]; total: number }>(
+            notificationsCacheKey,
+            (current) => {
+                if (!current) return current;
+
+                const existing = current.notifications || [];
+                const dedup = new Set(existing.map((item) => item.notification_id));
+                const fresh = entries.filter((item) => !dedup.has(item.notification_id));
+                if (fresh.length === 0) return current;
+
+                return {
+                    ...current,
+                    total: Math.max(0, (current.total || 0) + fresh.length),
+                    notifications: [...fresh, ...existing].slice(0, pageSize),
+                };
+            }
+        );
+    }, [notificationsCacheKey, pageSize]);
+
+    const buildOptimisticNotification = useCallback((input: {
+        userId: string;
+        channel: Notification['channel'];
+        priority: Notification['priority'];
+        templateId?: string;
+        data?: Record<string, any>;
+        scheduledAt?: string;
+        metadata?: Record<string, any>;
+    }): Notification => {
+        const now = new Date().toISOString();
+        const optimisticId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+        return {
+            notification_id: optimisticId,
+            app_id: '',
+            user_id: input.userId,
+            channel: input.channel,
+            priority: input.priority,
+            status: input.scheduledAt ? 'pending' : 'queued',
+            content: {
+                title: '',
+                body: '',
+                data: input.data,
+                media_url: (input.data?.media_url as string | undefined) || undefined,
+            },
+            template_id: input.templateId,
+            metadata: input.metadata,
+            scheduled_at: input.scheduledAt,
+            created_at: now,
+            updated_at: now,
+        };
+    }, []);
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -378,7 +439,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setShowBatchSend(false);
             setBatchCsvFile(null);
             setBatchRows([]);
-            refresh();
+            const optimistic = notifications
+                .slice(0, pageSize)
+                .map((item) => buildOptimisticNotification({
+                    userId: item.user_id || '',
+                    channel: (item.channel || 'email') as Notification['channel'],
+                    priority: (item.priority || 'normal') as Notification['priority'],
+                    templateId: item.template_id,
+                    data: item.data,
+                    scheduledAt: item.scheduled_at,
+                }));
+            prependOptimisticNotifications(optimistic);
         } catch (err: any) {
             toast.error(extractErrorMessage(err, 'Batch send failed'));
         } finally {
@@ -667,15 +738,27 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         setQuickSending(true);
         try {
             const selectedDigestRule = quickDigestRuleId ? digestRules.find(r => r.id === quickDigestRuleId) : null;
+            const scheduledAt = quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined;
             await quickSendAPI.send(apiKey, {
                 to: quickTo,
                 template: quickSelectedTemplate?.name || quickTemplateId,
                 data: Object.keys(quickData).length > 0 ? quickData : undefined,
                 priority: quickPriority as any,
-                scheduled_at: quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined,
+                scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
                 webhook_url: quickSelectedTemplate?.channel === 'webhook' && quickWebhookUrl ? quickWebhookUrl : undefined,
             });
+            prependOptimisticNotifications([
+                buildOptimisticNotification({
+                    userId: quickTo,
+                    channel: (quickSelectedTemplate?.channel || 'email') as Notification['channel'],
+                    priority: (quickPriority || 'normal') as Notification['priority'],
+                    templateId: quickSelectedTemplate?.id,
+                    data: Object.keys(quickData).length > 0 ? quickData : undefined,
+                    scheduledAt,
+                    metadata: selectedDigestRule ? { digest_key: selectedDigestRule.digest_key } : undefined,
+                }),
+            ]);
             toast.success('Notification sent!');
             setQuickTo('');
             setQuickTemplateId('');
@@ -689,7 +772,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 URL.revokeObjectURL(quickMedia.previewUrl);
             }
             setQuickMedia(null);
-            refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
         } finally {
@@ -786,6 +868,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     notificationsAPI.send(apiKey, { ...payload, webhook_target: target })
                 );
                 await Promise.all(sendPromises);
+                prependOptimisticNotifications(
+                    selectedTargets.map((target) =>
+                        buildOptimisticNotification({
+                            userId: `webhook:${target}`,
+                            channel: payload.channel,
+                            priority: payload.priority,
+                            templateId: payload.template_id,
+                            data: customData,
+                            scheduledAt: payload.scheduled_at,
+                            metadata: {
+                                ...(payload.metadata || {}),
+                                webhook_target: target,
+                            },
+                        })
+                    )
+                );
             } else if (userIds.length > 1) {
                 await notificationsAPI.sendBulk(apiKey, {
                     user_ids: userIds,
@@ -795,8 +893,33 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     data: customData,
                     metadata: payload.metadata,
                 });
+                prependOptimisticNotifications(
+                    userIds.map((uid) =>
+                        buildOptimisticNotification({
+                            userId: uid,
+                            channel: payload.channel,
+                            priority: payload.priority,
+                            templateId: payload.template_id,
+                            data: customData,
+                            scheduledAt: payload.scheduled_at,
+                            metadata: payload.metadata,
+                        })
+                    )
+                );
             } else {
-                await notificationsAPI.send(apiKey, { ...payload, user_id: userIds[0] || formData.user_id });
+                const singleUserId = userIds[0] || formData.user_id;
+                await notificationsAPI.send(apiKey, { ...payload, user_id: singleUserId });
+                prependOptimisticNotifications([
+                    buildOptimisticNotification({
+                        userId: singleUserId,
+                        channel: payload.channel,
+                        priority: payload.priority,
+                        templateId: payload.template_id,
+                        data: customData,
+                        scheduledAt: payload.scheduled_at,
+                        metadata: payload.metadata,
+                    }),
+                ]);
             }
 
             setShowSendForm(false);
@@ -806,7 +929,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setDataInput('');
             setAdvDigestRuleId('');
             clearFormMedia();
-            refresh();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);

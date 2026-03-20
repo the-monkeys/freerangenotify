@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useApiQuery } from '../hooks/use-api-query';
+import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { templatesAPI } from '../services/api';
 import type { Template, CreateTemplateRequest, TemplateVersion } from '../types';
 import { Button } from './ui/button';
@@ -37,6 +37,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
     const [pageSize] = useState(20);
 
     const offset = (page - 1) * pageSize;
+    const templatesCacheKey = `templates-${appId}-${offset}`;
     const {
         data: templatesData,
         loading,
@@ -45,8 +46,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         () => templatesAPI.list(apiKey, pageSize, offset),
         [apiKey, pageSize, offset],
         {
-            cacheKey: `templates-${appId}-${offset}`,
-            staleTime: 60000 // 1 minute
+            cacheKey: templatesCacheKey,
+            staleTime: 60000, // 1 minute
         }
     );
 
@@ -164,14 +165,44 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     body: formData.body,
                     variables: formData.variables,
                 });
+                mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                    if (!current) return current;
+                    return {
+                        ...current,
+                        templates: current.templates.map((tmpl) =>
+                            tmpl.id === editingTemplate.id
+                                ? {
+                                    ...tmpl,
+                                    description: formData.description,
+                                    webhook_target: formData.webhook_target,
+                                    subject: formData.subject,
+                                    body: formData.body,
+                                    variables: formData.variables || [],
+                                }
+                                : tmpl
+                        ),
+                    };
+                });
                 toast.success('Template updated successfully!');
             } else {
-                await templatesAPI.create(apiKey, { ...formData, app_id: appId });
+                const created = await templatesAPI.create(apiKey, { ...formData, app_id: appId }) as Template;
+                mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                    if (!current) return current;
+
+                    const nextTemplates = page === 1
+                        ? [created, ...current.templates].slice(0, pageSize)
+                        : current.templates;
+
+                    return {
+                        ...current,
+                        total: current.total + 1,
+                        templates: nextTemplates,
+                    };
+                });
                 toast.success('Template created successfully!');
             }
             setShowAddForm(false);
             resetForm();
-            fetchTemplates();
         } catch (error) {
             console.error('Failed to save template:', error);
             toast.error(extractErrorMessage(error, editingTemplate ? 'Failed to update template' : 'Failed to create template'));
@@ -211,7 +242,15 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
         setDeleteLoading(true);
         try {
             await templatesAPI.delete(apiKey, deleteTarget.id);
-            fetchTemplates();
+            mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                if (!current) return current;
+                const nextTemplates = current.templates.filter((tmpl) => tmpl.id !== deleteTarget.id);
+                return {
+                    ...current,
+                    total: Math.max(0, current.total - 1),
+                    templates: nextTemplates,
+                };
+            });
             setDeleteTarget(null);
         } catch (error) {
             console.error('Failed to delete template:', error);
@@ -368,7 +407,23 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 // Ignore storage failures.
             }
             toast.success('Saved as template defaults');
-            fetchTemplates();
+            mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                if (!current) return current;
+                return {
+                    ...current,
+                    templates: current.templates.map((item) =>
+                        item.id === tmpl.id
+                            ? {
+                                ...item,
+                                metadata: {
+                                    ...(item.metadata || {}),
+                                    sample_data: parsedData,
+                                },
+                            }
+                            : item
+                    ),
+                };
+            });
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Failed to save template defaults'));
         } finally {
@@ -397,7 +452,21 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
             updatePreviewData(tmpl.id, JSON.stringify(generated, null, 2));
 
             toast.success('Template defaults reset');
-            fetchTemplates();
+            mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                if (!current) return current;
+                return {
+                    ...current,
+                    templates: current.templates.map((item) => {
+                        if (item.id !== tmpl.id) return item;
+                        const nextMetadata = { ...(item.metadata || {}) } as Record<string, any>;
+                        delete nextMetadata.sample_data;
+                        return {
+                            ...item,
+                            metadata: nextMetadata,
+                        };
+                    }),
+                };
+            });
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Failed to reset template defaults'));
         } finally {
@@ -430,8 +499,26 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 variables: tmpl.variables,
             });
             toast.success(`Version saved for "${tmpl.name}"`);
-            // Refresh templates to get the updated version number
-            fetchTemplates();
+            mutateApiQueryCache<{ templates: Template[]; total: number }>(templatesCacheKey, (current) => {
+                if (!current) return current;
+                return {
+                    ...current,
+                    templates: current.templates.map((item) => {
+                        if (item.id !== tmpl.id) return item;
+                        const nextVersion = typeof (item as any).version === 'number'
+                            ? (item as any).version + 1
+                            : typeof (item as any).current_version === 'number'
+                                ? (item as any).current_version + 1
+                                : undefined;
+                        if (typeof nextVersion !== 'number') return item;
+                        return {
+                            ...item,
+                            ...(typeof (item as any).version === 'number' ? { version: nextVersion } : {}),
+                            ...(typeof (item as any).current_version === 'number' ? { current_version: nextVersion } : {}),
+                        };
+                    }),
+                };
+            });
         } catch (error: any) {
             const msg = error?.response?.data?.error || 'Failed to save version';
             toast.error(msg);
@@ -688,12 +775,14 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                     <p className="text-muted-foreground text-center py-8">No templates found.</p>
                 ) : (
                     <div className="space-y-4">
-                        {templates.map((tmpl) => (
+                        {templates.map((tmpl) => {
+                            const templateName = tmpl.name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+                            return (
                             <Card key={tmpl.id} className="bg-card border-border/80 shadow-sm">
                                 <CardContent className="space-y-4 pt-5">
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                         <div className="min-w-0 space-y-1">
-                                            <h4 className="truncate text-base font-semibold text-foreground">{tmpl.name}</h4>
+                                            <h4 className="truncate text-base font-semibold text-foreground">{templateName}</h4>
                                             <p className="text-sm text-muted-foreground line-clamp-1 max-w-lg">{tmpl.description || 'No description provided.'}</p>
                                             <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
                                                 <span className="font-mono">{tmpl.id}</span>
@@ -869,7 +958,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     </div>
                                 </CardContent>
                             </Card>
-                        ))}
+                        )
+                        })}
                     </div>
                 )}
 
