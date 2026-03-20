@@ -9,6 +9,7 @@ import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Card, CardContent } from '../ui/card';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 
@@ -32,6 +33,7 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    const [controlFilter, setControlFilter] = useState('');
 
     useEffect(() => {
         if (open) {
@@ -95,6 +97,20 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
         groups[g].push(ctrl);
     }
 
+    const normalizedFilter = controlFilter.trim().toLowerCase();
+    const filteredGroups = Object.entries(groups)
+        .map(([groupName, groupControls]) => {
+            if (!normalizedFilter) return [groupName, groupControls] as const;
+            const filtered = groupControls.filter((ctrl) => {
+                const label = ctrl.label?.toLowerCase() || '';
+                const key = ctrl.key?.toLowerCase() || '';
+                const help = ctrl.help_text?.toLowerCase() || '';
+                return label.includes(normalizedFilter) || key.includes(normalizedFilter) || help.includes(normalizedFilter);
+            });
+            return [groupName, filtered] as const;
+        })
+        .filter(([, groupControls]) => groupControls.length > 0);
+
     const renderControl = (ctrl: ContentControl) => {
         const val = values[ctrl.key] ?? '';
 
@@ -113,7 +129,7 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
                         value={val}
                         onChange={e => updateValue(ctrl.key, e.target.value)}
                         placeholder={ctrl.placeholder}
-                        className="h-[80px]"
+                        className="h-20"
                     />
                 );
             case 'url':
@@ -191,7 +207,7 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
             onClose={() => onOpenChange(false)}
             title={`Content Controls: ${templateName}`}
         >
-            <div className="space-y-5 p-1">
+            <div className="space-y-4 p-1">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -207,22 +223,42 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
                     </div>
                 ) : (
                     <>
-                        {Object.entries(groups).map(([groupName, groupControls]) => (
-                            <div key={groupName} className="border border-border rounded-lg overflow-hidden">
+                        <Card className="border-border/80">
+                            <CardContent className="space-y-2 p-3.5">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <Label className="text-xs">Find control</Label>
+                                    <p className="text-xs text-muted-foreground">{controls.length} controls</p>
+                                </div>
+                                <Input
+                                    value={controlFilter}
+                                    onChange={(e) => setControlFilter(e.target.value)}
+                                    placeholder="Search by label, key, or help text"
+                                />
+                            </CardContent>
+                        </Card>
+
+                        {filteredGroups.map(([groupName, groupControls]) => (
+                            <div key={groupName} className="overflow-hidden rounded-lg border border-border">
                                 <button
                                     onClick={() => toggleGroup(groupName)}
-                                    className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/50 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+                                    className="w-full flex items-center justify-between px-4 py-2.5 bg-muted/45 text-sm font-medium text-foreground hover:bg-muted transition-colors"
                                 >
-                                    {groupName}
-                                    {collapsedGroups[groupName]
-                                        ? <ChevronDown className="h-4 w-4" />
-                                        : <ChevronUp className="h-4 w-4" />}
+                                    <span>{groupName}</span>
+                                    <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                                        {groupControls.length}
+                                        {collapsedGroups[groupName]
+                                            ? <ChevronDown className="h-4 w-4" />
+                                            : <ChevronUp className="h-4 w-4" />}
+                                    </span>
                                 </button>
                                 {!collapsedGroups[groupName] && (
-                                    <div className="p-4 space-y-4">
+                                    <div className="space-y-3 p-4">
                                         {groupControls.map(ctrl => (
-                                            <div key={ctrl.key} className="space-y-1.5">
-                                                <Label className="text-xs font-medium">{ctrl.label}</Label>
+                                            <div key={ctrl.key} className="rounded-md border border-border/80 bg-background p-3 space-y-1.5">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <Label className="text-xs font-medium">{ctrl.label}</Label>
+                                                    <span className="text-[11px] font-mono text-muted-foreground">{ctrl.key}</span>
+                                                </div>
                                                 {renderControl(ctrl)}
                                                 {ctrl.help_text && (
                                                     <p className="text-xs text-muted-foreground">{ctrl.help_text}</p>
@@ -233,6 +269,12 @@ const TemplateControlsPanel: React.FC<TemplateControlsPanelProps> = ({
                                 )}
                             </div>
                         ))}
+
+                        {filteredGroups.length === 0 && (
+                            <div className="rounded-lg border border-border/80 bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                                No controls match the current search.
+                            </div>
+                        )}
 
                         <div className="flex gap-2 pt-2">
                             <Button

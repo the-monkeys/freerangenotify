@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { EmailBlockBuilder } from './templates/EmailBlockBuilder';
+import { Badge } from './ui/badge';
 
 interface TemplateEditorProps {
     content: string;
@@ -75,21 +76,26 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
     // Placed AFTER all hooks to comply with React's Rules of Hooks.
     if (channel !== 'email') {
         return (
-            <Textarea
-                className="min-h-[200px] font-mono text-sm"
-                value={content}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder || 'Write your template content...'}
-            />
+            <div className="space-y-2">
+                <div className="rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                    Plain text editor for this channel.
+                </div>
+                <Textarea
+                    className="min-h-55 font-mono text-sm"
+                    value={content}
+                    onChange={(e) => onChange(e.target.value)}
+                    placeholder={placeholder || 'Write your template content...'}
+                />
+            </div>
         );
     }
 
     // Email channel: Builder (drag-and-drop blocks), Visual (contentEditable), or HTML
     return (
-        <div className="space-y-2">
-            <div className="border rounded overflow-hidden">
+        <div className="space-y-3">
+            <div className="rounded-lg border border-border/80 overflow-hidden bg-background">
                 {/* Toolbar */}
-                <div className="flex items-center gap-1 p-2 border-b bg-muted/30 flex-wrap">
+                <div className="flex items-center gap-1.5 p-2 border-b bg-muted/25 flex-wrap">
                     <Button
                         type="button"
                         variant={mode === 'builder' ? 'default' : 'ghost'}
@@ -114,6 +120,9 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
                     >
                         HTML
                     </Button>
+                    <Badge variant="outline" className="ml-auto text-[11px]">
+                        Email editor
+                    </Badge>
 
                     {mode === 'visual' && (
                         <>
@@ -151,14 +160,14 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
                                     const widthAttr = width ? ` width="${width}"` : '';
                                     const img = `<img src="${url}" alt="${alt}"${widthAttr} style="max-width:100%;height:auto;" />`;
                                     execCommand('insertHTML', img);
-                                }}>🖼 Image</Button>
+                                }}>Image</Button>
                         </>
                     )}
                 </div>
 
                 {/* Editor area */}
                 {mode === 'builder' ? (
-                    <div className="p-4 min-h-[300px] bg-white">
+                    <div className="p-4 min-h-75 bg-white">
                         <EmailBlockBuilder
                             content={content}
                             onChange={onChange}
@@ -171,12 +180,12 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
                         ref={editorRef}
                         contentEditable
                         suppressContentEditableWarning
-                        className="p-4 min-h-[300px] prose max-w-none focus:outline-none bg-white"
+                        className="p-4 min-h-75 prose max-w-none focus:outline-none bg-white"
                         onInput={handleEditorInput}
                     />
                 ) : (
-                    <textarea
-                        className="w-full min-h-[300px] font-mono text-sm p-4 border-0 focus:outline-none resize-y"
+                    <Textarea
+                        className="w-full min-h-75 rounded-none border-0 font-mono text-sm p-4 resize-y focus-visible:ring-0"
                         value={content}
                         onChange={handleHtmlChange}
                         placeholder={placeholder || 'Enter raw HTML...'}
@@ -186,11 +195,11 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ content, onChange, chan
 
             {/* Live preview for email */}
             {content && (
-                <div>
-                    <p className="text-xs text-gray-500 font-semibold mb-1 uppercase">Live Preview</p>
+                <div className="rounded-lg border border-border/80 bg-background p-3">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live preview</p>
                     <iframe
                         srcDoc={content}
-                        className="w-full h-[300px] border rounded bg-white"
+                        className="w-full h-75 rounded-md border bg-white"
                         sandbox=""
                         title="Email Template Preview"
                     />

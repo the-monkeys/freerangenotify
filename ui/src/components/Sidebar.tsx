@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2 } from 'lucide-react';
+import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -10,32 +10,33 @@ import {
     Sidebar as AppSidebar,
     SidebarContent,
     SidebarFooter,
-    SidebarGroup,
-    SidebarGroupContent,
-    SidebarGroupLabel,
     SidebarHeader,
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    SidebarSeparator,
     useSidebar,
 } from './ui/sidebar';
+import { Logo } from './ui/logo';
+import { Button } from './ui/button';
 
 interface NavItem {
     label: string;
     icon: React.ReactNode;
     to: string;
-    section: string;
 }
 
-const navItems: NavItem[] = [
-    { label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, to: '/apps', section: 'MAIN' },
-    { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants', section: 'MAIN' },
-    { label: 'Workflows', icon: <Workflow className="h-4 w-4" />, to: '/workflows', section: 'MAIN' },
-    { label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, to: '/digest-rules', section: 'MAIN' },
-    { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics', section: 'MAIN' },
-    { label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" />, to: '/dashboard', section: 'ADMIN' },
-    { label: 'Audit Logs', icon: <ScrollText className="h-4 w-4" />, to: '/audit', section: 'ADMIN' },
-    { label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs', section: 'ADMIN' },
+const mainItems: NavItem[] = [
+    { label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, to: '/apps' },
+    { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants' },
+    { label: 'Workflows', icon: <Workflow className="h-4 w-4" />, to: '/workflows' },
+    { label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, to: '/digest-rules' },
+    { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics' },
+];
+const adminItems: NavItem[] = [
+    { label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" />, to: '/dashboard' },
+    { label: 'Audit Logs', icon: <ScrollText className="h-4 w-4" />, to: '/audit' },
+    { label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs' },
 ];
 
 const isNavItemActive = (pathname: string, to: string): boolean => {
@@ -51,7 +52,7 @@ const SidebarNav: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
-    const { isMobile, setOpenMobile } = useSidebar();
+    const { isMobile, setOpenMobile, state, setOpen, toggleSidebar } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
@@ -65,68 +66,104 @@ const SidebarNav: React.FC = () => {
         navigate('/register', { replace: true });
     };
 
-    const sections = [...new Set(navItems.map(item => item.section))];
+    const handleLogoClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (state === 'collapsed') {
+            e.preventDefault();
+            setOpen(true);
+        }
+    };
 
     const handleItemNavigate = () => {
         if (isMobile) {
             setOpenMobile(false);
+            return;
         }
+
+        // if (state === 'collapsed') {
+        //     setOpen(true);
+        // }
     };
 
     return (
         <>
-            <SidebarHeader className="px-3 py-4">
+            <SidebarHeader className="p-4 flex flex-row items-center justify-between">
                 <Link
                     to="/"
-                    className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 no-underline transition-colors hover:bg-sidebar-accent/50 hover:no-underline group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                    className="group flex flex-1 items-center gap-2.5 rounded-lg no-underline transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                    onClick={handleLogoClick}
                 >
-                    <Bell className="h-5 w-5 text-accent" />
+                    <div className="relative size-5">
+                        <Logo className={`size-5 ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'}`} />
+                        {state === 'collapsed' && (
+                            <SidebarOpen className="absolute inset-0 size-5 dark:text-white text-accent opacity-0 transition-opacity group-hover:opacity-100" />
+                        )}
+                    </div>
                     <span className="text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
                         FreeRange <span className="font-normal text-muted-foreground">Notify</span>
                     </span>
                 </Link>
+                <Button
+                    type="button"
+                    variant={"ghost"}
+                    onClick={toggleSidebar}
+                    className={`rounded p-1 transition-colors hover:bg-sidebar-accent/50 ${state === 'collapsed' ? 'hidden' : 'block'}`}
+                    aria-label="Collapse sidebar"
+                >
+                    <SidebarClose className="size-5 dark:text-white text-accent" />
+                </Button>
             </SidebarHeader>
 
-            <SidebarContent className="">
-                {sections.map(section => (
-                    <SidebarGroup key={section} className="">
-                        <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground/90">
-                            {section}
-                        </SidebarGroupLabel>
-                        <SidebarGroupContent>
-                            <SidebarMenu>
-                                {navItems
-                                    .filter(item => item.section === section)
-                                    .map(item => (
-                                        <SidebarMenuItem key={item.to}>
-                                            <SidebarMenuButton
-                                                asChild
-                                                isActive={isNavItemActive(location.pathname, item.to)}
-                                                tooltip={item.label}
-                                            >
-                                                <NavLink to={item.to} onClick={handleItemNavigate} className={"p-0"}>
-                                                    {item.icon}
-                                                    <span>{item.label}</span>
-                                                </NavLink>
-                                            </SidebarMenuButton>
-                                        </SidebarMenuItem>
-                                    ))}
-                            </SidebarMenu>
-                        </SidebarGroupContent>
-                    </SidebarGroup>
-                ))}
+            <SidebarContent className="overflow-hidden">
+                <SidebarMenu>
+                    {mainItems.map((item) => (
+                        <SidebarMenuItem key={item.to} className="px-1">
+                            <NavLink
+                                to={item.to}
+                                className={({ isActive }) =>
+                                    `flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 ${isActive || isNavItemActive(location.pathname, item.to)
+                                        ? 'bg-sidebar-accent/50 text-foreground'
+                                        : ''
+                                    }`
+                                }
+                                onClick={handleItemNavigate}
+                            >
+                                {item.icon}
+                                <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
+                            </NavLink>
+                        </SidebarMenuItem>
+                    ))}
+                    <SidebarSeparator className="my-2 border-border/70" />
+                    {adminItems.map((item) => (
+                        <SidebarMenuItem key={item.to} className="px-1">
+                            <NavLink
+                                to={item.to}
+                                className={({ isActive }) =>
+                                    `flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 ${isActive || isNavItemActive(location.pathname, item.to)
+                                        ? 'bg-sidebar-accent/50 text-foreground'
+                                        : ''
+                                    }`
+                                }
+                                onClick={handleItemNavigate}
+                            >
+                                {item.icon}
+                                <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
+                            </NavLink>
+                        </SidebarMenuItem>
+                    ))}
+                </SidebarMenu>
             </SidebarContent>
 
             <SidebarFooter className="">
-                <button
-                    onClick={toggleTheme}
-                    className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-                >
-                    {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-                    <span className="group-data-[collapsible=icon]:hidden">
-                        {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
-                    </span>
-                </button>
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton onClick={toggleTheme} className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+                            {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                            <span className="group-data-[collapsible=icon]:hidden">
+                                {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                            </span>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
 
                 <div className="pt-1">
                     <UserMenu

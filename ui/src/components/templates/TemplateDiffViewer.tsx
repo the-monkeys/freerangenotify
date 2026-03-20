@@ -6,8 +6,9 @@ import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Label } from '../ui/label';
+import { Badge } from '../ui/badge';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 
 interface TemplateDiffViewerProps {
     apiKey: string;
@@ -79,42 +80,50 @@ const TemplateDiffViewer: React.FC<TemplateDiffViewerProps> = ({
             onClose={() => onOpenChange(false)}
             title={`Compare Versions: ${templateName}`}
         >
-            <div className="space-y-6 p-1">
-                {/* Version selectors */}
-                <div className="flex items-end gap-3">
-                    <div className="flex-1 space-y-1.5">
-                        <Label className="text-xs">From version</Label>
-                        <Select value={fromVersion} onValueChange={setFromVersion}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {versions.map(v => (
-                                    <SelectItem key={v.id} value={String(v.version)}>
-                                        v{v.version}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+            <div className="space-y-5 p-1">
+                <div className="rounded-lg border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+                    Pick two template versions to compare field-level changes.
+                </div>
+
+                <div className="rounded-xl border border-border bg-background p-3.5 sm:p-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs">From version</Label>
+                            <Select value={fromVersion} onValueChange={setFromVersion}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select version" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {versions.map(v => (
+                                        <SelectItem key={v.id} value={String(v.version)}>
+                                            v{v.version}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="hidden sm:flex h-9 items-center justify-center text-muted-foreground">
+                            <ArrowRight className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs">To version</Label>
+                            <Select value={toVersion} onValueChange={setToVersion}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select version" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {versions.map(v => (
+                                        <SelectItem key={v.id} value={String(v.version)}>
+                                            v{v.version}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button onClick={handleCompare} disabled={loading || !fromVersion || !toVersion} size="sm">
+                            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Compare'}
+                        </Button>
                     </div>
-                    <div className="flex-1 space-y-1.5">
-                        <Label className="text-xs">To version</Label>
-                        <Select value={toVersion} onValueChange={setToVersion}>
-                            <SelectTrigger>
-                                <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {versions.map(v => (
-                                    <SelectItem key={v.id} value={String(v.version)}>
-                                        v{v.version}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <Button onClick={handleCompare} disabled={loading || !fromVersion || !toVersion}>
-                        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Compare'}
-                    </Button>
                 </div>
 
                 {/* Diff display */}
@@ -126,15 +135,20 @@ const TemplateDiffViewer: React.FC<TemplateDiffViewerProps> = ({
                             </p>
                         ) : (
                             normalizedChanges().map((change) => (
-                                <div key={change.field} className="space-y-1">
-                                    <p className="text-sm font-medium text-foreground">{change.field}</p>
-                                    <div className="bg-red-50 border-l-2 border-red-400 px-3 py-2 rounded-r">
-                                        <pre className="whitespace-pre-wrap text-xs text-red-800 font-mono">
+                                <div key={change.field} className="space-y-2 rounded-xl border border-border bg-background p-3">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-sm font-medium text-foreground">{change.field}</p>
+                                        <Badge variant="outline" className="text-[11px]">
+                                            v{diff.from_version} to v{diff.to_version}
+                                        </Badge>
+                                    </div>
+                                    <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+                                        <pre className="whitespace-pre-wrap text-xs text-foreground font-mono">
                                             - {renderValue(change.old)}
                                         </pre>
                                     </div>
-                                    <div className="bg-green-50 border-l-2 border-green-400 px-3 py-2 rounded-r">
-                                        <pre className="whitespace-pre-wrap text-xs text-green-800 font-mono">
+                                    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                                        <pre className="whitespace-pre-wrap text-xs text-foreground font-mono">
                                             + {renderValue(change.newer)}
                                         </pre>
                                     </div>

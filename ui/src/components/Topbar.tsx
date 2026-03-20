@@ -1,9 +1,10 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, RefreshCcw } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { SidebarTrigger } from './ui/sidebar';
+import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
 
 function useBreadcrumb(): { label: string; segments: { label: string; path?: string }[] } {
@@ -76,7 +77,7 @@ const Topbar: React.FC = () => {
         <header className="h-14 shrink-0 border-b border-border/70 bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/85">
             <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <SidebarTrigger className="size-8 text-muted-foreground hover:bg-muted/70 hover:text-foreground" />
+                    <SidebarTrigger className="p-1 md:hidden" />
 
                     <nav className="flex items-center gap-1 text-sm">
                         {segments.map((segment, i) => {
@@ -105,6 +106,17 @@ const Topbar: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => window.location.reload()}
+                        aria-label="Refresh page"
+                        title="Refresh"
+                        className="text-muted-foreground"
+                    >
+                        <RefreshCcw className="h-4 w-4" />
+                    </Button>
                     <NotificationBell isAuthenticated={!!user} />
                 </div>
             </div>

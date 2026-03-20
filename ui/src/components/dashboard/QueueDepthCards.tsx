@@ -27,6 +27,8 @@ const SPARKLINE_COLORS: Record<string, string> = {
     low: '#60a5fa',    // blue-400
 };
 
+const PANEL_CARD_CLASSES = 'border-border/70 bg-white/80 shadow-sm backdrop-blur-sm dark:bg-zinc-900/60';
+
 function Sparkline({ data, color }: { data: number[]; color: string }) {
     if (data.length < 2) return null;
     const w = 120, h = 28, pad = 1;
@@ -109,7 +111,7 @@ export default function QueueDepthCards({ stats, dlqItems, onReplay, replaying }
                         const priority = extractPriority(queue);
                         const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
                         return (
-                            <Card key={queue} className={PRIORITY_STYLES[priority] || ''}>
+                            <Card key={queue} className={`${PANEL_CARD_CLASSES} ${PRIORITY_STYLES[priority] || ''}`}>
                                 <CardContent className="pt-5 pb-4">
                                     <h4 className="text-xs text-muted-foreground uppercase mb-2 tracking-wider">
                                         {queue.replace('frn:queue:', '').toUpperCase()}
@@ -140,14 +142,14 @@ export default function QueueDepthCards({ stats, dlqItems, onReplay, replaying }
             </div>
 
             {/* DLQ Section */}
-            <Card>
+            <Card className={PANEL_CARD_CLASSES}>
                 <CardHeader>
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                         <CardTitle className="text-red-600">Dead Letter Queue</CardTitle>
                         <div className="flex items-center gap-2">
                             <Badge
                                 variant={dlqItems.length > 0 ? 'destructive' : 'outline'}
-                                className={dlqItems.length > 0 ? 'bg-red-100 text-red-700 border-red-300' : 'bg-green-100 text-green-700 border-green-300'}
+                                className={dlqItems.length > 0 ? 'border-red-300 bg-red-100 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300' : 'border-green-300 bg-green-100 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'}
                             >
                                 {dlqItems.length} items
                             </Badge>
@@ -212,7 +214,7 @@ export default function QueueDepthCards({ stats, dlqItems, onReplay, replaying }
                                             <TableCell>
                                                 <Badge variant="outline" className="text-xs">{item.priority || 'normal'}</Badge>
                                             </TableCell>
-                                            <TableCell className="text-red-600 text-sm">{item.reason}</TableCell>
+                                            <TableCell className="text-sm text-red-600 dark:text-red-400">{item.reason}</TableCell>
                                             <TableCell className="text-foreground text-sm">
                                                 {item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}
                                             </TableCell>

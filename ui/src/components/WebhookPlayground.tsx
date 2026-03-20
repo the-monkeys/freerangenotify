@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
@@ -70,17 +69,16 @@ export default function WebhookPlayground() {
     }, []);
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    Webhook Playground
-                    <Badge variant="outline" className="text-xs font-normal">Beta</Badge>
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        <section className="space-y-4">
+            <h3 className="flex items-center gap-2 text-lg font-semibold">
+                Webhook Playground
+                <Badge variant="outline" className="text-xs font-normal">Beta</Badge>
+            </h3>
+
+            <div className="space-y-4 rounded-lg border border-border/70 bg-white/70 p-4 dark:bg-zinc-900/40">
                 {!playgroundURL ? (
                     <div className="text-center py-6 space-y-3">
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                             Create a temporary webhook URL to test delivery without external tools. URLs expire after 30 minutes.
                         </p>
                         <Button onClick={createPlayground} disabled={creating}>
@@ -92,10 +90,10 @@ export default function WebhookPlayground() {
                         <div className="space-y-2">
                             <Label>Your test webhook URL (expires in 30 min)</Label>
                             <div className="flex gap-2">
-                                <Input value={playgroundURL} readOnly className="font-mono text-sm bg-gray-50" />
+                                <Input value={playgroundURL} readOnly className="bg-muted/40 font-mono text-sm" />
                                 <Button variant="outline" size="sm" onClick={copyURL}>Copy</Button>
                             </div>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                                 Use this URL as a webhook target when sending notifications. Payloads appear below in real-time.
                             </p>
                         </div>
@@ -106,7 +104,7 @@ export default function WebhookPlayground() {
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
                                 </span>
-                                <span className="text-xs text-green-600 font-medium">Listening for payloads</span>
+                                <span className="text-xs font-medium text-green-600 dark:text-green-400">Listening for payloads</span>
                             </div>
                             <Button variant="ghost" size="sm" className="text-red-500" onClick={handleDestroy}>
                                 Stop & Close
@@ -119,18 +117,18 @@ export default function WebhookPlayground() {
                                 <Badge variant="outline" className="ml-2 text-xs">{payloads.length}</Badge>
                             </h4>
                             {payloads.length === 0 ? (
-                                <p className="text-sm text-gray-400 italic py-4 text-center">
+                                <p className="py-4 text-center text-sm italic text-muted-foreground">
                                     No payloads received yet. Send a webhook to the URL above.
                                 </p>
                             ) : (
                                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
                                     {payloads.map((p, i) => (
-                                        <div key={i} className="bg-gray-50 border border-gray-200 rounded p-3">
+                                        <div key={i} className="rounded border border-border/70 bg-muted/40 p-3 dark:bg-zinc-800/40">
                                             <div className="flex justify-between items-center mb-2">
                                                 <Badge variant="outline" className="text-xs">#{i + 1}</Badge>
-                                                <span className="text-xs text-gray-400">{p.received_at ? new Date(p.received_at).toLocaleTimeString() : ''}</span>
+                                                <span className="text-xs text-muted-foreground">{p.received_at ? new Date(p.received_at).toLocaleTimeString() : ''}</span>
                                             </div>
-                                            <pre className="whitespace-pre-wrap text-xs font-mono text-gray-800 overflow-auto max-h-[200px]">
+                                            <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap text-xs font-mono text-foreground">
                                                 {JSON.stringify(p.body, null, 2)}
                                             </pre>
                                         </div>
@@ -140,7 +138,7 @@ export default function WebhookPlayground() {
                         </div>
                     </div>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+        </section>
     );
 }

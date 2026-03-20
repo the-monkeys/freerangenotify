@@ -127,7 +127,7 @@ const HeroIllustration: React.FC = () => {
 
                 {/* ── Inbox card ──────────────────────────────────── */}
                 <motion.div
-                    className="relative flex flex-col w-120 h-120 rounded-[18px] border border-black/9 dark:border-white/9 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-xl shadow-[0_1px_2px_rgba(0,0,0,0.04),0_3px_16px_rgba(0,0,0,0.04)] overflow-hidden"
+                    className="relative flex flex-col w-120 h-120 -ml-12 rounded-[18px] border border-black/9 dark:border-white/9 bg-white/90 dark:bg-neutral-950/90 backdrop-blur-xl shadow-[0_1px_2px_rgba(0,0,0,0.04),0_3px_16px_rgba(0,0,0,0.04)] overflow-hidden"
                     initial={{ opacity: 0, x: -22 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
@@ -171,7 +171,7 @@ const HeroIllustration: React.FC = () => {
                         ))}
                     </div>
 
-                    {/* Message list — flex-1 so it fills the remaining fixed height */}
+                    {/* Message list */}
                     <div className="relative z-10 flex-1 overflow-hidden">
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.div
@@ -230,7 +230,7 @@ const HeroIllustration: React.FC = () => {
 
                 {/* ── Phone mockup ────────────────────────────────── */}
                 <motion.div
-                    className="absolute -right-12 -bottom-8"
+                    className="absolute right-0 -bottom-8"
                     initial={{ opacity: 0, x: -20, scale: 0.95 }}
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     transition={{ duration: 0.55, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}

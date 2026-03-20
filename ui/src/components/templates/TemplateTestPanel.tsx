@@ -9,8 +9,9 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { Card, CardContent } from '../ui/card';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { ChevronsUpDown, Loader2 } from 'lucide-react';
 
 interface TemplateTestPanelProps {
     apiKey: string;
@@ -35,6 +36,9 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [savingDefaults, setSavingDefaults] = useState(false);
     const [variableFilter, setVariableFilter] = useState('');
+    const [showAllQuickVariables, setShowAllQuickVariables] = useState(false);
+
+    const MAX_QUICK_VARIABLES = 18;
 
     const getStorageKey = () => `frn:template-test-variables:${template.app_id}:${template.id}`;
 
@@ -66,6 +70,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
             setJsonError('');
             setSelectedUserId('');
             setVariableFilter('');
+            setShowAllQuickVariables(false);
             fetchUsers();
         }
     }, [open, template.id]);
@@ -192,50 +197,60 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
             onClose={() => onOpenChange(false)}
             title="Send Test Notification"
         >
-            <div className="space-y-5 p-1">
-                {/* Template info */}
-                <div className="flex items-center gap-2">
+            <div className="space-y-4 p-1">
+                <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{template.name}</span>
                     <Badge variant="outline" className="text-xs">{template.channel}</Badge>
+                    <Badge variant="secondary" className="text-xs">
+                        {(template.variables || []).length} variables
+                    </Badge>
                 </div>
 
-                {/* User picker */}
-                <div className="space-y-1.5">
-                    <Label className="text-xs">Recipient User</Label>
-                    <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                        <SelectTrigger>
-                            <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select a user...'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {users.map(u => (
-                                <SelectItem key={u.user_id} value={u.user_id}>
-                                    {u.email || u.user_id}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+                <Card className="border-border/80">
+                    <CardContent className="space-y-1.5 p-3.5">
+                        <Label className="text-xs">Recipient User</Label>
+                        <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                            <SelectTrigger>
+                                <SelectValue placeholder={loadingUsers ? 'Loading users...' : 'Select a user...'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {users.map(u => (
+                                    <SelectItem key={u.user_id} value={u.user_id}>
+                                        {u.email || u.user_id}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </CardContent>
+                </Card>
 
-                {/* Variables editor */}
-                <div className="space-y-1.5">
-                    <Label className="text-xs">Variables (JSON)</Label>
-                    <Textarea
-                        className="h-[140px] font-mono text-xs"
-                        value={variablesJson}
-                        onChange={(e) => updateVariablesJson(e.target.value)}
-                        placeholder='{"user_name": "Alice"}'
-                    />
-                    {jsonError && <p className="text-xs text-red-600">{jsonError}</p>}
-                    <p className="text-xs text-muted-foreground">{variableHint}</p>
-                    {template.variables && template.variables.length > 0 && (() => {
+                <Card className="border-border/80">
+                    <CardContent className="space-y-2 p-3.5">
+                        <Label className="text-xs">Variables (JSON)</Label>
+                        <Textarea
+                            className="h-44 font-mono text-xs"
+                            value={variablesJson}
+                            onChange={(e) => updateVariablesJson(e.target.value)}
+                            placeholder='{"user_name": "Alice"}'
+                        />
+                        {jsonError && <p className="text-xs text-red-600">{jsonError}</p>}
+                        <p className="text-xs text-muted-foreground">{variableHint}</p>
+
+                        {template.variables && template.variables.length > 0 && (() => {
                         try {
                             const parsed = JSON.parse(variablesJson || '{}') as Record<string, any>;
-                            const filteredVariables = template.variables.filter((v) =>
+                            const filtered = template.variables.filter((v) =>
                                 v.toLowerCase().includes(variableFilter.trim().toLowerCase())
                             );
+                            const filteredVariables = showAllQuickVariables
+                                ? filtered
+                                : filtered.slice(0, MAX_QUICK_VARIABLES);
                             return (
-                                <div className="border border-border rounded p-3 bg-muted/40">
-                                    <div className="text-xs text-muted-foreground font-semibold mb-2">QUICK VARIABLE FORM</div>
+                                <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                        <p className="text-xs font-semibold text-muted-foreground">Quick Variable Form</p>
+                                        <p className="text-xs text-muted-foreground">{filtered.length} match</p>
+                                    </div>
                                     <div className="mb-2">
                                         <Input
                                             value={variableFilter}
@@ -243,7 +258,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                                             placeholder="Search variable name..."
                                         />
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                                    <div className="grid max-h-60 grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
                                         {filteredVariables.map((variable) => (
                                             <div key={variable} className="space-y-1">
                                                 <Label className="text-xs">{variable}</Label>
@@ -258,7 +273,21 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                                             </div>
                                         ))}
                                     </div>
-                                    {filteredVariables.length === 0 && (
+                                    {filtered.length > MAX_QUICK_VARIABLES && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="mt-2 h-6 px-2 text-xs"
+                                            onClick={() => setShowAllQuickVariables((prev) => !prev)}
+                                        >
+                                            <ChevronsUpDown className="h-3.5 w-3.5" />
+                                            {showAllQuickVariables
+                                                ? 'Show fewer'
+                                                : `Show all ${filtered.length}`}
+                                        </Button>
+                                    )}
+                                    {filtered.length === 0 && (
                                         <p className="text-xs text-muted-foreground mt-2">No variables match your search.</p>
                                     )}
                                 </div>
@@ -271,15 +300,16 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                             );
                         }
                     })()}
-                </div>
+                    </CardContent>
+                </Card>
 
                 {/* Action buttons */}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     <Button
                         variant="outline"
                         onClick={handlePreview}
                         disabled={loadingPreview}
-                        className="flex-1"
+                        className="flex-1 min-w-30"
                     >
                         {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                         Preview
@@ -288,7 +318,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                         variant="outline"
                         onClick={handleSaveDefaults}
                         disabled={savingDefaults}
-                        className="flex-1"
+                        className="flex-1 min-w-34"
                     >
                         {savingDefaults ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                         Save as Default
@@ -296,7 +326,7 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                     <Button
                         onClick={handleSendTest}
                         disabled={loadingSend || !selectedUserId}
-                        className="flex-1"
+                        className="flex-1 min-w-30"
                     >
                         {loadingSend ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                         Send Test
@@ -305,18 +335,18 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
 
                 {/* Preview output */}
                 {preview && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 rounded-lg border border-border/80 bg-background p-3">
                         <Label className="text-xs">Preview Output</Label>
                         {template.channel === 'email' ? (
                             <iframe
                                 srcDoc={preview}
                                 sandbox=""
-                                className="w-full border rounded bg-white"
+                                className="w-full border rounded-md bg-white"
                                 style={{ height: '300px' }}
                                 title="Template preview"
                             />
                         ) : (
-                            <div className="bg-muted p-4 rounded border border-border overflow-y-auto max-h-[300px] text-sm text-foreground whitespace-pre-wrap">
+                            <div className="bg-muted/35 p-4 rounded-md border border-border overflow-y-auto max-h-75 text-sm text-foreground whitespace-pre-wrap">
                                 {preview}
                             </div>
                         )}

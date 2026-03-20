@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
@@ -135,14 +134,13 @@ export default function QuickTestPanel() {
     };
 
     return (
-        <Card>
-            <CardHeader>
-                <div>
-                    <CardTitle className="text-base">Quick Test</CardTitle>
-                    <p className="text-xs text-muted-foreground mt-1">Send a test notification end-to-end</p>
-                </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        <section className="space-y-4">
+            <div>
+                <h3 className="text-lg font-semibold">Quick Test</h3>
+                <p className="mt-1 text-xs text-muted-foreground">Send a test notification end-to-end</p>
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-border/70 bg-white/70 p-4 dark:bg-zinc-900/40">
                 {/* Step 1: App */}
                 <div className="space-y-1.5">
                     <Label className="text-xs font-medium">Application</Label>
@@ -235,8 +233,8 @@ export default function QuickTestPanel() {
                 {result && (
                     <div
                         className={`p-3 rounded-md border text-sm ${result.success
-                            ? 'border-green-200 bg-green-50 text-green-700'
-                            : 'border-red-200 bg-red-50 text-red-700'
+                            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+                            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300'
                             }`}
                     >
                         {result.message}
@@ -252,7 +250,7 @@ export default function QuickTestPanel() {
                     View API Documentation
                     <ExternalLink className="h-3 w-3" />
                 </a>
-            </CardContent>
-        </Card>
+            </div>
+        </section>
     );
 }

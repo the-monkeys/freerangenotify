@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { useApiQuery } from '../hooks/use-api-query';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
-import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest, AttributeVar } from '../types';
+import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -22,13 +22,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
-import { WhatsAppPreview } from './WhatsAppPreview';
 import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
+import EditablePreviewPanel from './templates/EditablePreviewPanel';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -74,10 +74,25 @@ function scheduleToISO(datetimeLocal: string, timezone: string): string | undefi
     return localInTimezoneToISO(datetimeLocal, timezone);
 }
 
+/** Sorts template variables by the order they first appear in the template body. */
+function sortVariablesByAppearance(variables: string[], body: string): string[] {
+    return [...variables].sort((a, b) => {
+        const ia = body.indexOf(`{{${a}}}`);
+        const ib = body.indexOf(`{{${b}}}`);
+        return (ia === -1 ? Infinity : ia) - (ib === -1 ? Infinity : ib);
+    });
+}
+
+const SEND_FORM_SHELL_CLASS = 'rounded-xl border border-border/80 bg-muted/35 p-5 space-y-4';
+const SEND_FORM_INFO_CLASS = 'text-sm text-muted-foreground';
+const SEND_FORM_SECTION_CLASS = 'rounded-lg border border-border bg-background';
+type PreviewSource = 'quick' | 'advanced' | 'broadcast';
+
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
     const [filters, setFilters] = useState<{ status?: string; channel?: string; from?: string; to?: string }>({});
+    const notificationsCacheKey = `notifs-${apiKey}-${page}-${JSON.stringify(filters)}`;
 
     // 1. Notifications List
     const {
@@ -87,7 +102,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     } = useApiQuery(
         () => notificationsAPI.list(apiKey, page, pageSize, filters),
         [apiKey, page, pageSize, filters],
-        { cacheKey: `notifs-${apiKey}-${page}-${JSON.stringify(filters)}`, staleTime: 30000 }
+        {
+            cacheKey: notificationsCacheKey,
+            staleTime: 30000,
+        }
     );
 
     const notifications = useMemo(() => notifsData?.notifications || [], [notifsData]);
@@ -166,6 +184,63 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [detailNotif, setDetailNotif] = useState<Notification | null>(null);
     const [bulkActing, setBulkActing] = useState(false);
+
+    const prependOptimisticNotifications = useCallback((entries: Notification[]) => {
+        if (entries.length === 0) return;
+
+        mutateApiQueryCache<{ notifications: Notification[]; total: number }>(
+            notificationsCacheKey,
+            (current) => {
+                if (!current) return current;
+
+                const existing = current.notifications || [];
+                const dedup = new Set(existing.map((item) => item.notification_id));
+                const fresh = entries.filter((item) => !dedup.has(item.notification_id));
+                if (fresh.length === 0) return current;
+
+                return {
+                    ...current,
+                    total: Math.max(0, (current.total || 0) + fresh.length),
+                    notifications: [...fresh, ...existing].slice(0, pageSize),
+                };
+            }
+        );
+    }, [notificationsCacheKey, pageSize]);
+
+    const buildOptimisticNotification = useCallback((input: {
+        userId: string;
+        channel: Notification['channel'];
+        priority: Notification['priority'];
+        templateId?: string;
+        data?: Record<string, any>;
+        scheduledAt?: string;
+        metadata?: Record<string, any>;
+    }): Notification => {
+        const now = new Date().toISOString();
+        const optimisticId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+        return {
+            notification_id: optimisticId,
+            app_id: '',
+            user_id: input.userId,
+            channel: input.channel,
+            priority: input.priority,
+            status: input.scheduledAt ? 'pending' : 'queued',
+            content: {
+                title: '',
+                body: '',
+                data: input.data,
+                media_url: (input.data?.media_url as string | undefined) || undefined,
+            },
+            template_id: input.templateId,
+            metadata: input.metadata,
+            scheduled_at: input.scheduledAt,
+            created_at: now,
+            updated_at: now,
+        };
+    }, []);
 
     const toggleSelect = (id: string) => {
         setSelectedIds(prev => {
@@ -364,7 +439,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setShowBatchSend(false);
             setBatchCsvFile(null);
             setBatchRows([]);
-            refresh();
+            const optimistic = notifications
+                .slice(0, pageSize)
+                .map((item) => buildOptimisticNotification({
+                    userId: item.user_id || '',
+                    channel: (item.channel || 'email') as Notification['channel'],
+                    priority: (item.priority || 'normal') as Notification['priority'],
+                    templateId: item.template_id,
+                    data: item.data,
+                    scheduledAt: item.scheduled_at,
+                }));
+            prependOptimisticNotifications(optimistic);
         } catch (err: any) {
             toast.error(extractErrorMessage(err, 'Batch send failed'));
         } finally {
@@ -401,12 +486,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
     const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
-    const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
-    const [quickPreviewHtml, setQuickPreviewHtml] = useState('');
-    const [quickPreviewLoading, setQuickPreviewLoading] = useState(false);
-    const [quickAttrVars, setQuickAttrVars] = useState<AttributeVar[]>([]);
-    const [quickVarsDrawerOpen, setQuickVarsDrawerOpen] = useState(false);
-    const quickRerenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [quickMedia, setQuickMedia] = useState<{ url: string; previewUrl: string; type: string; name: string } | null>(null);
+    const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
+    const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
+    const [activePreviews, setActivePreviews] = useState<Record<string, { data: string; rendered: string; loading: boolean }>>({});
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
@@ -415,17 +498,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
-    const quickVariables = quickSelectedTemplate?.variables || [];
+    const quickVariables = useMemo(() => {
+        const vars = quickSelectedTemplate?.variables || [];
+        return quickSelectedTemplate?.body ? sortVariablesByAppearance(vars, quickSelectedTemplate.body) : vars;
+    }, [quickSelectedTemplate]);
 
     // Advanced/Broadcast: detect variables from selected template
     const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
-    const formVariables = formSelectedTemplate?.variables || [];
+    const formVariables = useMemo(() => {
+        const vars = formSelectedTemplate?.variables || [];
+        return formSelectedTemplate?.body ? sortVariablesByAppearance(vars, formSelectedTemplate.body) : vars;
+    }, [formSelectedTemplate]);
     const parsedFormData = useMemo(() => {
-        try {
-            return parseCustomData(dataInput) || {};
-        } catch {
-            return {};
-        }
+        const parsed = parseCustomData(dataInput);
+        if (!parsed || typeof parsed !== 'object') return {} as Record<string, string>;
+        const next: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) next[k] = v == null ? '' : String(v);
+        return next;
     }, [dataInput]);
 
     // Helper: get sample_data from template metadata
@@ -446,99 +535,230 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         }
     }, [users, quickTo, quickToManual]);
 
-    // Editable preview: CSS + JS injected into iframe for contenteditable spans
-    const EDITABLE_STYLE = `<style>.frn-editable{outline:none;transition:outline .15s,background-color .15s;cursor:text;border-radius:2px;min-width:1ch;display:inline}.frn-editable:hover{outline:2px dashed #3b82f6;background-color:rgba(59,130,246,.05)}.frn-editable:focus{outline:2px solid #3b82f6;background-color:rgba(59,130,246,.08)}</style>`;
-    const EDITABLE_SCRIPT = `<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-frn-var]').forEach(function(el){el.addEventListener('input',function(){window.parent.postMessage({type:'frn-var-edit',variable:el.getAttribute('data-frn-var'),value:el.textContent||''},'*')})})});<\/script>`;
+    const updateFormDataVariable = useCallback((variable: string, value: string) => {
+        setDataInput((prev) => {
+            const current = parseCustomData(prev);
+            const next: Record<string, string> = current && typeof current === 'object'
+                ? Object.fromEntries(Object.entries(current).map(([k, v]) => [k, v == null ? '' : String(v)]))
+                : {};
+            next[variable] = value;
+            return JSON.stringify(next, null, 2);
+        });
+    }, []);
 
-    const injectEditableSupport = (html: string) => {
-        let result = html;
-        if (result.includes('</head>')) {
-            result = result.replace('</head>', EDITABLE_STYLE + '</head>');
-        } else {
-            result = EDITABLE_STYLE + result;
-        }
-        if (result.includes('</body>')) {
-            result = result.replace('</body>', EDITABLE_SCRIPT + '</body>');
-        } else {
-            result = result + EDITABLE_SCRIPT;
-        }
-        return result;
-    };
+    const removeFormDataVariable = useCallback((variable: string) => {
+        setDataInput((prev) => {
+            const current = parseCustomData(prev);
+            const next: Record<string, string> = current && typeof current === 'object'
+                ? Object.fromEntries(Object.entries(current).map(([k, v]) => [k, v == null ? '' : String(v)]))
+                : {};
+            delete next[variable];
+            return Object.keys(next).length > 0 ? JSON.stringify(next, null, 2) : '';
+        });
+    }, []);
 
-    // Render editable preview for Quick Send
-    const renderQuickPreview = useCallback(async () => {
-        if (!quickSelectedTemplate) return;
-        setQuickPreviewLoading(true);
+    const handleFormMediaUpload = useCallback(async (files: File[]) => {
+        if (files.length === 0) return;
+
+        const remainingLimit = 5 - mediaFiles.length;
+        const filesToUpload = files.slice(0, remainingLimit);
+
+        if (files.length > remainingLimit) {
+            toast.warning(`Only ${remainingLimit} more file(s) can be added.`);
+        }
+
+        for (const file of filesToUpload) {
+            if (file.size > 16 * 1024 * 1024) {
+                toast.error(`${file.name} is too large (max 16 MB)`);
+                continue;
+            }
+
+            const localUrl = URL.createObjectURL(file);
+            try {
+                toast.info(`Uploading ${file.name}...`);
+                const result = await mediaAPI.upload(apiKey, file);
+                setMediaFiles((prev) => {
+                    const next = [...prev, {
+                        url: result.url,
+                        previewUrl: localUrl,
+                        type: file.type,
+                        name: file.name,
+                    }];
+                    if (next.length === 1) {
+                        setFormData((fd) => ({ ...fd, media_url: result.url } as any));
+                        updateFormDataVariable('media_url', result.url);
+                    }
+                    return next;
+                });
+            } catch (err) {
+                URL.revokeObjectURL(localUrl);
+                toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+            }
+        }
+
+        toast.success('Upload complete');
+    }, [apiKey, mediaFiles.length, updateFormDataVariable]);
+
+    const removeFormMediaAt = useCallback((idx: number) => {
+        const target = mediaFiles[idx];
+        if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+        const newFiles = mediaFiles.filter((_, i) => i !== idx);
+        setMediaFiles(newFiles);
+        const primary = newFiles.length > 0 ? newFiles[0].url : '';
+        setFormData((prev) => ({ ...prev, media_url: primary } as any));
+        if (primary) updateFormDataVariable('media_url', primary);
+        else removeFormDataVariable('media_url');
+    }, [mediaFiles, removeFormDataVariable, updateFormDataVariable]);
+
+    const clearFormMedia = useCallback(() => {
+        mediaFiles.forEach((m) => {
+            if (m.previewUrl) URL.revokeObjectURL(m.previewUrl);
+        });
+        setMediaFiles([]);
+        setFormData((prev) => ({ ...prev, media_url: '' } as any));
+        removeFormDataVariable('media_url');
+    }, [mediaFiles, removeFormDataVariable]);
+
+    const updatePreviewVariable = useCallback((templateId: string, variable: string, value: string) => {
+        setActivePreviews((prev) => {
+            const currentData = prev[templateId]?.data || '{}';
+            try {
+                const parsed = JSON.parse(currentData) as Record<string, string>;
+                const next = { ...parsed, [variable]: value };
+                const serialized = JSON.stringify(next, null, 2);
+
+                if (previewSource === 'quick') {
+                    setQuickData(next);
+                } else if (previewSource === 'advanced' || previewSource === 'broadcast') {
+                    setDataInput(serialized);
+                }
+
+                return {
+                    ...prev,
+                    [templateId]: {
+                        ...(prev[templateId] || { rendered: '', loading: false }),
+                        data: serialized,
+                    },
+                };
+            } catch {
+                return prev;
+            }
+        });
+    }, [previewSource]);
+
+    const renderTemplatePreview = useCallback(async (template: Template, data: Record<string, any>, source: PreviewSource) => {
+        const templateId = template.id;
+        const serialized = JSON.stringify(data || {}, null, 2);
+
+        setPreviewSource(source);
+        setSlidePreview({
+            templateId,
+            templateName: template.name,
+            channel: template.channel,
+        });
+
+        setActivePreviews((prev) => ({
+            ...prev,
+            [templateId]: {
+                ...(prev[templateId] || { rendered: '', loading: false }),
+                data: serialized,
+                loading: true,
+            },
+        }));
+
         try {
-            const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
-                data: Object.keys(quickData).length > 0 ? quickData : {},
-                editable: quickSelectedTemplate.channel === 'email',
+            const res = await templatesAPI.render(apiKey, templateId, {
+                data: data || {},
+                editable: template.channel === 'email',
             });
-            setQuickPreviewHtml(res.rendered_body || '');
-            setQuickAttrVars(res.attribute_variables || []);
-            setQuickPreviewOpen(true);
+            setActivePreviews((prev) => ({
+                ...prev,
+                [templateId]: {
+                    ...(prev[templateId] || { rendered: '', loading: false }),
+                    data: prev[templateId]?.data ?? serialized,
+                    rendered: res.rendered_body || '',
+                    loading: false,
+                },
+            }));
         } catch (err) {
             toast.error(extractErrorMessage(err, 'Failed to render preview'));
-        } finally {
-            setQuickPreviewLoading(false);
+            setActivePreviews((prev) => ({
+                ...prev,
+                [templateId]: {
+                    ...(prev[templateId] || { rendered: '', loading: false }),
+                    data: prev[templateId]?.data ?? serialized,
+                    loading: false,
+                },
+            }));
         }
-    }, [apiKey, quickSelectedTemplate, quickData]);
+    }, [apiKey]);
 
-    // Debounced re-render when attribute variables change in the sidebar
-    const debouncedRerender = useCallback(() => {
-        if (quickRerenderTimer.current) clearTimeout(quickRerenderTimer.current);
-        quickRerenderTimer.current = setTimeout(async () => {
-            if (!quickSelectedTemplate || !quickPreviewOpen) return;
-            try {
-                const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
-                    data: Object.keys(quickData).length > 0 ? quickData : {},
-                    editable: quickSelectedTemplate.channel === 'email',
-                });
-                setQuickPreviewHtml(res.rendered_body || '');
-            } catch { /* silently fail on debounced re-render */ }
-        }, 500);
-    }, [apiKey, quickSelectedTemplate, quickData, quickPreviewOpen]);
+    const handleRenderPreview = useCallback(async (templateId: string) => {
+        const template = templates.find((t) => t.id === templateId);
+        const preview = activePreviews[templateId];
+        if (!template || !preview) return;
 
-    // Handle postMessage from editable preview iframe
-    useEffect(() => {
-        if (!quickPreviewOpen) return;
-        const handler = (e: MessageEvent) => {
-            if (e.data?.type === 'frn-var-edit' && typeof e.data.variable === 'string') {
-                setQuickData(d => ({ ...d, [e.data.variable]: e.data.value ?? '' }));
-            }
-        };
-        window.addEventListener('message', handler);
-        return () => window.removeEventListener('message', handler);
-    }, [quickPreviewOpen]);
-
-    // Handle image upload for attribute variables
-    const handleAttrVarImageUpload = useCallback(async (varName: string, file: File) => {
+        let parsedData: Record<string, any> = {};
         try {
-            const res = await mediaAPI.upload(apiKey, file);
-            setQuickData(d => ({ ...d, [varName]: res.url }));
-            debouncedRerender();
-        } catch (err) {
-            toast.error(extractErrorMessage(err, 'Image upload failed'));
+            parsedData = JSON.parse(preview.data || '{}');
+        } catch {
+            toast.error('Invalid preview JSON data');
+            return;
         }
-    }, [apiKey, debouncedRerender]);
 
-    // State for collapsible variables section
-    const [varsExpanded, setVarsExpanded] = useState(true);
+        await renderTemplatePreview(template, parsedData, previewSource || 'quick');
+    }, [templates, activePreviews, previewSource, renderTemplatePreview]);
+
+    const renderQuickPreview = useCallback(async () => {
+        if (!quickSelectedTemplate) return;
+        await renderTemplatePreview(
+            quickSelectedTemplate,
+            Object.keys(quickData).length > 0 ? quickData : {},
+            'quick',
+        );
+    }, [quickSelectedTemplate, quickData, renderTemplatePreview]);
+
+    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast') => {
+        if (!formSelectedTemplate?.id) {
+            toast.error('Select a template to preview');
+            return;
+        }
+
+        const customData = parseCustomData(dataInput);
+        if (customData === null) {
+            toast.error('Invalid JSON in custom data');
+            return;
+        }
+
+        await renderTemplatePreview(formSelectedTemplate, customData || {}, context);
+    }, [formSelectedTemplate, dataInput, renderTemplatePreview]);
 
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
         setQuickSending(true);
         try {
             const selectedDigestRule = quickDigestRuleId ? digestRules.find(r => r.id === quickDigestRuleId) : null;
+            const scheduledAt = quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined;
             await quickSendAPI.send(apiKey, {
                 to: quickTo,
                 template: quickSelectedTemplate?.name || quickTemplateId,
                 data: Object.keys(quickData).length > 0 ? quickData : undefined,
                 priority: quickPriority as any,
-                scheduled_at: quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined,
+                scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
                 webhook_url: quickSelectedTemplate?.channel === 'webhook' && quickWebhookUrl ? quickWebhookUrl : undefined,
             });
+            prependOptimisticNotifications([
+                buildOptimisticNotification({
+                    userId: quickTo,
+                    channel: (quickSelectedTemplate?.channel || 'email') as Notification['channel'],
+                    priority: (quickPriority || 'normal') as Notification['priority'],
+                    templateId: quickSelectedTemplate?.id,
+                    data: Object.keys(quickData).length > 0 ? quickData : undefined,
+                    scheduledAt,
+                    metadata: selectedDigestRule ? { digest_key: selectedDigestRule.digest_key } : undefined,
+                }),
+            ]);
             toast.success('Notification sent!');
             setQuickTo('');
             setQuickTemplateId('');
@@ -548,11 +768,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
             setQuickWebhookUrl('');
-            setQuickPreviewOpen(false);
-            setQuickPreviewHtml('');
-            setQuickAttrVars([]);
-            setQuickVarsDrawerOpen(false);
-            refresh();
+            if (quickMedia?.previewUrl) {
+                URL.revokeObjectURL(quickMedia.previewUrl);
+            }
+            setQuickMedia(null);
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
         } finally {
@@ -603,6 +822,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setBroadcastWorkflowTriggerId('');
             setBroadcastTopicKey('');
             setBroadcastDigestRuleId('');
+            clearFormMedia();
             refresh();
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
@@ -648,6 +868,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     notificationsAPI.send(apiKey, { ...payload, webhook_target: target })
                 );
                 await Promise.all(sendPromises);
+                prependOptimisticNotifications(
+                    selectedTargets.map((target) =>
+                        buildOptimisticNotification({
+                            userId: `webhook:${target}`,
+                            channel: payload.channel,
+                            priority: payload.priority,
+                            templateId: payload.template_id,
+                            data: customData,
+                            scheduledAt: payload.scheduled_at,
+                            metadata: {
+                                ...(payload.metadata || {}),
+                                webhook_target: target,
+                            },
+                        })
+                    )
+                );
             } else if (userIds.length > 1) {
                 await notificationsAPI.sendBulk(apiKey, {
                     user_ids: userIds,
@@ -657,8 +893,33 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     data: customData,
                     metadata: payload.metadata,
                 });
+                prependOptimisticNotifications(
+                    userIds.map((uid) =>
+                        buildOptimisticNotification({
+                            userId: uid,
+                            channel: payload.channel,
+                            priority: payload.priority,
+                            templateId: payload.template_id,
+                            data: customData,
+                            scheduledAt: payload.scheduled_at,
+                            metadata: payload.metadata,
+                        })
+                    )
+                );
             } else {
-                await notificationsAPI.send(apiKey, { ...payload, user_id: userIds[0] || formData.user_id });
+                const singleUserId = userIds[0] || formData.user_id;
+                await notificationsAPI.send(apiKey, { ...payload, user_id: singleUserId });
+                prependOptimisticNotifications([
+                    buildOptimisticNotification({
+                        userId: singleUserId,
+                        channel: payload.channel,
+                        priority: payload.priority,
+                        templateId: payload.template_id,
+                        data: customData,
+                        scheduledAt: payload.scheduled_at,
+                        metadata: payload.metadata,
+                    }),
+                ]);
             }
 
             setShowSendForm(false);
@@ -667,7 +928,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setSelectedTargets([]);
             setDataInput('');
             setAdvDigestRuleId('');
-            refresh();
+            clearFormMedia();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
@@ -726,8 +987,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                         {/* ── Quick Send Tab ── */}
                         <TabsContent value="quick">
-                            <div className="bg-muted p-6 rounded border border-border space-y-4">
-                                <p className="text-sm text-muted-foreground">Send a notification using email or user ID and a template name. No UUIDs required.</p>
+                            <div className={SEND_FORM_SHELL_CLASS}>
+                                <p className={SEND_FORM_INFO_CLASS}>Send a notification using email or user ID and a template name. No UUIDs required.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="quickTo">To (Recipient)</Label>
@@ -778,11 +1039,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             setQuickTemplateId(value);
                                             // Pre-fill variables with sample_data
                                             const selected = templates.find(t => t.id === value);
+                                            if (selected?.channel !== 'whatsapp' && quickMedia?.previewUrl) {
+                                                URL.revokeObjectURL(quickMedia.previewUrl);
+                                                setQuickMedia(null);
+                                            }
                                             const sample = getSampleData(selected);
                                             if (Object.keys(sample).length > 0) {
-                                                setQuickData(sample);
+                                                setQuickData(
+                                                    selected?.channel === 'whatsapp' && quickMedia
+                                                        ? { ...sample, media_url: quickMedia.url }
+                                                        : sample,
+                                                );
                                             } else {
-                                                setQuickData({});
+                                                setQuickData(
+                                                    selected?.channel === 'whatsapp' && quickMedia
+                                                        ? { media_url: quickMedia.url }
+                                                        : {},
+                                                );
                                             }
                                         }}>
                                             <SelectTrigger>
@@ -796,8 +1069,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </Select>
                                     </div>
                                 </div>
-                                {quickVariables.length > 0 && quickSelectedTemplate?.channel === 'email' && (
-                                    <div className="rounded-md border border-border bg-background p-4 space-y-2">
+                                {quickVariables.length > 0 && (
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium flex items-center gap-2">
                                                 Template Variables
@@ -807,70 +1080,44 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 )}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Click <strong>Preview</strong> below to see the rendered email and edit variables inline by clicking highlighted text.
-                                        </p>
-                                    </div>
-                                )}
-                                {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && quickSelectedTemplate?.channel !== 'whatsapp' && (
-                                    <div className="rounded-md border border-border bg-background">
-                                        <button
-                                            type="button"
-                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                            onClick={() => setVarsExpanded(!varsExpanded)}
-                                        >
-                                            <span className="flex items-center gap-2">
-                                                Template Variables
-                                                <Badge variant="secondary" className="text-xs">{quickVariables.length}</Badge>
-                                                {quickSelectedTemplate?.metadata?.sample_data && (
-                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                )}
-                                            </span>
-                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                        </button>
-                                        {varsExpanded && (
-                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {quickVariables.map(v => {
-                                                    const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
-                                                    const isDateVar = v.toLowerCase() === 'date';
-                                                    const currentVal = quickData[v] || '';
-                                                    return (
-                                                        <div key={v} className="space-y-1">
-                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            {isDateVar ? (
-                                                                <Input
-                                                                    type="date"
-                                                                    value={toISODateOnly(currentVal)}
-                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: formatDateForTemplate(e.target.value) }))}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            ) : (
-                                                                <Input
-                                                                    value={currentVal}
-                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
-                                                                    placeholder={sampleVal ? String(sampleVal) : v}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
+                                        {quickVariables.length <= 2 ? (
+                                            <>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.
+                                                </p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {quickVariables.map((v) => {
+                                                        const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
+                                                        const isDateVar = v.toLowerCase() === 'date';
+                                                        const currentVal = quickData[v] || '';
+                                                        return (
+                                                            <div key={v} className="space-y-1">
+                                                                <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                {isDateVar ? (
+                                                                    <Input
+                                                                        type="date"
+                                                                        value={toISODateOnly(currentVal)}
+                                                                        onChange={(e) => setQuickData((d) => ({ ...d, [v]: formatDateForTemplate(e.target.value) }))}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                ) : (
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setQuickData((d) => ({ ...d, [v]: e.target.value }))}
+                                                                        placeholder={sampleVal ? String(sampleVal) : v}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground">
+                                                Fill variable values through the preview panel.
+                                            </p>
                                         )}
-                                    </div>
-                                )}
-                                {quickSelectedTemplate?.channel === 'whatsapp' && (
-                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                        <WhatsAppPreview
-                                            templateName={quickSelectedTemplate?.name}
-                                            buttons={quickSelectedTemplate?.metadata?.buttons}
-                                            data={quickData}
-                                            templateContent={{
-                                                title: quickSelectedTemplate?.metadata?.title_template || quickSelectedTemplate?.subject,
-                                                body: quickSelectedTemplate?.metadata?.body_template || quickSelectedTemplate?.body
-                                            }}
-                                        />
                                     </div>
                                 )}
                                 {quickSelectedTemplate?.channel === 'webhook' && (
@@ -895,6 +1142,85 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <p className="text-xs text-muted-foreground mt-1">Go to the <strong>Providers</strong> tab to add webhook endpoints.</p>
                                         </div>
                                     )
+                                )}
+                                {quickSelectedTemplate?.channel === 'whatsapp' && (
+                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image Attachment (optional)</Label>
+                                        {!quickMedia && (
+                                            <label
+                                                htmlFor="quickMediaUpload"
+                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-5 cursor-pointer hover:bg-muted/50 transition-colors"
+                                            >
+                                                <UploadCloud className="h-7 w-7 text-muted-foreground" />
+                                                <span className="text-sm font-medium">Click to upload image</span>
+                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP — max 16 MB</span>
+                                                <input
+                                                    id="quickMediaUpload"
+                                                    type="file"
+                                                    accept="image/jpeg,image/png,image/gif,image/webp"
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        if (file.size > 16 * 1024 * 1024) {
+                                                            toast.error(`${file.name} is too large (max 16 MB)`);
+                                                            return;
+                                                        }
+
+                                                        const localUrl = URL.createObjectURL(file);
+                                                        try {
+                                                            toast.info(`Uploading ${file.name}...`);
+                                                            const result = await mediaAPI.upload(apiKey, file);
+                                                            setQuickMedia((prev) => {
+                                                                if (prev?.previewUrl) {
+                                                                    URL.revokeObjectURL(prev.previewUrl);
+                                                                }
+                                                                return {
+                                                                    url: result.url,
+                                                                    previewUrl: localUrl,
+                                                                    type: file.type,
+                                                                    name: file.name,
+                                                                };
+                                                            });
+                                                            setQuickData((d) => ({ ...d, media_url: result.url }));
+                                                            toast.success('Image uploaded');
+                                                        } catch (err) {
+                                                            URL.revokeObjectURL(localUrl);
+                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+
+                                        {quickMedia && (
+                                            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <img src={quickMedia.previewUrl} alt={quickMedia.name} className="h-12 w-12 rounded object-cover border border-border" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium truncate">{quickMedia.name}</p>
+                                                        <p className="text-xs text-muted-foreground truncate">{quickMedia.url}</p>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        URL.revokeObjectURL(quickMedia.previewUrl);
+                                                        setQuickMedia(null);
+                                                        setQuickData((d) => {
+                                                            const next = { ...d };
+                                                            delete next.media_url;
+                                                            return next;
+                                                        });
+                                                    }}
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
@@ -940,7 +1266,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 )}
 
                                 {/* Schedule toggle */}
-                                <div className="rounded-md border border-border">
+                                <div className={SEND_FORM_SECTION_CLASS}>
                                     <button
                                         type="button"
                                         className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -983,129 +1309,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     {quickTemplateId && (
                                         <Button
                                             variant="outline"
-                                            disabled={quickPreviewLoading || !quickTemplateId}
+                                            disabled={!!activePreviews[quickTemplateId]?.loading || !quickTemplateId}
                                             onClick={renderQuickPreview}
                                         >
                                             <Eye className="w-4 h-4 mr-1" />
-                                            {quickPreviewLoading ? 'Rendering...' : 'Preview'}
+                                            {activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview'}
                                         </Button>
                                     )}
                                     <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
                                         {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
-
-                                <Dialog open={quickPreviewOpen} onOpenChange={(open) => { setQuickPreviewOpen(open); if (!open) setQuickVarsDrawerOpen(false); }}>
-                                    <DialogContent className="max-w-4xl h-[85vh] overflow-hidden flex flex-col p-0">
-                                        {/* Header bar */}
-                                        <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">
-                                            <div>
-                                                <h3 className="text-sm font-semibold">
-                                                    {quickSelectedTemplate?.name}
-                                                </h3>
-                                                {quickSelectedTemplate?.channel === 'email' && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Click any <span className="text-blue-500 font-medium">highlighted</span> text to edit inline
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {quickSelectedTemplate?.channel === 'email' && quickAttrVars.length > 0 && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant={quickVarsDrawerOpen ? 'default' : 'outline'}
-                                                        onClick={() => setQuickVarsDrawerOpen(!quickVarsDrawerOpen)}
-                                                    >
-                                                        <FileText className="w-3.5 h-3.5 mr-1" />
-                                                        Variables
-                                                        <Badge variant="secondary" className="ml-1 text-xs">{quickAttrVars.length}</Badge>
-                                                    </Button>
-                                                )}
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={renderQuickPreview}
-                                                    disabled={quickPreviewLoading}
-                                                >
-                                                    {quickPreviewLoading ? 'Refreshing...' : 'Refresh'}
-                                                </Button>
-                                            </div>
-                                        </div>
-
-                                        {/* Full-width preview — the hero */}
-                                        <div className="flex-1 min-h-0 relative">
-                                            {quickSelectedTemplate?.channel === 'email' ? (
-                                                <iframe
-                                                    srcDoc={injectEditableSupport(quickPreviewHtml)}
-                                                    title="Editable Preview"
-                                                    className="w-full h-full border-0 bg-white"
-                                                    sandbox="allow-scripts"
-                                                />
-                                            ) : (
-                                                <iframe
-                                                    srcDoc={quickPreviewHtml}
-                                                    title="Notification Preview"
-                                                    className="w-full h-full border-0 bg-white"
-                                                    sandbox="allow-same-origin"
-                                                />
-                                            )}
-                                        </div>
-
-                                        {/* Collapsible variables drawer — slides up from bottom */}
-                                        {quickVarsDrawerOpen && quickAttrVars.length > 0 && (
-                                            <div className="border-t border-border bg-muted/30 shrink-0 max-h-[35vh] overflow-y-auto">
-                                                <div className="px-5 py-3 space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image & URL Variables</p>
-                                                        <button type="button" onClick={() => setQuickVarsDrawerOpen(false)} className="text-muted-foreground hover:text-foreground">
-                                                            <X className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                        {quickAttrVars.map(av => (
-                                                            <div key={av.name} className="space-y-1">
-                                                                <Label className="text-xs flex items-center gap-1">
-                                                                    {av.type === 'image' ? '🖼️' : '🔗'} {av.name}
-                                                                </Label>
-                                                                <Input
-                                                                    value={quickData[av.name] || ''}
-                                                                    onChange={e => {
-                                                                        setQuickData(d => ({ ...d, [av.name]: e.target.value }));
-                                                                        debouncedRerender();
-                                                                    }}
-                                                                    placeholder={av.type === 'image' ? 'Image URL' : 'https://...'}
-                                                                    className="text-xs h-8"
-                                                                />
-                                                                {av.type === 'image' && (
-                                                                    <label
-                                                                        className="flex items-center justify-center gap-1 text-xs border border-dashed border-border rounded px-2 py-1 cursor-pointer hover:bg-muted/50 transition-colors"
-                                                                        onDragOver={e => e.preventDefault()}
-                                                                        onDrop={e => {
-                                                                            e.preventDefault();
-                                                                            const file = e.dataTransfer.files?.[0];
-                                                                            if (file && file.type.startsWith('image/')) handleAttrVarImageUpload(av.name, file);
-                                                                        }}
-                                                                    >
-                                                                        <UploadCloud className="h-3 w-3" />
-                                                                        Upload
-                                                                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleAttrVarImageUpload(av.name, f); }} />
-                                                                    </label>
-                                                                )}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </DialogContent>
-                                </Dialog>
                             </div>
                         </TabsContent>
 
                         {/* ── Bulk Send Tab ── */}
                         <TabsContent value="advanced">
-                            <form onSubmit={handleSendNotification} className="bg-muted p-6 rounded border border-border space-y-4">
-                                <p className="text-sm text-muted-foreground mb-2">Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
+                            <form onSubmit={handleSendNotification} className={SEND_FORM_SHELL_CLASS}>
+                                <p className={`${SEND_FORM_INFO_CLASS} mb-2`}>Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="recipient">
@@ -1136,6 +1357,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 if (shouldClearTemplate) setDataInput('');
                                                 if (next !== 'webhook') {
                                                     setSelectedTargets([]);
+                                                }
+                                                if (next !== 'whatsapp') {
+                                                    clearFormMedia();
                                                 }
                                             }}
                                         >
@@ -1187,6 +1411,48 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
                                     </div>
 
+                                    {formVariables.length > 0 && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-medium">Template Variables</span>
+                                                    <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                </div>
+                                                {formVariables.length <= 2 ? (
+                                                    <>
+                                                        <p className="text-xs text-muted-foreground">Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.</p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {formVariables.map((v) => {
+                                                                const currentVal = parsedFormData[v] || '';
+                                                                const isDateVar = v.toLowerCase() === 'date';
+                                                                return (
+                                                                    <div key={v} className="space-y-1">
+                                                                        <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                        {isDateVar ? (
+                                                                            <Input
+                                                                                type="date"
+                                                                                value={toISODateOnly(currentVal)}
+                                                                                onChange={(e) => updateFormDataVariable(v, formatDateForTemplate(e.target.value))}
+                                                                            />
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={currentVal}
+                                                                                onChange={(e) => updateFormDataVariable(v, e.target.value)}
+                                                                                placeholder={v}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Webhook Targets Selection */}
                                     {formData.channel === 'webhook' && (
                                         webhooks && Object.keys(webhooks).length > 0 ? (
@@ -1216,23 +1482,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     {/* WhatsApp Media Upload */}
                                     {formData.channel === 'whatsapp' && (
                                         <div className="space-y-4 md:col-span-2">
-                                            {/* Real-time WhatsApp Preview */}
-                                            {formData.template_id && (
-                                                <div className="space-y-2">
-                                                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                                    <WhatsAppPreview
-                                                        templateName={formSelectedTemplate?.name}
-                                                        mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
-                                                        buttons={formSelectedTemplate?.metadata?.buttons}
-                                                        data={parsedFormData}
-                                                        templateContent={{
-                                                            title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
-                                                            body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-
                                             <div className="space-y-2">
                                                 <Label>Media Attachment (optional)</Label>
                                                 <div className="space-y-3">
@@ -1253,45 +1502,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
                                                                 className="hidden"
                                                                 onChange={async (e) => {
-                                                                    const files = Array.from(e.target.files || []);
-                                                                    if (files.length === 0) return;
-
-                                                                    const remainingLimit = 5 - mediaFiles.length;
-                                                                    const filesToUpload = files.slice(0, remainingLimit);
-
-                                                                    if (files.length > remainingLimit) {
-                                                                        toast.warning(`Only ${remainingLimit} more file(s) can be added.`);
-                                                                    }
-
-                                                                    for (const file of filesToUpload) {
-                                                                        if (file.size > 16 * 1024 * 1024) {
-                                                                            toast.error(`${file.name} is too large (max 16 MB)`);
-                                                                            continue;
-                                                                        }
-
-                                                                        const localUrl = URL.createObjectURL(file);
-                                                                        try {
-                                                                            toast.info(`Uploading ${file.name}...`);
-                                                                            const result = await mediaAPI.upload(apiKey, file);
-                                                                            setMediaFiles(prev => {
-                                                                                const next = [...prev, {
-                                                                                    url: result.url,
-                                                                                    previewUrl: localUrl,
-                                                                                    type: file.type,
-                                                                                    name: file.name
-                                                                                }];
-                                                                                // Sync the first file's URL to formData for API compatibility
-                                                                                if (next.length === 1) {
-                                                                                    setFormData(fd => ({ ...fd, media_url: result.url } as any));
-                                                                                }
-                                                                                return next;
-                                                                            });
-                                                                        } catch (err) {
-                                                                            URL.revokeObjectURL(localUrl);
-                                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
-                                                                        }
-                                                                    }
-                                                                    toast.success('Upload complete');
+                                                                    await handleFormMediaUpload(Array.from(e.target.files || []));
                                                                 }}
                                                             />
                                                         </label>
@@ -1312,16 +1523,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 className='bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200'
                                                                 variant="outline"
                                                                 size="sm"
-                                                                onClick={() => {
-                                                                    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
-                                                                    const newFiles = mediaFiles.filter((_, i) => i !== idx);
-                                                                    setMediaFiles(newFiles);
-                                                                    // Update primary media_url
-                                                                    setFormData(prev => ({
-                                                                        ...prev,
-                                                                        media_url: newFiles.length > 0 ? newFiles[0].url : ''
-                                                                    } as any));
-                                                                }}
+                                                                onClick={() => removeFormMediaAt(idx)}
                                                             >
                                                                 <X className="h-3.5 w-3.5" />
                                                             </Button>
@@ -1393,64 +1595,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
-                                {formVariables.length > 0 && (
-                                    <div className="rounded-md border border-border bg-background">
-                                        <button
-                                            type="button"
-                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                            onClick={() => setVarsExpanded(!varsExpanded)}
-                                        >
-                                            <span className="flex items-center gap-2">
-                                                Template Variables
-                                                <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
-                                                {formSelectedTemplate?.metadata?.sample_data && (
-                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                )}
-                                            </span>
-                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                        </button>
-                                        {varsExpanded && (
-                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {formVariables.map(v => {
-                                                    const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
-                                                    const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
-                                                    const isDateVar = v.toLowerCase() === 'date';
-                                                    return (
-                                                        <div key={v} className="space-y-1">
-                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            {isDateVar ? (
-                                                                <Input
-                                                                    type="date"
-                                                                    value={toISODateOnly(currentVal)}
-                                                                    onChange={e => {
-                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                        parsed[v] = formatDateForTemplate(e.target.value);
-                                                                        setDataInput(JSON.stringify(parsed, null, 2));
-                                                                    }}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            ) : (
-                                                                <Input
-                                                                    value={currentVal}
-                                                                    onChange={e => {
-                                                                        const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                        parsed[v] = e.target.value;
-                                                                        setDataInput(JSON.stringify(parsed, null, 2));
-                                                                    }}
-                                                                    placeholder={sampleVal ? String(sampleVal) : v}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
                                 {/* Schedule toggle */}
-                                <div className="rounded-md border border-border">
+                                <div className={SEND_FORM_SECTION_CLASS}>
                                     <button
                                         type="button"
                                         className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1604,11 +1750,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Button
                                             type="button"
                                             variant="outline"
+                                            onClick={() => renderSendPreview('advanced')}
+                                            disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
+                                        >
+                                            <Eye className="h-4 w-4 mr-1" />
+                                            {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
                                             onClick={() => {
                                                 setFormData(createEmptyForm());
                                                 setSelectedUsers([]);
                                                 setSelectedTargets([]);
                                                 setDataInput('');
+                                                clearFormMedia();
                                             }}
                                         >
                                             Reset
@@ -1621,13 +1777,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
                         {/* ── Broadcast Tab ── */}
                         <TabsContent value="broadcast">
-                            <Card className="border-orange-200 bg-orange-50/30">
+                            <Card className="border-border/80 bg-card/40">
                                 <CardHeader>
-                                    <CardTitle className="text-orange-800 text-lg">Broadcast to All Users</CardTitle>
-                                    <p className="text-sm text-orange-600/80 mt-1">This will send a notification to ALL users of this application.</p>
+                                    <CardTitle className="text-lg">Broadcast to All Users</CardTitle>
+                                    <p className="text-sm text-muted-foreground mt-1">This sends a notification to all users in this application.</p>
                                 </CardHeader>
                                 <CardContent>
                                     <form onSubmit={handleBroadcastSubmit} className="space-y-4">
+                                        <div className="rounded-md border border-amber-300/60 bg-amber-100/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
+                                            Broadcast impacts every recipient matched by this app or topic filter.
+                                        </div>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div className="space-y-2">
                                                 <Label htmlFor="broadcastChannel">Channel</Label>
@@ -1645,6 +1804,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         if (shouldClearTemplate) setDataInput('');
                                                         if (next !== 'webhook') {
                                                             setSelectedTargets([]);
+                                                        }
+                                                        if (next !== 'whatsapp') {
+                                                            clearFormMedia();
                                                         }
                                                     }}
                                                 >
@@ -1731,19 +1893,95 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             )}
                                         </div>
 
-                                        {formData.channel === 'whatsapp' && formData.template_id && (
-                                            <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                                <WhatsAppPreview
-                                                    templateName={formSelectedTemplate?.name}
-                                                    mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
-                                                    buttons={formSelectedTemplate?.metadata?.buttons}
-                                                    data={parsedFormData}
-                                                    templateContent={{
-                                                        title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
-                                                        body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
-                                                    }}
-                                                />
+                                        {formVariables.length > 0 && (
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-medium">Template Variables</span>
+                                                    <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                </div>
+                                                {formVariables.length <= 2 ? (
+                                                    <>
+                                                        <p className="text-xs text-muted-foreground">Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.</p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {formVariables.map((v) => {
+                                                                const currentVal = parsedFormData[v] || '';
+                                                                const isDateVar = v.toLowerCase() === 'date';
+                                                                return (
+                                                                    <div key={v} className="space-y-1">
+                                                                        <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                        {isDateVar ? (
+                                                                            <Input
+                                                                                type="date"
+                                                                                value={toISODateOnly(currentVal)}
+                                                                                onChange={(e) => updateFormDataVariable(v, formatDateForTemplate(e.target.value))}
+                                                                            />
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={currentVal}
+                                                                                onChange={(e) => updateFormDataVariable(v, e.target.value)}
+                                                                                placeholder={v}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {formData.channel === 'whatsapp' && (
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <Label>Media Attachment (optional)</Label>
+                                                    <div className="space-y-3">
+                                                        {mediaFiles.length < 5 && (
+                                                            <label
+                                                                htmlFor="broadcastMediaUpload"
+                                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                            >
+                                                                <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                                                                <span className="text-sm font-medium">Click to upload image or file</span>
+                                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB (Limit: 5 files)</span>
+                                                                <input
+                                                                    multiple
+                                                                    id="broadcastMediaUpload"
+                                                                    type="file"
+                                                                    accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
+                                                                    className="hidden"
+                                                                    onChange={async (e) => {
+                                                                        await handleFormMediaUpload(Array.from(e.target.files || []));
+                                                                    }}
+                                                                />
+                                                            </label>
+                                                        )}
+
+                                                        {mediaFiles.map((file, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="p-2 bg-primary/10 rounded">
+                                                                        <UploadCloud className="h-4 w-4 text-primary" />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-medium truncate max-w-[150px]">{file.name}</p>
+                                                                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">{file.url}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <Button
+                                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() => removeFormMediaAt(idx)}
+                                                                >
+                                                                    <X className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 
@@ -1789,64 +2027,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         )}
 
-                                        {formVariables.length > 0 && (
-                                            <div className="rounded-md border border-border bg-background">
-                                                <button
-                                                    type="button"
-                                                    className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                                    onClick={() => setVarsExpanded(!varsExpanded)}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        Template Variables
-                                                        <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
-                                                        {formSelectedTemplate?.metadata?.sample_data && (
-                                                            <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                        )}
-                                                    </span>
-                                                    {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                                </button>
-                                                {varsExpanded && (
-                                                    <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                        {formVariables.map(v => {
-                                                            const currentVal = dataInput ? (() => { try { return JSON.parse(dataInput)[v] || ''; } catch { return ''; } })() : '';
-                                                            const sampleVal = formSelectedTemplate?.metadata?.sample_data?.[v];
-                                                            const isDateVar = v.toLowerCase() === 'date';
-                                                            return (
-                                                                <div key={v} className="space-y-1">
-                                                                    <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                                    {isDateVar ? (
-                                                                        <Input
-                                                                            type="date"
-                                                                            value={toISODateOnly(currentVal)}
-                                                                            onChange={e => {
-                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                                parsed[v] = formatDateForTemplate(e.target.value);
-                                                                                setDataInput(JSON.stringify(parsed, null, 2));
-                                                                            }}
-                                                                            className={currentVal ? '' : 'text-muted-foreground'}
-                                                                        />
-                                                                    ) : (
-                                                                        <Input
-                                                                            value={currentVal}
-                                                                            onChange={e => {
-                                                                                const parsed = dataInput ? (() => { try { return JSON.parse(dataInput); } catch { return {}; } })() : {};
-                                                                                parsed[v] = e.target.value;
-                                                                                setDataInput(JSON.stringify(parsed, null, 2));
-                                                                            }}
-                                                                            placeholder={sampleVal ? String(sampleVal) : v}
-                                                                            className={currentVal ? '' : 'text-muted-foreground'}
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
                                         {/* Schedule toggle */}
-                                        <div className="rounded-md border border-border">
+                                        <div className={SEND_FORM_SECTION_CLASS}>
                                             <button
                                                 type="button"
                                                 className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
@@ -1895,13 +2077,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </div>
 
                                         <div className="flex justify-end pt-2">
-                                            <Button
-                                                type="submit"
-                                                className="bg-orange-600 hover:bg-orange-700 text-white"
-                                                disabled={isSubmitting}
-                                            >
-                                                {isSubmitting ? 'Processing...' : '🚀 Send Broadcast'}
-                                            </Button>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    onClick={() => renderSendPreview('broadcast')}
+                                                    disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
+                                                >
+                                                    <Eye className="h-4 w-4 mr-1" />
+                                                    {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
+                                                </Button>
+                                                <Button
+                                                    type="submit"
+                                                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                                                    disabled={isSubmitting}
+                                                >
+                                                    {isSubmitting ? 'Processing...' : 'Send Broadcast'}
+                                                </Button>
+                                            </div>
                                         </div>
 
                                         {confirmingBroadcast && (
@@ -2323,6 +2516,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     )}
                 </SlidePanel>
 
+                <EditablePreviewPanel
+                    slidePreview={slidePreview}
+                    templates={templates}
+                    activePreviews={activePreviews}
+                    savingDefaults={{}}
+                    showDefaultActions={false}
+                    onClose={() => {
+                        setSlidePreview(null);
+                        setPreviewSource(null);
+                    }}
+                    onRenderPreview={handleRenderPreview}
+                    onSaveDefaults={() => { }}
+                    onResetDefaults={() => { }}
+                    onVariableEdit={updatePreviewVariable}
+                />
+
                 {/* Batch Send Dialog */}
                 <Dialog open={showBatchSend} onOpenChange={(open) => {
                     setShowBatchSend(open);
@@ -2506,7 +2715,7 @@ const UserMultiSelect: React.FC<{
         <div className="space-y-2">
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" type="button" className="w-full justify-between">
+                    <Button variant="outline" type="button" className="w-full justify-between h-9 rounded-lg">
                         <span className="truncate text-left">{selectorLabel}</span>
                         <span className="text-xs text-muted-foreground">{selectedCount}/{totalUsers}</span>
                     </Button>
@@ -2544,7 +2753,7 @@ const UserMultiSelect: React.FC<{
                                 </button>
                             </div>
                         </div>
-                        <div className="max-h-72 overflow-y-auto rounded border border-border">
+                        <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-card/30">
                             {filteredUsers.length === 0 ? (
                                 <p className="text-muted-foreground text-sm p-3">No users found.</p>
                             ) : (
@@ -2568,10 +2777,9 @@ const UserMultiSelect: React.FC<{
                         {selectedUsers.length > 0 && (
                             <div className="flex flex-wrap gap-2 pt-1">
                                 {selectedUsers.map(user => (
-                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs text-foreground">
+                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-xs text-foreground">
                                         {user.email || user.user_id}
                                         <button
-                                            id='remove-btn'
                                             type="button"
                                             className="text-muted-foreground hover:text-foreground"
                                             onClick={() => toggleUser(user.user_id)}
@@ -2607,13 +2815,13 @@ const WebhookTargetSelect: React.FC<{
             <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Selected {value.length} of {targets.length}</span>
                 <div className="flex gap-2">
-                    <button type="button" className="hover:text-foreground" onClick={() => onChange(targets)}>Select all</button>
-                    <button type="button" className="hover:text-foreground" onClick={() => onChange([])}>Clear</button>
+                    <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => onChange(targets)}>Select all</button>
+                    <button type="button" className="hover:text-foreground underline-offset-2 hover:underline" onClick={() => onChange([])}>Clear</button>
                 </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-border rounded bg-card">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 border border-border rounded-lg bg-card/30">
                 {targets.map(name => (
-                    <div key={name} className="flex items-center space-x-2">
+                    <div key={name} className="flex items-center gap-2 rounded-md border border-border/70 bg-background px-2.5 py-2">
                         <Checkbox
                             id={`webhook-${name}`}
                             checked={value.includes(name)}

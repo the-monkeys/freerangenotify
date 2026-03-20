@@ -11,9 +11,11 @@ interface StatCardProps {
     colorClass?: string;
 }
 
+const PANEL_CARD_CLASSES = 'border-border/70 bg-white/80 shadow-sm backdrop-blur-sm dark:bg-zinc-900/60';
+
 function StatCard({ icon, label, value, colorClass = 'text-foreground' }: StatCardProps) {
     return (
-        <Card>
+        <Card className={PANEL_CARD_CLASSES}>
             <CardContent className="pt-5 pb-4">
                 <div className="flex items-start gap-3">
                     <div className="p-2 rounded-md bg-muted">{icon}</div>
@@ -61,7 +63,7 @@ export default function OverviewStats() {
         return (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 {Array.from({ length: 4 }).map((_, i) => (
-                    <Card key={i}>
+                    <Card key={i} className={PANEL_CARD_CLASSES}>
                         <CardContent className="pt-5 pb-4">
                             <div className="h-16 animate-pulse bg-muted rounded" />
                         </CardContent>

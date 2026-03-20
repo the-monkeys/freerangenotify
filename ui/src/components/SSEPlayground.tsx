@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from './ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -206,19 +205,20 @@ export default function SSEPlayground() {
     }, [selectedUser]);
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+        <section className="space-y-4">
+            <div>
+                <h3 className="flex items-center gap-2 text-lg font-semibold">
                     <Radio className="h-5 w-5" />
                     SSE Receiver
-                    {connected && <Badge className="bg-green-500/15 text-green-600 border-green-500/30 text-[10px]">Live</Badge>}
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
+                    {connected && <Badge className="border-green-500/30 bg-green-500/15 text-[10px] text-green-600">Live</Badge>}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
                     Connect as a real user to receive SSE notifications. Uses secure short-lived tokens —
                     the application API key never leaves the server.
                 </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-border/70 bg-white/70 p-4 dark:bg-zinc-900/40">
                 {/* Setup: App + User selection */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -422,7 +422,7 @@ export default function SSEPlayground() {
                                 Waiting for notifications... Send one from the Notifications tab with channel "SSE".
                             </p>
                         ) : (
-                            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                            <div className="space-y-2 max-h-100 overflow-y-auto">
                                 {events.map((evt, i) => (
                                     <div key={i} className="bg-card border border-border rounded p-3">
                                         <div className="flex justify-between items-center mb-2">
@@ -439,7 +439,7 @@ export default function SSEPlayground() {
                                                 {new Date(evt.received_at).toLocaleTimeString()}
                                             </span>
                                         </div>
-                                        <pre className="whitespace-pre-wrap text-xs font-mono text-foreground overflow-auto max-h-[200px]">
+                                        <pre className="whitespace-pre-wrap text-xs font-mono text-foreground overflow-auto max-h-50">
                                             {typeof evt.data === 'string' ? evt.data : JSON.stringify(evt.data, null, 2)}
                                         </pre>
                                     </div>
@@ -448,7 +448,7 @@ export default function SSEPlayground() {
                         )}
                     </div>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+        </section>
     );
 }

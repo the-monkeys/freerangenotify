@@ -209,6 +209,7 @@ const AppDetail: React.FC = () => {
                 app_name: appName,
                 description: description,
                 webhook_url: webhookUrl,
+                tenant_id: tenantId,
             });
             setApp(updated);
             localStorage.setItem('last_app_name', updated.app_name);
@@ -311,7 +312,7 @@ const AppDetail: React.FC = () => {
                 <div className="grid gap-6 md:grid-cols-[260px_minmax(0,1fr)]">
                     {/* Options sidebar — desktop */}
                     <aside className="hidden md:block">
-                        <Card size="sm" className="sticky top-20 bg-card/60 shadow-sm backdrop-blur-sm">
+                        <Card size="sm" className="bg-card/60 shadow-sm backdrop-blur-sm">
                             <CardContent className="p-2">
                                 {TAB_GROUPS.map((group) => (
                                     <SidebarGroup key={group.label} className="p-1">
@@ -408,8 +409,8 @@ const AppDetail: React.FC = () => {
                                             <p className="text-xs text-muted-foreground">Moving an app to an organization shares it with all organization members.</p>
                                         </div>
 
-                                        <div className="flex justify-end mt-8">
-                                            <Button type="submit">Save Overview</Button>
+                                        <div className="flex justify-end">
+                                            <Button type="submit" className='w-24'>Save</Button>
                                         </div>
                                     </form>
                                 </CardContent>
