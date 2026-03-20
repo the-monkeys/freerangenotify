@@ -22,13 +22,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
 import { WhatsAppPreview } from './WhatsAppPreview';
 import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
+import EditablePreviewPanel from './templates/EditablePreviewPanel';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -83,17 +84,10 @@ function sortVariablesByAppearance(variables: string[], body: string): string[] 
     });
 }
 
-/** Infers the display type for a variable based on its name. */
-function inferSendVarType(name: string): 'image' | 'url' | 'text' {
-    const n = name.toLowerCase();
-    if (/image|img|logo|photo|avatar|thumbnail|banner|picture/.test(n)) return 'image';
-    if (/url|link|href|src|uri|website/.test(n)) return 'url';
-    return 'text';
-}
-
 const SEND_FORM_SHELL_CLASS = 'rounded-xl border border-border/80 bg-muted/35 p-5 space-y-4';
 const SEND_FORM_INFO_CLASS = 'text-sm text-muted-foreground';
 const SEND_FORM_SECTION_CLASS = 'rounded-lg border border-border bg-background';
+type PreviewSource = 'quick' | 'advanced' | 'broadcast';
 
 const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, onUnreadCount }) => {
     const [page, setPage] = useState(1);
@@ -422,16 +416,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
     const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
-    const [quickPreviewOpen, setQuickPreviewOpen] = useState(false);
-    const [quickPreviewHtml, setQuickPreviewHtml] = useState('');
-    const [quickPreviewLoading, setQuickPreviewLoading] = useState(false);
-    const [sendPreviewOpen, setSendPreviewOpen] = useState(false);
-    const [sendPreviewHtml, setSendPreviewHtml] = useState('');
-    const [sendPreviewLoading, setSendPreviewLoading] = useState(false);
-    const [sendPreviewContext, setSendPreviewContext] = useState<'advanced' | 'broadcast'>('advanced');
-    const [sendPreviewData, setSendPreviewData] = useState<Record<string, string>>({});
-    const [sendPreviewShowVars, setSendPreviewShowVars] = useState(false);
-    const [quickPreviewShowVars, setQuickPreviewShowVars] = useState(false);
+    const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
+    const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
+    const [activePreviews, setActivePreviews] = useState<Record<string, { data: string; rendered: string; loading: boolean }>>({});
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
@@ -447,10 +434,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     // Advanced/Broadcast: detect variables from selected template
     const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
-    const formVariables = useMemo(() => {
-        const vars = formSelectedTemplate?.variables || [];
-        return formSelectedTemplate?.body ? sortVariablesByAppearance(vars, formSelectedTemplate.body) : vars;
-    }, [formSelectedTemplate]);
     const parsedFormData = useMemo(() => {
         try {
             return parseCustomData(dataInput) || {};
@@ -477,106 +460,119 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         }
     }, [users, quickTo, quickToManual]);
 
-    // Editable preview: CSS + JS injected into iframe for contenteditable spans
-    const EDITABLE_STYLE = `<style>.frn-editable{outline:none;transition:outline .15s,background-color .15s;cursor:text;border-radius:2px;min-width:1ch;display:inline}.frn-editable:hover{outline:2px dashed #3b82f6;background-color:rgba(59,130,246,.05)}.frn-editable:focus{outline:2px solid #3b82f6;background-color:rgba(59,130,246,.08)}</style>`;
-    const EDITABLE_SCRIPT = `<script>document.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[data-frn-var]').forEach(function(el){el.addEventListener('input',function(){window.parent.postMessage({type:'frn-var-edit',variable:el.getAttribute('data-frn-var'),value:el.textContent||''},'*')})})});<\/script>`;
+    const updatePreviewVariable = useCallback((templateId: string, variable: string, value: string) => {
+        setActivePreviews((prev) => {
+            const currentData = prev[templateId]?.data || '{}';
+            try {
+                const parsed = JSON.parse(currentData) as Record<string, string>;
+                const next = { ...parsed, [variable]: value };
+                const serialized = JSON.stringify(next, null, 2);
 
-    const injectEditableSupport = (html: string) => {
-        let result = html;
-        if (result.includes('</head>')) {
-            result = result.replace('</head>', EDITABLE_STYLE + '</head>');
-        } else {
-            result = EDITABLE_STYLE + result;
-        }
-        if (result.includes('</body>')) {
-            result = result.replace('</body>', EDITABLE_SCRIPT + '</body>');
-        } else {
-            result = result + EDITABLE_SCRIPT;
-        }
-        return result;
-    };
+                if (previewSource === 'quick') {
+                    setQuickData(next);
+                } else if (previewSource === 'advanced' || previewSource === 'broadcast') {
+                    setDataInput(serialized);
+                }
 
-    // Render editable preview for Quick Send
-    const renderQuickPreview = useCallback(async () => {
-        if (!quickSelectedTemplate) return;
-        setQuickPreviewLoading(true);
+                return {
+                    ...prev,
+                    [templateId]: {
+                        ...(prev[templateId] || { rendered: '', loading: false }),
+                        data: serialized,
+                    },
+                };
+            } catch {
+                return prev;
+            }
+        });
+    }, [previewSource]);
+
+    const renderTemplatePreview = useCallback(async (template: Template, data: Record<string, any>, source: PreviewSource) => {
+        const templateId = template.id;
+        const serialized = JSON.stringify(data || {}, null, 2);
+
+        setPreviewSource(source);
+        setSlidePreview({
+            templateId,
+            templateName: template.name,
+            channel: template.channel,
+        });
+
+        setActivePreviews((prev) => ({
+            ...prev,
+            [templateId]: {
+                ...(prev[templateId] || { rendered: '', loading: false }),
+                data: serialized,
+                loading: true,
+            },
+        }));
+
         try {
-            const res = await templatesAPI.render(apiKey, quickSelectedTemplate.id, {
-                data: Object.keys(quickData).length > 0 ? quickData : {},
-                editable: quickSelectedTemplate.channel === 'email',
+            const res = await templatesAPI.render(apiKey, templateId, {
+                data: data || {},
+                editable: template.channel === 'email',
             });
-            setQuickPreviewHtml(res.rendered_body || '');
-            setQuickPreviewOpen(true);
+            setActivePreviews((prev) => ({
+                ...prev,
+                [templateId]: {
+                    ...(prev[templateId] || { rendered: '', loading: false }),
+                    data: prev[templateId]?.data ?? serialized,
+                    rendered: res.rendered_body || '',
+                    loading: false,
+                },
+            }));
         } catch (err) {
             toast.error(extractErrorMessage(err, 'Failed to render preview'));
-        } finally {
-            setQuickPreviewLoading(false);
+            setActivePreviews((prev) => ({
+                ...prev,
+                [templateId]: {
+                    ...(prev[templateId] || { rendered: '', loading: false }),
+                    data: prev[templateId]?.data ?? serialized,
+                    loading: false,
+                },
+            }));
         }
-    }, [apiKey, quickSelectedTemplate, quickData]);
+    }, [apiKey]);
 
-    // Sync preview variable edits back to dataInput so Send always uses the latest values
-    useEffect(() => {
-        if (!sendPreviewOpen || Object.keys(sendPreviewData).length === 0) return;
-        setDataInput(JSON.stringify(sendPreviewData, null, 2));
-    }, [sendPreviewData, sendPreviewOpen]);
+    const handleRenderPreview = useCallback(async (templateId: string) => {
+        const template = templates.find((t) => t.id === templateId);
+        const preview = activePreviews[templateId];
+        if (!template || !preview) return;
 
-    // Handle postMessage from editable preview iframe
-    useEffect(() => {
-        if (!quickPreviewOpen) return;
-        const handler = (e: MessageEvent) => {
-            if (e.data?.type === 'frn-var-edit' && typeof e.data.variable === 'string') {
-                setQuickData(d => ({ ...d, [e.data.variable]: e.data.value ?? '' }));
-            }
-        };
-        window.addEventListener('message', handler);
-        return () => window.removeEventListener('message', handler);
-    }, [quickPreviewOpen]);
+        let parsedData: Record<string, any> = {};
+        try {
+            parsedData = JSON.parse(preview.data || '{}');
+        } catch {
+            toast.error('Invalid preview JSON data');
+            return;
+        }
 
-    // Handle postMessage from editable send preview iframe (email bulk/broadcast)
-    useEffect(() => {
-        if (!sendPreviewOpen || formSelectedTemplate?.channel !== 'email') return;
-        const handler = (e: MessageEvent) => {
-            if (e.data?.type === 'frn-var-edit' && typeof e.data.variable === 'string') {
-                setSendPreviewData(d => ({ ...d, [e.data.variable]: e.data.value ?? '' }));
-            }
-        };
-        window.addEventListener('message', handler);
-        return () => window.removeEventListener('message', handler);
-    }, [sendPreviewOpen, formSelectedTemplate?.channel]);
+        await renderTemplatePreview(template, parsedData, previewSource || 'quick');
+    }, [templates, activePreviews, previewSource, renderTemplatePreview]);
 
-    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast', data?: Record<string, string>) => {
+    const renderQuickPreview = useCallback(async () => {
+        if (!quickSelectedTemplate) return;
+        await renderTemplatePreview(
+            quickSelectedTemplate,
+            Object.keys(quickData).length > 0 ? quickData : {},
+            'quick',
+        );
+    }, [quickSelectedTemplate, quickData, renderTemplatePreview]);
+
+    const renderSendPreview = useCallback(async (context: 'advanced' | 'broadcast') => {
         if (!formSelectedTemplate?.id) {
             toast.error('Select a template to preview');
             return;
         }
 
-        const customData = data ?? parseCustomData(dataInput);
+        const customData = parseCustomData(dataInput);
         if (customData === null) {
             toast.error('Invalid JSON in custom data');
             return;
         }
 
-        setSendPreviewContext(context);
-        setSendPreviewLoading(true);
-        if (!data) {
-            // Initialize sidebar data from the form on first open
-            const init: Record<string, string> = {};
-            for (const [k, v] of Object.entries(customData || {})) init[k] = String(v);
-            setSendPreviewData(init);
-        }
-        try {
-            const res = await templatesAPI.render(apiKey, formSelectedTemplate.id, {
-                data: customData || {},
-                editable: formSelectedTemplate.channel === 'email',
-            });
-            setSendPreviewHtml(res.rendered_body || '');
-            setSendPreviewOpen(true);
-        } catch (err) {
-            toast.error(extractErrorMessage(err, 'Failed to render preview'));
-        } finally {
-            setSendPreviewLoading(false);
-        }
-    }, [apiKey, formSelectedTemplate, dataInput]);
+        await renderTemplatePreview(formSelectedTemplate, customData || {}, context);
+    }, [formSelectedTemplate, dataInput, renderTemplatePreview]);
 
     // State for collapsible variables section
     const [varsExpanded, setVarsExpanded] = useState(true);
@@ -604,8 +600,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
             setQuickWebhookUrl('');
-            setQuickPreviewOpen(false);
-            setQuickPreviewHtml('');
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -1037,132 +1031,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     {quickTemplateId && (
                                         <Button
                                             variant="outline"
-                                            disabled={quickPreviewLoading || !quickTemplateId}
+                                            disabled={!!activePreviews[quickTemplateId]?.loading || !quickTemplateId}
                                             onClick={renderQuickPreview}
                                         >
                                             <Eye className="w-4 h-4 mr-1" />
-                                            {quickPreviewLoading ? 'Rendering...' : 'Preview'}
+                                            {activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview'}
                                         </Button>
                                     )}
                                     <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
                                         {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
-
-                                <Dialog open={quickPreviewOpen} onOpenChange={(open) => { setQuickPreviewOpen(open); }}>
-                                    <DialogContent className="max-w-5xl h-[85vh] overflow-hidden flex flex-col p-0">
-                                        {/* Toolbar */}
-                                        <div className="flex items-center gap-3 px-5 py-3 border-b border-border shrink-0">
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="text-sm font-semibold">{quickSelectedTemplate?.name}</h3>
-                                                {quickSelectedTemplate?.channel === 'email' && (
-                                                    <p className="text-xs text-muted-foreground">
-                                                        Click any <span className="text-blue-500 font-medium">highlighted</span> text to edit inline
-                                                    </p>
-                                                )}
-                                            </div>
-                                            {quickVariables.length > 0 && (
-                                                <button
-                                                    onClick={() => setQuickPreviewShowVars(v => !v)}
-                                                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                                >
-                                                    <span className={`inline-block transition-transform duration-200 ${quickPreviewShowVars ? 'rotate-0' : '-rotate-90'}`}>▾</span>
-                                                    {quickPreviewShowVars ? 'Hide Variables' : 'Show Variables'}
-                                                </button>
-                                            )}
-                                            <Button
-                                                size="sm"
-                                                className="text-xs h-7"
-                                                onClick={renderQuickPreview}
-                                                disabled={quickPreviewLoading}
-                                            >
-                                                {quickPreviewLoading ? 'Rendering...' : 'Re-render'}
-                                            </Button>
-                                        </div>
-
-                                        {/* Body: optional variables sidebar + preview */}
-                                        <div className="flex flex-1 min-h-0 overflow-hidden">
-                                            {/* Variables sidebar */}
-                                            {quickVariables.length > 0 && quickPreviewShowVars && (
-                                                <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
-                                                    <div className="px-4 py-3 shrink-0">
-                                                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variables</p>
-                                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                                            Edit values then click <span className="font-medium">Re-render</span>.
-                                                        </p>
-                                                    </div>
-                                                    <div className="h-px bg-border shrink-0" />
-                                                    <div className="flex flex-col gap-4 px-4 py-3">
-                                                        {quickVariables.map((varName) => {
-                                                            const type = inferSendVarType(varName);
-                                                            const value = quickData[varName] ?? '';
-                                                            return (
-                                                                <div key={varName} className="flex flex-col gap-1.5">
-                                                                    <Label className="text-xs font-medium text-foreground capitalize">
-                                                                        {varName.replace(/_/g, ' ')}
-                                                                    </Label>
-                                                                    {type === 'image' ? (
-                                                                        <div className="flex flex-col gap-1">
-                                                                            <Input
-                                                                                type="url"
-                                                                                value={value}
-                                                                                onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
-                                                                                placeholder="https://..."
-                                                                                className="h-7 text-xs"
-                                                                            />
-                                                                            {value && (
-                                                                                <img
-                                                                                    src={value}
-                                                                                    alt={varName}
-                                                                                    className="h-14 w-auto rounded border border-border object-contain"
-                                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                                                                />
-                                                                            )}
-                                                                        </div>
-                                                                    ) : type === 'url' ? (
-                                                                        <Input
-                                                                            type="url"
-                                                                            value={value}
-                                                                            onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
-                                                                            placeholder="https://..."
-                                                                            className="h-7 text-xs"
-                                                                        />
-                                                                    ) : (
-                                                                        <Input
-                                                                            value={value}
-                                                                            onChange={(e) => setQuickData(d => ({ ...d, [varName]: e.target.value }))}
-                                                                            placeholder={varName}
-                                                                            className="h-7 text-xs"
-                                                                        />
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Preview area */}
-                                            <div className="flex-1 min-h-0 relative">
-                                                {quickSelectedTemplate?.channel === 'email' ? (
-                                                    <iframe
-                                                        srcDoc={injectEditableSupport(quickPreviewHtml)}
-                                                        title="Editable Preview"
-                                                        className="w-full h-full border-0 bg-white"
-                                                        sandbox="allow-scripts"
-                                                    />
-                                                ) : (
-                                                    <iframe
-                                                        srcDoc={quickPreviewHtml}
-                                                        title="Notification Preview"
-                                                        className="w-full h-full border-0 bg-white"
-                                                        sandbox="allow-same-origin"
-                                                    />
-                                                )}
-                                            </div>
-                                        </div>
-                                    </DialogContent>
-                                </Dialog>
                             </div>
                         </TabsContent>
 
@@ -1613,10 +1492,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             type="button"
                                             variant="outline"
                                             onClick={() => renderSendPreview('advanced')}
-                                            disabled={sendPreviewLoading || !formData.template_id}
+                                            disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
                                         >
                                             <Eye className="h-4 w-4 mr-1" />
-                                            {sendPreviewLoading && sendPreviewContext === 'advanced' ? 'Rendering...' : 'Preview'}
+                                            {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
                                         </Button>
                                         <Button
                                             type="button"
@@ -1864,10 +1743,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     type="button"
                                                     variant="outline"
                                                     onClick={() => renderSendPreview('broadcast')}
-                                                    disabled={sendPreviewLoading || !formData.template_id}
+                                                    disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
                                                 >
                                                     <Eye className="h-4 w-4 mr-1" />
-                                                    {sendPreviewLoading && sendPreviewContext === 'broadcast' ? 'Rendering...' : 'Preview'}
+                                                    {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
                                                 </Button>
                                                 <Button
                                                     type="submit"
@@ -2298,136 +2177,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     )}
                 </SlidePanel>
 
-                <Dialog open={sendPreviewOpen} onOpenChange={setSendPreviewOpen}>
-                    <DialogContent className="max-w-5xl h-[85vh] overflow-hidden flex flex-col p-0">
-                        {/* Toolbar */}
-                        <div className="flex items-center gap-3 px-5 py-3 border-b border-border shrink-0">
-                            <div className="flex-1 min-w-0">
-                                <h3 className="text-sm font-semibold">
-                                    {sendPreviewContext === 'advanced' ? 'Bulk Send Preview' : 'Broadcast Preview'}
-                                </h3>
-                                <p className="text-xs text-muted-foreground">Rendered from selected template and current variables.</p>
-                            </div>
-                            {formVariables.length > 0 && (
-                                <button
-                                    onClick={() => setSendPreviewShowVars(v => !v)}
-                                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                    <span className={`inline-block transition-transform duration-200 ${sendPreviewShowVars ? 'rotate-0' : '-rotate-90'}`}>▾</span>
-                                    {sendPreviewShowVars ? 'Hide Variables' : 'Show Variables'}
-                                </button>
-                            )}
-                            {(formSelectedTemplate?.channel === 'email' || formSelectedTemplate?.channel === 'whatsapp') && (
-                                <Button
-                                    size="sm"
-                                    className="text-xs h-7"
-                                    onClick={() => renderSendPreview(sendPreviewContext, sendPreviewData)}
-                                    disabled={sendPreviewLoading}
-                                >
-                                    {sendPreviewLoading ? 'Rendering...' : 'Re-render'}
-                                </Button>
-                            )}
-                            {formSelectedTemplate && (
-                                <Badge variant="outline" className="text-xs">{formSelectedTemplate.channel}</Badge>
-                            )}
-                        </div>
-
-                        {/* Body: optional variables sidebar + preview */}
-                        <div className="flex flex-1 min-h-0 overflow-hidden">
-                            {/* Variables sidebar */}
-                            {formVariables.length > 0 && sendPreviewShowVars && (
-                                <div className="w-72 shrink-0 flex flex-col overflow-y-auto border-r border-border bg-muted/10">
-                                    <div className="px-4 py-3 shrink-0">
-                                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Variables</p>
-                                        <p className="text-xs text-muted-foreground mt-0.5">
-                                            Edit values then click <span className="font-medium">Re-render</span>.
-                                        </p>
-                                    </div>
-                                    <div className="h-px bg-border shrink-0" />
-                                    <div className="flex flex-col gap-4 px-4 py-3">
-                                        {formVariables.map((varName) => {
-                                            const type = inferSendVarType(varName);
-                                            const value = sendPreviewData[varName] ?? '';
-                                            return (
-                                                <div key={varName} className="flex flex-col gap-1.5">
-                                                    <Label className="text-xs font-medium text-foreground capitalize">
-                                                        {varName.replace(/_/g, ' ')}
-                                                    </Label>
-                                                    {type === 'image' ? (
-                                                        <div className="flex flex-col gap-1">
-                                                            <Input
-                                                                type="url"
-                                                                value={value}
-                                                                onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
-                                                                placeholder="https://..."
-                                                                className="h-7 text-xs"
-                                                            />
-                                                            {value && (
-                                                                <img
-                                                                    src={value}
-                                                                    alt={varName}
-                                                                    className="h-14 w-auto rounded border border-border object-contain"
-                                                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    ) : type === 'url' ? (
-                                                        <Input
-                                                            type="url"
-                                                            value={value}
-                                                            onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
-                                                            placeholder="https://..."
-                                                            className="h-7 text-xs"
-                                                        />
-                                                    ) : (
-                                                        <Input
-                                                            value={value}
-                                                            onChange={(e) => setSendPreviewData(d => ({ ...d, [varName]: e.target.value }))}
-                                                            placeholder={varName}
-                                                            className="h-7 text-xs"
-                                                        />
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Preview area */}
-                            <div className="flex-1 min-h-0 min-w-0 bg-muted/15">
-                                {sendPreviewLoading ? (
-                                    <div className="h-full flex items-center justify-center text-muted-foreground">
-                                        <Loader2 className="h-5 w-5 animate-spin" />
-                                    </div>
-                                ) : formSelectedTemplate?.channel === 'email' ? (
-                                    <iframe
-                                        srcDoc={sendPreviewHtml}
-                                        title="Send Preview"
-                                        className="w-full h-full border-0 bg-white"
-                                        sandbox="allow-scripts"
-                                    />
-                                ) : formSelectedTemplate?.channel === 'whatsapp' ? (
-                                    <div className="h-full overflow-auto p-6 flex items-start justify-center">
-                                        <WhatsAppPreview
-                                            templateName={formSelectedTemplate?.name}
-                                            buttons={formSelectedTemplate?.metadata?.buttons}
-                                            data={sendPreviewData}
-                                            templateContent={{
-                                                title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject,
-                                                body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body,
-                                            }}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="h-full overflow-auto p-4">
-                                        <pre className="text-sm whitespace-pre-wrap wrap-break-word font-mono text-foreground">{sendPreviewHtml}</pre>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                <EditablePreviewPanel
+                    slidePreview={slidePreview}
+                    templates={templates}
+                    activePreviews={activePreviews}
+                    savingDefaults={{}}
+                    showDefaultActions={false}
+                    onClose={() => {
+                        setSlidePreview(null);
+                        setPreviewSource(null);
+                    }}
+                    onRenderPreview={handleRenderPreview}
+                    onSaveDefaults={() => { }}
+                    onResetDefaults={() => { }}
+                    onVariableEdit={updatePreviewVariable}
+                />
 
                 {/* Batch Send Dialog */}
                 <Dialog open={showBatchSend} onOpenChange={(open) => {

@@ -11,6 +11,7 @@ interface EditablePreviewPanelProps {
     templates: Template[];
     activePreviews: Record<string, { data: string; rendered: string; loading: boolean }>;
     savingDefaults: Record<string, boolean>;
+    showDefaultActions?: boolean;
     onClose: () => void;
     onRenderPreview: (templateId: string) => void;
     onSaveDefaults: (template: Template) => void;
@@ -107,6 +108,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
     templates,
     activePreviews,
     savingDefaults,
+    showDefaultActions = true,
     onClose,
     onRenderPreview,
     onSaveDefaults,
@@ -191,7 +193,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                         >
                             {currentPreview?.loading ? 'Rendering...' : 'Re-render'}
                         </Button>
-                        {currentTemplate && (
+                        {showDefaultActions && currentTemplate && (
                             <Button
                                 size="sm"
                                 variant="outline"
@@ -202,7 +204,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                                 {savingDefaults[currentTemplate.id] ? 'Saving...' : 'Save Defaults'}
                             </Button>
                         )}
-                        {currentTemplate && (
+                        {showDefaultActions && currentTemplate && (
                             <Button
                                 size="sm"
                                 variant="ghost"
