@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Separator } from '../ui/separator';
+import { Camera, Mic, MoreVertical, Paperclip, Phone, Smile, Video } from 'lucide-react';
 import type { Template } from '../../types';
 
 interface EditablePreviewPanelProps {
@@ -103,6 +104,104 @@ function injectEditableSupport(html: string): string {
     return result;
 }
 
+function extractWhatsAppBody(rendered: string): string {
+    if (!rendered) return '';
+
+    const bodyMatch = rendered.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    const fromBody = bodyMatch?.[1] ?? rendered;
+
+    // Keep preview safe and deterministic in the panel.
+    return fromBody
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .trim();
+}
+
+const WhatsAppMobilePreview: React.FC<{ rendered: string; mediaUrl?: string }> = ({ rendered, mediaUrl }) => {
+    const timeString = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+    });
+
+    const applicationName = localStorage.getItem('last_app_name') || 'FreeRange Notify';
+
+    const bubbleHtml = extractWhatsAppBody(rendered);
+    const hasHtml = /<[^>]+>/.test(bubbleHtml);
+    const showMedia = !!mediaUrl && /^(https?:)?\/\//i.test(mediaUrl);
+
+    return (
+        <div className="h-full p-4 sm:p-6 overflow-y-auto bg-muted/20">
+            <div className="mx-auto w-full max-w-sm h-full rounded-lg flex flex-col border border-border overflow-hidden bg-[#efe7de] dark:bg-[#0b141a]">
+                <div
+                    className="absolute inset-0 opacity-20 dark:opacity-10 pointer-events-none"
+                    style={{
+                        backgroundImage:
+                            'radial-gradient(circle at 20% 30%, rgba(0,0,0,0.08) 0, transparent 32%), radial-gradient(circle at 70% 65%, rgba(0,0,0,0.07) 0, transparent 28%)',
+                    }}
+                />
+
+                <div className="relative z-10 bg-[#f0f2f5] dark:bg-[#202c33] px-3 py-2.5 border-b border-black/10 dark:border-white/10">
+                    <div className="flex items-center gap-2.5">
+                        <div className="size-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xl">
+                            {applicationName.substring(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-[#111b21] dark:text-[#e9edef] truncate">{applicationName}</p>
+                            <p className="text-[11px] text-[#667781] dark:text-[#8696a0]">Business Account</p>
+                        </div>
+                        <div className='flex flex-row items-center gap-4'>
+                            <Video className="size-6 text-[#667781] dark:text-[#8696a0]" />
+                            <Phone className="size-5 text-[#667781] dark:text-[#8696a0]" />
+                            <MoreVertical className="size-5 text-[#667781] dark:text-[#8696a0]" />
+                        </div>
+
+                    </div>
+                </div>
+
+                <div className="px-3 py-3 flex flex-col flex-1">
+                    <div className="self-center mb-3 rounded-md bg-white/80 dark:bg-[#182229] px-2 py-0.5 text-[10px] uppercase font-semibold tracking-wide text-[#667781] dark:text-[#8696a0]">
+                        Today
+                    </div>
+
+                    {showMedia && (
+                        <div className="relative mb-2 max-w-[86%] rounded-2xl rounded-tl-sm bg-white dark:bg-[#202c33] shadow p-1.5">
+                            <img src={mediaUrl} alt="WhatsApp media" className="rounded-xl max-h-56 w-full object-cover" />
+                            <div className="mt-1 text-right text-[10px] text-[#667781] dark:text-[#8696a0]">{timeString}</div>
+                        </div>
+                    )}
+
+                    <div className="relative max-w-[86%] rounded-2xl rounded-tl-sm bg-white dark:bg-[#202c33] shadow px-3 py-2 text-[14px] leading-5 text-[#111b21] dark:text-[#e9edef]">
+                        {hasHtml ? (
+                            <div
+                                className="[&_a]:text-emerald-600 [&_a]:underline [&_strong]:font-semibold [&_p]:my-0"
+                                dangerouslySetInnerHTML={{ __html: bubbleHtml }}
+                            />
+                        ) : (
+                            <p className="whitespace-pre-wrap">{bubbleHtml || 'No WhatsApp content rendered.'}</p>
+                        )}
+                        <div className="mt-1 text-right text-[10px] text-[#667781] dark:text-[#8696a0]">{timeString}</div>
+                    </div>
+                </div>
+
+                <div className="bg-[#f0f2f5] dark:bg-[#202c33] p-2 border-t border-black/10 dark:border-white/10">
+                    <div className="flex items-center gap-1.5">
+                        <div className="flex-1 rounded-full bg-white dark:bg-[#2a3942] px-3 py-2 flex items-center gap-2 text-[#667781] dark:text-[#8696a0]">
+                            <Smile className="h-4.5 w-4.5" />
+                            <span className="text-xs flex-1">Message</span>
+                            <Paperclip className="h-4 w-4 -rotate-45" />
+                            <Camera className="h-4 w-4" />
+                        </div>
+                        <div className="rounded-full bg-[#00a884] p-2 text-white">
+                            <Mic className="h-4 w-4" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
     slidePreview,
     templates,
@@ -128,6 +227,12 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
             return {};
         }
     })();
+    const whatsappMediaUrl =
+        parsedVariables.media_url ||
+        parsedVariables.image_url ||
+        parsedVariables.image ||
+        parsedVariables.img_url ||
+        '';
 
     const rawVariables = currentTemplate?.variables ?? [];
     const hasVariables = rawVariables.length > 0;
@@ -299,6 +404,8 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                                         className="w-full h-full border-0 bg-white"
                                         title="Editable Rendered Preview"
                                     />
+                                ) : slidePreview.channel === 'whatsapp' ? (
+                                    <WhatsAppMobilePreview rendered={currentPreview.rendered} mediaUrl={whatsappMediaUrl} />
                                 ) : (
                                     <div className="h-full p-4 overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
                                         {currentPreview.rendered}

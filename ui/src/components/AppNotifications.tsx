@@ -22,11 +22,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { SlidePanel } from './ui/slide-panel';
-import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, ChevronDown, ChevronUp, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
+import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Clock, Layers, XCircle, Download, UploadCloud, FileText, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
-import { WhatsAppPreview } from './WhatsAppPreview';
 import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
 import EditablePreviewPanel from './templates/EditablePreviewPanel';
@@ -416,6 +415,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
     const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
+    const [quickMedia, setQuickMedia] = useState<{ url: string; previewUrl: string; type: string; name: string } | null>(null);
     const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
     const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
     const [activePreviews, setActivePreviews] = useState<Record<string, { data: string; rendered: string; loading: boolean }>>({});
@@ -434,12 +434,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     // Advanced/Broadcast: detect variables from selected template
     const formSelectedTemplate = useMemo(() => templates.find(t => t.id === formData.template_id), [templates, formData.template_id]);
+    const formVariables = useMemo(() => {
+        const vars = formSelectedTemplate?.variables || [];
+        return formSelectedTemplate?.body ? sortVariablesByAppearance(vars, formSelectedTemplate.body) : vars;
+    }, [formSelectedTemplate]);
     const parsedFormData = useMemo(() => {
-        try {
-            return parseCustomData(dataInput) || {};
-        } catch {
-            return {};
-        }
+        const parsed = parseCustomData(dataInput);
+        if (!parsed || typeof parsed !== 'object') return {} as Record<string, string>;
+        const next: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) next[k] = v == null ? '' : String(v);
+        return next;
     }, [dataInput]);
 
     // Helper: get sample_data from template metadata
@@ -459,6 +463,90 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickTo(users[0].user_id);
         }
     }, [users, quickTo, quickToManual]);
+
+    const updateFormDataVariable = useCallback((variable: string, value: string) => {
+        setDataInput((prev) => {
+            const current = parseCustomData(prev);
+            const next: Record<string, string> = current && typeof current === 'object'
+                ? Object.fromEntries(Object.entries(current).map(([k, v]) => [k, v == null ? '' : String(v)]))
+                : {};
+            next[variable] = value;
+            return JSON.stringify(next, null, 2);
+        });
+    }, []);
+
+    const removeFormDataVariable = useCallback((variable: string) => {
+        setDataInput((prev) => {
+            const current = parseCustomData(prev);
+            const next: Record<string, string> = current && typeof current === 'object'
+                ? Object.fromEntries(Object.entries(current).map(([k, v]) => [k, v == null ? '' : String(v)]))
+                : {};
+            delete next[variable];
+            return Object.keys(next).length > 0 ? JSON.stringify(next, null, 2) : '';
+        });
+    }, []);
+
+    const handleFormMediaUpload = useCallback(async (files: File[]) => {
+        if (files.length === 0) return;
+
+        const remainingLimit = 5 - mediaFiles.length;
+        const filesToUpload = files.slice(0, remainingLimit);
+
+        if (files.length > remainingLimit) {
+            toast.warning(`Only ${remainingLimit} more file(s) can be added.`);
+        }
+
+        for (const file of filesToUpload) {
+            if (file.size > 16 * 1024 * 1024) {
+                toast.error(`${file.name} is too large (max 16 MB)`);
+                continue;
+            }
+
+            const localUrl = URL.createObjectURL(file);
+            try {
+                toast.info(`Uploading ${file.name}...`);
+                const result = await mediaAPI.upload(apiKey, file);
+                setMediaFiles((prev) => {
+                    const next = [...prev, {
+                        url: result.url,
+                        previewUrl: localUrl,
+                        type: file.type,
+                        name: file.name,
+                    }];
+                    if (next.length === 1) {
+                        setFormData((fd) => ({ ...fd, media_url: result.url } as any));
+                        updateFormDataVariable('media_url', result.url);
+                    }
+                    return next;
+                });
+            } catch (err) {
+                URL.revokeObjectURL(localUrl);
+                toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+            }
+        }
+
+        toast.success('Upload complete');
+    }, [apiKey, mediaFiles.length, updateFormDataVariable]);
+
+    const removeFormMediaAt = useCallback((idx: number) => {
+        const target = mediaFiles[idx];
+        if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+        const newFiles = mediaFiles.filter((_, i) => i !== idx);
+        setMediaFiles(newFiles);
+        const primary = newFiles.length > 0 ? newFiles[0].url : '';
+        setFormData((prev) => ({ ...prev, media_url: primary } as any));
+        if (primary) updateFormDataVariable('media_url', primary);
+        else removeFormDataVariable('media_url');
+    }, [mediaFiles, removeFormDataVariable, updateFormDataVariable]);
+
+    const clearFormMedia = useCallback(() => {
+        mediaFiles.forEach((m) => {
+            if (m.previewUrl) URL.revokeObjectURL(m.previewUrl);
+        });
+        setMediaFiles([]);
+        setFormData((prev) => ({ ...prev, media_url: '' } as any));
+        removeFormDataVariable('media_url');
+    }, [mediaFiles, removeFormDataVariable]);
 
     const updatePreviewVariable = useCallback((templateId: string, variable: string, value: string) => {
         setActivePreviews((prev) => {
@@ -574,9 +662,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         await renderTemplatePreview(formSelectedTemplate, customData || {}, context);
     }, [formSelectedTemplate, dataInput, renderTemplatePreview]);
 
-    // State for collapsible variables section
-    const [varsExpanded, setVarsExpanded] = useState(true);
-
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
         setQuickSending(true);
@@ -600,6 +685,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
             setQuickWebhookUrl('');
+            if (quickMedia?.previewUrl) {
+                URL.revokeObjectURL(quickMedia.previewUrl);
+            }
+            setQuickMedia(null);
             refresh();
         } catch (error) {
             toast.error(extractErrorMessage(error, 'Quick-send failed'));
@@ -651,6 +740,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setBroadcastWorkflowTriggerId('');
             setBroadcastTopicKey('');
             setBroadcastDigestRuleId('');
+            clearFormMedia();
             refresh();
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
@@ -715,6 +805,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setSelectedTargets([]);
             setDataInput('');
             setAdvDigestRuleId('');
+            clearFormMedia();
             refresh();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
@@ -826,11 +917,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             setQuickTemplateId(value);
                                             // Pre-fill variables with sample_data
                                             const selected = templates.find(t => t.id === value);
+                                            if (selected?.channel !== 'whatsapp' && quickMedia?.previewUrl) {
+                                                URL.revokeObjectURL(quickMedia.previewUrl);
+                                                setQuickMedia(null);
+                                            }
                                             const sample = getSampleData(selected);
                                             if (Object.keys(sample).length > 0) {
-                                                setQuickData(sample);
+                                                setQuickData(
+                                                    selected?.channel === 'whatsapp' && quickMedia
+                                                        ? { ...sample, media_url: quickMedia.url }
+                                                        : sample,
+                                                );
                                             } else {
-                                                setQuickData({});
+                                                setQuickData(
+                                                    selected?.channel === 'whatsapp' && quickMedia
+                                                        ? { media_url: quickMedia.url }
+                                                        : {},
+                                                );
                                             }
                                         }}>
                                             <SelectTrigger>
@@ -844,8 +947,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </Select>
                                     </div>
                                 </div>
-                                {quickVariables.length > 0 && quickSelectedTemplate?.channel === 'email' && (
-                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-2`}>
+                                {quickVariables.length > 0 && (
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium flex items-center gap-2">
                                                 Template Variables
@@ -855,70 +958,44 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 )}
                                             </span>
                                         </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            Click <strong>Preview</strong> below to see the rendered email and edit variables inline by clicking highlighted text.
-                                        </p>
-                                    </div>
-                                )}
-                                {quickVariables.length > 0 && quickSelectedTemplate?.channel !== 'email' && (
-                                    <div className={SEND_FORM_SECTION_CLASS}>
-                                        <button
-                                            type="button"
-                                            className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors"
-                                            onClick={() => setVarsExpanded(!varsExpanded)}
-                                        >
-                                            <span className="flex items-center gap-2">
-                                                Template Variables
-                                                <Badge variant="secondary" className="text-xs">{quickVariables.length}</Badge>
-                                                {quickSelectedTemplate?.metadata?.sample_data && (
-                                                    <span className="text-xs text-muted-foreground font-normal">• sample data pre-filled</span>
-                                                )}
-                                            </span>
-                                            {varsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                        </button>
-                                        {varsExpanded && (
-                                            <div className="px-4 pb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                {quickVariables.map(v => {
-                                                    const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
-                                                    const isDateVar = v.toLowerCase() === 'date';
-                                                    const currentVal = quickData[v] || '';
-                                                    return (
-                                                        <div key={v} className="space-y-1">
-                                                            <Label className="text-xs text-muted-foreground">{v}</Label>
-                                                            {isDateVar ? (
-                                                                <Input
-                                                                    type="date"
-                                                                    value={toISODateOnly(currentVal)}
-                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: formatDateForTemplate(e.target.value) }))}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            ) : (
-                                                                <Input
-                                                                    value={currentVal}
-                                                                    onChange={e => setQuickData(d => ({ ...d, [v]: e.target.value }))}
-                                                                    placeholder={sampleVal ? String(sampleVal) : v}
-                                                                    className={currentVal ? '' : 'text-muted-foreground'}
-                                                                />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
+                                        {quickVariables.length <= 2 ? (
+                                            <>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.
+                                                </p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {quickVariables.map((v) => {
+                                                        const sampleVal = quickSelectedTemplate?.metadata?.sample_data?.[v];
+                                                        const isDateVar = v.toLowerCase() === 'date';
+                                                        const currentVal = quickData[v] || '';
+                                                        return (
+                                                            <div key={v} className="space-y-1">
+                                                                <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                {isDateVar ? (
+                                                                    <Input
+                                                                        type="date"
+                                                                        value={toISODateOnly(currentVal)}
+                                                                        onChange={(e) => setQuickData((d) => ({ ...d, [v]: formatDateForTemplate(e.target.value) }))}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                ) : (
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setQuickData((d) => ({ ...d, [v]: e.target.value }))}
+                                                                        placeholder={sampleVal ? String(sampleVal) : v}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground">
+                                                Fill variable values through the preview panel.
+                                            </p>
                                         )}
-                                    </div>
-                                )}
-                                {quickSelectedTemplate?.channel === 'whatsapp' && (
-                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                        <WhatsAppPreview
-                                            templateName={quickSelectedTemplate?.name}
-                                            buttons={quickSelectedTemplate?.metadata?.buttons}
-                                            data={quickData}
-                                            templateContent={{
-                                                title: quickSelectedTemplate?.metadata?.title_template || quickSelectedTemplate?.subject,
-                                                body: quickSelectedTemplate?.metadata?.body_template || quickSelectedTemplate?.body
-                                            }}
-                                        />
                                     </div>
                                 )}
                                 {quickSelectedTemplate?.channel === 'webhook' && (
@@ -943,6 +1020,85 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <p className="text-xs text-muted-foreground mt-1">Go to the <strong>Providers</strong> tab to add webhook endpoints.</p>
                                         </div>
                                     )
+                                )}
+                                {quickSelectedTemplate?.channel === 'whatsapp' && (
+                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image Attachment (optional)</Label>
+                                        {!quickMedia && (
+                                            <label
+                                                htmlFor="quickMediaUpload"
+                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-5 cursor-pointer hover:bg-muted/50 transition-colors"
+                                            >
+                                                <UploadCloud className="h-7 w-7 text-muted-foreground" />
+                                                <span className="text-sm font-medium">Click to upload image</span>
+                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP — max 16 MB</span>
+                                                <input
+                                                    id="quickMediaUpload"
+                                                    type="file"
+                                                    accept="image/jpeg,image/png,image/gif,image/webp"
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        if (file.size > 16 * 1024 * 1024) {
+                                                            toast.error(`${file.name} is too large (max 16 MB)`);
+                                                            return;
+                                                        }
+
+                                                        const localUrl = URL.createObjectURL(file);
+                                                        try {
+                                                            toast.info(`Uploading ${file.name}...`);
+                                                            const result = await mediaAPI.upload(apiKey, file);
+                                                            setQuickMedia((prev) => {
+                                                                if (prev?.previewUrl) {
+                                                                    URL.revokeObjectURL(prev.previewUrl);
+                                                                }
+                                                                return {
+                                                                    url: result.url,
+                                                                    previewUrl: localUrl,
+                                                                    type: file.type,
+                                                                    name: file.name,
+                                                                };
+                                                            });
+                                                            setQuickData((d) => ({ ...d, media_url: result.url }));
+                                                            toast.success('Image uploaded');
+                                                        } catch (err) {
+                                                            URL.revokeObjectURL(localUrl);
+                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+
+                                        {quickMedia && (
+                                            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <img src={quickMedia.previewUrl} alt={quickMedia.name} className="h-12 w-12 rounded object-cover border border-border" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium truncate">{quickMedia.name}</p>
+                                                        <p className="text-xs text-muted-foreground truncate">{quickMedia.url}</p>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        URL.revokeObjectURL(quickMedia.previewUrl);
+                                                        setQuickMedia(null);
+                                                        setQuickData((d) => {
+                                                            const next = { ...d };
+                                                            delete next.media_url;
+                                                            return next;
+                                                        });
+                                                    }}
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
@@ -1080,6 +1236,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 if (next !== 'webhook') {
                                                     setSelectedTargets([]);
                                                 }
+                                                if (next !== 'whatsapp') {
+                                                    clearFormMedia();
+                                                }
                                             }}
                                         >
                                             <SelectTrigger>
@@ -1130,6 +1289,48 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
                                     </div>
 
+                                    {formVariables.length > 0 && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-medium">Template Variables</span>
+                                                    <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                </div>
+                                                {formVariables.length <= 2 ? (
+                                                    <>
+                                                        <p className="text-xs text-muted-foreground">Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.</p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {formVariables.map((v) => {
+                                                                const currentVal = parsedFormData[v] || '';
+                                                                const isDateVar = v.toLowerCase() === 'date';
+                                                                return (
+                                                                    <div key={v} className="space-y-1">
+                                                                        <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                        {isDateVar ? (
+                                                                            <Input
+                                                                                type="date"
+                                                                                value={toISODateOnly(currentVal)}
+                                                                                onChange={(e) => updateFormDataVariable(v, formatDateForTemplate(e.target.value))}
+                                                                            />
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={currentVal}
+                                                                                onChange={(e) => updateFormDataVariable(v, e.target.value)}
+                                                                                placeholder={v}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Webhook Targets Selection */}
                                     {formData.channel === 'webhook' && (
                                         webhooks && Object.keys(webhooks).length > 0 ? (
@@ -1159,23 +1360,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     {/* WhatsApp Media Upload */}
                                     {formData.channel === 'whatsapp' && (
                                         <div className="space-y-4 md:col-span-2">
-                                            {/* Real-time WhatsApp Preview */}
-                                            {formData.template_id && (
-                                                <div className="space-y-2">
-                                                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                                    <WhatsAppPreview
-                                                        templateName={formSelectedTemplate?.name}
-                                                        mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
-                                                        buttons={formSelectedTemplate?.metadata?.buttons}
-                                                        data={parsedFormData}
-                                                        templateContent={{
-                                                            title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
-                                                            body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-
                                             <div className="space-y-2">
                                                 <Label>Media Attachment (optional)</Label>
                                                 <div className="space-y-3">
@@ -1196,45 +1380,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
                                                                 className="hidden"
                                                                 onChange={async (e) => {
-                                                                    const files = Array.from(e.target.files || []);
-                                                                    if (files.length === 0) return;
-
-                                                                    const remainingLimit = 5 - mediaFiles.length;
-                                                                    const filesToUpload = files.slice(0, remainingLimit);
-
-                                                                    if (files.length > remainingLimit) {
-                                                                        toast.warning(`Only ${remainingLimit} more file(s) can be added.`);
-                                                                    }
-
-                                                                    for (const file of filesToUpload) {
-                                                                        if (file.size > 16 * 1024 * 1024) {
-                                                                            toast.error(`${file.name} is too large (max 16 MB)`);
-                                                                            continue;
-                                                                        }
-
-                                                                        const localUrl = URL.createObjectURL(file);
-                                                                        try {
-                                                                            toast.info(`Uploading ${file.name}...`);
-                                                                            const result = await mediaAPI.upload(apiKey, file);
-                                                                            setMediaFiles(prev => {
-                                                                                const next = [...prev, {
-                                                                                    url: result.url,
-                                                                                    previewUrl: localUrl,
-                                                                                    type: file.type,
-                                                                                    name: file.name
-                                                                                }];
-                                                                                // Sync the first file's URL to formData for API compatibility
-                                                                                if (next.length === 1) {
-                                                                                    setFormData(fd => ({ ...fd, media_url: result.url } as any));
-                                                                                }
-                                                                                return next;
-                                                                            });
-                                                                        } catch (err) {
-                                                                            URL.revokeObjectURL(localUrl);
-                                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
-                                                                        }
-                                                                    }
-                                                                    toast.success('Upload complete');
+                                                                    await handleFormMediaUpload(Array.from(e.target.files || []));
                                                                 }}
                                                             />
                                                         </label>
@@ -1255,16 +1401,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 className='bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200'
                                                                 variant="outline"
                                                                 size="sm"
-                                                                onClick={() => {
-                                                                    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
-                                                                    const newFiles = mediaFiles.filter((_, i) => i !== idx);
-                                                                    setMediaFiles(newFiles);
-                                                                    // Update primary media_url
-                                                                    setFormData(prev => ({
-                                                                        ...prev,
-                                                                        media_url: newFiles.length > 0 ? newFiles[0].url : ''
-                                                                    } as any));
-                                                                }}
+                                                                onClick={() => removeFormMediaAt(idx)}
                                                             >
                                                                 <X className="h-3.5 w-3.5" />
                                                             </Button>
@@ -1505,6 +1642,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 setSelectedUsers([]);
                                                 setSelectedTargets([]);
                                                 setDataInput('');
+                                                clearFormMedia();
                                             }}
                                         >
                                             Reset
@@ -1544,6 +1682,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         if (shouldClearTemplate) setDataInput('');
                                                         if (next !== 'webhook') {
                                                             setSelectedTargets([]);
+                                                        }
+                                                        if (next !== 'whatsapp') {
+                                                            clearFormMedia();
                                                         }
                                                     }}
                                                 >
@@ -1630,19 +1771,95 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             )}
                                         </div>
 
-                                        {formData.channel === 'whatsapp' && formData.template_id && (
-                                            <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">WhatsApp Preview</Label>
-                                                <WhatsAppPreview
-                                                    templateName={formSelectedTemplate?.name}
-                                                    mediaFiles={mediaFiles.map(m => ({ url: m.previewUrl || m.url, type: m.type }))}
-                                                    buttons={formSelectedTemplate?.metadata?.buttons}
-                                                    data={parsedFormData}
-                                                    templateContent={{
-                                                        title: formSelectedTemplate?.metadata?.title_template || formSelectedTemplate?.subject || parsedFormData?.title,
-                                                        body: formSelectedTemplate?.metadata?.body_template || formSelectedTemplate?.body || parsedFormData?.body
-                                                    }}
-                                                />
+                                        {formVariables.length > 0 && (
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-medium">Template Variables</span>
+                                                    <Badge variant="secondary" className="text-xs">{formVariables.length}</Badge>
+                                                </div>
+                                                {formVariables.length <= 2 ? (
+                                                    <>
+                                                        <p className="text-xs text-muted-foreground">Fill variables directly here, or use <strong>Preview</strong> to edit in the preview panel.</p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {formVariables.map((v) => {
+                                                                const currentVal = parsedFormData[v] || '';
+                                                                const isDateVar = v.toLowerCase() === 'date';
+                                                                return (
+                                                                    <div key={v} className="space-y-1">
+                                                                        <Label className="text-xs text-muted-foreground">{v}</Label>
+                                                                        {isDateVar ? (
+                                                                            <Input
+                                                                                type="date"
+                                                                                value={toISODateOnly(currentVal)}
+                                                                                onChange={(e) => updateFormDataVariable(v, formatDateForTemplate(e.target.value))}
+                                                                            />
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={currentVal}
+                                                                                onChange={(e) => updateFormDataVariable(v, e.target.value)}
+                                                                                placeholder={v}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {formData.channel === 'whatsapp' && (
+                                            <div className="space-y-4">
+                                                <div className="space-y-2">
+                                                    <Label>Media Attachment (optional)</Label>
+                                                    <div className="space-y-3">
+                                                        {mediaFiles.length < 5 && (
+                                                            <label
+                                                                htmlFor="broadcastMediaUpload"
+                                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-6 cursor-pointer hover:bg-muted/50 transition-colors"
+                                                            >
+                                                                <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                                                                <span className="text-sm font-medium">Click to upload image or file</span>
+                                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP, PDF, MP4 — max 16 MB (Limit: 5 files)</span>
+                                                                <input
+                                                                    multiple
+                                                                    id="broadcastMediaUpload"
+                                                                    type="file"
+                                                                    accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,video/mp4"
+                                                                    className="hidden"
+                                                                    onChange={async (e) => {
+                                                                        await handleFormMediaUpload(Array.from(e.target.files || []));
+                                                                    }}
+                                                                />
+                                                            </label>
+                                                        )}
+
+                                                        {mediaFiles.map((file, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="p-2 bg-primary/10 rounded">
+                                                                        <UploadCloud className="h-4 w-4 text-primary" />
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-sm font-medium truncate max-w-[150px]">{file.name}</p>
+                                                                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">{file.url}</p>
+                                                                    </div>
+                                                                </div>
+                                                                <Button
+                                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() => removeFormMediaAt(idx)}
+                                                                >
+                                                                    <X className="h-3.5 w-3.5" />
+                                                                </Button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
 
