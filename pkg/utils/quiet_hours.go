@@ -9,6 +9,10 @@ import (
 // IsQuietHours checks if the current time falls within a user's configured quiet hours.
 // Returns false if quiet hours are not configured.
 func IsQuietHours(u *user.User) bool {
+	if !u.Preferences.QuietHours.Enabled {
+		return false
+	}
+
 	if u.Preferences.QuietHours.Start == "" || u.Preferences.QuietHours.End == "" {
 		return false
 	}

@@ -14,8 +14,9 @@ import (
 
 // ApplicationServiceImpl implements the ApplicationService interface
 type ApplicationServiceImpl struct {
-	repo   application.Repository
-	logger *zap.Logger
+	repo           application.Repository
+	cascadeDeleter *CascadeDeleter
+	logger         *zap.Logger
 }
 
 // NewApplicationService creates a new ApplicationService
@@ -24,6 +25,11 @@ func NewApplicationService(repo application.Repository, logger *zap.Logger) *App
 		repo:   repo,
 		logger: logger,
 	}
+}
+
+// SetCascadeDeleter injects the cascade deleter after construction (for late DI wiring).
+func (s *ApplicationServiceImpl) SetCascadeDeleter(cd *CascadeDeleter) {
+	s.cascadeDeleter = cd
 }
 
 // Create creates a new application
@@ -145,12 +151,20 @@ func (s *ApplicationServiceImpl) Delete(ctx context.Context, appID string) error
 		return errors.NotFound("Application", appID)
 	}
 
+	// Run cascade: adopt shared resources, delete unshared ones, purge app-scoped data.
+	if s.cascadeDeleter != nil {
+		if err := s.cascadeDeleter.DeleteAppResources(ctx, appID); err != nil {
+			s.logger.Error("Cascade deletion failed", zap.String("app_id", appID), zap.Error(err))
+			return errors.Internal("Cascade deletion failed", err)
+		}
+	}
+
 	if err := s.repo.Delete(ctx, appID); err != nil {
 		s.logger.Error("Failed to delete application", zap.String("app_id", appID), zap.Error(err))
 		return errors.DatabaseError("delete application", err)
 	}
 
-	s.logger.Info("Application deleted successfully", zap.String("app_id", appID))
+	s.logger.Info("Application deleted with full cascade", zap.String("app_id", appID))
 	return nil
 }
 

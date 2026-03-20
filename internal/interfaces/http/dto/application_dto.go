@@ -53,7 +53,7 @@ type ApplicationResponse struct {
 	Description       string               `json:"description"`
 	APIKey            string               `json:"api_key"`
 	AdminUserID       string               `json:"admin_user_id"`
-	TenantID          string               `json:"tenant_id,omitempty"`
+	TenantID          string               `json:"tenant_id"`
 	WebhookURL        string               `json:"webhook_url,omitempty"`
 	Webhooks          map[string]string    `json:"webhooks,omitempty"`
 	Settings          application.Settings `json:"settings"`

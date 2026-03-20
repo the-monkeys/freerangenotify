@@ -611,6 +611,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// ── Cross-App Resource Linking (after all feature-gated services) ──
 	container.ResourceLinkRepo = repository.NewResourceLinkRepository(dbManager.Client.GetClient(), logger)
+	cascadeDeleter := services.NewCascadeDeleter(container.ResourceLinkRepo, dbManager.Client.GetClient(), logger)
+	container.ApplicationService.(*services.ApplicationServiceImpl).SetCascadeDeleter(cascadeDeleter)
+	services.SetAuthCascadeDeleter(container.AuthService, cascadeDeleter)
 	container.UserHandler.SetLinkRepo(container.ResourceLinkRepo)
 	container.TemplateHandler.SetLinkRepo(container.ResourceLinkRepo)
 	if container.WorkflowHandler != nil {

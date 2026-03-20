@@ -44,6 +44,7 @@ type authService struct {
 	tenantRepo          tenant.Repository
 	tenantMemberRepo    tenant.MemberRepository
 	esClient            *elasticsearch.Client
+	cascadeDeleter      *CascadeDeleter
 	logger              *zap.Logger
 }
 
@@ -77,6 +78,19 @@ func NewAuthService(
 		tenantMemberRepo:    tenantMemberRepo,
 		esClient:            esClient,
 		logger:              logger,
+	}
+}
+
+// SetCascadeDeleter injects the cascade deleter for account deletion cleanup.
+func (s *authService) SetCascadeDeleter(cd *CascadeDeleter) {
+	s.cascadeDeleter = cd
+}
+
+// SetAuthCascadeDeleter is a package-level helper that injects the cascade
+// deleter into an auth.Service backed by the unexported authService type.
+func SetAuthCascadeDeleter(svc interface{}, cd *CascadeDeleter) {
+	if s, ok := svc.(*authService); ok {
+		s.SetCascadeDeleter(cd)
 	}
 }
 
@@ -526,31 +540,41 @@ func (s *authService) deleteAccountCascade(ctx context.Context, userID string, a
 		appIDList = append(appIDList, id)
 	}
 
-	// Purge app-scoped data first.
-	if len(appIDList) > 0 {
+	// Purge app-scoped data: use cascade deleter for proper resource adoption.
+	if len(appIDList) > 0 && s.cascadeDeleter != nil {
+		for _, appID := range appIDList {
+			if err := s.cascadeDeleter.DeleteAppResources(ctx, appID); err != nil {
+				s.logger.Warn("Failed to cascade-delete app resources during account purge",
+					zap.String("app_id", appID), zap.String("user_id", userID), zap.Error(err))
+			}
+		}
+	} else if len(appIDList) > 0 {
+		// Fallback: direct ES deletion if cascade deleter not wired.
 		indicesByApp := []string{
-			"notifications",
-			"users",
-			"templates",
-			"workflows",
-			"workflow_executions",
-			"workflow_schedules",
-			"digest_rules",
-			"topics",
-			"topic_subscribers",
-			"environments",
-			"resource_links",
-			"audits",
-			"audit_logs",
+			"notifications", "users", "templates", "workflows",
+			"workflow_executions", "workflow_schedules", "digest_rules",
+			"topics", "topic_subscriptions", "environments",
+			"app_resource_links", "audits", "audit_logs", "app_memberships",
 		}
 		for _, indexName := range indicesByApp {
 			if err := s.deleteByTerms(ctx, indexName, "app_id", appIDList); err != nil {
 				s.logger.Warn("failed to purge index by app scope",
-					zap.String("index", indexName),
-					zap.String("user_id", userID),
-					zap.Error(err),
-				)
+					zap.String("index", indexName), zap.String("user_id", userID), zap.Error(err))
 			}
+		}
+		// Also clean up resource links by source and target.
+		for _, appID := range appIDList {
+			_ = s.deleteByQuery(ctx, "app_resource_links", map[string]interface{}{
+				"query": map[string]interface{}{
+					"bool": map[string]interface{}{
+						"should": []map[string]interface{}{
+							{"term": map[string]interface{}{"source_app_id": appID}},
+							{"term": map[string]interface{}{"target_app_id": appID}},
+						},
+						"minimum_should_match": 1,
+					},
+				},
+			})
 		}
 	}
 
@@ -561,7 +585,7 @@ func (s *authService) deleteAccountCascade(ctx context.Context, userID string, a
 	}
 
 	// Purge user-scoped membership and dashboard records.
-	_ = s.deleteByTerm(ctx, "memberships", "user_id", userID)
+	_ = s.deleteByTerm(ctx, "app_memberships", "user_id", userID)
 	_ = s.deleteByTerm(ctx, "dashboard_notifications", "user_id", userID)
 	_ = s.deleteByTerm(ctx, "dashboard_notifications", "recipient_id", userID)
 

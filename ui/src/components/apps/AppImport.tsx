@@ -266,8 +266,9 @@ const AppImport: React.FC<AppImportProps> = ({ appId, appName }) => {
                                 return (
                                     <div key={srcAppId} className="border rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
-                                            <div className="font-medium">
+                                            <div className="font-medium flex items-center gap-2">
                                                 From: <span className="text-primary">{srcApp?.app_name || srcAppId.slice(0, 8) + '...'}</span>
+                                                {!srcApp && <Badge variant="destructive" className="text-[10px]">orphaned</Badge>}
                                             </div>
                                             <span className="text-xs text-muted-foreground">{srcLinks.length} link(s)</span>
                                         </div>

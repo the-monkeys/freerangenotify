@@ -64,10 +64,11 @@ func (h *ApplicationHandler) authorizeAppAccess(c *fiber.Ctx, appID, userID stri
 	if app.TenantID != "" && h.tenantService != nil {
 		hasAccess, role, tErr := h.tenantService.HasAccess(c.Context(), app.TenantID, userID)
 		if tErr == nil && hasAccess {
-			// Map tenant role to app role: owner/admin -> Editor, member -> Viewer
+			// Map tenant role to app role:
+			// owner/admin can manage tenant apps; members are read-only.
 			appRole := auth.RoleViewer
 			if role == "owner" || role == "admin" {
-				appRole = auth.RoleEditor
+				appRole = auth.RoleAdmin
 			}
 			c.Locals("role", appRole)
 			return app, appRole, nil
@@ -217,6 +218,23 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	}
 	if role != auth.RoleOwner && role != auth.RoleAdmin {
 		return errors.Forbidden("admin or owner role required to update the application")
+	}
+
+	// Changing org association is an owner-only operation.
+	if req.TenantID != nil && *req.TenantID != app.TenantID {
+		if role != auth.RoleOwner {
+			return errors.Forbidden("only the application owner can change the organization")
+		}
+		// If moving to a tenant, user must also be owner/admin of the target tenant.
+		if *req.TenantID != "" && h.tenantService != nil {
+			hasAccess, tenantRole, tErr := h.tenantService.HasAccess(c.Context(), *req.TenantID, userID)
+			if tErr != nil {
+				return tErr
+			}
+			if !hasAccess || (tenantRole != "owner" && tenantRole != "admin") {
+				return errors.Forbidden("only tenant owners/admins can move an app to this organization")
+			}
+		}
 	}
 
 	if req.AppName != "" {

@@ -12,8 +12,8 @@ type Application struct {
 	Description       string            `json:"description" es:"description"`
 	APIKey            string            `json:"api_key" es:"api_key"`
 	APIKeyGeneratedAt time.Time         `json:"api_key_generated_at" es:"api_key_generated_at"`
-	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"`   // The admin user who owns this app
-	TenantID          string            `json:"tenant_id,omitempty" es:"tenant_id"` // Optional: app belongs to tenant (C1)
+	AdminUserID       string            `json:"admin_user_id" es:"admin_user_id"` // The admin user who owns this app
+	TenantID          string            `json:"tenant_id" es:"tenant_id"`         // Optional: app belongs to tenant (C1)
 	WebhookURL        string            `json:"webhook_url,omitempty" es:"webhook_url"`
 	Webhooks          map[string]string `json:"webhooks,omitempty" es:"webhooks"`
 	Settings          Settings          `json:"settings" es:"settings"`
