@@ -294,13 +294,11 @@ export default function TemplateLibrary() {
     return (
         <>
             <div className="mx-auto max-w-7xl space-y-6">
-            <Card size="sm" className="bg-card/60 shadow-sm">
-                <CardHeader className="pb-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-start gap-3">
-                            <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}?tab=templates`)}>
-                                <ArrowLeft className="h-4 w-4" />
-                                Back
+                <Card size="sm" className="bg-card/60 shadow-sm">
+                    <CardHeader className="">
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" size="sm" className='items-center' onClick={() => navigate(`/apps/${appId}?tab=templates`)}>
+                                <ArrowLeft className="size-4" />
                             </Button>
                             <div>
                                 <CardTitle className="text-xl">Template Library</CardTitle>
@@ -309,64 +307,60 @@ export default function TemplateLibrary() {
                                 </p>
                             </div>
                         </div>
-                        <Badge variant="outline" className="h-7 px-2 text-xs w-fit">
-                            {templates.length} templates
-                        </Badge>
-                    </div>
-                </CardHeader>
-            </Card>
-
-            {loading ? (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {Array.from({ length: 6 }).map((_, i) => (
-                        <Card key={i} className="overflow-hidden border-border/80">
-                            <CardContent className="space-y-3 p-4">
-                                <Skeleton className="h-4 w-3/4" />
-                                <Skeleton className="h-3 w-full" />
-                                <Skeleton className="h-3 w-5/6" />
-                                <Skeleton className="h-44 w-full rounded-md" />
-                                <Skeleton className="h-8 w-full" />
-                            </CardContent>
-                        </Card>
-                    ))}
-                </div>
-            ) : templates.length === 0 ? (
-                <Card className="border-border/80">
-                    <CardContent className="py-14 text-center text-sm text-muted-foreground">
-                        No templates available in the library.
-                    </CardContent>
+                    </CardHeader>
                 </Card>
-            ) : (
-                sortedCategories.map((category) => (
-                    <section key={category} className="space-y-3">
-                        <div className="flex items-center gap-2">
-                            <h2 className="text-base font-semibold">{formatCategory(category)}</h2>
-                            <Badge variant="outline" className="text-xs font-normal">
-                                {groupedTemplates[category].length}
-                            </Badge>
-                        </div>
 
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {groupedTemplates[category].map((t) => (
-                                <TemplateLibraryCard
-                                    key={t.name}
-                                    template={t}
-                                    category={category}
-                                    expandedPreview={expandedPreview}
-                                    cloning={cloning}
-                                    renderedPreview={renderedPreviews[getTemplatePreviewKey(t)]}
-                                    previewLoading={previewLoading[getTemplatePreviewKey(t)]}
-                                    onTogglePreview={(name) =>
-                                        setExpandedPreview((prev) => (prev === name ? null : name))
-                                    }
-                                    onOpenFullscreen={(template) => setFullscreenTemplate(template)}
-                                    onImport={handleImport}
-                                />
-                            ))}
-                        </div>
-                    </section>
-                ))
-            )}
+                {loading ? (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <Card key={i} className="overflow-hidden border-border/80">
+                                <CardContent className="space-y-3 p-4">
+                                    <Skeleton className="h-4 w-3/4" />
+                                    <Skeleton className="h-3 w-full" />
+                                    <Skeleton className="h-3 w-5/6" />
+                                    <Skeleton className="h-44 w-full rounded-md" />
+                                    <Skeleton className="h-8 w-full" />
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                ) : templates.length === 0 ? (
+                    <Card className="border-border/80">
+                        <CardContent className="py-14 text-center text-sm text-muted-foreground">
+                            No templates available in the library.
+                        </CardContent>
+                    </Card>
+                ) : (
+                    sortedCategories.map((category) => (
+                        <section key={category} className="space-y-3">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-base font-semibold">{formatCategory(category)}</h2>
+                                <Badge variant="outline" className="text-xs font-normal">
+                                    {groupedTemplates[category].length}
+                                </Badge>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                {groupedTemplates[category].map((t) => (
+                                    <TemplateLibraryCard
+                                        key={t.name}
+                                        template={t}
+                                        category={category}
+                                        expandedPreview={expandedPreview}
+                                        cloning={cloning}
+                                        renderedPreview={renderedPreviews[getTemplatePreviewKey(t)]}
+                                        previewLoading={previewLoading[getTemplatePreviewKey(t)]}
+                                        onTogglePreview={(name) =>
+                                            setExpandedPreview((prev) => (prev === name ? null : name))
+                                        }
+                                        onOpenFullscreen={(template) => setFullscreenTemplate(template)}
+                                        onImport={handleImport}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    ))
+                )}
             </div>
 
             <SlidePanel

@@ -803,7 +803,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     <div className="flex flex-wrap gap-2">
                                         <Button
                                             onClick={() => openPreviewDialog(tmpl)}
-                                            variant="secondary"
+                                            variant="outline"
                                             size="sm"
                                             title={activePreviews[tmpl.id] ? 'Close preview panel for this template' : 'Render and preview this template with sample data'}
                                         >
@@ -861,6 +861,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                             variant="destructive"
                                             size="sm"
                                             title="Permanently delete this template"
+                                            className="border border-red-600/50"
                                         >
                                             <Trash2 className="h-3.5 w-3.5" />
                                             Delete

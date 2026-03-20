@@ -92,11 +92,11 @@ const SidebarNav: React.FC = () => {
                 >
                     <div className="relative size-5">
                         <Bell
-                            className={`absolute inset-0 size-5 text-white transition-opacity ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
+                            className={`absolute inset-0 size-5 dark:text-white text-accent transition-opacity ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
                                 }`}
                         />
                         {state === 'collapsed' && (
-                            <SidebarOpen className="absolute inset-0 size-5 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+                            <SidebarOpen className="absolute inset-0 size-5 dark:text-white text-accent opacity-0 transition-opacity group-hover:opacity-100" />
                         )}
                     </div>
                     <span className="text-sm font-semibold tracking-tight text-sidebar-foreground group-data-[collapsible=icon]:hidden">
@@ -109,7 +109,7 @@ const SidebarNav: React.FC = () => {
                     className={`rounded p-1 transition-colors hover:bg-sidebar-accent/50 ${state === 'collapsed' ? 'hidden' : 'block'}`}
                     aria-label="Collapse sidebar"
                 >
-                    <SidebarClose className="size-5 text-white" />
+                    <SidebarClose className="size-5 dark:text-white text-accent" />
                 </button>
             </SidebarHeader>
 
