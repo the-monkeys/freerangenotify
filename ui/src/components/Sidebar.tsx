@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Bell, LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose } from 'lucide-react';
+import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -17,6 +17,8 @@ import {
     SidebarSeparator,
     useSidebar,
 } from './ui/sidebar';
+import { Logo } from './ui/logo';
+import { Button } from './ui/button';
 
 interface NavItem {
     label: string;
@@ -91,10 +93,7 @@ const SidebarNav: React.FC = () => {
                     onClick={handleLogoClick}
                 >
                     <div className="relative size-5">
-                        <Bell
-                            className={`absolute inset-0 size-5 dark:text-white text-accent transition-opacity ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'
-                                }`}
-                        />
+                        <Logo className={`size-5 ${state === 'collapsed' ? 'opacity-100 group-hover:opacity-0' : 'opacity-100'}`} />
                         {state === 'collapsed' && (
                             <SidebarOpen className="absolute inset-0 size-5 dark:text-white text-accent opacity-0 transition-opacity group-hover:opacity-100" />
                         )}
@@ -103,14 +102,15 @@ const SidebarNav: React.FC = () => {
                         FreeRange <span className="font-normal text-muted-foreground">Notify</span>
                     </span>
                 </Link>
-                <button
+                <Button
                     type="button"
+                    variant={"ghost"}
                     onClick={toggleSidebar}
                     className={`rounded p-1 transition-colors hover:bg-sidebar-accent/50 ${state === 'collapsed' ? 'hidden' : 'block'}`}
                     aria-label="Collapse sidebar"
                 >
                     <SidebarClose className="size-5 dark:text-white text-accent" />
-                </button>
+                </Button>
             </SidebarHeader>
 
             <SidebarContent className="overflow-hidden">

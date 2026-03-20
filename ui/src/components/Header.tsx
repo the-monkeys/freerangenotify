@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from './ui/button';
-import { Menu, X, Bell } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { NotificationBell } from './NotificationBell';
 import UserAvatarMenu from './UserAvatarMenu';
+import LogoWithName from './ui/logo';
 
 const Header: React.FC = () => {
     const location = useLocation();
@@ -75,10 +76,7 @@ const Header: React.FC = () => {
                         className="flex items-center gap-2.5 no-underline hover:no-underline shrink-0 text-foreground"
                         onClick={closeMobile}
                     >
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-foreground text-background">
-                            <Bell className="h-4 w-4" />
-                        </span>
-                        <span className="text-base sm:text-lg font-semibold tracking-tight">FreeRange Notify</span>
+                        <LogoWithName />
                     </Link>
 
                 </div>
