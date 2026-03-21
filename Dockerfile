@@ -37,8 +37,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install runtime dependencies for HTTPS requests and timezone resolution.
+RUN apk --no-cache add ca-certificates tzdata
 
 # Create app user
 RUN addgroup -g 1001 app && adduser -u 1001 -G app -s /bin/sh -D app

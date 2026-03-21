@@ -68,6 +68,18 @@ type Repository interface {
 	// ListByTarget returns all links for a target app, optionally filtered by type.
 	ListByTarget(ctx context.Context, targetAppID string, resourceType *ResourceType) ([]*Link, error)
 
+	// ListBySource returns all links where this app is the source (its resources are shared out).
+	ListBySource(ctx context.Context, sourceAppID string, resourceType *ResourceType) ([]*Link, error)
+
+	// DeleteAllBySource deletes all links where this app is the source.
+	DeleteAllBySource(ctx context.Context, sourceAppID string) error
+
+	// CountByResource counts how many target apps link to a specific resource from a specific source.
+	CountByResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) (int64, error)
+
+	// UpdateLink updates a link document in place.
+	UpdateLink(ctx context.Context, link *Link) error
+
 	// BulkCreate creates multiple links in one request.
 	BulkCreate(ctx context.Context, links []*Link) error
 }

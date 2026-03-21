@@ -157,3 +157,61 @@ func (r *ResourceLinkRepository) BulkCreate(ctx context.Context, links []*resour
 	}
 	return nil
 }
+
+func (r *ResourceLinkRepository) ListBySource(ctx context.Context, sourceAppID string, rt *resourcelink.ResourceType) ([]*resourcelink.Link, error) {
+	filters := []map[string]interface{}{
+		{"term": map[string]interface{}{"source_app_id": sourceAppID}},
+	}
+	if rt != nil {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{"resource_type": string(*rt)},
+		})
+	}
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{"must": filters},
+		},
+		"size": 10000,
+	}
+	result, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	links := make([]*resourcelink.Link, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		raw, _ := json.Marshal(hit)
+		var link resourcelink.Link
+		if err := json.Unmarshal(raw, &link); err == nil {
+			links = append(links, &link)
+		}
+	}
+	return links, nil
+}
+
+func (r *ResourceLinkRepository) DeleteAllBySource(ctx context.Context, sourceAppID string) error {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"term": map[string]interface{}{"source_app_id": sourceAppID},
+		},
+	}
+	return r.BaseRepository.DeleteByQuery(ctx, query)
+}
+
+func (r *ResourceLinkRepository) CountByResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) (int64, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"source_app_id": sourceAppID}},
+					{"term": map[string]interface{}{"resource_type": string(rt)}},
+					{"term": map[string]interface{}{"resource_id": resourceID}},
+				},
+			},
+		},
+	}
+	return r.BaseRepository.Count(ctx, query)
+}
+
+func (r *ResourceLinkRepository) UpdateLink(ctx context.Context, link *resourcelink.Link) error {
+	return r.BaseRepository.Update(ctx, link.LinkID, link)
+}

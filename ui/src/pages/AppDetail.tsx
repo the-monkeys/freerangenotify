@@ -212,6 +212,7 @@ const AppDetail: React.FC = () => {
                 tenant_id: tenantId,
             });
             setApp(updated);
+            setTenantId(updated.tenant_id || '');
             localStorage.setItem('last_app_name', updated.app_name);
             window.dispatchEvent(new CustomEvent('app-name-updated', { detail: updated.app_name }));
             toast.success('Application updated successfully!');
@@ -261,6 +262,10 @@ const AppDetail: React.FC = () => {
 
     if (loading) return <div className="flex justify-center items-center min-h-screen"><Spinner /></div>;
     if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
+
+    const selectedTenantName = tenantId
+        ? tenants.find((tenant) => tenant.id === tenantId)?.name ?? 'Linked Organization'
+        : 'Personal Workspace (None)';
 
     return (
         <div className="mx-auto max-w-7xl">
@@ -397,7 +402,7 @@ const AppDetail: React.FC = () => {
                                                 onValueChange={(val) => setTenantId(val === 'none' ? '' : val)}
                                             >
                                                 <SelectTrigger id="organization">
-                                                    <SelectValue placeholder="Personal Workspace (No Organization)" />
+                                                    <SelectValue>{selectedTenantName}</SelectValue>
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     <SelectItem value="none">Personal Workspace (None)</SelectItem>
