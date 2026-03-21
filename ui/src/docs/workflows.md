@@ -56,7 +56,7 @@ Aggregates multiple notifications into a single summary.
 ### Via the API
 
 ```bash
-curl -X POST http://localhost:8080/v1/workflows/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/workflows/ \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -75,11 +75,11 @@ curl -X POST http://localhost:8080/v1/workflows/ \
 Send a trigger event to start a workflow execution:
 
 ```bash
-curl -X POST http://localhost:8080/v1/workflows/WORKFLOW_ID/trigger \
+curl -X POST https://freerangenotify.monkeys.support/v1/workflows/WORKFLOW_ID/trigger \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "USER_UUID",
+    "user_id": "YOUR_USER_ID",
     "data": {"user_name": "Alice", "plan": "Pro"}
   }'
 ```

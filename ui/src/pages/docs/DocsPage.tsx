@@ -107,11 +107,12 @@ const DocsPage: React.FC = () => {
                     td: ({ children }) => <td className="border border-border px-3 py-2 text-foreground/80">{children}</td>,
                     code: ({ className, children, ...props }) => {
                         const match = /language-(\w+)/.exec(className || '');
-                        if (match) {
+                        const isBlock = String(children).includes('\n');
+                        if (match || isBlock) {
                             return (
                                 <SyntaxHighlighter
                                     style={theme === 'dark' ? oneDark : oneLight}
-                                    language={match[1]}
+                                    language={match ? match[1] : 'text'}
                                     PreTag="div"
                                     className="my-4 overflow-x-auto"
                                     customStyle={{

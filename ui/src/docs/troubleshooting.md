@@ -49,7 +49,7 @@ Common issues, debugging techniques, and frequently asked questions.
 **Cause:** Wrong user ID format, expired JWT, or browser compatibility issue.
 
 **Fix:**
-1. The `user_id` parameter must be the **internal UUID** — not the `external_id`
+1. The `user_id` can be your platform's username (`external_id`), email, or internal UUID — FRN resolves all formats
 2. Verify the JWT token is valid and not expired
 3. Check browser supports `EventSource` (all modern browsers do)
 4. If using HTTPS, ensure the SSL certificate is valid
@@ -87,13 +87,13 @@ docker-compose logs -f notification-worker    # Worker
 
 ```bash
 # Provider health
-curl http://localhost:8080/v1/admin/providers/health
+curl https://freerangenotify.monkeys.support/v1/admin/providers/health
 
 # Queue statistics
-curl http://localhost:8080/v1/admin/queues/stats
+curl https://freerangenotify.monkeys.support/v1/admin/queues/stats
 
 # Dead letter queue
-curl http://localhost:8080/v1/admin/dlq
+curl https://freerangenotify.monkeys.support/v1/admin/dlq
 ```
 
 ### Dashboard Tools
@@ -109,7 +109,7 @@ curl http://localhost:8080/v1/admin/dlq
 
 **Q: Can I use `external_id` instead of `user_id` when sending notifications?**
 
-A: Yes — use the Quick Send API (`POST /v1/quick-send/`) which accepts email addresses and auto-creates users. For the standard Notifications API, you must use the internal UUID.
+A: Yes — all FreeRangeNotify endpoints that accept a `user_id` automatically resolve it. You can pass your platform's username/ID (`external_id`), an email address, or the internal UUID. This works for sending notifications, SSE connections, subscriber hash generation, and all inbox operations.
 
 **Q: What's the maximum notification payload size?**
 

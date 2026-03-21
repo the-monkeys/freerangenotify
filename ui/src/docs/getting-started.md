@@ -13,7 +13,7 @@ FreeRangeNotify uses a **Hub-and-Spoke architecture** to decouple notification i
 Every notification belongs to an Application. Create one from the **Applications** page, or via the API:
 
 ```bash
-curl -X POST http://localhost:8080/v1/apps/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/apps/ \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "My App", "description": "Production notifications"}'
@@ -23,23 +23,23 @@ The response includes your **API Key** — save it. All subsequent calls use thi
 
 ### Step 2: Register a User
 
-Users represent notification recipients. Each user gets a unique internal UUID (`user_id`). You can also attach your own `external_id` for mapping.
+Users represent notification recipients. Each user gets a unique internal UUID. You can also set your own `user_id` (e.g., your platform's username) which becomes the user's `external_id`.
 
 ```bash
-curl -X POST http://localhost:8080/v1/users/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/users/ \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"email": "alice@example.com", "user_id": "ext-alice-123"}'
+  -d '{"email": "alice@example.com", "user_id": "alice_monkeys"}'
 ```
 
-> **Important:** When sending notifications, always use the internal `user_id` (UUID) returned in the response — not the `external_id`.
+> **Tip:** When sending notifications, you can use either your `user_id` (e.g., `alice_monkeys`), the user's email, or the internal UUID. FreeRangeNotify resolves all of them automatically.
 
 ### Step 3: Create a Template
 
 Templates define notification content. Use Go template variables like `{{.name}}` for dynamic content.
 
 ```bash
-curl -X POST http://localhost:8080/v1/templates/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/templates/ \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -56,11 +56,11 @@ curl -X POST http://localhost:8080/v1/templates/ \
 ### Step 4: Send Your First Notification
 
 ```bash
-curl -X POST http://localhost:8080/v1/notifications/ \
+curl -X POST https://freerangenotify.monkeys.support/v1/notifications/ \
   -H "X-API-Key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "user_id": "INTERNAL_USER_UUID",
+    "user_id": "YOUR_USER_ID",
     "channel": "email",
     "priority": "normal",
     "title": "Welcome!",
@@ -75,7 +75,7 @@ curl -X POST http://localhost:8080/v1/notifications/ \
 View the notification status in the **Dashboard** or query the API:
 
 ```bash
-curl http://localhost:8080/v1/notifications/NOTIFICATION_ID \
+curl https://freerangenotify.monkeys.support/v1/notifications/NOTIFICATION_ID \
   -H "X-API-Key: YOUR_API_KEY"
 ```
 

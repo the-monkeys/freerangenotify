@@ -21,7 +21,7 @@ Navigate to your application → **Environments** tab → **Create Environment**
 ### Via the API
 
 ```bash
-curl -X POST http://localhost:8080/v1/apps/APP_ID/environments \
+curl -X POST https://freerangenotify.monkeys.support/v1/apps/APP_ID/environments \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "staging"}'
@@ -42,7 +42,7 @@ When you use an environment's API key, all operations are scoped to that environ
 Move templates and configurations from one environment to another:
 
 ```bash
-curl -X POST http://localhost:8080/v1/apps/APP_ID/environments/promote \
+curl -X POST https://freerangenotify.monkeys.support/v1/apps/APP_ID/environments/promote \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

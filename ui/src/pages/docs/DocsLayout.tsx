@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BookOpen, Rocket, FileText, Workflow, Tag, Radio, Layers, Code2, HelpCircle, ArrowLeft, Menu } from 'lucide-react';
+import { BookOpen, Rocket, FileText, Workflow, Tag, Radio, Layers, Code2, HelpCircle, ArrowLeft, Menu, Zap, Inbox, Globe } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
 import { Button } from '../../components/ui/button';
 
@@ -24,7 +24,15 @@ const NAV_SECTIONS: DocNavSection[] = [
             { label: 'Workflows', to: '/docs/workflows', icon: <Workflow className="h-4 w-4" /> },
             { label: 'Topics', to: '/docs/topics', icon: <Tag className="h-4 w-4" /> },
             { label: 'Channels', to: '/docs/channels', icon: <Radio className="h-4 w-4" /> },
+            { label: 'SSE (Real-time)', to: '/docs/sse', icon: <Zap className="h-4 w-4" /> },
+            { label: 'In-App (Inbox)', to: '/docs/in-app', icon: <Inbox className="h-4 w-4" /> },
             { label: 'Environments', to: '/docs/environments', icon: <Layers className="h-4 w-4" /> },
+        ],
+    },
+    {
+        title: 'EXAMPLES',
+        items: [
+            { label: 'Monkeys Integration', to: '/docs/monkeys-integration', icon: <Globe className="h-4 w-4" /> },
         ],
     },
     {
