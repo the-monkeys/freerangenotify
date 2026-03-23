@@ -370,6 +370,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 	container.NotificationHandler.SetIdempotencyStore(container.IdempotencyStore)
+	container.NotificationHandler.SetUserRepo(repos.User)
 	// Create SMTP provider for template test-send (best-effort — nil if not configured)
 	var smtpProvider providers.Provider
 	if cfg.Providers.SMTP.Host != "" {

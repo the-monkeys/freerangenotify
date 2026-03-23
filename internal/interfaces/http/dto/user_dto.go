@@ -97,12 +97,14 @@ func ToUserResponse(u *user.User) UserResponse {
 
 // BulkCreateUserRequest represents a request to create multiple users at once.
 type BulkCreateUserRequest struct {
-	Users []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
+	Upsert bool                `json:"upsert"`
+	Users  []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
 }
 
 // BulkCreateUserResponse is the response for bulk user creation.
 type BulkCreateUserResponse struct {
 	Created int             `json:"created"`
+	Updated int             `json:"updated"`
 	Total   int             `json:"total"`
 	Errors  []BulkUserError `json:"errors,omitempty"`
 }

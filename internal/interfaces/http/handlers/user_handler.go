@@ -45,11 +45,22 @@ func (h *UserHandler) getAppID(c *fiber.Ctx) (string, error) {
 }
 
 // verifyUserOwnership fetches the user and ensures it belongs to the caller's app.
+// Supports both internal UUID and external_id resolution.
 func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.User, error) {
 	appID, err := h.getAppID(c)
 	if err != nil {
 		return nil, err
 	}
+
+	// Try direct lookup first (UUID). If not a valid UUID, resolve via external_id.
+	if _, parseErr := uuid.Parse(userID); parseErr != nil {
+		u, lookupErr := h.service.GetByExternalID(c.Context(), appID, userID)
+		if lookupErr != nil {
+			return nil, errors.NotFound("user", userID)
+		}
+		return u, nil
+	}
+
 	u, err := h.service.GetByID(c.Context(), userID)
 	if err != nil {
 		return nil, err
@@ -559,12 +570,14 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 	}
 
 	var users []*user.User
+	var updatedUsers []*user.User
 	var bulkErrors []dto.BulkUserError
 
 	for i, ur := range req.Users {
 		u := &user.User{
 			UserID:     ur.UserID,
 			AppID:      appID,
+			ExternalID: ur.ExternalID,
 			Email:      ur.Email,
 			Phone:      ur.Phone,
 			Timezone:   ur.Timezone,
@@ -584,6 +597,39 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 			})
 			continue
 		}
+
+		// Upsert mode: if user with this email exists, update instead of failing
+		if req.Upsert && u.Email != "" {
+			existing, _ := h.service.GetByEmail(c.Context(), appID, u.Email)
+			if existing != nil {
+				if u.ExternalID != "" {
+					existing.ExternalID = u.ExternalID
+				}
+				if u.Phone != "" {
+					existing.Phone = u.Phone
+				}
+				if u.Timezone != "" {
+					existing.Timezone = u.Timezone
+				}
+				if u.Language != "" {
+					existing.Language = u.Language
+				}
+				if u.WebhookURL != "" {
+					existing.WebhookURL = u.WebhookURL
+				}
+				if err := h.service.Update(c.Context(), existing); err != nil {
+					bulkErrors = append(bulkErrors, dto.BulkUserError{
+						Index:   i,
+						Email:   ur.Email,
+						Message: "upsert update failed: " + err.Error(),
+					})
+				} else {
+					updatedUsers = append(updatedUsers, existing)
+				}
+				continue
+			}
+		}
+
 		users = append(users, u)
 	}
 
@@ -596,6 +642,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(dto.BulkCreateUserResponse{
 		Created: len(users),
+		Updated: len(updatedUsers),
 		Total:   len(req.Users),
 		Errors:  bulkErrors,
 	})

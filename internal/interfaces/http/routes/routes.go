@@ -163,6 +163,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	applyAuth(templates)
 	templates.Get("/library", c.TemplateHandler.GetLibrary)
 	templates.Post("/library/:name/clone", c.TemplateHandler.CloneFromLibrary)
+	templates.Post("/seed", c.TemplateHandler.SeedTemplates)
 	templates.Post("/", c.TemplateHandler.CreateTemplate)
 	templates.Get("/", c.TemplateHandler.ListTemplates)
 	templates.Get("/:id", c.TemplateHandler.GetTemplate)
