@@ -192,6 +192,13 @@ func main() {
 		}
 	}
 
+	// In-app provider: notifications are already persisted to ES by the API
+	// service. The worker just marks them as "sent" — no external delivery.
+	inAppProvider := providers.NewInAppProvider(logger)
+	if err := providerManager.RegisterProvider(inAppProvider); err != nil {
+		logger.Warn("Failed to register in-app provider", zap.Error(err))
+	}
+
 	logger.Info("Provider registry initialized",
 		zap.Strings("registered_factories", providers.RegisteredProviders()),
 		zap.Strings("active_channels", func() []string {

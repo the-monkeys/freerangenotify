@@ -73,8 +73,9 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # Notification Worker (reuses the image built by notification-service)
+  # Notification Worker (builds from the same Dockerfile as notification-service)
   notification-worker:
+    build: .
     image: freerange-notify:latest
     container_name: freerange-notification-worker
     command: [ "./worker" ]

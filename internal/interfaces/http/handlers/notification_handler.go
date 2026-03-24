@@ -3,11 +3,14 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"text/template"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"go.uber.org/zap"
@@ -15,9 +18,10 @@ import (
 
 // NotificationHandler handles HTTP requests for notifications
 type NotificationHandler struct {
-	service notification.Service
-	logger  *zap.Logger
-	idemp   *idempotency.Store
+	service  notification.Service
+	logger   *zap.Logger
+	idemp    *idempotency.Store
+	userRepo user.Repository
 }
 
 // NewNotificationHandler creates a new notification handler
@@ -31,6 +35,31 @@ func NewNotificationHandler(service notification.Service, logger *zap.Logger) *N
 // SetIdempotencyStore injects the idempotency store for Idempotency-Key support.
 func (h *NotificationHandler) SetIdempotencyStore(store *idempotency.Store) {
 	h.idemp = store
+}
+
+// SetUserRepo injects the user repository for external_id → UUID resolution.
+func (h *NotificationHandler) SetUserRepo(repo user.Repository) {
+	h.userRepo = repo
+}
+
+// resolveUserID converts an external_id, email, or internal UUID to the internal user ID.
+// Falls back to the original identifier if resolution is unavailable.
+func (h *NotificationHandler) resolveUserID(c *fiber.Ctx, appID, identifier string) string {
+	if _, err := uuid.Parse(identifier); err == nil {
+		return identifier
+	}
+	if h.userRepo == nil {
+		return identifier
+	}
+	if strings.Contains(identifier, "@") {
+		if u, err := h.userRepo.GetByEmail(c.Context(), appID, identifier); err == nil {
+			return u.UserID
+		}
+	}
+	if u, err := h.userRepo.GetByExternalID(c.Context(), appID, identifier); err == nil {
+		return u.UserID
+	}
+	return identifier
 }
 
 // Send handles POST /v1/notifications
@@ -374,7 +403,7 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 	}
 
 	if userID := c.Query("user_id"); userID != "" {
-		filter.UserID = userID
+		filter.UserID = h.resolveUserID(c, appID, userID)
 	}
 	if channel := c.Query("channel"); channel != "" {
 		filter.Channel = notification.Channel(channel)
@@ -417,6 +446,13 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 		})
 	}
 
+	// Get total count for pagination
+	total, err := h.service.Count(c.Context(), filter)
+	if err != nil {
+		h.logger.Error("Failed to count notifications", zap.Error(err))
+		total = int64(len(notifications))
+	}
+
 	// Convert to response
 	var items []*dto.NotificationResponse
 	for _, n := range notifications {
@@ -425,7 +461,7 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 
 	response := dto.NotificationListResponse{
 		Notifications: items,
-		Total:         int64(len(items)), // TODO: Get actual count from repository
+		Total:         total,
 		Page:          filter.Page,
 		PageSize:      filter.PageSize,
 	}
@@ -607,6 +643,7 @@ func (h *NotificationHandler) GetUnreadCount(c *fiber.Ctx) error {
 	if userID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
+	userID = h.resolveUserID(c, appID, userID)
 
 	count, err := h.service.GetUnreadCount(c.Context(), userID, appID)
 	if err != nil {
@@ -624,6 +661,7 @@ func (h *NotificationHandler) ListUnread(c *fiber.Ctx) error {
 	if userID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
+	userID = h.resolveUserID(c, appID, userID)
 
 	notifications, err := h.service.ListUnread(c.Context(), userID, appID)
 	if err != nil {
@@ -688,6 +726,7 @@ func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 	if req.UserID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
+	req.UserID = h.resolveUserID(c, appID, req.UserID)
 
 	err := h.service.MarkRead(c.Context(), req.NotificationIDs, appID, req.UserID)
 	if err != nil {
@@ -756,6 +795,7 @@ func (h *NotificationHandler) BulkArchive(c *fiber.Ctx) error {
 	if req.UserID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
+	req.UserID = h.resolveUserID(c, appID, req.UserID)
 	if len(req.NotificationIDs) == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "notification_ids is required"})
 	}
@@ -780,6 +820,7 @@ func (h *NotificationHandler) MarkAllRead(c *fiber.Ctx) error {
 	if req.UserID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
+	req.UserID = h.resolveUserID(c, appID, req.UserID)
 
 	if err := h.service.MarkAllRead(c.Context(), req.UserID, appID, req.Category); err != nil {
 		h.logger.Error("Failed to mark all as read", zap.Error(err))

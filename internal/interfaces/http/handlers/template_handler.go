@@ -1097,6 +1097,73 @@ func validateControlValues(controls []template.TemplateControl, values template.
 	return nil
 }
 
+// SeedTemplates handles POST /v1/templates/seed
+// Accepts a JSON array of templates and creates them idempotently (skip if name already exists).
+func (h *TemplateHandler) SeedTemplates(c *fiber.Ctx) error {
+	appID := c.Locals("app_id").(string)
+
+	var req dto.SeedTemplatesRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+	}
+
+	if len(req.Templates) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":   "No templates provided",
+			"message": "templates array must contain at least one entry",
+		})
+	}
+
+	var created []*dto.TemplateResponse
+	var skipped []string
+	var errors []dto.SeedTemplateError
+
+	for _, st := range req.Templates {
+		createReq := &template.CreateRequest{
+			AppID:       appID,
+			Name:        st.Name,
+			Description: st.Description,
+			Channel:     st.Channel,
+			Subject:     st.Subject,
+			Body:        st.Body,
+			Variables:   st.Variables,
+			Metadata:    st.Metadata,
+			Locale:      st.Locale,
+			CreatedBy:   "seed",
+		}
+
+		tmpl, err := h.service.Create(c.Context(), createReq)
+		if err != nil {
+			// If template already exists, skip it
+			if strings.Contains(err.Error(), "already exists") {
+				skipped = append(skipped, st.Name)
+				continue
+			}
+			errors = append(errors, dto.SeedTemplateError{
+				Name:    st.Name,
+				Message: err.Error(),
+			})
+			continue
+		}
+		created = append(created, toTemplateResponse(tmpl))
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+		"success": true,
+		"created": len(created),
+		"skipped": len(skipped),
+		"errors":  len(errors),
+		"details": fiber.Map{
+			"created_templates": created,
+			"skipped_names":     skipped,
+			"error_details":     errors,
+		},
+	})
+}
+
 // Helper function to convert template to response
 func toTemplateResponse(tmpl *template.Template) *dto.TemplateResponse {
 	return &dto.TemplateResponse{

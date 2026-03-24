@@ -7,6 +7,29 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 )
 
+// SeedTemplatesRequest represents a request to seed multiple templates idempotently.
+type SeedTemplatesRequest struct {
+	Templates []SeedTemplateEntry `json:"templates" validate:"required,min=1,dive"`
+}
+
+// SeedTemplateEntry is a single template in a seed request.
+type SeedTemplateEntry struct {
+	Name        string                 `json:"name" validate:"required,min=3,max=100"`
+	Description string                 `json:"description"`
+	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app sse slack discord whatsapp"`
+	Subject     string                 `json:"subject"`
+	Body        string                 `json:"body" validate:"required"`
+	Variables   []string               `json:"variables"`
+	Metadata    map[string]interface{} `json:"metadata"`
+	Locale      string                 `json:"locale" validate:"omitempty,min=2,max=10"`
+}
+
+// SeedTemplateError describes a single failure in a seed operation.
+type SeedTemplateError struct {
+	Name    string `json:"name"`
+	Message string `json:"message"`
+}
+
 // CreateTemplateRequest represents a request to create a new template
 type CreateTemplateRequest struct {
 	AppID         string                 `json:"app_id" validate:"required"`

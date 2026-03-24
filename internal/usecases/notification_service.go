@@ -689,6 +689,14 @@ func (s *NotificationService) List(ctx context.Context, filter notification.Noti
 	return s.notificationRepo.List(ctx, &filter)
 }
 
+// Count returns the total number of notifications matching the filter.
+func (s *NotificationService) Count(ctx context.Context, filter notification.NotificationFilter) (int64, error) {
+	if err := filter.Validate(); err != nil {
+		return 0, err
+	}
+	return s.notificationRepo.Count(ctx, &filter)
+}
+
 // UpdateStatus updates the status of a notification
 func (s *NotificationService) UpdateStatus(ctx context.Context, notificationID string, status notification.Status, errorMessage string, appID string) error {
 	// Validate status
