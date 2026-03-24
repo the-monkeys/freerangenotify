@@ -28,6 +28,7 @@ const TenantsList = lazy(() => import('./pages/TenantsList'));
 const TenantDetail = lazy(() => import('./pages/TenantDetail'));
 const AppDetail = lazy(() => import('./pages/AppDetail'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const WorkspaceBilling = lazy(() => import('./pages/WorkspaceBilling'));
 const WorkflowsList = lazy(() => import('./pages/workflows/WorkflowsList'));
 const WorkflowBuilder = lazy(() => import('./pages/workflows/WorkflowBuilder'));
 const WorkflowExecutions = lazy(() => import('./pages/workflows/WorkflowExecutions'));
@@ -82,6 +83,7 @@ const App: React.FC = () => {
                       <Route path="/tenants" element={<TenantsList />} />
                       <Route path="/tenants/:id" element={<TenantDetail />} />
                       <Route path="/apps/:id/templates/library" element={<TemplateLibrary />} />
+                      <Route path="/billing" element={<WorkspaceBilling />} />
                       <Route path="/dashboard" element={<Dashboard />} />
                       <Route path="/workflows" element={<WorkflowsList />} />
                       <Route path="/workflows/new" element={<WorkflowBuilder />} />

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{{.company_name}} - {{.badge_text}}</title>
+    <style>
+        /* Base Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100% !important;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+            background-color: #e9ecef;
+        }
+
+        table,
+        td {
+            border-collapse: collapse;
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+
+        img {
+            border: 0;
+            height: auto;
+            line-height: 100%;
+            outline: none;
+            text-decoration: none;
+            display: block;
+        }
+
+        /* Responsive Layout */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }
+
+        .content-padding {
+            padding: 40px;
+        }
+
+        /* Typography */
+        h1 {
+            color: #0f172a;
+            font-family: 'Inter', Helvetica, Arial, sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        p {
+            color: #475569;
+            font-family: 'Inter', Helvetica, Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 16px 0;
+        }
+
+        /* Components */
+        .badge {
+            color: #f59e0b;
+            font-family: sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .cta-button {
+            background-color: #2563eb;
+            border-radius: 6px;
+            color: #ffffff !important;
+            display: inline-block;
+            font-family: sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 14px 28px;
+            text-decoration: none;
+        }
+
+        /* Video Preview Overlay */
+        .video-container {
+            position: relative;
+            background-color: #0f172a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60px;
+            height: 60px;
+        }
+
+        @media screen and (max-width: 600px) {
+            .speaker-col {
+                width: 100% !important;
+                display: block !important;
+                margin-bottom: 30px;
+            }
+
+            .content-padding {
+                padding: 20px !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <center>
+        <table role="presentation" class="container">
+            <tr>
+                <td class="content-padding" style="padding-bottom: 0;">
+                    <img src="{{.company_logo}}" alt="{{.company_name}}"
+                        width="140" style="max-height: 48px; width: auto;">
+                </td>
+            </tr>
+
+            <tr>
+                <td class="content-padding">
+                    <span class="badge">{{.badge_text}}</span>
+                    <h1 style="margin-top: 10px;">{{.title_main}} <br><span style="color: #2563eb;">{{.title_highlight}}</span></h1>
+                    <p style="color: #64748b;">{{.event_datetime}}</p>
+                    <div style="margin-top: 25px;">
+                        <a href="{{.cta_url}}" class="cta-button">{{.cta_text}}</a>
+                    </div>
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding: 0 40px;">
+                    <a href="{{.video_url}}" style="text-decoration: none;">
+                        <table role="presentation" width="100%" class="video-container">
+                            <tr>
+                                <td align="center" style="padding: 0;">
+                                    <img src="{{.video_thumbnail}}"
+                                        alt="Video Preview" style="width: 100%; max-width: 520px;">
+                                </td>
+                            </tr>
+                        </table>
+                    </a>
+                </td>
+            </tr>
+
+            <tr>
+                <td class="content-padding">
+                    <p>Hi {{or .recipient_name "there"}},</p>
+                    <p>{{.intro_paragraph}}</p>
+                </td>
+            </tr>
+
+            <tr>
+                <td class="content-padding" style="background-color: #f8fafc; text-align: center;">
+                    <h2 style="font-family: sans-serif; font-size: 18px; color: #0f172a; margin-bottom: 30px;">{{.speakers_title}}</h2>
+                    <table role="presentation" width="100%">
+                        <tr>
+                            <td class="speaker-col" width="50%" align="center">
+                                <img src="{{.speaker1_avatar}}" alt="{{.speaker1_name}}"
+                                    style="border-radius: 50%; width: 100px; height: 100px; border: 3px solid #ffffff; object-fit: cover;">
+                                <p style="font-weight: bold; color: #0f172a; margin-bottom: 4px;">{{.speaker1_name}}</p>
+                                <p style="font-size: 14px; margin-top: 0; color: #64748b;">{{.speaker1_role}}</p>
+                            </td>
+                            <td class="speaker-col" width="50%" align="center">
+                                <img src="{{.speaker2_avatar}}" alt="{{.speaker2_name}}"
+                                    style="border-radius: 50%; width: 100px; height: 100px; border: 3px solid #ffffff; object-fit: cover;">
+                                <p style="font-weight: bold; color: #0f172a; margin-bottom: 4px;">{{.speaker2_name}}</p>
+                                <p style="font-size: 14px; margin-top: 0; color: #64748b;">{{.speaker2_role}}</p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+
+            <tr>
+                <td class="content-padding" style="text-align: center; background-color: #ffffff;">
+                    <table role="presentation" align="center" style="margin-bottom: 20px;">
+                        <tr>
+                            <td style="padding: 0 10px;"><a href="{{.twitter_url}}"><img
+                                        src="https://cdn-icons-png.flaticon.com/512/733/733579.png" width="24"
+                                        alt="Twitter"></a></td>
+                            <td style="padding: 0 10px;"><a href="{{.linkedin_url}}"><img
+                                        src="https://cdn-icons-png.flaticon.com/512/3536/3536505.png" width="24"
+                                        alt="LinkedIn"></a></td>
+                            <td style="padding: 0 10px;"><a href="{{.instagram_url}}"><img
+                                        src="https://cdn-icons-png.flaticon.com/512/2111/2111463.png" width="24"
+                                        alt="Instagram"></a></td>
+                        </tr>
+                    </table>
+                    <p style="font-size: 12px; color: #94a3b8;">
+                        &copy; {{.current_year}} {{.company_name}} | {{.company_address}}<br>
+                        <a href="{{.unsubscribe_url}}" style="color: #2563eb;">Unsubscribe</a> | <a href="{{.preferences_url}}" style="color: #2563eb;">Manage
+                            Preferences</a>
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </center>
+</body>
+
+</html>
