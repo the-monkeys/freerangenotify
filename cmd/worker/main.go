@@ -55,7 +55,8 @@ func main() {
 	}
 
 	// Create provider manager and register providers
-	providerManager := providers.NewManager(c.Metrics, c.PresenceRepository, logger)
+	providerManager := providers.NewManager(c.Metrics, c.PresenceRepository, logger).
+		WithBillingEmitter(cfg.Features.BillingEnabled, c.UsageRepo)
 
 	// Build provider config map from application config
 	providerConfigs := map[string]map[string]interface{}{

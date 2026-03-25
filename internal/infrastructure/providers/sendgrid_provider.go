@@ -127,6 +127,8 @@ func (p *SendGridProvider) Send(ctx context.Context, notif *notification.Notific
 		zap.Duration("delivery_time", deliveryTime))
 
 	result := NewResult("sendgrid-"+notif.NotificationID, deliveryTime)
+	result.Metadata["credential_source"] = CredSourceSystem
+	result.Metadata["billing_channel"] = "email"
 	result.Metadata["to_email"] = usr.Email
 	result.Metadata["from_email"] = fromEmail
 

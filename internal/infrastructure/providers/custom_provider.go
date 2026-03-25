@@ -104,7 +104,10 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 		zap.String("notification_id", notif.NotificationID),
 		zap.Duration("delivery_time", time.Since(start)))
 
-	return NewResult(fmt.Sprintf("custom-%s-%s", p.name, notif.NotificationID), time.Since(start)), nil
+	result := NewResult(fmt.Sprintf("custom-%s-%s", p.name, notif.NotificationID), time.Since(start))
+	result.Metadata["credential_source"] = CredSourceBYOC
+	result.Metadata["billing_channel"] = "custom"
+	return result, nil
 }
 
 // GetName returns the provider name.

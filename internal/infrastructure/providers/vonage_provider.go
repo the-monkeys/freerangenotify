@@ -132,6 +132,8 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 		zap.Duration("delivery_time", deliveryTime))
 
 	res := NewResult("vonage-"+messageID, deliveryTime)
+	res.Metadata["credential_source"] = CredSourceSystem
+	res.Metadata["billing_channel"] = "sms"
 	res.Metadata["to_phone"] = usr.Phone
 	res.Metadata["from_number"] = p.config.FromNumber
 	return res, nil

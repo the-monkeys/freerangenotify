@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -74,6 +75,32 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 	// Build SMS body
 	smsBody := p.buildSMSBody(notif)
 
+	// Per-app credential override (use local vars to avoid race conditions)
+	accountSID := p.accountSID
+	authToken := p.authToken
+	fromNumber := p.fromNumber
+	credSource := CredSourceSystem
+
+	if appCfg, ok := ctx.Value(SMSConfigKey).(*application.SMSAppConfig); ok && appCfg != nil {
+		if appCfg.AccountSID != "" && appCfg.AuthToken != "" {
+			accountSID = appCfg.AccountSID
+			authToken = appCfg.AuthToken
+			if appCfg.FromNumber != "" {
+				fromNumber = appCfg.FromNumber
+			}
+			credSource = CredSourceBYOC
+			p.logger.Debug("Using per-app SMS config",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("from_number", fromNumber),
+				zap.String("account_sid_prefix", accountSID[:min(6, len(accountSID))]+"..."))
+		}
+	}
+
+	// Suppress unused variable warnings for credentials (used when real Twilio client is integrated)
+	_ = accountSID
+	_ = authToken
+	_ = fromNumber
+
 	// TODO: Send SMS via Twilio
 	// params := &api.CreateMessageParams{}
 	// params.SetTo(usr.Phone)
@@ -102,8 +129,10 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 		zap.Duration("delivery_time", deliveryTime))
 
 	result := NewResult("twilio-simulated-"+notif.NotificationID, deliveryTime)
+	result.Metadata["credential_source"] = credSource
+	result.Metadata["billing_channel"] = "sms"
 	result.Metadata["to_phone"] = usr.Phone
-	result.Metadata["from_number"] = p.fromNumber
+	result.Metadata["from_number"] = fromNumber
 	result.Metadata["body_length"] = len(smsBody)
 
 	return result, nil

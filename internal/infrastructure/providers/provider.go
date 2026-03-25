@@ -91,10 +91,18 @@ func NewErrorResult(err error, errorType string) *Result {
 	}
 }
 
+// Credential source constants for billing metering
+const (
+	CredSourceSystem   = "system"   // System .env credentials — we pay the carrier
+	CredSourceBYOC     = "byoc"     // User's own credentials — they pay the carrier
+	CredSourcePlatform = "platform" // No external cost (in-app, SSE, push)
+)
+
 // Provider Context Keys
 type contextKey string
 
 const (
 	EmailConfigKey    contextKey = "email_config"
 	WhatsAppConfigKey contextKey = "whatsapp_config"
+	SMSConfigKey      contextKey = "sms_config"
 )

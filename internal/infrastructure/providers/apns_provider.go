@@ -125,6 +125,8 @@ func (p *APNSProvider) Send(ctx context.Context, notif *notification.Notificatio
 		zap.Duration("delivery_time", deliveryTime))
 
 	result := NewResult("apns-simulated-"+notif.NotificationID, deliveryTime)
+	result.Metadata["credential_source"] = CredSourcePlatform
+	result.Metadata["billing_channel"] = "push"
 	result.Metadata["token_count"] = len(tokens)
 	result.Metadata["platform"] = "ios"
 	result.Metadata["bundle_id"] = p.bundleID

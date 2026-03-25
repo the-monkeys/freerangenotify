@@ -116,6 +116,8 @@ func (p *PostmarkProvider) Send(ctx context.Context, notif *notification.Notific
 		zap.Duration("delivery_time", deliveryTime))
 
 	res := NewResult("postmark-"+result.MessageID, deliveryTime)
+	res.Metadata["credential_source"] = CredSourceSystem
+	res.Metadata["billing_channel"] = "email"
 	res.Metadata["to_email"] = usr.Email
 	res.Metadata["from_email"] = p.config.FromEmail
 	return res, nil

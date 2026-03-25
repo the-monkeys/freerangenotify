@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -22,6 +23,10 @@ type Manager struct {
 	presenceRepo   user.PresenceRepository
 	logger         *zap.Logger
 	mu             sync.RWMutex
+
+	// Billing — both fields are nil-safe when billing is disabled.
+	billingEnabled bool
+	usageEmitter   billing.UsageEmitter
 }
 
 // NewManager creates a new provider manager
@@ -34,6 +39,15 @@ func NewManager(metrics *metrics.NotificationMetrics, presenceRepo user.Presence
 		presenceRepo:   presenceRepo,
 		logger:         logger,
 	}
+}
+
+// WithBillingEmitter configures the Manager to emit usage events after each
+// successful Send(). This is a no-op when billingEnabled is false, preserving
+// full backward compatibility for local development.
+func (m *Manager) WithBillingEmitter(enabled bool, emitter billing.UsageEmitter) *Manager {
+	m.billingEnabled = enabled
+	m.usageEmitter = emitter
+	return m
 }
 
 // RegisterProvider registers a provider for a specific channel
@@ -184,6 +198,36 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 		zap.String("provider", provider.GetName()),
 		zap.String("provider_message_id", result.ProviderMessageID),
 		zap.Duration("delivery_time", result.DeliveryTime))
+
+	// Emit billing usage event — only when billing is enabled and emitter is wired.
+	if m.billingEnabled && m.usageEmitter != nil {
+		credSource, _ := result.Metadata["credential_source"].(string)
+		billingChannel, _ := result.Metadata["billing_channel"].(string)
+		if credSource != "" && billingChannel != "" {
+			// AppID serves as the workspace/tenant scope.
+			// UserID on the notification is the end-recipient, not the billed account.
+			event := &billing.UsageEvent{
+				TenantID:         notif.AppID, // billed to the app's owning workspace
+				AppID:            notif.AppID,
+				NotificationID:   notif.NotificationID,
+				Channel:          billingChannel,
+				Provider:         provider.GetName(),
+				CredentialSource: credSource,
+				MessageType:      string(notif.Category), // "marketing" | "utility" | "transactional"
+				Currency:         "INR",
+				Status:           "charged",
+			}
+			// Emit in a goroutine so delivery latency is unaffected.
+			// The emitter itself retries and logs on failure.
+			go func() {
+				if err := m.usageEmitter.Emit(context.Background(), event); err != nil {
+					m.logger.Error("billing: failed to emit usage event",
+						zap.String("notification_id", notif.NotificationID),
+						zap.Error(err))
+				}
+			}()
+		}
+	}
 
 	return result, nil
 }

@@ -113,6 +113,8 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 		zap.Duration("delivery_time", deliveryTime))
 
 	res := NewResult("resend-"+result.ID, deliveryTime)
+	res.Metadata["credential_source"] = CredSourceSystem
+	res.Metadata["billing_channel"] = "email"
 	res.Metadata["to_email"] = usr.Email
 	res.Metadata["from_email"] = p.config.FromEmail
 	return res, nil

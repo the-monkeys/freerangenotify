@@ -71,7 +71,10 @@ func (p *SSEProvider) Send(ctx context.Context, notif *notification.Notification
 		zap.String("user_id", usr.UserID),
 		zap.Duration("processing_time", processingTime))
 
-	return NewResult("", processingTime), nil
+	result := NewResult("", processingTime)
+	result.Metadata["credential_source"] = CredSourcePlatform
+	result.Metadata["billing_channel"] = "sse"
+	return result, nil
 }
 
 // GetName returns the provider name

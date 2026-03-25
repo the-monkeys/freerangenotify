@@ -66,6 +66,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	accountSID := p.config.AccountSID
 	authToken := p.config.AuthToken
 	fromNumber := p.config.FromNumber
+	credSource := CredSourceSystem
 
 	if appCfg, ok := ctx.Value(WhatsAppConfigKey).(*application.WhatsAppAppConfig); ok && appCfg != nil {
 		if appCfg.AccountSID != "" && appCfg.AuthToken != "" {
@@ -74,6 +75,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 			if appCfg.FromNumber != "" {
 				fromNumber = appCfg.FromNumber
 			}
+			credSource = CredSourceBYOC
 			p.logger.Debug("Using per-app WhatsApp config",
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("from_number", fromNumber),
@@ -188,6 +190,8 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		zap.Duration("delivery_time", time.Since(start)))
 
 	result := NewResult(providerMsgID, time.Since(start))
+	result.Metadata["credential_source"] = credSource
+	result.Metadata["billing_channel"] = "whatsapp"
 	if twilioResp.Status != nil {
 		result.Metadata["twilio_status"] = fmt.Sprintf("%v", twilioResp.Status)
 	}

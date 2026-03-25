@@ -1089,6 +1089,16 @@ export const billingAPI = {
     const { data } = await api.post('/billing/accept-trial');
     return data;
   },
+
+  getUsageBreakdown: async () => {
+    const { data } = await api.get('/billing/usage/breakdown');
+    return data;
+  },
+
+  getRates: async () => {
+    const { data } = await api.get('/billing/rates');
+    return data;
+  },
 };
 
 // ============= Custom Provider APIs =============

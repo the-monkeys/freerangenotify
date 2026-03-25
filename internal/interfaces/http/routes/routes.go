@@ -254,6 +254,8 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	billing.Get("/usage", c.BillingHandler.GetUsage)
 	billing.Get("/subscription", c.BillingHandler.GetSubscription)
 	billing.Post("/accept-trial", c.BillingHandler.AcceptTrial)
+	billing.Get("/usage/breakdown", c.BillingHandler.GetUsageBreakdown)
+	billing.Get("/rates", c.BillingHandler.GetRates)
 
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)

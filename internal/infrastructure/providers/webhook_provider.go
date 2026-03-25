@@ -181,6 +181,8 @@ func (p *WebhookProvider) Send(ctx context.Context, notif *notification.Notifica
 		zap.Duration("delivery_time", deliveryTime))
 
 	result := NewResult("webhook-"+notif.NotificationID, deliveryTime)
+	result.Metadata["credential_source"] = CredSourceBYOC
+	result.Metadata["billing_channel"] = "webhook"
 	result.Metadata["url"] = targetURL
 
 	return result, nil
