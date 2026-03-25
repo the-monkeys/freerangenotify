@@ -82,7 +82,10 @@ func (p *TeamsProvider) Send(ctx context.Context, notif *notification.Notificati
 		zap.String("notification_id", notif.NotificationID),
 		zap.Duration("delivery_time", time.Since(start)))
 
-	return NewResult("teams-"+notif.NotificationID, time.Since(start)), nil
+	result := NewResult("teams-"+notif.NotificationID, time.Since(start))
+	result.Metadata["credential_source"] = CredSourceBYOC
+	result.Metadata["billing_channel"] = "teams"
+	return result, nil
 }
 
 func (p *TeamsProvider) GetName() string                                { return "teams" }

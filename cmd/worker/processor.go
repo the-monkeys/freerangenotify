@@ -15,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
@@ -45,6 +46,7 @@ type NotificationProcessor struct {
 	userRepo         user.Repository
 	appRepo          application.Repository
 	templateRepo     template.Repository
+	authService      auth.Service
 	licensingChecker license.Checker
 	providerManager  *providers.Manager
 	redisClient      *redis.Client
@@ -76,6 +78,7 @@ func NewNotificationProcessor(
 	userRepo user.Repository,
 	appRepo application.Repository,
 	templateRepo template.Repository,
+	authService auth.Service,
 	licensingChecker license.Checker,
 	providerManager *providers.Manager,
 	redisClient *redis.Client,
@@ -89,6 +92,7 @@ func NewNotificationProcessor(
 		userRepo:         userRepo,
 		appRepo:          appRepo,
 		templateRepo:     templateRepo,
+		authService:      authService,
 		licensingChecker: licensingChecker,
 		providerManager:  providerManager,
 		redisClient:      redisClient,
@@ -682,12 +686,30 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 	// If it's WhatsApp, inject app-specific Twilio credentials when configured.
 	if notif.Channel == notification.ChannelWhatsApp {
 		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		isByoc := false
 		if err == nil && app != nil && app.Settings.WhatsApp != nil {
 			waCfg := app.Settings.WhatsApp
 			if waCfg.AccountSID != "" && waCfg.AuthToken != "" {
 				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, waCfg)
 				p.logger.Debug("Using app WhatsApp config",
 					zap.String("app_id", notif.AppID))
+				isByoc = true
+			}
+		}
+
+		// Phase 3: Phone verification gate for system credentials
+		if !isByoc && app != nil {
+			adminUser, err := p.authService.GetCurrentUser(ctx, app.AdminUserID)
+			if err != nil {
+				p.logger.Error("Failed to fetch admin user for WhatsApp phone verification check",
+					zap.String("admin_id", app.AdminUserID), zap.Error(err))
+				return fmt.Errorf("phone verification check failed")
+			}
+			if !adminUser.PhoneVerified {
+				p.logger.Warn("Blocked system WhatsApp send due to unverified phone",
+					zap.String("app_id", app.AppID),
+					zap.String("admin_id", app.AdminUserID))
+				return fmt.Errorf("phone_verification_required")
 			}
 		}
 	}

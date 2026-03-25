@@ -1089,6 +1089,16 @@ export const billingAPI = {
     const { data } = await api.post('/billing/accept-trial');
     return data;
   },
+
+  getUsageBreakdown: async () => {
+    const { data } = await api.get('/billing/usage/breakdown');
+    return data;
+  },
+
+  getRates: async () => {
+    const { data } = await api.get('/billing/rates');
+    return data;
+  },
 };
 
 // ============= Custom Provider APIs =============
@@ -1126,6 +1136,14 @@ export const authExtendedAPI = {
 
   deleteOwnAccount: async (payload: { password: string; confirm_text: string }) => {
     await api.delete('/admin/me', { data: payload });
+  },
+
+  sendPhoneOTP: async (payload: { phone: string }) => {
+    await api.post('/admin/phone/send-otp', payload);
+  },
+
+  verifyPhoneOTP: async (payload: { phone: string; otp_code: string }) => {
+    await api.post('/admin/phone/verify-otp', payload);
   },
 };
 

@@ -33,6 +33,7 @@ type Settings struct {
 	Slack                  *SlackAppConfig                     `json:"slack,omitempty" es:"slack"`                       // Phase 3
 	Discord                *DiscordAppConfig                   `json:"discord,omitempty" es:"discord"`                   // Phase 3
 	WhatsApp               *WhatsAppAppConfig                  `json:"whatsapp_config,omitempty" es:"whatsapp_config"`   // Phase 3
+	SMS                    *SMSAppConfig                       `json:"sms_config,omitempty" es:"sms_config"`             // Billing: per-app SMS creds
 	CustomProviders        []CustomProviderConfig              `json:"custom_providers,omitempty" es:"custom_providers"` // Phase 3
 	ValidationURL          string                              `json:"validation_url,omitempty" es:"validation_url"`
 	ValidationConfig       *ValidationConfig                   `json:"validation_config,omitempty" es:"validation_config"`
@@ -115,6 +116,13 @@ type DiscordAppConfig struct {
 
 // WhatsAppAppConfig holds per-app Twilio WhatsApp credentials (Phase 3)
 type WhatsAppAppConfig struct {
+	AccountSID string `json:"account_sid" es:"account_sid"`
+	AuthToken  string `json:"auth_token" es:"auth_token"`
+	FromNumber string `json:"from_number" es:"from_number"`
+}
+
+// SMSAppConfig holds per-app Twilio SMS credentials
+type SMSAppConfig struct {
 	AccountSID string `json:"account_sid" es:"account_sid"`
 	AuthToken  string `json:"auth_token" es:"auth_token"`
 	FromNumber string `json:"from_number" es:"from_number"`

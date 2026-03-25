@@ -20,6 +20,7 @@ type Config struct {
 	Security   SecurityConfig   `mapstructure:"security"`
 	OIDC       OIDCConfig       `mapstructure:"oidc"`
 	Features   FeaturesConfig   `mapstructure:"features"`
+	Billing    BillingConfig    `mapstructure:"billing"`
 	Licensing  LicensingConfig  `mapstructure:"licensing"`
 }
 
@@ -49,6 +50,14 @@ type SelfHostedLicenseConfig struct {
 	HeartbeatIntervalSeconds int    `mapstructure:"heartbeat_interval_seconds"`
 }
 
+// BillingConfig contains configurable quotas and limits for billing.
+type BillingConfig struct {
+	FreeTrialEmailQuota    int64 `mapstructure:"free_trial_email_quota" yaml:"free_trial_email_quota"`
+	FreeTrialWhatsAppQuota int64 `mapstructure:"free_trial_whatsapp_quota" yaml:"free_trial_whatsapp_quota"`
+	FreeTrialSMSQuota      int64 `mapstructure:"free_trial_sms_quota" yaml:"free_trial_sms_quota"`
+	FreeTrialPushQuota     int64 `mapstructure:"free_trial_push_quota" yaml:"free_trial_push_quota"`
+}
+
 // FeaturesConfig contains feature flags for Phase 1 features.
 // All default to false — when disabled, the system behaves identically to pre-Phase-1.
 type FeaturesConfig struct {
@@ -58,6 +67,7 @@ type FeaturesConfig struct {
 	SSEHMACEnforced bool `mapstructure:"sse_hmac_enforced" yaml:"sse_hmac_enforced"`
 	// Registration/Billing UX
 	TrialWelcomeEnabled bool `mapstructure:"trial_welcome_enabled" yaml:"trial_welcome_enabled"`
+	BillingEnabled      bool `mapstructure:"billing_enabled" yaml:"billing_enabled"`
 	// Phase 2
 	TopicsEnabled   bool `mapstructure:"topics_enabled" yaml:"topics_enabled"`
 	ThrottleEnabled bool `mapstructure:"throttle_enabled" yaml:"throttle_enabled"`
@@ -376,6 +386,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("features.digest_enabled", false)
 	viper.SetDefault("features.sse_hmac_enforced", false)
 	viper.SetDefault("features.trial_welcome_enabled", true)
+	viper.SetDefault("features.billing_enabled", false)
+
+	viper.SetDefault("billing.free_trial_email_quota", 500)
+	viper.SetDefault("billing.free_trial_whatsapp_quota", 50)
+	viper.SetDefault("billing.free_trial_sms_quota", 50)
+	viper.SetDefault("billing.free_trial_push_quota", 1000)
 
 	viper.SetDefault("oidc.enabled", false)
 	viper.SetDefault("oidc.issuer", "https://identity.monkeys.support")

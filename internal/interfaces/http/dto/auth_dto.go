@@ -52,13 +52,15 @@ type AuthResponse struct {
 
 // AdminUserResponse represents admin user data in response
 type AdminUserResponse struct {
-	UserID      string `json:"user_id"`
-	Email       string `json:"email"`
-	FullName    string `json:"full_name"`
-	IsActive    bool   `json:"is_active"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
-	LastLoginAt string `json:"last_login_at,omitempty"`
+	UserID        string `json:"user_id"`
+	Email         string `json:"email"`
+	FullName      string `json:"full_name"`
+	Phone         string `json:"phone,omitempty"`
+	PhoneVerified bool   `json:"phone_verified"`
+	IsActive      bool   `json:"is_active"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
+	LastLoginAt   string `json:"last_login_at,omitempty"`
 }
 
 // TokenPairResponse represents token pair response
@@ -88,4 +90,15 @@ type ResendOTPRequest struct {
 type OTPResponse struct {
 	Message   string `json:"message"`
 	ExpiresIn int    `json:"expires_in"`
+}
+
+// PhoneOTPRequest represents a request to send a phone verification OTP (DTO)
+type PhoneOTPRequest struct {
+	Phone string `json:"phone" validate:"required"`
+}
+
+// PhoneVerifyRequest represents a request to verify a phone OTP (DTO)
+type PhoneVerifyRequest struct {
+	Phone   string `json:"phone" validate:"required"`
+	OTPCode string `json:"otp_code" validate:"required,len=6"`
 }

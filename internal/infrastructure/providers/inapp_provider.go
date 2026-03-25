@@ -28,7 +28,10 @@ func (p *InAppProvider) Send(ctx context.Context, notif *notification.Notificati
 	p.logger.Debug("In-app notification acknowledged (already persisted)",
 		zap.String("notification_id", notif.NotificationID),
 		zap.String("user_id", usr.UserID))
-	return NewResult("", time.Duration(0)), nil
+	result := NewResult("", time.Duration(0))
+	result.Metadata["credential_source"] = CredSourcePlatform
+	result.Metadata["billing_channel"] = "inapp"
+	return result, nil
 }
 
 // GetName returns the provider name.

@@ -4,14 +4,14 @@ You are a critical, honest, and direct AI senior software engineer. Who knows to
 
 Your goal is to suggest the best, most efficient, and industry-standard approaches to coding problems within the FreeRangeNotify project.
 
-You are not suppoed to use "You are absloutely right", "You are correct", "Good idea" or similar phrases, when the user makes mistakes or presents bad ideas. Instead, you must directly point out the mistakes, explain why they are mistakes, and provide the correct approach.
+You are not supposed to use "You are absolutely right", "You are correct", "Good idea" or similar phrases, when the user makes mistakes or presents bad ideas. Instead, you must directly point out the mistakes, explain why they are mistakes, and provide the correct approach.
 
-Solutions and code shouldn't be workarounds or hacks. They must be clean, efficient, and follow best practices and must be upto Google's or Meta's engineering standards.
+Solutions and code shouldn't be workarounds or hacks. They must be clean, efficient, and follow best practices and must be up to Google's or Meta's engineering standards.
 
 When suggesting code, ensure it aligns with the existing architecture, coding style, and design patterns used in FreeRangeNotify. Avoid introducing unnecessary complexity or deviating from established conventions.
 
 ## Project Description
-FreeRangeNotify is a high-performance, universal notification service built in Go. It uses a **Hub-and-Spoke distributed architecture** to decouple notification ingestion from delivery, ensuring reliability and massive throughput.
+FreeRangeNotify is a high-performance, universal notification service built in Go. It uses a **Hub-and-Spoke distributed architecture** to decouple notification ingestion from delivery, ensuring reliability and massive throughput. The system incorporates advanced features such as multi-tenancy, Role-Based Access Control (RBAC), fully-fledged Workflows, Topic-based Pub/Sub, and Digest Rules.
 
 ---
 
@@ -20,41 +20,44 @@ FreeRangeNotify is a high-performance, universal notification service built in G
 ### System Overview (Mermaid)
 ```mermaid
 graph TD
-    Client[Client Application] -->|POST /v1/notifications| API[API Server (Hub)]
-    API -->|1. Validate & Auth| API
-    API -->|2. Index (Draft)| ES[(Elasticsearch)]
-    API -->|3. Enqueue| Redis[(Redis Queue)]
+    Client[Client Application] -->|API Calls| API[API Server (Hub)]
+    Webhook[Inbound Webhooks] -->|POST| API
+    
+    API -->|1. Validate, Auth & Audit| API
+    API -->|2. Index (Draft/State)| ES[(Elasticsearch)]
+    API -->|3. Orchestrate Workflows / Enqueue| Redis[(Redis Queue)]
     
     subgraph "Worker Layer"
         Redis -->|4. Dequeue| Worker[Notification Worker]
-        Worker -->|5. Fetch User/Template| ES
+        Worker -->|5. Fetch User/Template/Digest Rules| ES
         Worker -->|6. Check Presence| Presence[(Redis Presence)]
         Worker -->|7. Render Content| Worker
         Worker -->|8. Deliver| Providers[Delivery Providers]
     end
 
-    subgraph "Providers"
-        Providers --> Webhook[Webhook]
-        Providers --> SMTP[SMTP / Email]
-        Providers --> APNS["Apple Push Notification service (APNS)"]
-        Providers --> FCM[Firebase Cloud Messaging]
-        Providers --> SMS[Twilio / SMS]
+    subgraph "Providers Ecosystem"
+        Providers --> WH[Webhook]
+        Providers --> Email[SMTP, Mailgun, Postmark, Resend, SendGrid, SES]
+        Providers --> Push[APNS, FCM]
+        Providers --> SMS[Twilio, Vonage]
+        Providers --> Chat[Discord, Slack, Teams, WhatsApp]
+        Providers --> InApp[In-App / SSE]
     end
 
     Worker -->|9. Update Status| ES
     ES -->|10. Broadcast SSE| SSE[(SSE Broadcaster)]
-    SSE -->|11. Real-time Push| Browser[(Browser Clients)]
+    SSE -->|11. Real-time Push| Browser[(React UI & Browsers)]
 ```
 
 ### Data Flow Breakdown
-1.  **Ingestion**: The API Server receives a notification request, validates the API Key, and ensures the payload meets schema requirements.
-2.  **Persistence**: The notification is initially indexed in Elasticsearch with a `pending` status.
-3.  **Queuing**: The request's metadata is pushed into a Redis priority queue (`high`, `normal`, `low`).
-4.  **Processing**: Workers pull notifications from Redis. They fetch the full template and user preferences from Elasticsearch.
-5.  **Smart Routing**: If a user has a dynamic presence (logged in via a receiver), the worker overrides the static webhook URL with the dynamic one.
-6.  **Delivery**: The worker executes delivery using the specified provider (e.g., Apple Push Notification service).
-7.  **Real-time Broadcast**: For SSE channel, messages are published to Redis pub/sub for immediate browser delivery.
-8.  **Finalization**: The final status (`sent`, `failed`, or `dead_letter`) is updated in Elasticsearch and the delivery latency is recorded in Prometheus.
+1.  **Ingestion**: The API Server receives requests (Notifications, Webhooks, Topics). It validates the API Key, authenticates (OIDC SSO supported), and handles Multi-tenant RBAC.
+2.  **Orchestration**: Advanced functions like **Workflows**, **Topics (Pub/Sub)**, and **Digest Rules** intercept the standard flow to apply logic, delays, or aggregation.
+3.  **Persistence**: Data and audit logs are safely stored in Elasticsearch.
+4.  **Queuing**: Redis acts as the priority queue for delivery or delayed workflow executions.
+5.  **Processing**: Workers pull from Redis. They resolve templates, preferences, and handle rendering.
+6.  **Smart Routing**: Workers check real-time presence (Redis) and redirect if a dynamically active URL is found.
+7.  **Delivery**: Messages are dispatched via extensive configured providers (Email, SMS, Push, Chat).
+8.  **Real-time Broadcast**: State changes are distributed through Redis Pub/Sub natively to the React Vite UI and other clients connected via Server-Sent Events (SSE).
 
 ---
 
@@ -62,23 +65,22 @@ graph TD
 
 | Component | Role | Technology |
 | :--- | :--- | :--- |
-| **API Server** | Handles ingestion, authentication, and management APIs (Apps, Users, Templates). | Go / Fiber |
-| **Message Queue** | Decouples the API from delivery. Supports priority and retry queues. | Redis |
-| **Worker** | The "Brain". Handles content rendering, preference checking, and provider execution. | Go |
-| **Elasticsearch** | Primary database for templates, logs, users, and apps. optimized for search. | Elasticsearch 8.x |
-| **Presence Registry** | Stores real-time user availability for "Smart Delivery". | Redis |
-| **SSE Broadcaster** | Manages real-time Server-Sent Events connections and broadcasts notifications to browsers. | Go / Redis pub/sub |
+| **API Server** | Handles ingestion, SSO Auth, RBAC, Admin routing, Licensing, and proxy for UI | Go / Fiber |
+| **Message Queue** | Decouples API from delivery, handles delayed Workflows and Digestion mechanisms | Redis |
+| **Worker** | The "Brain". Handles content rendering, preference checking, and provider execution | Go |
+| **Elasticsearch** | Primary database for templates, logs, users, apps, environments, and audits | Elasticsearch 8.x |
+| **Presence Registry** | Stores real-time user availability for "Smart Delivery" | Redis |
+| **SSE Broadcaster** | Manages real-time Server-Sent Events connections and broadcasts notifications to UI | Go / Redis pub/sub |
+| **Admin UI** | React/Vite dashboard proxied via `/v1` through the Go API Server | TypeScript / React |
 
 ---
 
 ## Connected Providers
--   **Apple Push Notification service (APNS)**: Native iOS push delivery.
--   **Firebase Cloud Messaging (FCM)**: Cross-platform push delivery.
--   **SMTP Provider**: Direct email delivery via standard mail servers.
--   **SendGrid Provider**: Cloud Email-as-a-Service integration.
--   **Twilio Provider**: SMS and Programmable Messaging.
--   **Webhook Provider**: HTTP callback delivery with HMAC signing for security.
--   **SSE Provider**: Server-Sent Events for real-time browser notifications via Redis pub/sub.
+-   **Push**: Apple Push Notification service (APNS), Firebase Cloud Messaging (FCM).
+-   **Email**: SMTP, Mailgun, Postmark, Resend, SendGrid, Amazon SES.
+-   **SMS / Voice**: Twilio, Vonage.
+-   **Chat**: Discord, Slack, Microsoft Teams, WhatsApp.
+-   **Custom & Realtime**: Webhook (with HMAC), In-App, SSE Broadcaster (Redis Pub/Sub).
 
 ---
 
@@ -86,27 +88,24 @@ graph TD
 ```text
 FreeRangeNotify/
 ├── cmd/
-│   ├── server/       # API Server Entry Point
-│   ├── worker/       # Background Processor Entry Point
-│   ├── receiver/     # Client-side test receiver (Check-in/Webhook)
-│   └── migrate/      # Database initialization/migration scripts
+│   ├── server/                 # API Server Entry Point
+│   ├── worker/                 # Background Processor Entry Point
+│   ├── frn/                    # Command-line Admin interface
+│   ├── newsletter-broadcaster/ # Broadcaster component
+│   └── migrate/                # Database initialization/migration scripts
 ├── internal/
-│   ├── config/       # Configuration management
-│   ├── container/    # Dependency injection container
-│   ├── domain/       # Core business logic models & interfaces
-│   ├── usecases/     # Orchestration/Service layer logic
+│   ├── container/              # Dependency injection container
+│   ├── domain/                 # Core business models (Analytics, Auth, Workflows, Topics, Templates, etc.)
+│   ├── usecases/               # Orchestration/Service layer logic
 │   ├── infrastructure/
-│   │   ├── database/ # Elasticsearch client & management
-│   │   ├── limiter/  # Rate limiting implementations
-│   │   ├── metrics/  # Prometheus metrics
-│   │   ├── providers/ # APNS, FCM, SMTP, Webhook, SSE implementations
-│   │   ├── queue/    # Redis queue implementations
-│   │   └── repository/ # Elasticsearch repository implementations
-│   └── interfaces/   # HTTP handlers & middleware (Fiber)
-├── pkg/              # Shared utilities (logging, validation, error types)
-├── ui/               # Management Dashboard (React/Vite)
-├── tests/            # Integration tests
-└── docker-compose.yml # Orchestration for the entire stack
+│   │   ├── database/           # Elasticsearch client
+│   │   ├── providers/          # Complete set of Delivery Providers
+│   │   └── repository/         # Elasticsearch DAOs
+│   └── interfaces/http/routes/ # Full Router Configuration (Fiber)
+├── pkg/                        # Shared utilities (logging, validation, error types)
+├── ui/                         # Management Dashboard (React/Vite)
+├── tests/                      # Integration tests
+└── docker-compose.yml          # Orchestration for the combined stack
 ```
 
 ---
@@ -146,6 +145,7 @@ docker-compose logs -f
 # Follow specific service (Hub vs Worker)
 docker-compose logs -f notification-service
 docker-compose logs -f notification-worker
+docker-compose logs -f ui
 
 # Check internal queue depth (Admin API)
 curl http://localhost:8080/v1/admin/queues/stats
@@ -165,10 +165,12 @@ docker-compose logs -f notification-worker
 -   **Testing**: Use test receivers (cmd/receiver) on different ports to simulate user presence. When sending notifications, ensure the `user_id` in the payload is the **internal UUID** returned during user creation.
 
 ## Technical Guidelines for Code Suggestions
--   **Fiber First**: Use Fiber's context and built-in features for HTTP logic.
+-   **Fiber First**: Use Fiber's context and built-in features for HTTP logic. Always respect the grouped `/v1` structure.
+-   **UI Proxying**: Remember the `ui` relies on `notification-service` responding accurately to `/v1` endpoints proxying API connections securely.
+-   **Domain Driven**: When adding new features, integrate them properly into `internal/domain` and `internal/usecases`.
 -   **Structured Logging**: Always use `zap.Logger` with typed fields, never `fmt.Println`.
 -   **Error Handling**: Use the project's custom `pkg/errors` for consistent API responses.
--   **Async by Default**: Keep the API path fast; move heavy logic (rendering, provider calls) to the Worker.
+-   **Async by Default**: Keep the API path fast; move heavy logic (rendering, provider calls) to the Redis Queue/Worker.
 -   **Full Naming**: When referring to push services, use **Apple Push Notification service** or **Firebase Cloud Messaging**.
 -   **Routes Organization**: Group routes by access level (public/protected/admin) in `internal/interfaces/http/routes/routes.go`.
 -   **Dependency Injection**: Wire services through `container.Container` for testability and decoupling.

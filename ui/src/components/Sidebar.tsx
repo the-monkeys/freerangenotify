@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose } from 'lucide-react';
+import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { billingAPI } from '../services/api';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import DeleteAccountDialog from './DeleteAccountDialog';
+import VerifyPhoneDialog from './VerifyPhoneDialog';
 import {
     Sidebar as AppSidebar,
     SidebarContent,
@@ -24,6 +26,7 @@ interface NavItem {
     label: string;
     icon: React.ReactNode;
     to: string;
+    id?: string;
 }
 
 const mainItems: NavItem[] = [
@@ -34,9 +37,10 @@ const mainItems: NavItem[] = [
     { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics' },
 ];
 const adminItems: NavItem[] = [
-    { label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" />, to: '/dashboard' },
-    { label: 'Audit Logs', icon: <ScrollText className="h-4 w-4" />, to: '/audit' },
-    { label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs' },
+    { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" />, to: '/dashboard' },
+    { id: 'audit', label: 'Audit Logs', icon: <ScrollText className="h-4 w-4" />, to: '/audit' },
+    { id: 'docs', label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs' },
+    { id: 'billing', label: 'Billing & Licensing', icon: <CreditCard className="h-4 w-4" />, to: '/billing' },
 ];
 
 const isNavItemActive = (pathname: string, to: string): boolean => {
@@ -55,6 +59,29 @@ const SidebarNav: React.FC = () => {
     const { isMobile, setOpenMobile, state, setOpen, toggleSidebar } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+    const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
+    const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+
+    React.useEffect(() => {
+        if (!user) return;
+        let mounted = true;
+        
+        const fetchSubscription = async () => {
+            try {
+                const sub = await billingAPI.getSubscription();
+                if (mounted && sub?.current_period_end) {
+                    const diffTime = new Date(sub.current_period_end).getTime() - new Date().getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    setDaysRemaining(diffDays > 0 ? diffDays : 0);
+                }
+            } catch (err) {
+                // Safely ignore if billing is unconfigured
+            }
+        };
+        
+        fetchSubscription();
+        return () => { mounted = false; };
+    }, [user]);
 
     const handleLogout = async () => {
         await logout();
@@ -146,7 +173,12 @@ const SidebarNav: React.FC = () => {
                                 onClick={handleItemNavigate}
                             >
                                 {item.icon}
-                                <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
+                                <span className="group-data-[collapsible=icon]:hidden flex-1 leading-none">{item.label}</span>
+                                {item.id === 'billing' && daysRemaining !== null && (
+                                    <span className={`group-data-[collapsible=icon]:hidden ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${daysRemaining < 7 ? 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400' : 'bg-primary/10 text-primary'}`}>
+                                        {daysRemaining} day{daysRemaining !== 1 && 's'}
+                                    </span>
+                                )}
                             </NavLink>
                         </SidebarMenuItem>
                     ))}
@@ -167,9 +199,10 @@ const SidebarNav: React.FC = () => {
 
                 <div className="pt-1">
                     <UserMenu
-                        user={{ full_name: user?.full_name, email: user?.email }}
+                        user={{ full_name: user?.full_name, email: user?.email, phone_verified: user?.phone_verified }}
                         onChangePassword={() => setChangePasswordOpen(true)}
                         onDeleteProfile={() => setDeleteAccountOpen(true)}
+                        onVerifyPhone={() => setVerifyPhoneOpen(true)}
                         onLogout={handleLogout}
                     />
                 </div>
@@ -184,6 +217,11 @@ const SidebarNav: React.FC = () => {
                     onOpenChange={setDeleteAccountOpen}
                     userEmail={user?.email}
                     onDeleted={handleDeleted}
+                />
+
+                <VerifyPhoneDialog
+                    open={verifyPhoneOpen}
+                    onOpenChange={setVerifyPhoneOpen}
                 />
             </SidebarFooter>
         </>

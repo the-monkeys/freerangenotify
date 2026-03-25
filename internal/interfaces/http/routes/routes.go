@@ -254,12 +254,18 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	billing.Get("/usage", c.BillingHandler.GetUsage)
 	billing.Get("/subscription", c.BillingHandler.GetSubscription)
 	billing.Post("/accept-trial", c.BillingHandler.AcceptTrial)
+	billing.Get("/usage/breakdown", c.BillingHandler.GetUsageBreakdown)
+	billing.Get("/rates", c.BillingHandler.GetRates)
 
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
+	
+	// Phone verification
+	adminAuth.Post("/phone/send-otp", c.AuthHandler.SendPhoneOTP)
+	adminAuth.Post("/phone/verify-otp", c.AuthHandler.VerifyPhoneOTP)
 
 	// Tenant/organization management (C1)
 	if c.TenantHandler != nil {

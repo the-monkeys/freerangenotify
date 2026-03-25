@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { templatesAPI, usersAPI } from '../../services/api';
 import type { Template, User } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
+import VerifyPhoneDialog from '../VerifyPhoneDialog';
 import { extractErrorMessage } from '../../lib/utils';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
@@ -27,6 +29,8 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
     onOpenChange,
 }) => {
     const [users, setUsers] = useState<User[]>([]);
+    const { user } = useAuth();
+    const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
     const [selectedUserId, setSelectedUserId] = useState('');
     const [variablesJson, setVariablesJson] = useState('');
     const [jsonError, setJsonError] = useState('');
@@ -155,6 +159,11 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
     };
 
     const handleSendTest = async () => {
+        if (template.channel === 'whatsapp' && !user?.phone_verified) {
+            setIsVerifyDialogOpen(true);
+            return;
+        }
+
         if (!selectedUserId) {
             toast.error('Select a recipient user');
             return;
@@ -353,6 +362,10 @@ const TemplateTestPanel: React.FC<TemplateTestPanelProps> = ({
                     </div>
                 )}
             </div>
+            <VerifyPhoneDialog 
+                open={isVerifyDialogOpen} 
+                onOpenChange={setIsVerifyDialogOpen} 
+            />
         </SlidePanel>
     );
 };

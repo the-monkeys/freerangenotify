@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
 	"net/smtp"
 	"os"
 	"strconv"
@@ -1227,3 +1228,150 @@ func (s *authService) notifyInviteAcceptedToInviters(ctx context.Context, user *
 		})
 	}
 }
+
+// SendPhoneOTP sends a 6-digit OTP via Twilio SMS to the user's phone.
+func (s *authService) SendPhoneOTP(ctx context.Context, userID string, req *auth.PhoneOTPRequest) error {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return errors.NotFound("user", "User not found")
+	}
+
+	// Already verified with this number?
+	if user.PhoneVerified && user.Phone == req.Phone {
+		return errors.BadRequest("Phone number is already verified")
+	}
+
+	// Generate 6-digit OTP
+	otpCode, err := generateOTP(6)
+	if err != nil {
+		return fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	// Store in Redis with key "otp:phone:<userID>" and 10-minute TTL
+	pending := &auth.PendingRegistration{
+		Email:    req.Phone, // re-use Email field to store phone
+		OTPCode:  otpCode,
+		CreatedAt: time.Now(),
+		Attempts: 0,
+	}
+	if err := s.otpRepo.StorePhoneOTP(ctx, userID, pending); err != nil {
+		return fmt.Errorf("failed to store phone OTP: %w", err)
+	}
+
+	// Send OTP via Twilio SMS — use the SMS-specific number first
+	accountSID := os.Getenv("FREERANGE_PROVIDERS_TWILIO_ACCOUNT_SID")
+	authToken := os.Getenv("FREERANGE_PROVIDERS_TWILIO_AUTH_TOKEN")
+	fromNumber := os.Getenv("FREERANGE_PROVIDERS_TWILIO_FROM_NUMBER")
+
+	// Fallback to WhatsApp provider config if Twilio SMS env not set
+	if accountSID == "" {
+		accountSID = os.Getenv("FREERANGE_PROVIDERS_WHATSAPP_ACCOUNT_SID")
+		authToken = os.Getenv("FREERANGE_PROVIDERS_WHATSAPP_AUTH_TOKEN")
+		// Don't use WhatsApp from number for SMS — it has "whatsapp:" prefix
+		fromNumber = os.Getenv("FREERANGE_PROVIDERS_TWILIO_FROM_NUMBER")
+	}
+
+	if accountSID == "" || authToken == "" || fromNumber == "" {
+		s.logger.Warn("Twilio SMS not configured, OTP not sent via SMS",
+			zap.String("user_id", userID),
+			zap.String("otp_code", otpCode))
+		// Don't fail — OTP is stored, can be checked in logs for dev
+		return nil
+	}
+
+	go func() {
+		smsBody := fmt.Sprintf("Your FreeRange Notify verification code is: %s. It expires in 10 minutes.", otpCode)
+		apiURL := fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json", accountSID)
+
+		data := fmt.Sprintf("To=%s&From=%s&Body=%s",
+			req.Phone, fromNumber, smsBody)
+
+		httpReq, err := http.NewRequest(http.MethodPost, apiURL, strings.NewReader(data))
+		if err != nil {
+			s.logger.Error("Failed to create SMS request", zap.Error(err))
+			return
+		}
+		httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		httpReq.SetBasicAuth(accountSID, authToken)
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Do(httpReq)
+		if err != nil {
+			s.logger.Error("Failed to send SMS OTP", zap.Error(err))
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			s.logger.Error("Twilio SMS API error", zap.Int("status", resp.StatusCode))
+		} else {
+			s.logger.Info("Phone OTP sent via SMS",
+				zap.String("user_id", userID),
+				zap.String("phone", req.Phone))
+		}
+	}()
+
+	return nil
+}
+
+// VerifyPhoneOTP verifies the phone OTP and marks the user's phone as verified.
+func (s *authService) VerifyPhoneOTP(ctx context.Context, userID string, req *auth.PhoneVerifyRequest) error {
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return errors.NotFound("user", "User not found")
+	}
+
+	// Retrieve pending OTP from Redis
+	pending, err := s.otpRepo.GetPhoneOTP(ctx, userID)
+	if err != nil || pending == nil {
+		return errors.BadRequest("No pending phone verification found. Please request a new code.")
+	}
+
+	// Check attempts
+	if pending.Attempts >= 5 {
+		_ = s.otpRepo.DeletePhoneOTP(ctx, userID)
+		return errors.BadRequest("Too many failed attempts. Please request a new code.")
+	}
+
+	// Verify OTP
+	if pending.OTPCode != req.OTPCode {
+		pending.Attempts++
+		_ = s.otpRepo.StorePhoneOTP(ctx, userID, pending)
+		return errors.BadRequest("Invalid verification code")
+	}
+
+	// Verify phone matches
+	if pending.Email != req.Phone { // Email field stores phone
+		return errors.BadRequest("Phone number does not match the one used to request OTP")
+	}
+
+	// Mark user as phone verified
+	user.Phone = req.Phone
+	user.PhoneVerified = true
+	user.UpdatedAt = time.Now()
+
+	if err := s.repo.UpdateUser(ctx, user); err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// Clean up OTP
+	_ = s.otpRepo.DeletePhoneOTP(ctx, userID)
+
+	s.logger.Info("Phone verified successfully",
+		zap.String("user_id", userID),
+		zap.String("phone", req.Phone))
+
+	s.notifyInApp(ctx, user.UserID, "Phone verified", "Your phone number has been verified. You can now send WhatsApp notifications.", "security", map[string]interface{}{
+		"event_code": "auth.phone_verified",
+		"phone":      req.Phone,
+	})
+
+	return nil
+}
+

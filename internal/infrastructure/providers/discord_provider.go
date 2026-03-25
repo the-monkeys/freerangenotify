@@ -83,7 +83,10 @@ func (p *DiscordProvider) Send(ctx context.Context, notif *notification.Notifica
 		zap.String("notification_id", notif.NotificationID),
 		zap.Duration("delivery_time", time.Since(start)))
 
-	return NewResult("discord-"+notif.NotificationID, time.Since(start)), nil
+	result := NewResult("discord-"+notif.NotificationID, time.Since(start))
+	result.Metadata["credential_source"] = CredSourceBYOC
+	result.Metadata["billing_channel"] = "discord"
+	return result, nil
 }
 
 // GetName returns the provider name.

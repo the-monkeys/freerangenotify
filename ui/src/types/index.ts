@@ -23,6 +23,8 @@ export interface AdminUser {
     created_at: string;
     updated_at: string;
     last_login_at?: string;
+    phone?: string;
+    phone_verified?: boolean;
 }
 
 export interface AuthResponse {

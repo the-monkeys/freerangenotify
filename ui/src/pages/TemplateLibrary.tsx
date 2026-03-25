@@ -207,6 +207,11 @@ function TemplateLibraryCard({
                             <p className="line-clamp-2 pr-2 text-xs leading-5 text-muted-foreground">
                                 {template.description || 'Ready-to-use template you can import and adapt.'}
                             </p>
+                            {template.metadata?.usecase && (
+                                <p className="mt-1.5 line-clamp-2 text-[11px] font-medium leading-relaxed text-blue-600/80 dark:text-blue-400/90">
+                                    <strong className="font-semibold text-blue-700/80 dark:text-blue-300">Best for:</strong> {template.metadata.usecase as string}
+                                </p>
+                            )}
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1.5">
                             <Badge variant="outline" className="h-6 gap-1.5 px-2">

@@ -91,6 +91,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 	password := p.password
 	fromEmail := p.fromEmail
 	fromName := p.fromName
+	credSource := CredSourceSystem
 
 	// Check for dynamic config override in context
 	if cfg, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && cfg != nil {
@@ -101,6 +102,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 			password = cfg.SMTP.Password
 			fromEmail = cfg.SMTP.FromEmail
 			fromName = cfg.SMTP.FromName
+			credSource = CredSourceBYOC
 			p.logger.Debug("Using dynamic SMTP configuration", zap.String("notification_id", notif.NotificationID))
 		}
 	}
@@ -141,6 +143,8 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 		zap.Duration("delivery_time", deliveryTime))
 
 	result := NewResult("smtp-"+notif.NotificationID, deliveryTime)
+	result.Metadata["credential_source"] = credSource
+	result.Metadata["billing_channel"] = "email"
 	result.Metadata["to_email"] = usr.Email
 	result.Metadata["from_email"] = p.fromEmail
 

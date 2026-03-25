@@ -12,6 +12,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/audit"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
@@ -23,6 +24,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/billingrepo"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
@@ -93,6 +95,9 @@ type Container struct {
 	LicensingHandler             *handlers.LicensingHandler
 	OpsHandler                   *handlers.OpsHandler
 	BillingHandler               *handlers.BillingHandler
+
+	// Billing Metering
+	UsageRepo billing.UsageRepository
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -428,7 +433,13 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		cfg.Providers.SMTP,
 		logger,
 	)
-	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, logger)
+	rateCard := billing.DefaultRatesWithQuotas(
+		cfg.Billing.FreeTrialEmailQuota,
+		cfg.Billing.FreeTrialWhatsAppQuota,
+		cfg.Billing.FreeTrialSMSQuota,
+		cfg.Billing.FreeTrialPushQuota,
+	)
+	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, repos.Application, rateCard, logger)
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
 		container.ApplicationService,
@@ -590,6 +601,19 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.TeamService = services.NewTeamService(container.MembershipRepo, authRepo, logger)
 		container.TeamHandler = handlers.NewTeamHandler(container.TeamService, repos.Application, logger)
 		logger.Info("RBAC / Team management enabled")
+	}
+
+	// ── Billing: Usage Metering (feature-gated) ──
+	if cfg.Features.BillingEnabled {
+		usageRepo := billingrepo.NewESUsageRepo(dbManager.Client.GetClient(), logger)
+		if err := usageRepo.EnsureIndex(context.Background()); err != nil {
+			logger.Warn("billing: failed to ensure usage index — metering may not work", zap.Error(err))
+		}
+		container.BillingHandler.SetUsageRepo(usageRepo, true)
+		container.UsageRepo = usageRepo
+		logger.Info("Billing metering enabled", zap.String("index", "frn_usage_events"))
+	} else {
+		logger.Warn("Billing metering is DISABLED. Set FREERANGE_FEATURES_BILLING_ENABLED=true for production.")
 	}
 
 	// ── Phase 6: Multi-Environment (feature-gated) ──

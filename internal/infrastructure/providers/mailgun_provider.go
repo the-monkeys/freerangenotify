@@ -104,6 +104,8 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 		zap.Duration("delivery_time", deliveryTime))
 
 	res := NewResult("mailgun-"+notif.NotificationID, deliveryTime)
+	res.Metadata["credential_source"] = CredSourceSystem
+	res.Metadata["billing_channel"] = "email"
 	res.Metadata["to_email"] = usr.Email
 	res.Metadata["from_email"] = p.config.FromEmail
 	return res, nil
