@@ -106,13 +106,15 @@ func (h *AuthHandler) VerifyOTP(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(dto.AuthResponse{
 		User: &dto.AdminUserResponse{
-			UserID:      response.User.UserID,
-			Email:       response.User.Email,
-			FullName:    response.User.FullName,
-			IsActive:    response.User.IsActive,
-			CreatedAt:   response.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt:   response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			LastLoginAt: formatTimePtr(response.User.LastLoginAt),
+			UserID:        response.User.UserID,
+			Email:         response.User.Email,
+			FullName:      response.User.FullName,
+			Phone:         response.User.Phone,
+			PhoneVerified: response.User.PhoneVerified,
+			IsActive:      response.User.IsActive,
+			CreatedAt:     response.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt:     response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			LastLoginAt:   formatTimePtr(response.User.LastLoginAt),
 		},
 		AccessToken:         response.Tokens.AccessToken,
 		RefreshToken:        response.Tokens.RefreshToken,
@@ -190,13 +192,15 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 
 	return c.JSON(dto.AuthResponse{
 		User: &dto.AdminUserResponse{
-			UserID:      response.User.UserID,
-			Email:       response.User.Email,
-			FullName:    response.User.FullName,
-			IsActive:    response.User.IsActive,
-			CreatedAt:   response.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			UpdatedAt:   response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			LastLoginAt: formatTimePtr(response.User.LastLoginAt),
+			UserID:        response.User.UserID,
+			Email:         response.User.Email,
+			FullName:      response.User.FullName,
+			Phone:         response.User.Phone,
+			PhoneVerified: response.User.PhoneVerified,
+			IsActive:      response.User.IsActive,
+			CreatedAt:     response.User.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt:     response.User.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			LastLoginAt:   formatTimePtr(response.User.LastLoginAt),
 		},
 		AccessToken:  response.Tokens.AccessToken,
 		RefreshToken: response.Tokens.RefreshToken,
@@ -425,13 +429,15 @@ func (h *AuthHandler) GetCurrentUser(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(dto.AdminUserResponse{
-		UserID:      user.UserID,
-		Email:       user.Email,
-		FullName:    user.FullName,
-		IsActive:    user.IsActive,
-		CreatedAt:   user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   user.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		LastLoginAt: formatTimePtr(user.LastLoginAt),
+		UserID:        user.UserID,
+		Email:         user.Email,
+		FullName:      user.FullName,
+		Phone:         user.Phone,
+		PhoneVerified: user.PhoneVerified,
+		IsActive:      user.IsActive,
+		CreatedAt:     user.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:     user.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		LastLoginAt:   formatTimePtr(user.LastLoginAt),
 	})
 }
 
@@ -568,4 +574,60 @@ func generateRandomState() (string, error) {
 	}
 	// Use RawURLEncoding to avoid '+' and '/' characters that break in URL query parameters
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// SendPhoneOTP handles phone OTP send request
+func (h *AuthHandler) SendPhoneOTP(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	var req dto.PhoneOTPRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.PhoneOTPRequest{
+		Phone: req.Phone,
+	}
+
+	if err := h.authService.SendPhoneOTP(c.Context(), userID, authReq); err != nil {
+		h.logger.Error("Failed to send phone OTP", zap.String("user_id", userID), zap.Error(err))
+		return err
+	}
+
+	return c.JSON(dto.OTPResponse{
+		Message:   "Verification code sent to your phone",
+		ExpiresIn: 600,
+	})
+}
+
+// VerifyPhoneOTP handles phone OTP verification
+func (h *AuthHandler) VerifyPhoneOTP(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	var req dto.PhoneVerifyRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	authReq := &auth.PhoneVerifyRequest{
+		Phone:   req.Phone,
+		OTPCode: req.OTPCode,
+	}
+
+	if err := h.authService.VerifyPhoneOTP(c.Context(), userID, authReq); err != nil {
+		h.logger.Error("Failed to verify phone OTP", zap.String("user_id", userID), zap.Error(err))
+		return err
+	}
+
+	return c.JSON(dto.MessageResponse{
+		Message: "Phone verified successfully",
+	})
 }

@@ -223,6 +223,7 @@ func main() {
 		c.DatabaseManager.Repositories.User,
 		c.DatabaseManager.Repositories.Application,
 		c.DatabaseManager.Repositories.Template,
+		c.AuthService,
 		c.LicensingChecker,
 		providerManager,
 		c.RedisClient,

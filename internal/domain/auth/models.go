@@ -7,14 +7,16 @@ import (
 
 // AdminUser represents an admin user who can log into the dashboard
 type AdminUser struct {
-	UserID       string    `json:"user_id" es:"user_id"`
-	Email        string    `json:"email" es:"email"`
-	PasswordHash string    `json:"password_hash" es:"password_hash"`
-	FullName     string    `json:"full_name,omitempty" es:"full_name"`
-	IsActive     bool      `json:"is_active" es:"is_active"`
-	CreatedAt    time.Time `json:"created_at" es:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at" es:"updated_at"`
-	LastLoginAt  time.Time `json:"last_login_at,omitempty" es:"last_login_at"`
+	UserID        string    `json:"user_id" es:"user_id"`
+	Email         string    `json:"email" es:"email"`
+	PasswordHash  string    `json:"password_hash" es:"password_hash"`
+	FullName      string    `json:"full_name,omitempty" es:"full_name"`
+	Phone         string    `json:"phone,omitempty" es:"phone"`
+	PhoneVerified bool      `json:"phone_verified" es:"phone_verified"`
+	IsActive      bool      `json:"is_active" es:"is_active"`
+	CreatedAt     time.Time `json:"created_at" es:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" es:"updated_at"`
+	LastLoginAt   time.Time `json:"last_login_at,omitempty" es:"last_login_at"`
 }
 
 // PasswordResetToken represents a password reset token
@@ -47,6 +49,17 @@ type VerifyOTPRequest struct {
 // ResendOTPRequest represents a request to resend a registration OTP
 type ResendOTPRequest struct {
 	Email string `json:"email" validate:"required,email"`
+}
+
+// PhoneOTPRequest represents a request to send a phone verification OTP.
+type PhoneOTPRequest struct {
+	Phone string `json:"phone" validate:"required"`
+}
+
+// PhoneVerifyRequest represents a request to verify a phone OTP.
+type PhoneVerifyRequest struct {
+	Phone   string `json:"phone" validate:"required"`
+	OTPCode string `json:"otp_code" validate:"required,len=6"`
 }
 
 // RefreshToken represents a refresh token for JWT
@@ -156,6 +169,10 @@ type Service interface {
 	// OTP verification
 	VerifyRegistrationOTP(ctx context.Context, req *VerifyOTPRequest) (*AuthResponse, error)
 	ResendRegistrationOTP(ctx context.Context, req *ResendOTPRequest) error
+
+	// Phone verification
+	SendPhoneOTP(ctx context.Context, userID string, req *PhoneOTPRequest) error
+	VerifyPhoneOTP(ctx context.Context, userID string, req *PhoneVerifyRequest) error
 }
 
 // ─── Phase 2: RBAC Types ───────────────────────────────────────────────

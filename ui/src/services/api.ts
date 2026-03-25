@@ -1137,6 +1137,14 @@ export const authExtendedAPI = {
   deleteOwnAccount: async (payload: { password: string; confirm_text: string }) => {
     await api.delete('/admin/me', { data: payload });
   },
+
+  sendPhoneOTP: async (payload: { phone: string }) => {
+    await api.post('/admin/phone/send-otp', payload);
+  },
+
+  verifyPhoneOTP: async (payload: { phone: string; otp_code: string }) => {
+    await api.post('/admin/phone/verify-otp', payload);
+  },
 };
 
 // ============= Media Upload APIs =============

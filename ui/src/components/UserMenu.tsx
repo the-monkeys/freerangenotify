@@ -1,4 +1,4 @@
-import { ChevronUp, Lock, LogOut } from 'lucide-react';
+import { ChevronUp, Lock, LogOut, Phone } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -11,13 +11,14 @@ import {
 import { Avatar, AvatarFallback } from './ui/avatar';
 
 interface Props {
-    user: { full_name?: string; email?: string };
+    user: { full_name?: string; email?: string; phone_verified?: boolean };
     onChangePassword: () => void;
     onDeleteProfile: () => void;
+    onVerifyPhone: () => void;
     onLogout: () => void;
 }
 
-export default function UserMenu({ user, onChangePassword, onDeleteProfile, onLogout }: Props) {
+export default function UserMenu({ user, onChangePassword, onDeleteProfile, onVerifyPhone, onLogout }: Props) {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -50,6 +51,17 @@ export default function UserMenu({ user, onChangePassword, onDeleteProfile, onLo
                     <Lock className="h-4 w-4 mr-2" />
                     Change Password
                 </DropdownMenuItem>
+                {user.phone_verified ? (
+                    <DropdownMenuItem disabled>
+                        <Phone className="h-4 w-4 mr-2 text-green-500" />
+                        Phone Verified
+                    </DropdownMenuItem>
+                ) : (
+                    <DropdownMenuItem onClick={onVerifyPhone}>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Verify Phone
+                    </DropdownMenuItem>
+                )}
                 <DropdownMenuItem
                     onClick={onDeleteProfile}
                     className="text-destructive focus:text-destructive"

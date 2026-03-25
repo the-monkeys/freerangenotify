@@ -262,6 +262,10 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
+	
+	// Phone verification
+	adminAuth.Post("/phone/send-otp", c.AuthHandler.SendPhoneOTP)
+	adminAuth.Post("/phone/verify-otp", c.AuthHandler.VerifyPhoneOTP)
 
 	// Tenant/organization management (C1)
 	if c.TenantHandler != nil {

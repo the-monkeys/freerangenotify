@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
 import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import VerifyPhoneDialog from './VerifyPhoneDialog';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Pagination } from './Pagination';
@@ -733,8 +735,25 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         await renderTemplatePreview(formSelectedTemplate, customData || {}, context);
     }, [formSelectedTemplate, dataInput, renderTemplatePreview]);
 
+    const { user } = useAuth();
+    const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
+    
+    // Checks if the user needs phone verification for the current send request
+    const checkVerificationAndBlock = useCallback((channel: string) => {
+        if (channel === 'whatsapp' && !user?.phone_verified) {
+            setIsVerifyDialogOpen(true);
+            return true;
+        }
+        return false;
+    }, [user]);
+
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
+        
+        const selectedTemplate = templates.find(t => t.id === quickTemplateId);
+        const channel = selectedTemplate?.channel || 'email';
+        if (checkVerificationAndBlock(channel)) return;
+
         setQuickSending(true);
         try {
             const selectedDigestRule = quickDigestRuleId ? digestRules.find(r => r.id === quickDigestRuleId) : null;
@@ -773,7 +792,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             }
             setQuickMedia(null);
         } catch (error) {
-            toast.error(extractErrorMessage(error, 'Quick-send failed'));
+            const msg = extractErrorMessage(error, 'Quick-send failed');
+            if (msg.includes('phone_verification_required')) {
+                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+            } else {
+                toast.error(msg);
+            }
         } finally {
             setQuickSending(false);
         }
@@ -785,6 +809,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     };
 
     const executeBroadcast = async () => {
+        if (checkVerificationAndBlock(formData.channel)) return;
+        
         setConfirmingBroadcast(false);
         setIsSubmitting(true);
 
@@ -827,7 +853,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
-            toast.error(extractErrorMessage(error, 'Failed to broadcast notification'));
+            const msg = extractErrorMessage(error, 'Failed to broadcast notification');
+            if (msg.includes('phone_verification_required')) {
+                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+            } else {
+                toast.error(msg);
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -835,6 +866,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     const handleSendNotification = async (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (checkVerificationAndBlock(formData.channel)) return;
+
         try {
             const customData = parseCustomData(dataInput);
             if (customData === null) {
@@ -932,7 +966,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
             console.error('Failed to send notification:', error);
-            toast.error(extractErrorMessage(error, 'Failed to send notification'));
+            const msg = extractErrorMessage(error, 'Failed to send notification');
+            if (msg.includes('phone_verification_required')) {
+                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+            } else {
+                toast.error(msg);
+            }
         }
     };
 
@@ -2350,7 +2389,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         </>
                     )
                 }
-
+                <VerifyPhoneDialog 
+                    open={isVerifyDialogOpen} 
+                    onOpenChange={setIsVerifyDialogOpen} 
+                />
                 <Pagination
                     currentPage={page}
                     totalItems={totalNotifications}

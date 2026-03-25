@@ -22,6 +22,10 @@ type OTPRepository interface {
 	GetPendingRegistration(ctx context.Context, email string) (*auth.PendingRegistration, error)
 	DeletePendingRegistration(ctx context.Context, email string) error
 	IncrementAttempts(ctx context.Context, email string) (int, error)
+
+	StorePhoneOTP(ctx context.Context, userID string, reg *auth.PendingRegistration) error
+	GetPhoneOTP(ctx context.Context, userID string) (*auth.PendingRegistration, error)
+	DeletePhoneOTP(ctx context.Context, userID string) error
 }
 
 type redisOTPRepository struct {
@@ -35,6 +39,10 @@ func NewOTPRepository(client *redis.Client) OTPRepository {
 
 func (r *redisOTPRepository) key(email string) string {
 	return otpPrefix + email
+}
+
+func (r *redisOTPRepository) phoneKey(userID string) string {
+	return "frn:otp:phone:" + userID
 }
 
 func (r *redisOTPRepository) StorePendingRegistration(ctx context.Context, reg *auth.PendingRegistration) error {
@@ -96,4 +104,32 @@ func (r *redisOTPRepository) IncrementAttempts(ctx context.Context, email string
 	}
 
 	return reg.Attempts, nil
+}
+
+func (r *redisOTPRepository) StorePhoneOTP(ctx context.Context, userID string, reg *auth.PendingRegistration) error {
+	data, err := json.Marshal(reg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal phone OTP: %w", err)
+	}
+	return r.client.Set(ctx, r.phoneKey(userID), data, otpTTL).Err()
+}
+
+func (r *redisOTPRepository) GetPhoneOTP(ctx context.Context, userID string) (*auth.PendingRegistration, error) {
+	data, err := r.client.Get(ctx, r.phoneKey(userID)).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get phone OTP: %w", err)
+	}
+
+	var reg auth.PendingRegistration
+	if err := json.Unmarshal(data, &reg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal phone OTP: %w", err)
+	}
+	return &reg, nil
+}
+
+func (r *redisOTPRepository) DeletePhoneOTP(ctx context.Context, userID string) error {
+	return r.client.Del(ctx, r.phoneKey(userID)).Err()
 }

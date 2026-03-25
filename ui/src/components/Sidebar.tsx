@@ -7,6 +7,7 @@ import { billingAPI } from '../services/api';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import DeleteAccountDialog from './DeleteAccountDialog';
+import VerifyPhoneDialog from './VerifyPhoneDialog';
 import {
     Sidebar as AppSidebar,
     SidebarContent,
@@ -58,6 +59,7 @@ const SidebarNav: React.FC = () => {
     const { isMobile, setOpenMobile, state, setOpen, toggleSidebar } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+    const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
     const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
 
     React.useEffect(() => {
@@ -197,9 +199,10 @@ const SidebarNav: React.FC = () => {
 
                 <div className="pt-1">
                     <UserMenu
-                        user={{ full_name: user?.full_name, email: user?.email }}
+                        user={{ full_name: user?.full_name, email: user?.email, phone_verified: user?.phone_verified }}
                         onChangePassword={() => setChangePasswordOpen(true)}
                         onDeleteProfile={() => setDeleteAccountOpen(true)}
+                        onVerifyPhone={() => setVerifyPhoneOpen(true)}
                         onLogout={handleLogout}
                     />
                 </div>
@@ -214,6 +217,11 @@ const SidebarNav: React.FC = () => {
                     onOpenChange={setDeleteAccountOpen}
                     userEmail={user?.email}
                     onDeleted={handleDeleted}
+                />
+
+                <VerifyPhoneDialog
+                    open={verifyPhoneOpen}
+                    onOpenChange={setVerifyPhoneOpen}
                 />
             </SidebarFooter>
         </>
