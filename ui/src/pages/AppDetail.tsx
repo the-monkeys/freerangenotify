@@ -13,6 +13,7 @@ import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
 import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
+import TemplateLibrary from './TemplateLibrary';
 
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -30,9 +31,9 @@ import { Badge } from '../components/ui/badge';
 import { useApiQuery } from '../hooks/use-api-query';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import' | 'browse-library';
 
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import'];
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import', 'browse-library'];
 
 interface TabDef {
     id: TabId;
@@ -330,7 +331,7 @@ const AppDetail: React.FC = () => {
                                                     <SidebarMenuItem key={tab.id}>
                                                         <button
                                                             onClick={() => handleTabChange(tab.id)}
-                                                            className={`inline-flex h-9 w-full items-center gap-2.5 rounded-lg border-0 px-2.5 text-left text-sm transition-colors focus-visible:outline-none ${activeTab === tab.id
+                                                            className={`inline-flex h-9 w-full items-center gap-2.5 rounded-lg border-0 px-2.5 text-left text-sm transition-colors focus-visible:outline-none ${activeTab === tab.id || (tab.id === 'templates' && activeTab === 'browse-library')
                                                                 ? 'bg-foreground text-background shadow-sm'
                                                                 : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                                                                 }`}
@@ -429,6 +430,9 @@ const AppDetail: React.FC = () => {
                                 </div>
                                 <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
                                     <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
+                                </div>
+                                <div className={activeTab === 'browse-library' ? 'block' : 'hidden'}>
+                                    <TemplateLibrary />
                                 </div>
                                 <div className={activeTab === 'notifications' ? 'block' : 'hidden'}>
                                     <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />

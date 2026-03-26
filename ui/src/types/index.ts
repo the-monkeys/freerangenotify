@@ -151,6 +151,7 @@ export interface UpdateApplicationRequest {
 export interface User {
     user_id: string;
     external_id?: string;
+    full_name?: string;
     app_id: string;
     email: string;
     phone?: string;
@@ -182,6 +183,7 @@ export interface UserPreferences {
 export interface CreateUserRequest {
     user_id?: string;
     external_id?: string;
+    full_name?: string;
     email?: string;
     phone?: string;
     timezone?: string;
@@ -191,11 +193,32 @@ export interface CreateUserRequest {
 
 export interface UpdateUserRequest {
     external_id?: string;
+    full_name?: string;
     email?: string;
     phone?: string;
     timezone?: string;
     language?: string;
     preferences?: UserPreferences;
+}
+
+export interface BulkCreateUserRequest {
+    upsert: boolean;
+    skip_existing: boolean;
+    users: CreateUserRequest[];
+}
+
+export interface BulkUserError {
+    index: number;
+    email?: string;
+    message: string;
+}
+
+export interface BulkCreateUserResponse {
+    created: number;
+    updated: number;
+    skipped: number;
+    total: number;
+    errors?: BulkUserError[];
 }
 
 // ============= Device Types =============

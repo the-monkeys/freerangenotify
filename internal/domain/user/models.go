@@ -11,6 +11,7 @@ type User struct {
 	AppID             string      `json:"app_id" es:"app_id"`
 	EnvironmentID     string      `json:"environment_id,omitempty" es:"environment_id"`
 	ExternalID        string      `json:"external_id,omitempty" es:"external_id"`
+	FullName          string      `json:"full_name,omitempty" es:"full_name"`
 	Email             string      `json:"email,omitempty" es:"email"`
 	Phone             string      `json:"phone,omitempty" es:"phone"`
 	Timezone          string      `json:"timezone,omitempty" es:"timezone"`
@@ -76,6 +77,7 @@ type UserFilter struct {
 	AppIDs        []string `json:"app_ids,omitempty"`
 	EnvironmentID string   `json:"environment_id,omitempty"`
 	Email         string   `json:"email,omitempty"`
+	FullName      string   `json:"full_name,omitempty"`
 	Timezone      string   `json:"timezone,omitempty"`
 	Language      string   `json:"language,omitempty"`
 	Limit         int      `json:"limit,omitempty"`
@@ -115,6 +117,7 @@ type Service interface {
 type CreateRequest struct {
 	AppID             string      `json:"app_id" validate:"required"`
 	ExternalID        string      `json:"external_id,omitempty"`
+	FullName          string      `json:"full_name,omitempty"`
 	Email             string      `json:"email,omitempty" validate:"omitempty,email"`
 	Phone             string      `json:"phone,omitempty"`
 	Timezone          string      `json:"timezone,omitempty"`
@@ -129,6 +132,7 @@ type CreateRequest struct {
 // UpdateRequest represents a request to update a user
 type UpdateRequest struct {
 	ExternalID        *string      `json:"external_id,omitempty"`
+	FullName          *string      `json:"full_name,omitempty"`
 	Email             *string      `json:"email,omitempty" validate:"omitempty,email"`
 	Phone             *string      `json:"phone,omitempty"`
 	Timezone          *string      `json:"timezone,omitempty"`

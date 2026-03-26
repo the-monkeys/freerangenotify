@@ -70,7 +70,8 @@ import type {
   TemplateTestRequest,
   TemplateControlsResponse,
   UpdateControlsRequest,
-  BulkCreateUsersRequest,
+  BulkCreateUserRequest,
+  BulkCreateUserResponse,
   SubscriberHashResponse,
   SystemStats,
 } from '../types';
@@ -337,8 +338,8 @@ export const usersAPI = {
     return data.data;
   },
 
-  bulkCreate: async (apiKey: string, payload: BulkCreateUsersRequest) => {
-    const { data } = await api.post('/users/bulk', payload, {
+  bulkCreate: async (apiKey: string, payload: BulkCreateUserRequest) => {
+    const { data } = await api.post<BulkCreateUserResponse>('/users/bulk', payload, {
       headers: getAuthHeaders(apiKey)
     });
     return data;

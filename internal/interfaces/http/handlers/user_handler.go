@@ -104,6 +104,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		UserID:     req.UserID,
 		AppID:      appID,
 		ExternalID: req.ExternalID,
+		FullName:   req.FullName,
 		Email:      req.Email,
 		Phone:      req.Phone,
 		Timezone:   req.Timezone,
@@ -196,6 +197,9 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	// Update fields
 	if req.ExternalID != "" {
 		u.ExternalID = req.ExternalID
+	}
+	if req.FullName != "" {
+		u.FullName = req.FullName
 	}
 	if req.Email != "" {
 		u.Email = req.Email
@@ -572,12 +576,14 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 	var users []*user.User
 	var updatedUsers []*user.User
 	var bulkErrors []dto.BulkUserError
+	skippedUsers := 0
 
 	for i, ur := range req.Users {
 		u := &user.User{
 			UserID:     ur.UserID,
 			AppID:      appID,
 			ExternalID: ur.ExternalID,
+			FullName:   ur.FullName,
 			Email:      ur.Email,
 			Phone:      ur.Phone,
 			Timezone:   ur.Timezone,
@@ -598,12 +604,24 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 			continue
 		}
 
+		// Skip mode: if email exists, skip without error
+		if req.SkipExisting && u.Email != "" {
+			existing, _ := h.service.GetByEmail(c.Context(), appID, u.Email)
+			if existing != nil {
+				skippedUsers++
+				continue
+			}
+		}
+
 		// Upsert mode: if user with this email exists, update instead of failing
-		if req.Upsert && u.Email != "" {
+		if req.Upsert && !req.SkipExisting && u.Email != "" {
 			existing, _ := h.service.GetByEmail(c.Context(), appID, u.Email)
 			if existing != nil {
 				if u.ExternalID != "" {
 					existing.ExternalID = u.ExternalID
+				}
+				if u.FullName != "" {
+					existing.FullName = u.FullName
 				}
 				if u.Phone != "" {
 					existing.Phone = u.Phone
@@ -643,6 +661,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(dto.BulkCreateUserResponse{
 		Created: len(users),
 		Updated: len(updatedUsers),
+		Skipped: skippedUsers,
 		Total:   len(req.Users),
 		Errors:  bulkErrors,
 	})

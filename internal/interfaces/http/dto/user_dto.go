@@ -6,6 +6,7 @@ import "github.com/the-monkeys/freerangenotify/internal/domain/user"
 type CreateUserRequest struct {
 	UserID      string            `json:"user_id" validate:"omitempty"`
 	ExternalID  string            `json:"external_id" validate:"omitempty"`
+	FullName    string            `json:"full_name" validate:"omitempty"`
 	Email       string            `json:"email" validate:"omitempty,email"`
 	Phone       string            `json:"phone" validate:"omitempty"`
 	Timezone    string            `json:"timezone" validate:"omitempty"`
@@ -17,6 +18,7 @@ type CreateUserRequest struct {
 // UpdateUserRequest represents a request to update a user
 type UpdateUserRequest struct {
 	ExternalID  string            `json:"external_id" validate:"omitempty"`
+	FullName    string            `json:"full_name" validate:"omitempty"`
 	Email       string            `json:"email" validate:"omitempty,email"`
 	Phone       string            `json:"phone" validate:"omitempty"`
 	Timezone    string            `json:"timezone" validate:"omitempty"`
@@ -50,6 +52,7 @@ type UserResponse struct {
 	UserID      string           `json:"user_id"`
 	AppID       string           `json:"app_id"`
 	ExternalID  string           `json:"external_id,omitempty"`
+	FullName    string           `json:"full_name,omitempty"`
 	Email       string           `json:"email,omitempty"`
 	Phone       string           `json:"phone,omitempty"`
 	Timezone    string           `json:"timezone,omitempty"`
@@ -83,6 +86,7 @@ func ToUserResponse(u *user.User) UserResponse {
 		UserID:      u.UserID,
 		AppID:       u.AppID,
 		ExternalID:  u.ExternalID,
+		FullName:    u.FullName,
 		Email:       u.Email,
 		Phone:       u.Phone,
 		Timezone:    u.Timezone,
@@ -97,14 +101,16 @@ func ToUserResponse(u *user.User) UserResponse {
 
 // BulkCreateUserRequest represents a request to create multiple users at once.
 type BulkCreateUserRequest struct {
-	Upsert bool                `json:"upsert"`
-	Users  []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
+	Upsert       bool                `json:"upsert"`
+	SkipExisting bool                `json:"skip_existing"`
+	Users        []CreateUserRequest `json:"users" validate:"required,min=1,max=1000,dive"`
 }
 
 // BulkCreateUserResponse is the response for bulk user creation.
 type BulkCreateUserResponse struct {
 	Created int             `json:"created"`
 	Updated int             `json:"updated"`
+	Skipped int             `json:"skipped"`
 	Total   int             `json:"total"`
 	Errors  []BulkUserError `json:"errors,omitempty"`
 }

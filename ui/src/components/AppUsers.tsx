@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useApiQuery } from '../hooks/use-api-query';
 import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Pagination } from './Pagination';
 import ConfirmDeleteDialog from './ConfirmDeleteDialog';
 import { toast } from 'sonner';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, Trash2, Upload, Download } from 'lucide-react';
 
 const getBrowserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -54,6 +54,8 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [pageSize] = useState(20);
     const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [uploadingCSV, setUploadingCSV] = useState(false);
 
     const { 
         data: usersData, 
@@ -72,6 +74,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const totalCount = useMemo(() => usersData?.total_count || 0, [usersData]);
     const [formData, setFormData] = useState<CreateUserRequest>({
         email: '',
+        full_name: '',
         phone: '',
         external_id: '',
         timezone: getBrowserTimezone(),
@@ -99,6 +102,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 // Update
                 const updatePayload: any = {
                     external_id: formData.external_id,
+                    full_name: formData.full_name,
                     email: formData.email,
                     phone: formData.phone,
                     timezone: formData.timezone,
@@ -114,6 +118,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             setShowAddForm(false);
             setFormData({
                 email: '',
+                full_name: '',
                 phone: '',
                 external_id: '',
                 timezone: getBrowserTimezone(),
@@ -145,6 +150,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         setFormData({
             user_id: user.user_id,
             external_id: user.external_id || '',
+            full_name: user.full_name || '',
             email: user.email,
             phone: user.phone || '',
             timezone: user.timezone || getBrowserTimezone(),
@@ -184,6 +190,88 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         }
     };
 
+    const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setUploadingCSV(true);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const text = e.target?.result as string;
+                if (!text) throw new Error("File empty");
+
+                const lines = text.split('\n').filter(l => l.trim().length > 0);
+                if (lines.length < 2) throw new Error("CSV must contain a header row and at least one data row.");
+
+                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                const emailIdx = headers.indexOf('email');
+                const nameIdx = headers.indexOf('full_name') !== -1 ? headers.indexOf('full_name') : headers.indexOf('name');
+                const phoneIdx = headers.indexOf('phone');
+                const extIdIdx = headers.indexOf('external_id');
+
+                if (emailIdx === -1) {
+                    throw new Error("CSV header must contain 'email'");
+                }
+
+                const usersToCreate: CreateUserRequest[] = [];
+                for (let i = 1; i < lines.length; i++) {
+                    const columns = lines[i].split(',').map(c => c.trim());
+                    if (columns.length < headers.length) continue;
+
+                    if (!columns[emailIdx]) continue; // Skip empty emails
+
+                    usersToCreate.push({
+                        email: columns[emailIdx],
+                        full_name: nameIdx !== -1 ? columns[nameIdx] : undefined,
+                        phone: phoneIdx !== -1 ? columns[phoneIdx] : undefined,
+                        external_id: extIdIdx !== -1 ? columns[extIdIdx] : undefined,
+                        timezone: getBrowserTimezone(),
+                        language: 'en',
+                    });
+                }
+
+                if (usersToCreate.length === 0) {
+                    throw new Error("No valid valid user data rows found.");
+                }
+
+                const res = await usersAPI.bulkCreate(apiKey, {
+                    upsert: false,
+                    skip_existing: true,
+                    users: usersToCreate
+                });
+
+                toast.success(`Import successful: ${res.created} created, ${res.skipped} skipped.`);
+                fetchUsers();
+            } catch (err) {
+                console.error("CSV import error", err);
+                toast.error(extractErrorMessage(err, "Failed to parse or upload CSV"));
+            } finally {
+                setUploadingCSV(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        };
+        reader.onerror = () => {
+            toast.error("Failed to read file.");
+            setUploadingCSV(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        reader.readAsText(file);
+    };
+
+    const handleDownloadCSVTemplate = () => {
+        const csvContent = "email,full_name,phone,external_id\nuser1@example.com,John Doe,+15550100,ext_123\nuser2@example.com,Jane Smith,,ext_124\n";
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'users_import_template.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     if (loading) return <div className="text-center py-4">Loading users...</div>;
 
     return (
@@ -191,35 +279,60 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                     <CardTitle>Application Users</CardTitle>
-                    <Button
-                        onClick={() => {
-                            setShowAddForm(!showAddForm);
-                            if (!showAddForm) {
-                                setEditingUser(null);
-                                setFormData({
-                                    email: '',
-                                    phone: '',
-                                    external_id: '',
-                                    timezone: getBrowserTimezone(),
-                                    language: 'en',
-                                    preferences: {
-                                        email_enabled: true,
-                                        push_enabled: true,
-                                        sms_enabled: true,
-                                        dnd: false,
-                                        daily_limit: 0,
-                                        quiet_hours: {
-                                            enabled: false,
-                                            start: '',
-                                            end: ''
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleDownloadCSVTemplate}
+                            title="Download CSV template"
+                        >
+                            <Download className="h-4 w-4 mr-1" />
+                            CSV Template
+                        </Button>
+                        <input
+                            type="file"
+                            accept=".csv"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleCSVUpload}
+                        />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingCSV}
+                        >
+                            <Upload className="h-4 w-4 mr-1" />
+                            {uploadingCSV ? 'Importing...' : 'Import CSV'}
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => {
+                                setShowAddForm(!showAddForm);
+                                if (!showAddForm) {
+                                    setEditingUser(null);
+                                    setFormData({
+                                        email: '',
+                                        full_name: '',
+                                        phone: '',
+                                        external_id: '',
+                                        timezone: getBrowserTimezone(),
+                                        language: 'en',
+                                        preferences: {
+                                            email_enabled: true,
+                                            push_enabled: true,
+                                            sms_enabled: true,
+                                            dnd: false,
+                                            daily_limit: 0,
+                                            quiet_hours: { enabled: false, start: '', end: '' }
                                         }
-                                    }
-                                });
-                            }
-                        }}
-                    >
-                        {showAddForm ? 'Cancel' : 'Add User'}
-                    </Button>
+                                    });
+                                }
+                            }}
+                        >
+                            {showAddForm ? 'Cancel' : 'Add User'}
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
@@ -256,6 +369,16 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                                 <p className="text-xs text-muted-foreground">
                                     Your platform's user identifier. Used for SSE connections and cross-system lookups.
                                 </p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="full_name">Full Name</Label>
+                                <Input
+                                    id="full_name"
+                                    type="text"
+                                    value={formData.full_name || ''}
+                                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                                    placeholder="John Doe"
+                                />
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
@@ -440,6 +563,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Email</TableHead>
+                                    <TableHead>Name</TableHead>
                                     <TableHead>Phone</TableHead>
                                     <TableHead>Language</TableHead>
                                     <TableHead>Quiet Hours</TableHead>
@@ -449,7 +573,8 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                             <TableBody>
                                 {users.map((user) => (
                                     <TableRow key={user.user_id}>
-                                        <TableCell>{user.email || '-'}</TableCell>
+                                        <TableCell className="font-medium">{user.email || '-'}</TableCell>
+                                        <TableCell>{user.full_name || '-'}</TableCell>
                                         <TableCell>{user.phone || '-'}</TableCell>
                                         <TableCell>{user.language || 'en'}</TableCell>
                                         <TableCell>

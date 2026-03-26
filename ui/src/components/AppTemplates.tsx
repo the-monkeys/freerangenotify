@@ -573,7 +573,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         <Badge variant="outline" className="rounded-sm py-1.5 px-4">
                             {totalCount} Total
                         </Badge>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}/templates/library`)}>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}?tab=browse-library`)}>
                             Browse Library
                         </Button>
                         <Button
