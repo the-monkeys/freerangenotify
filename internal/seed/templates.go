@@ -812,7 +812,7 @@ var LibraryTemplates = []template.Template{
 		Name:        "services_accounting_bookkeeping",
 		Description: "Full-bleed background image flyer for accounting and bookkeeping service promotions. Features a four-service highlight layout with a bold CTA.",
 		Channel:     "email",
-		Subject:     "{{.company_name}} — {{or .heading \"Accounting & Bookkeeping Services\"}}",
+		Subject:     "{{.company_name}} — {{.heading}}",
 		Body:        servicesAccountingHTML,
 		Variables: []string{
 			"background_image", "company_name", "heading",

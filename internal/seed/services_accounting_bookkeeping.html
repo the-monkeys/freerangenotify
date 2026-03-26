@@ -9,7 +9,9 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="x-apple-disable-message-reformatting" />
     <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no" />
-    <title>{{.company_name}} — {{or .heading "Accounting &amp; Bookkeeping Services"}}</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>{{.company_name}} — {{.heading}}</title>
     <!--[if mso]>
   <noscript>
     <xml>
@@ -85,7 +87,7 @@
 
         <!-- Preheader -->
         <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
-            {{or .heading "Accounting &amp; Bookkeeping Services"}} from {{.company_name}}
+            {{.heading}} from {{.company_name}}
         </div>
 
         <table role="presentation" cellpadding="0" cellspacing="0" width="640" class="email-container"
@@ -103,8 +105,8 @@
 
                     <!-- Overlay layer for readability -->
                     <div
-                        style="background:linear-gradient(135deg, rgba(235,238,244,0.92) 55%, rgba(235,238,244,0.55) 100%);">
-                        <!--[if mso]><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background-color:rgba(235,238,244,0.88);"><![endif]-->
+                        style="background-color:rgba(235,238,244,0.85);">
+                        <!--[if mso]><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="background-color:rgba(235,238,244,0.85);"><![endif]-->
 
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
 
@@ -127,7 +129,7 @@
                                             <td>
                                                 <h1 class="hero-title"
                                                     style="margin:0;font-size:34px;font-weight:900;line-height:40px;color:#2D3A5C;font-family:'Segoe UI',Arial,sans-serif;letter-spacing:-0.5px;text-transform:uppercase;">
-                                                    {{or .heading "Accounting &amp; Bookkeeping Services"}}
+                                                    {{.heading}}
                                                 </h1>
                                             </td>
                                         </tr>
