@@ -573,7 +573,7 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         <Badge variant="outline" className="rounded-sm py-1.5 px-4">
                             {totalCount} Total
                         </Badge>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}/templates/library`)}>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/apps/${appId}?tab=browse-library`)}>
                             Browse Library
                         </Button>
                         <Button
@@ -636,8 +636,8 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="email">Email</SelectItem>
-                                        {/* <SelectItem value="push">Push</SelectItem>
-                                        <SelectItem value="sms">SMS</SelectItem> */}
+                                        {/* <SelectItem value="push">Push</SelectItem> */}
+                                        <SelectItem value="sms">SMS</SelectItem>
                                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                         <SelectItem value="webhook">Webhook</SelectItem>
                                         <SelectItem value="in_app">In-App</SelectItem>

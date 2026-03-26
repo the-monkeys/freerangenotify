@@ -13,6 +13,7 @@ import DigestRulesList from './digest/DigestRulesList';
 import TopicsList from './topics/TopicsList';
 import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
+import TemplateLibrary from './TemplateLibrary';
 
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -30,9 +31,9 @@ import { Badge } from '../components/ui/badge';
 import { useApiQuery } from '../hooks/use-api-query';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import';
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import' | 'browse-library';
 
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import'];
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import', 'browse-library'];
 
 interface TabDef {
     id: TabId;
@@ -330,7 +331,7 @@ const AppDetail: React.FC = () => {
                                                     <SidebarMenuItem key={tab.id}>
                                                         <button
                                                             onClick={() => handleTabChange(tab.id)}
-                                                            className={`inline-flex h-9 w-full items-center gap-2.5 rounded-lg border-0 px-2.5 text-left text-sm transition-colors focus-visible:outline-none ${activeTab === tab.id
+                                                            className={`inline-flex h-9 w-full items-center gap-2.5 rounded-lg border-0 px-2.5 text-left text-sm transition-colors focus-visible:outline-none ${activeTab === tab.id || (tab.id === 'templates' && activeTab === 'browse-library')
                                                                 ? 'bg-foreground text-background shadow-sm'
                                                                 : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
                                                                 }`}
@@ -429,6 +430,9 @@ const AppDetail: React.FC = () => {
                                 </div>
                                 <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
                                     <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
+                                </div>
+                                <div className={activeTab === 'browse-library' ? 'block' : 'hidden'}>
+                                    <TemplateLibrary />
                                 </div>
                                 <div className={activeTab === 'notifications' ? 'block' : 'hidden'}>
                                     <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
@@ -1025,6 +1029,71 @@ const AppDetail: React.FC = () => {
                                                             />
                                                             <p className="text-xs text-muted-foreground">
                                                                 Your Twilio WhatsApp-enabled number. The &quot;whatsapp:&quot; prefix is added automatically.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+
+                                            <AccordionItem value="sms-channel" className="border bg-card rounded-lg px-4">
+                                                <AccordionTrigger className="text-base font-semibold hover:no-underline">SMS Channel Configuration</AccordionTrigger>
+                                                <AccordionContent className="pt-4 pb-4">
+                                                    <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
+                                                        <p className="text-sm text-muted-foreground">
+                                                            Configure per-app Twilio SMS credentials. Leave empty to use system defaults.
+                                                        </p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="smsAccountSid">Twilio Account SID</Label>
+                                                                <Input
+                                                                    id="smsAccountSid"
+                                                                    type="password"
+                                                                    className="text-sm"
+                                                                    value={settings.sms_config?.account_sid || ''}
+                                                                    onChange={(e) => setSettings({
+                                                                        ...settings,
+                                                                        sms_config: {
+                                                                            ...settings.sms_config,
+                                                                            account_sid: e.target.value
+                                                                        } as any
+                                                                    })}
+                                                                    placeholder="ACxxxxxxxxxxxxx"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="smsAuthToken">Twilio Auth Token</Label>
+                                                                <Input
+                                                                    id="smsAuthToken"
+                                                                    type="password"
+                                                                    className="text-sm"
+                                                                    value={settings.sms_config?.auth_token || ''}
+                                                                    onChange={(e) => setSettings({
+                                                                        ...settings,
+                                                                        sms_config: {
+                                                                            ...settings.sms_config,
+                                                                            auth_token: e.target.value
+                                                                        } as any
+                                                                    })}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="smsFromNumber">SMS From Number</Label>
+                                                            <Input
+                                                                id="smsFromNumber"
+                                                                className="text-sm"
+                                                                value={settings.sms_config?.from_number || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    sms_config: {
+                                                                        ...settings.sms_config,
+                                                                        from_number: e.target.value
+                                                                    } as any
+                                                                })}
+                                                                placeholder="+1234567890"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Your Twilio SMS-enabled phone number.
                                                             </p>
                                                         </div>
                                                     </div>

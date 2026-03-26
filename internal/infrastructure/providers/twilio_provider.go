@@ -3,11 +3,15 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/twilio/twilio-go"
+	openapi "github.com/twilio/twilio-go/rest/api/v2010"
 	"go.uber.org/zap"
 )
 
@@ -21,8 +25,7 @@ type TwilioProvider struct {
 	authToken  string
 	fromNumber string
 
-	// TODO: Add Twilio client
-	// client *twilio.RestClient
+	client *twilio.RestClient
 }
 
 // TwilioConfig holds Twilio-specific configuration
@@ -41,11 +44,10 @@ type TwilioConfig struct {
 
 // NewTwilioProvider creates a new Twilio provider
 func NewTwilioProvider(config TwilioConfig, logger *zap.Logger) (Provider, error) {
-	// TODO: Initialize Twilio client
-	// client := twilio.NewRestClientWithParams(twilio.ClientParams{
-	//     Username: config.AccountSID,
-	//     Password: config.AuthToken,
-	// })
+	client := twilio.NewRestClientWithParams(twilio.ClientParams{
+		Username: config.AccountSID,
+		Password: config.AuthToken,
+	})
 
 	return &TwilioProvider{
 		config:     config.Config,
@@ -53,6 +55,7 @@ func NewTwilioProvider(config TwilioConfig, logger *zap.Logger) (Provider, error
 		accountSID: config.AccountSID,
 		authToken:  config.AuthToken,
 		fromNumber: config.FromNumber,
+		client:     client,
 	}, nil
 }
 
@@ -79,7 +82,7 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 	accountSID := p.accountSID
 	authToken := p.authToken
 	fromNumber := p.fromNumber
-	credSource := CredSourceSystem
+	credSource := billing.CredSourceSystem
 
 	if appCfg, ok := ctx.Value(SMSConfigKey).(*application.SMSAppConfig); ok && appCfg != nil {
 		if appCfg.AccountSID != "" && appCfg.AuthToken != "" {
@@ -88,7 +91,7 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 			if appCfg.FromNumber != "" {
 				fromNumber = appCfg.FromNumber
 			}
-			credSource = CredSourceBYOC
+			credSource = billing.CredSourceBYOC
 			p.logger.Debug("Using per-app SMS config",
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("from_number", fromNumber),
@@ -96,39 +99,45 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 		}
 	}
 
-	// Suppress unused variable warnings for credentials (used when real Twilio client is integrated)
-	_ = accountSID
-	_ = authToken
-	_ = fromNumber
+	client := p.client
+	if credSource == billing.CredSourceBYOC {
+		// Instantiate a new client per request for BYOC to avoid mutating the shared provider client
+		client = twilio.NewRestClientWithParams(twilio.ClientParams{
+			Username: accountSID,
+			Password: authToken,
+		})
+	}
 
-	// TODO: Send SMS via Twilio
-	// params := &api.CreateMessageParams{}
-	// params.SetTo(usr.Phone)
-	// params.SetFrom(p.fromNumber)
-	// params.SetBody(smsBody)
-	//
-	// resp, err := p.client.Api.CreateMessage(params)
-	// if err != nil {
-	//     return p.handleError(err), nil
-	// }
-	//
-	// if resp.Status != nil && *resp.Status == "failed" {
-	//     return NewErrorResult(
-	//         fmt.Errorf("Twilio message failed"),
-	//         ErrorTypeProviderAPI,
-	//     ), nil
-	// }
+	params := &openapi.CreateMessageParams{}
+	params.SetTo(usr.Phone)
+	params.SetFrom(fromNumber)
+	params.SetBody(smsBody)
 
-	// Simulate sending (remove when real implementation is added)
-	time.Sleep(80 * time.Millisecond)
+	resp, err := client.Api.CreateMessage(params)
+	if err != nil {
+		p.logger.Error("Twilio SMS failed", zap.Error(err))
+		return p.handleError(err), nil
+	}
+
+	if resp.Status != nil && (*resp.Status == "failed" || *resp.Status == "undelivered") {
+		return NewErrorResult(
+			fmt.Errorf("Twilio message failed with status: %s", *resp.Status),
+			ErrorTypeProviderAPI,
+		), nil
+	}
 
 	deliveryTime := time.Since(startTime)
+	msgID := ""
+	if resp.Sid != nil {
+		msgID = *resp.Sid
+	}
 
 	p.logger.Info("Twilio SMS sent successfully",
 		zap.String("notification_id", notif.NotificationID),
+		zap.String("twilio_sid", msgID),
 		zap.Duration("delivery_time", deliveryTime))
 
-	result := NewResult("twilio-simulated-"+notif.NotificationID, deliveryTime)
+	result := NewResult(msgID, deliveryTime)
 	result.Metadata["credential_source"] = credSource
 	result.Metadata["billing_channel"] = "sms"
 	result.Metadata["to_phone"] = usr.Phone
@@ -177,12 +186,22 @@ func (p *TwilioProvider) buildSMSBody(notif *notification.Notification) string {
 
 // handleError categorizes Twilio errors
 func (p *TwilioProvider) handleError(err error) *Result {
-	// TODO: Implement proper error categorization based on Twilio error codes
-	// - 20003: Authentication Error -> ErrorTypeAuth
-	// - 21211: Invalid Phone Number -> ErrorTypeInvalid
-	// - 21608: Unsubscribed -> ErrorTypeInvalid
-	// - 21610: Blacklisted -> ErrorTypeInvalid
-	// - 20429: Too Many Requests -> ErrorTypeRateLimit
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "20003") || strings.Contains(errMsg, "Authentication Error") {
+		return NewErrorResult(err, ErrorTypeAuth)
+	}
+	if strings.Contains(errMsg, "21211") || strings.Contains(errMsg, "Invalid phone number") {
+		return NewErrorResult(err, ErrorTypeInvalid)
+	}
+	if strings.Contains(errMsg, "21608") || strings.Contains(errMsg, "unsubscribed") {
+		return NewErrorResult(err, ErrorTypeInvalid)
+	}
+	if strings.Contains(errMsg, "21610") || strings.Contains(errMsg, "blacklisted") {
+		return NewErrorResult(err, ErrorTypeInvalid)
+	}
+	if strings.Contains(errMsg, "20429") {
+		return NewErrorResult(err, ErrorTypeRateLimit)
+	}
 
 	return NewErrorResult(err, ErrorTypeUnknown)
 }

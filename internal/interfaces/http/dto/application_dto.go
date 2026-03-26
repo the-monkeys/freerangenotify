@@ -35,6 +35,7 @@ type UpdateSettingsRequest struct {
 	ValidationConfig       *application.ValidationConfig     `json:"validation_config"`
 	DefaultPreferences     *DefaultPreferencesDTO            `json:"default_preferences"`
 	WhatsAppConfig         *application.WhatsAppAppConfig    `json:"whatsapp_config,omitempty"`
+	SMSConfig              *application.SMSAppConfig         `json:"sms_config,omitempty"`
 	OnUserCreatedTriggerID *string                           `json:"on_user_created_trigger_id,omitempty"` // Phase 5: workflow to trigger on user create
 	InboundWebhookConfig   *application.InboundWebhookConfig `json:"inbound_webhook_config,omitempty"`     // Phase 7: inbound webhook (secret, event mapping)
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { applicationsAPI, templatesAPI } from '../services/api';
 import type { Template } from '../types';
@@ -192,6 +192,20 @@ function TemplateLibraryCard({
     // remove underscores from name, and capitalize first letter of each word for display
     const templateName = template.name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
 
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [scale, setScale] = useState(1);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const observer = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                setScale(Math.min(1, entry.contentRect.width / 600));
+            }
+        });
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     return (
         <Card className="group flex h-full flex-col overflow-hidden border-border/80 bg-card/70 shadow-sm transition-shadow hover:shadow-md">
             <CardContent className="flex flex-1 flex-col p-0">
@@ -214,10 +228,22 @@ function TemplateLibraryCard({
                             )}
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1.5">
-                            <Badge variant="outline" className="h-6 gap-1.5 px-2">
-                                <span className="text-muted-foreground">{channel.icon}</span>
-                                <span className="text-[11px]">{channel.label}</span>
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="h-6 gap-1.5 px-2">
+                                    <span className="text-muted-foreground">{channel.icon}</span>
+                                    <span className="text-[11px]">{channel.label}</span>
+                                </Badge>
+                                <Button
+                                    size="icon"
+                                    variant="outline"
+                                    className="h-6 w-6 border-primary/20 bg-primary/5 hover:bg-primary/20 transition-colors"
+                                    title="Import Template"
+                                    disabled={cloning === template.name}
+                                    onClick={() => onImport(template.name)}
+                                >
+                                    {cloning === template.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                                </Button>
+                            </div>
                             <Badge variant="outline" className="h-6 px-2 text-[11px]">
                                 {template.variables && template.variables.length > 0
                                     ? `${template.variables.length} field${template.variables.length === 1 ? '' : 's'}`
@@ -225,7 +251,6 @@ function TemplateLibraryCard({
                             </Badge>
                         </div>
                     </div>
-
                 </div>
 
                 <div className="border-y border-border/70 bg-muted/20 px-4 py-3">
@@ -244,46 +269,33 @@ function TemplateLibraryCard({
                         </div>
                     </div>
                     {previewLoading ? (
-                        <div className="flex h-44 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
+                        <div className="flex h-56 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
                             <Loader2 className="h-4 w-4 animate-spin" />
                         </div>
                     ) : template.channel === 'email' ? (
-                        <iframe
-                            srcDoc={previewContent}
-                            className="h-44 w-full rounded-md border-0 bg-white"
-                            title={`Preview: ${template.name}`}
-                            sandbox=""
-                        />
+                        <div ref={containerRef} className="relative w-full overflow-hidden rounded-md border border-border bg-white" style={{ height: `${900 * scale}px` }}>
+                            <div className="absolute top-0 left-0 w-[600px] h-[900px] origin-top-left" style={{ transform: `scale(${scale})` }}>
+                                <iframe
+                                    srcDoc={previewContent}
+                                    className="h-full w-full border-0 pointer-events-none"
+                                    title={`Preview: ${template.name}`}
+                                    sandbox=""
+                                    scrolling="no"
+                                />
+                            </div>
+                        </div>
                     ) : template.channel === 'whatsapp' ? (
-                        <div className="h-44 overflow-hidden rounded-md border border-border bg-background">
+                        <div className="h-56 overflow-hidden rounded-md border border-border bg-background">
                             <WhatsAppMobilePreview rendered={previewContent} mediaUrl={whatsappMediaUrl} compact />
                         </div>
                     ) : (
-                        <div className="max-h-44 overflow-auto rounded-md border border-border bg-background p-3">
+                        <div className="max-h-56 h-56 overflow-auto rounded-md border border-border bg-background p-3">
                             <pre className="text-xs font-mono whitespace-pre-wrap wrap-break-word text-foreground">{previewContent}</pre>
                         </div>
                     )}
                     <p className="mt-2 text-[11px] text-muted-foreground">
                         Preview uses default sample values.
                     </p>
-                </div>
-
-                <div className="mt-auto p-4 pt-3">
-                    <Button
-                        size="sm"
-                        className="w-full"
-                        disabled={cloning === template.name}
-                        onClick={() => onImport(template.name)}
-                    >
-                        {cloning === template.name ? (
-                            'Importing...'
-                        ) : (
-                            <>
-                                <Download className="mr-1.5 h-3.5 w-3.5" />
-                                Import Template
-                            </>
-                        )}
-                    </Button>
                 </div>
             </CardContent>
         </Card>
@@ -414,22 +426,34 @@ export default function TemplateLibrary() {
     const getCategory = (t: Template) =>
         (t.metadata?.category as string) || 'notification';
 
-    const groupedTemplates = templates.reduce<Record<string, Template[]>>((acc, t) => {
-        const cat = getCategory(t);
-        (acc[cat] ||= []).push(t);
-        return acc;
-    }, {});
+    const [activeChannel, setActiveChannel] = useState<string>('email');
 
-    const categoryOrder = ['transactional', 'newsletter', 'notification'];
-    const sortedCategories = useMemo(
-        () =>
-            Object.keys(groupedTemplates).sort(
-                (a, b) =>
-                    (categoryOrder.indexOf(a) === -1 ? 99 : categoryOrder.indexOf(a)) -
-                    (categoryOrder.indexOf(b) === -1 ? 99 : categoryOrder.indexOf(b)),
-            ),
-        [groupedTemplates],
-    );
+    const CHANNELS = [
+        { id: 'email', label: 'Email', icon: <Mail className="w-4 h-4 mr-2" /> },
+        { id: 'sms', label: 'SMS', icon: <MessageSquare className="w-4 h-4 mr-2" /> },
+        { id: 'whatsapp', label: 'WhatsApp', icon: <Phone className="w-4 h-4 mr-2" /> },
+        { id: 'push', label: 'Push', icon: <Bell className="w-4 h-4 mr-2" /> },
+        { id: 'webhook', label: 'Webhook', icon: <Webhook className="w-4 h-4 mr-2" /> },
+        { id: 'sse', label: 'SSE', icon: <Radio className="w-4 h-4 mr-2" /> },
+        { id: 'in_app', label: 'In-App', icon: <Globe className="w-4 h-4 mr-2" /> },
+    ];
+
+    const filteredTemplates = useMemo(() => {
+        const orderWeight: Record<string, number> = {
+            'welcome_email': 100,
+            'password_reset': 100,
+            'order_confirmation': 100,
+            'appointment_reminder': 100,
+            'booking_confirmation': 100,
+            'maintenance_notice': 100,
+        };
+        const list = templates.filter((t) => t.channel === activeChannel);
+        return list.sort((a, b) => {
+            const weightA = orderWeight[a.name] || 0;
+            const weightB = orderWeight[b.name] || 0;
+            return weightA - weightB;
+        });
+    }, [templates, activeChannel]);
 
     const defaultRenderDataByTemplate = useMemo(() => {
         const result: Record<string, Record<string, string>> = {};
@@ -448,59 +472,81 @@ export default function TemplateLibrary() {
 
     return (
         <>
-            <div className="mx-auto max-w-7xl space-y-6">
+            <div className="space-y-6">
                 <Card size="sm" className="bg-card/60 shadow-sm">
-                    <CardHeader className="">
-                        <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm" className='items-center' onClick={() => navigate(`/apps/${appId}?tab=templates`)}>
-                                <ArrowLeft className="size-4" />
+                    <CardHeader className="py-4">
+                        <div className="flex items-center gap-3">
+                            <Button variant="outline" size="sm" className='items-center font-medium shadow-sm' onClick={() => navigate(`/apps/${appId}?tab=templates`)}>
+                                <ArrowLeft className="mr-2 h-4 w-4" />
+                                Back to Templates
                             </Button>
                             <div>
                                 <CardTitle className="text-xl">Template Library</CardTitle>
-                                <p className="text-sm text-muted-foreground">
-                                    Choose by what each message looks like, then import and customize for your app.
+                                <p className="text-sm text-muted-foreground hidden sm:block">
+                                    Browse by channel, preview with data, and import directly to your app.
                                 </p>
                             </div>
                         </div>
                     </CardHeader>
                 </Card>
 
-                {loading ? (
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {Array.from({ length: 6 }).map((_, i) => (
-                            <Card key={i} className="overflow-hidden border-border/80">
-                                <CardContent className="space-y-3 p-4">
-                                    <Skeleton className="h-4 w-3/4" />
-                                    <Skeleton className="h-3 w-full" />
-                                    <Skeleton className="h-3 w-5/6" />
-                                    <Skeleton className="h-44 w-full rounded-md" />
-                                    <Skeleton className="h-8 w-full" />
+                <div className="flex flex-col md:flex-row gap-6 items-start">
+                    {/* Channel Sidebar */}
+                    <aside className="w-full md:w-56 shrink-0 sticky top-4">
+                        <Card className="bg-card/60 shadow-sm border-border/80">
+                            <CardContent className="p-2 space-y-1">
+                                {CHANNELS.map(ch => {
+                                    const count = templates.filter(t => t.channel === ch.id).length;
+                                    if (count === 0) return null; // Only show active channels
+                                    return (
+                                        <button
+                                            key={ch.id}
+                                            onClick={() => setActiveChannel(ch.id)}
+                                            className={`w-full flex items-center justify-start text-sm px-3 py-2.5 rounded-md transition-colors ${
+                                                activeChannel === ch.id
+                                                    ? 'bg-foreground text-background font-medium shadow-sm'
+                                                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
+                                            }`}
+                                        >
+                                            {ch.icon}
+                                            {ch.label}
+                                            <Badge variant={activeChannel === ch.id ? "secondary" : "outline"} className={`ml-auto text-[10px] ${activeChannel === ch.id ? 'bg-background/20 text-background hover:bg-background/20' : ''}`}>
+                                                {count}
+                                            </Badge>
+                                        </button>
+                                    );
+                                })}
+                            </CardContent>
+                        </Card>
+                    </aside>
+
+                    {/* Template Grid */}
+                    <div className="flex-1 min-w-0">
+                        {loading ? (
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                {Array.from({ length: 4 }).map((_, i) => (
+                                    <Card key={i} className="overflow-hidden border-border/80">
+                                        <CardContent className="space-y-3 p-4">
+                                            <Skeleton className="h-4 w-3/4" />
+                                            <Skeleton className="h-3 w-full" />
+                                            <Skeleton className="h-56 w-full rounded-md" />
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </div>
+                        ) : filteredTemplates.length === 0 ? (
+                            <Card className="border-border/80">
+                                <CardContent className="py-14 text-center text-sm text-muted-foreground">
+                                    No {activeChannel} templates available in the library yet.
                                 </CardContent>
                             </Card>
-                        ))}
-                    </div>
-                ) : templates.length === 0 ? (
-                    <Card className="border-border/80">
-                        <CardContent className="py-14 text-center text-sm text-muted-foreground">
-                            No templates available in the library.
-                        </CardContent>
-                    </Card>
-                ) : (
-                    sortedCategories.map((category) => (
-                        <section key={category} className="space-y-3">
-                            <div className="flex items-center gap-2">
-                                <h2 className="text-base font-semibold">{formatCategory(category)}</h2>
-                                <Badge variant="outline" className="text-xs font-normal">
-                                    {groupedTemplates[category].length}
-                                </Badge>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                {groupedTemplates[category].map((t) => (
+                        ) : (
+                            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                                {filteredTemplates.map((t) => (
                                     <TemplateLibraryCard
                                         key={t.name}
                                         template={t}
-                                        category={category}
+                                        category={getCategory(t)}
                                         cloning={cloning}
                                         defaultRenderData={defaultRenderDataByTemplate[getTemplatePreviewKey(t)] || {}}
                                         renderedPreview={renderedPreviews[getTemplatePreviewKey(t)]}
@@ -510,9 +556,9 @@ export default function TemplateLibrary() {
                                     />
                                 ))}
                             </div>
-                        </section>
-                    ))
-                )}
+                        )}
+                    </div>
+                </div>
             </div>
 
             <SlidePanel
