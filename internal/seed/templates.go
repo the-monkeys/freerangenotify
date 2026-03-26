@@ -30,7 +30,22 @@ var servicesAccountingHTML string
 //go:embed newsletter_webinar_briefing.html
 var newsletterWebinarBriefingHTML string
 
-// LibraryTemplates are pre-built templates users can clone into their apps.
+//go:embed promo_seasonal_sale.html
+var promoSeasonalSaleHTML string
+
+//go:embed travel_holiday_package.html
+var travelHolidayPackageHTML string
+
+//go:embed institution_course_enrollment.html
+var courseEnrollmentHTML string
+
+//go:embed freelance_consultant_intro.html
+var freelanceIntroHTML string
+
+//go:embed event_local_meetup.html
+var localMeetupHTML string
+
+// LibraryTemplates are pre-built templates users can clone into their apps. are pre-built templates users can clone into their apps.
 var LibraryTemplates = []template.Template{
 	{
 		Name:        "welcome_email",
@@ -887,6 +902,160 @@ var LibraryTemplates = []template.Template{
 				"company_address": "500 Oracle Parkway, Redwood Shores, CA",
 				"unsubscribe_url": "https://freerangenotify.com/unsubscribe",
 				"preferences_url": "https://freerangenotify.com/preferences",
+			},
+		},
+	},
+	{
+		Name:        "promo_seasonal_sale",
+		Description: "High-impact promotional template for seasonal sales with promo code box and product highlight.",
+		Channel:     "email",
+		Subject:     "{{.promo_title}}",
+		Body:        promoSeasonalSaleHTML,
+		Variables: []string{
+			"badge_text", "promo_title", "promo_subtitle", "cta_url", "cta_text",
+			"promo_code", "valid_until", "product_image", "product_name",
+			"product_description", "product_price", "product_original_price",
+			"company_name", "footer_text", "unsubscribe_url", "hero_image",
+		},
+		Locale: "en",
+		Status: "active",
+		Metadata: map[string]interface{}{
+			"category": "newsletter",
+			"sample_data": map[string]interface{}{
+				"hero_image":             "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"badge_text":             "Black Friday Early Access",
+				"promo_title":            "Our Biggest Sale of the Year",
+				"promo_subtitle":         "Get ahead of the crowd and unlock your 40% discount across the entire store today.",
+				"cta_url":                "https://example.com/shop",
+				"cta_text":               "Shop the Sale",
+				"promo_code":             "BFRI40",
+				"valid_until":            "Nov 30, 2026",
+				"product_image":          "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"product_name":           "Premium Pro Headset",
+				"product_description":    "Immersive sound engine, noise cancellation, and 40 hour battery life.",
+				"product_price":          "$149",
+				"product_original_price": "$249",
+				"company_name":           "Monkeys Tech Co.",
+				"footer_text":            "You received this because you are opted in to our promotional lists.",
+				"unsubscribe_url":        "https://example.com/unsubscribe",
+			},
+		},
+	},
+	{
+		Name:        "travel_holiday_package",
+		Description: "Beautiful destination promotional email for travel agencies with itinerary snapshot.",
+		Channel:     "email",
+		Subject:     "Your next adventure: {{.destination_name}}",
+		Body:        travelHolidayPackageHTML,
+		Variables: []string{
+			"logo_image", "company_name", "hero_image", "destination_name",
+			"destination_description", "day_1_plan", "day_2_plan", "day_3_plan",
+			"booking_url", "cta_text", "footer_text", "unsubscribe_url",
+		},
+		Locale: "en",
+		Status: "active",
+		Metadata: map[string]interface{}{
+			"category": "newsletter",
+			"sample_data": map[string]interface{}{
+				"logo_image":              "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"hero_image":              "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"company_name":            "Wanderlust Travels",
+				"destination_name":        "Escape to the Swiss Alps",
+				"destination_description": "Experience the ultimate winter getaway. Deep powder snow, breathtaking mountain ranges, and luxury chalets all included in our exclusive package.",
+				"day_1_plan":              "Arrival and Welcome Dinner",
+				"day_2_plan":              "Guided Ski Tour & Spa Access",
+				"day_3_plan":              "Mountain Peak Cable Car",
+				"booking_url":             "https://example.com/book",
+				"cta_text":                "View Package",
+				"footer_text":             "Wanderlust Travels Ltd.",
+				"unsubscribe_url":         "https://example.com/unsub",
+			},
+		},
+	},
+	{
+		Name:        "institution_course_enrollment",
+		Description: "Professional service/course enrollment template for institutions.",
+		Channel:     "email",
+		Subject:     "Enroll now: {{.course_name}}",
+		Body:        courseEnrollmentHTML,
+		Variables: []string{
+			"institution_logo", "institution_name", "course_name", "course_image",
+			"course_intro", "module_1", "module_2", "module_3", "start_date",
+			"duration", "enroll_url", "cta_text",
+		},
+		Locale: "en",
+		Status: "active",
+		Metadata: map[string]interface{}{
+			"category": "services",
+			"sample_data": map[string]interface{}{
+				"institution_logo": "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"institution_name": "Global Tech University",
+				"course_name":      "Advanced Machine Learning",
+				"course_image":     "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"course_intro":     "Equip yourself with the skills to build production-ready ML models.",
+				"module_1":         "Deep Learning Fundamentals",
+				"module_2":         "Neural Network Architecture",
+				"module_3":         "Model Deployment & MLOps",
+				"start_date":       "Oct 15, 2026",
+				"duration":         "12 Weeks",
+				"enroll_url":       "https://example.com/enroll",
+				"cta_text":         "Secure Your Spot",
+			},
+		},
+	},
+	{
+		Name:        "freelance_consultant_intro",
+		Description: "Personal, minimalist introduction template for freelancers scheduling calls.",
+		Channel:     "email",
+		Subject:     "Hello from {{.name}}",
+		Body:        freelanceIntroHTML,
+		Variables: []string{
+			"profile_pic", "name", "title", "intro_p1", "intro_p2",
+			"booking_url", "cta_text", "website_url", "unsubscribe_url",
+		},
+		Locale: "en",
+		Status: "active",
+		Metadata: map[string]interface{}{
+			"category": "services",
+			"sample_data": map[string]interface{}{
+				"profile_pic":     "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"name":            "Jordan Hayes",
+				"title":           "Fractional CMO & Strategy Consultant",
+				"intro_p1":        "I help tech startups scale their growth marketing channels without the overhead of a full-time executive.",
+				"intro_p2":        "If you're looking to optimize your acquisition funnel for Q4, let's connect for a brief discovery call to see if there's a fit.",
+				"booking_url":     "https://calendly.com/example",
+				"cta_text":        "Schedule a Call",
+				"website_url":     "https://jordanhayes.dev",
+				"unsubscribe_url": "https://example.com/unsub",
+			},
+		},
+	},
+	{
+		Name:        "event_local_meetup",
+		Description: "Fun, vibrant invitation template for local meetups or workshops.",
+		Channel:     "email",
+		Subject:     "You're invited: {{.event_name}}",
+		Body:        localMeetupHTML,
+		Variables: []string{
+			"event_name", "event_description", "event_date", "event_time",
+			"event_location", "event_vibe", "rsvp_url", "cta_text",
+			"sponsor_logo", "sponsor_name",
+		},
+		Locale: "en",
+		Status: "active",
+		Metadata: map[string]interface{}{
+			"category": "newsletter",
+			"sample_data": map[string]interface{}{
+				"event_name":        "Go Developers Meetup",
+				"event_description": "Join us for an evening of lightning talks, networking, and pizza. We'll be discussing the latest Go 1.25 release and building microservices.",
+				"event_date":        "Friday, Dec 10",
+				"event_time":        "6:30 PM",
+				"event_location":    "Downtown Hub",
+				"event_vibe":        "Pizza & Tech",
+				"rsvp_url":          "https://example.com/rsvp",
+				"cta_text":          "RSVP Now",
+				"sponsor_logo":      "https://monkeys.com.co/api/v2/storage/posts/za3dif/784f9010-baa7-4cd0-a3a7-5d39c7c738d6.png",
+				"sponsor_name":      "Monkeys Cloud",
 			},
 		},
 	},
