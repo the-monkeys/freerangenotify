@@ -1031,6 +1031,71 @@ const AppDetail: React.FC = () => {
                                                 </AccordionContent>
                                             </AccordionItem>
 
+                                            <AccordionItem value="sms-channel" className="border bg-card rounded-lg px-4">
+                                                <AccordionTrigger className="text-base font-semibold hover:no-underline">SMS Channel Configuration</AccordionTrigger>
+                                                <AccordionContent className="pt-4 pb-4">
+                                                    <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
+                                                        <p className="text-sm text-muted-foreground">
+                                                            Configure per-app Twilio SMS credentials. Leave empty to use system defaults.
+                                                        </p>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="smsAccountSid">Twilio Account SID</Label>
+                                                                <Input
+                                                                    id="smsAccountSid"
+                                                                    type="password"
+                                                                    className="text-sm"
+                                                                    value={settings.sms_config?.account_sid || ''}
+                                                                    onChange={(e) => setSettings({
+                                                                        ...settings,
+                                                                        sms_config: {
+                                                                            ...settings.sms_config,
+                                                                            account_sid: e.target.value
+                                                                        } as any
+                                                                    })}
+                                                                    placeholder="ACxxxxxxxxxxxxx"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="smsAuthToken">Twilio Auth Token</Label>
+                                                                <Input
+                                                                    id="smsAuthToken"
+                                                                    type="password"
+                                                                    className="text-sm"
+                                                                    value={settings.sms_config?.auth_token || ''}
+                                                                    onChange={(e) => setSettings({
+                                                                        ...settings,
+                                                                        sms_config: {
+                                                                            ...settings.sms_config,
+                                                                            auth_token: e.target.value
+                                                                        } as any
+                                                                    })}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="smsFromNumber">SMS From Number</Label>
+                                                            <Input
+                                                                id="smsFromNumber"
+                                                                className="text-sm"
+                                                                value={settings.sms_config?.from_number || ''}
+                                                                onChange={(e) => setSettings({
+                                                                    ...settings,
+                                                                    sms_config: {
+                                                                        ...settings.sms_config,
+                                                                        from_number: e.target.value
+                                                                    } as any
+                                                                })}
+                                                                placeholder="+1234567890"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Your Twilio SMS-enabled phone number.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+
                                             <div className='px-2'>
                                                 <div className="text-base font-semibold hover:no-underline">Default Notification Preferences</div>
                                                 <div className="pt-4 pb-4">

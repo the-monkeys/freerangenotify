@@ -714,6 +714,37 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		}
 	}
 
+	// If it's SMS, inject app-specific Twilio credentials when configured.
+	if notif.Channel == notification.ChannelSMS {
+		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		isByoc := false
+		if err == nil && app != nil && app.Settings.SMS != nil {
+			smsCfg := app.Settings.SMS
+			if smsCfg.AccountSID != "" && smsCfg.AuthToken != "" {
+				ctx = context.WithValue(ctx, providers.SMSConfigKey, smsCfg)
+				p.logger.Debug("Using app SMS config",
+					zap.String("app_id", notif.AppID))
+				isByoc = true
+			}
+		}
+
+		// Phase 3 block for SMS: Phone verification gate for system credentials
+		if !isByoc && app != nil {
+			adminUser, err := p.authService.GetCurrentUser(ctx, app.AdminUserID)
+			if err != nil {
+				p.logger.Error("Failed to fetch admin user for SMS phone verification check",
+					zap.String("admin_id", app.AdminUserID), zap.Error(err))
+				return fmt.Errorf("phone verification check failed")
+			}
+			if !adminUser.PhoneVerified {
+				p.logger.Warn("Blocked system SMS send due to unverified phone",
+					zap.String("app_id", app.AppID),
+					zap.String("admin_id", app.AdminUserID))
+				return fmt.Errorf("phone_verification_required")
+			}
+		}
+	}
+
 	// Check for provider fallback chains
 	app, err := p.appRepo.GetByID(ctx, notif.AppID)
 	if err == nil && app != nil && len(app.Settings.ProviderFallbacks) > 0 {

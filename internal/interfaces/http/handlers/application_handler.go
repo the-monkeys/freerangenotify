@@ -591,6 +591,9 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	if req.WhatsAppConfig != nil {
 		settings.WhatsApp = req.WhatsAppConfig
 	}
+	if req.SMSConfig != nil {
+		settings.SMS = req.SMSConfig
+	}
 	if req.OnUserCreatedTriggerID != nil {
 		settings.OnUserCreatedTriggerID = *req.OnUserCreatedTriggerID
 	}

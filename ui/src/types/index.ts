@@ -70,6 +70,7 @@ export interface ApplicationSettings {
     email_config?: EmailConfig;
     daily_email_limit?: number;
     whatsapp_config?: WhatsAppConfig;
+    sms_config?: SMSConfig;
     default_preferences?: DefaultPreferences;
     on_user_created_trigger_id?: string;  // Phase 5: workflow to trigger on user create
     inbound_webhook_config?: InboundWebhookConfig;  // Phase 7: inbound webhooks
@@ -110,6 +111,12 @@ export interface SendGridConfig {
 }
 
 export interface WhatsAppConfig {
+    account_sid: string;
+    auth_token: string;
+    from_number: string;
+}
+
+export interface SMSConfig {
     account_sid: string;
     auth_token: string;
     from_number: string;

@@ -740,7 +740,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     
     // Checks if the user needs phone verification for the current send request
     const checkVerificationAndBlock = useCallback((channel: string) => {
-        if (channel === 'whatsapp' && !user?.phone_verified) {
+        if ((channel === 'whatsapp' || channel === 'sms') && !user?.phone_verified) {
             setIsVerifyDialogOpen(true);
             return true;
         }
@@ -794,7 +794,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         } catch (error) {
             const msg = extractErrorMessage(error, 'Quick-send failed');
             if (msg.includes('phone_verification_required')) {
-                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+                toast.error(`${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} failed: Please verify your phone number in the Profile menu (top left) to use system credentials.`);
             } else {
                 toast.error(msg);
             }
@@ -802,6 +802,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickSending(false);
         }
     };
+
+
 
     const handleBroadcastSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -855,7 +857,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             console.error('Failed to broadcast notification:', error);
             const msg = extractErrorMessage(error, 'Failed to broadcast notification');
             if (msg.includes('phone_verification_required')) {
-                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+                toast.error(`${formData.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} failed: Please verify your phone number in the Profile menu (top left) to use system credentials.`);
             } else {
                 toast.error(msg);
             }
@@ -968,7 +970,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             console.error('Failed to send notification:', error);
             const msg = extractErrorMessage(error, 'Failed to send notification');
             if (msg.includes('phone_verification_required')) {
-                toast.error('WhatsApp failed: Please verify your phone number in the Profile menu (top left) to use system credentials.');
+                toast.error(`${formData.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} failed: Please verify your phone number in the Profile menu (top left) to use system credentials.`);
             } else {
                 toast.error(msg);
             }
