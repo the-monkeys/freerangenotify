@@ -15,6 +15,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       host: "0.0.0.0",
+      headers: {
+        // Avoid flaky keep-alive socket reuse on some localhost stacks.
+        Connection: "close",
+      },
+      watch: {
+        usePolling: env.CHOKIDAR_USEPOLLING === "true",
+        interval: Number(env.CHOKIDAR_INTERVAL || 1000),
+        ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+      },
       proxy: {
         "/v1": {
           // API_PROXY_TARGET is server-side only (not exposed to browser)

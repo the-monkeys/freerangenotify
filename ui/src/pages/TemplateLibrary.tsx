@@ -312,11 +312,20 @@ export default function TemplateLibrary() {
     const [fullscreenTemplate, setFullscreenTemplate] = useState<Template | null>(null);
     const [renderedPreviews, setRenderedPreviews] = useState<Record<string, string>>({});
     const [previewLoading, setPreviewLoading] = useState<Record<string, boolean>>({});
+    const previewRequestInFlightRef = useRef<Set<string>>(new Set());
+    const previewRenderedRef = useRef<Set<string>>(new Set());
 
     const getTemplatePreviewKey = (t: Template) => t.id || t.name;
 
     const getPreviewStorageKey = (templateId: string) =>
         `frn:template-preview-data:${appId}:${templateId}`;
+
+    useEffect(() => {
+        previewRequestInFlightRef.current.clear();
+        previewRenderedRef.current.clear();
+        setRenderedPreviews({});
+        setPreviewLoading({});
+    }, [appId, apiKey]);
 
     const getDefaultRenderData = (t: Template): Record<string, string> => {
         if (t.id && appId) {
@@ -353,8 +362,9 @@ export default function TemplateLibrary() {
         if (!apiKey) return;
         const key = getTemplatePreviewKey(t);
 
-        if (renderedPreviews[key] || previewLoading[key]) return;
+        if (previewRenderedRef.current.has(key) || previewRequestInFlightRef.current.has(key)) return;
 
+        previewRequestInFlightRef.current.add(key);
         setPreviewLoading((prev) => ({ ...prev, [key]: true }));
         try {
             const payload = {
@@ -366,13 +376,16 @@ export default function TemplateLibrary() {
                 : t.name
                     ? await templatesAPI.renderLibrary(apiKey, t.name, payload)
                     : null;
+            previewRenderedRef.current.add(key);
             setRenderedPreviews((prev) => ({
                 ...prev,
                 [key]: response?.rendered_body || t.body,
             }));
         } catch {
+            previewRenderedRef.current.add(key);
             setRenderedPreviews((prev) => ({ ...prev, [key]: t.body }));
         } finally {
+            previewRequestInFlightRef.current.delete(key);
             setPreviewLoading((prev) => ({ ...prev, [key]: false }));
         }
     };

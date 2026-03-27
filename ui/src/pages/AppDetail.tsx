@@ -423,21 +423,17 @@ const AppDetail: React.FC = () => {
                             </Card>
                         )}
 
-                        {app && (
-                            <>
-                                <div className={activeTab === 'users' ? 'block' : 'hidden'}>
-                                    <AppUsers apiKey={app.api_key} />
-                                </div>
-                                <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
-                                    <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
-                                </div>
-                                <div className={activeTab === 'browse-library' ? 'block' : 'hidden'}>
-                                    <TemplateLibrary />
-                                </div>
-                                <div className={activeTab === 'notifications' ? 'block' : 'hidden'}>
-                                    <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
-                                </div>
-                            </>
+                        {app && activeTab === 'users' && (
+                            <AppUsers apiKey={app.api_key} />
+                        )}
+                        {app && activeTab === 'templates' && (
+                            <AppTemplates appId={app.app_id} apiKey={app.api_key} webhooks={webhooks} />
+                        )}
+                        {app && activeTab === 'browse-library' && (
+                            <TemplateLibrary />
+                        )}
+                        {app && activeTab === 'notifications' && (
+                            <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
                         )}
 
                         {activeTab === 'settings' && (

@@ -109,7 +109,7 @@ const Login: React.FC = () => {
           //   window.location.href = `${apiUrl}/auth/sso/login`;
           // }}
           >
-            <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = 'https://monkeys.support/favicon.ico'; }} />
+            <img src="/logo192.png" alt="Monkeys Identity" className="w-5 h-5 object-contain rounded-full" onError={(e) => { e.currentTarget.src = '/favicon.ico'; }} />
             Monkeys Identity (Upcoming)
           </Button>
         </form>

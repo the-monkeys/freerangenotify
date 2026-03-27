@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
+import { buildApiUrl } from '../services/api';
 
 interface ActivityEvent {
   notification_id: string;
@@ -54,7 +55,7 @@ export function ActivityFeed() {
       return;
     }
 
-    const url = `/v1/admin/activity-feed?token=${encodeURIComponent(token)}`;
+    const url = buildApiUrl(`/admin/activity-feed?token=${encodeURIComponent(token)}`);
     const es = new EventSource(url);
     eventSourceRef.current = es;
 
