@@ -4,27 +4,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.course_name}}</title>
+    <style>
+        @media only screen and (max-width: 620px) {
+            .outer-pad {
+                padding: 0 !important;
+            }
+
+            .email-container {
+                width: 100% !important;
+                border-radius: 0 !important;
+            }
+
+            .mobile-pad {
+                padding-left: 20px !important;
+                padding-right: 20px !important;
+            }
+
+            .course-title {
+                font-size: 28px !important;
+                line-height: 1.25 !important;
+            }
+
+            .course-intro {
+                font-size: 16px !important;
+            }
+
+            .meta-grid .meta-col {
+                display: block !important;
+                width: 100% !important;
+                text-align: left !important;
+            }
+
+            .meta-grid .meta-cta {
+                padding-top: 14px !important;
+            }
+
+            .cta-link {
+                width: 100% !important;
+                text-align: center !important;
+                box-sizing: border-box !important;
+            }
+        }
+    </style>
 </head>
 <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:'Inter',Arial,sans-serif;">
     <table width="100%" border="0" cellspacing="0" cellpadding="0">
         <tr>
-            <td align="center" style="padding:40px 10px;">
-                <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:12px;border-top:6px solid #1e3a8a;box-shadow:0 8px 16px rgba(0,0,0,0.04);">
+            <td align="center" style="padding:40px 10px;" class="outer-pad">
+                <table width="600" border="0" cellspacing="0" cellpadding="0" class="email-container" style="background-color:#ffffff;border-radius:12px;border-top:6px solid #1e3a8a;box-shadow:0 8px 16px rgba(0,0,0,0.04);">
                     <tr>
-                        <td style="padding:40px 40px 20px 40px;text-align:center;">
+                        <td style="padding:40px 40px 20px 40px;text-align:center;" class="mobile-pad">
                             <img src="{{.institution_logo}}" alt="Institution Logo" width="80" style="display:inline-block;margin-bottom:16px;border-radius:8px;" />
                             <h4 style="margin:0 0 8px 0;color:#64748b;font-size:14px;text-transform:uppercase;letter-spacing:1px;">{{.institution_name}}</h4>
-                            <h1 style="margin:0;color:#1e293b;font-size:32px;font-weight:800;line-height:1.3;">{{.course_name}}</h1>
+                            <h1 class="course-title" style="margin:0;color:#1e293b;font-size:32px;font-weight:800;line-height:1.3;">{{.course_name}}</h1>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:20px 40px;">
+                        <td style="padding:20px 40px;" class="mobile-pad">
                             <img src="{{.course_image}}" alt="Course" width="100%" style="border-radius:8px;display:block;" />
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:20px 40px 40px 40px;">
-                            <p style="margin:0 0 24px 0;color:#475569;font-size:17px;line-height:1.6;">{{.course_intro}}</p>
+                        <td style="padding:20px 40px 40px 40px;" class="mobile-pad">
+                            <p class="course-intro" style="margin:0 0 24px 0;color:#475569;font-size:17px;line-height:1.6;">{{.course_intro}}</p>
                             
                             <table width="100%" border="0" cellspacing="0" cellpadding="20" style="background-color:#f8fafc;border-radius:8px;margin-bottom:30px;border:1px solid #e2e8f0;">
                                 <tr>
@@ -39,14 +81,14 @@
                                 </tr>
                             </table>
 
-                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" class="meta-grid">
                                 <tr>
-                                    <td align="left" valign="middle">
+                                    <td align="left" valign="middle" class="meta-col">
                                         <div style="font-size:20px;font-weight:bold;color:#1e3a8a;">Starts {{.start_date}}</div>
                                         <div style="font-size:14px;color:#64748b;">Duration: {{.duration}}</div>
                                     </td>
-                                    <td align="right" valign="middle">
-                                        <a href="{{.enroll_url}}" style="display:inline-block;padding:14px 28px;background-color:#1e3a8a;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:6px;">{{.cta_text}}</a>
+                                    <td align="right" valign="middle" class="meta-col meta-cta">
+                                        <a href="{{.enroll_url}}" class="cta-link" style="display:inline-block;padding:14px 28px;background-color:#1e3a8a;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;border-radius:6px;">{{.cta_text}}</a>
                                     </td>
                                 </tr>
                             </table>

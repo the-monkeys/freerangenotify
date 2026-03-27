@@ -315,6 +315,8 @@ meetup_html = """<!DOCTYPE html>
 </body>
 </html>"""
 
+PRESERVE_EXISTING_HTML = True
+
 for name, content in [
     ("promo_seasonal_sale.html", promo_html),
     ("travel_holiday_package.html", travel_html),
@@ -322,7 +324,10 @@ for name, content in [
     ("freelance_consultant_intro.html", freelance_html),
     ("event_local_meetup.html", meetup_html)
 ]:
-    with open(os.path.join(HTML_DIR, name), "w", encoding="utf-8") as f:
+    path = os.path.join(HTML_DIR, name)
+    if PRESERVE_EXISTING_HTML and os.path.exists(path):
+        continue
+    with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
 # Now update templates.go

@@ -6,51 +6,120 @@
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
     <title>{{.promo_title}}</title>
+    <style>
+        @media only screen and (max-width: 620px) {
+            .outer-pad {
+                padding: 0 !important;
+            }
+
+            .email-container {
+                width: 100% !important;
+                border-radius: 0 !important;
+            }
+
+            .hero-pad {
+                padding: 44px 20px !important;
+            }
+
+            .hero-title {
+                font-size: 34px !important;
+                line-height: 1.15 !important;
+                letter-spacing: -0.8px !important;
+            }
+
+            .hero-subtitle {
+                font-size: 17px !important;
+                margin-bottom: 28px !important;
+            }
+
+            .body-pad {
+                padding-left: 20px !important;
+                padding-right: 20px !important;
+            }
+
+            .coupon-box {
+                padding: 18px 16px !important;
+            }
+
+            .coupon-code {
+                font-size: 24px !important;
+                letter-spacing: 4px !important;
+            }
+
+            .product-grid .stack-col {
+                display: block !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            .product-copy {
+                padding-left: 0 !important;
+                padding-top: 18px !important;
+            }
+
+            .product-title {
+                font-size: 24px !important;
+            }
+
+            .product-desc {
+                font-size: 15px !important;
+            }
+
+            .cta-link {
+                padding: 14px 28px !important;
+                font-size: 14px !important;
+            }
+
+            .footer-pad {
+                padding: 24px 20px !important;
+            }
+        }
+    </style>
 </head>
 <body style="margin:0;padding:0;background-color:#f8fafc;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;">
         <tr>
-            <td align="center" style="padding:40px 10px;">
-                <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.08);">
+            <td align="center" style="padding:40px 10px;" class="outer-pad">
+                <table width="600" border="0" cellspacing="0" cellpadding="0" class="email-container" style="background-color:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.08);">
                     <tr>
-                        <td background="{{.hero_image}}" style="background-color:#0f172a;background-image:url('{{.hero_image}}');background-size:cover;background-position:center;padding:80px 40px;text-align:center;">
+                        <td background="{{.hero_image}}" class="hero-pad" style="background-color:#0f172a;background-image:url('{{.hero_image}}');background-size:cover;background-position:center;padding:80px 40px;text-align:center;">
                             <div style="background-color:rgba(15,23,42,0.85);display:inline-block;padding:8px 20px;border-radius:30px;color:#38bdf8;font-size:13px;font-weight:800;letter-spacing:2px;text-transform:uppercase;margin-bottom:24px;border:1px solid rgba(56,189,248,0.3);">
                                 {{.badge_text}}
                             </div>
-                            <h1 style="margin:0 0 20px 0;color:#ffffff;font-size:48px;line-height:1.1;font-weight:900;letter-spacing:-1.5px;">
+                            <h1 class="hero-title" style="margin:0 0 20px 0;color:#ffffff;font-size:48px;line-height:1.1;font-weight:900;letter-spacing:-1.5px;">
                                 {{.promo_title}}
                             </h1>
-                            <p style="margin:0 0 40px 0;color:#cbd5e1;font-size:20px;line-height:1.5;font-weight:300;">
+                            <p class="hero-subtitle" style="margin:0 0 40px 0;color:#cbd5e1;font-size:20px;line-height:1.5;font-weight:300;">
                                 {{.promo_subtitle}}
                             </p>
                             <table border="0" cellspacing="0" cellpadding="0" style="margin:0 auto;">
                                 <tr>
                                     <td align="center" style="border-radius:12px;background:linear-gradient(135deg, #3b82f6, #6366f1);box-shadow:0 8px 20px rgba(59,130,246,0.3);">
-                                        <a href="{{.cta_url}}" style="display:inline-block;padding:18px 40px;color:#ffffff;font-size:16px;font-weight:800;text-decoration:none;letter-spacing:1px;text-transform:uppercase;">{{.cta_text}}</a>
+                                        <a href="{{.cta_url}}" class="cta-link" style="display:inline-block;padding:18px 40px;color:#ffffff;font-size:16px;font-weight:800;text-decoration:none;letter-spacing:1px;text-transform:uppercase;">{{.cta_text}}</a>
                                     </td>
                                 </tr>
                             </table>
                         </td>
                     </tr>
                     <tr>
-                        <td align="center" style="padding:50px 40px;background-color:#ffffff;">
+                        <td align="center" class="body-pad" style="padding:50px 40px;background-color:#ffffff;">
                             <p style="margin:0 0 16px 0;color:#64748b;font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;">Use this code at checkout</p>
-                            <div style="background-color:#f1f5f9;border:2px dashed #94a3b8;padding:24px 40px;border-radius:16px;display:inline-block;">
-                                <span style="font-family:'Courier New',Courier,monospace;font-size:32px;font-weight:900;color:#0f172a;letter-spacing:6px;">{{.promo_code}}</span>
+                            <div class="coupon-box" style="background-color:#f1f5f9;border:2px dashed #94a3b8;padding:24px 40px;border-radius:16px;display:inline-block;">
+                                <span class="coupon-code" style="font-family:'Courier New',Courier,monospace;font-size:32px;font-weight:900;color:#0f172a;letter-spacing:6px;">{{.promo_code}}</span>
                             </div>
                             <p style="margin:24px 0 0 0;color:#94a3b8;font-size:13px;font-weight:500;">Valid until {{.valid_until}}</p>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:0 40px 50px 40px;background-color:#ffffff;">
-                            <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                        <td class="body-pad" style="padding:0 40px 50px 40px;background-color:#ffffff;">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" class="product-grid">
                                 <tr>
-                                    <td width="45%" valign="top">
+                                    <td width="45%" valign="top" class="stack-col">
                                         <img src="{{.product_image}}" alt="Product" width="100%" style="border-radius:16px;display:block;height:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1);" />
                                     </td>
-                                    <td width="55%" valign="middle" style="padding-left:30px;">
-                                        <h2 style="margin:0 0 12px 0;color:#0f172a;font-size:26px;font-weight:800;line-height:1.2;">{{.product_name}}</h2>
-                                        <p style="margin:0 0 24px 0;color:#475569;font-size:16px;line-height:1.6;">{{.product_description}}</p>
+                                    <td width="55%" valign="middle" class="stack-col product-copy" style="padding-left:30px;">
+                                        <h2 class="product-title" style="margin:0 0 12px 0;color:#0f172a;font-size:26px;font-weight:800;line-height:1.2;">{{.product_name}}</h2>
+                                        <p class="product-desc" style="margin:0 0 24px 0;color:#475569;font-size:16px;line-height:1.6;">{{.product_description}}</p>
                                         <div style="font-size:24px;font-weight:900;color:#3b82f6;">
                                             {{.product_price}} <span style="font-size:16px;color:#94a3b8;text-decoration:line-through;font-weight:500;margin-left:8px;">{{.product_original_price}}</span>
                                         </div>
@@ -60,7 +129,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <td style="background-color:#f8fafc;padding:30px 40px;text-align:center;">
+                        <td class="footer-pad" style="background-color:#f8fafc;padding:30px 40px;text-align:center;">
                             <p style="margin:0 0 12px 0;color:#475569;font-size:15px;font-weight:700;">{{.company_name}}</p>
                             <p style="margin:0 0 16px 0;color:#94a3b8;font-size:12px;line-height:1.5;">{{.footer_text}}</p>
                             <p style="margin:0;font-size:12px;">
