@@ -350,17 +350,22 @@ export default function TemplateLibrary() {
     };
 
     const renderTemplatePreview = async (t: Template) => {
-        if (!apiKey || !t.id) return;
+        if (!apiKey) return;
         const key = getTemplatePreviewKey(t);
 
         if (renderedPreviews[key] || previewLoading[key]) return;
 
         setPreviewLoading((prev) => ({ ...prev, [key]: true }));
         try {
-            const response = await templatesAPI.render(apiKey, t.id, {
+            const payload = {
                 data: getDefaultRenderData(t),
                 editable: false,
-            });
+            };
+            const response = t.id
+                ? await templatesAPI.render(apiKey, t.id, payload)
+                : t.name
+                    ? await templatesAPI.renderLibrary(apiKey, t.name, payload)
+                    : null;
             setRenderedPreviews((prev) => ({
                 ...prev,
                 [key]: response?.rendered_body || t.body,

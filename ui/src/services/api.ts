@@ -16,6 +16,7 @@ import type {
   CreateTemplateRequest,
   UpdateTemplateRequest,
   RenderTemplateRequest,
+  RenderTemplateResponse,
   CreateTemplateVersionRequest,
   AddDeviceRequest,
   TemplateVersion,
@@ -559,6 +560,13 @@ export const templatesAPI = {
 
   render: async (apiKey: string, id: string, payload: RenderTemplateRequest) => {
     const { data } = await api.post(`/templates/${id}/render`, payload, {
+      headers: getAuthHeaders(apiKey)
+    });
+    return data;
+  },
+
+  renderLibrary: async (apiKey: string, name: string, payload: RenderTemplateRequest) => {
+    const { data } = await api.post<RenderTemplateResponse>(`/templates/library/${name}/render`, payload, {
       headers: getAuthHeaders(apiKey)
     });
     return data;
