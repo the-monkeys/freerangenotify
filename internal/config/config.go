@@ -21,6 +21,7 @@ type Config struct {
 	OIDC       OIDCConfig       `mapstructure:"oidc"`
 	Features   FeaturesConfig   `mapstructure:"features"`
 	Billing    BillingConfig    `mapstructure:"billing"`
+	Payment    PaymentConfig    `mapstructure:"payment"`
 	Licensing  LicensingConfig  `mapstructure:"licensing"`
 }
 
@@ -56,6 +57,22 @@ type BillingConfig struct {
 	FreeTrialWhatsAppQuota int64 `mapstructure:"free_trial_whatsapp_quota" yaml:"free_trial_whatsapp_quota"`
 	FreeTrialSMSQuota      int64 `mapstructure:"free_trial_sms_quota" yaml:"free_trial_sms_quota"`
 	FreeTrialPushQuota     int64 `mapstructure:"free_trial_push_quota" yaml:"free_trial_push_quota"`
+}
+
+// PaymentConfig selects the payment gateway and holds provider-specific credentials.
+// All secrets MUST come from environment variables — never hardcode.
+type PaymentConfig struct {
+	Provider string         `mapstructure:"provider"` // "mock" | "razorpay"
+	Razorpay RazorpayConfig `mapstructure:"razorpay"`
+}
+
+// RazorpayConfig holds Razorpay API credentials.
+// Get keys from https://dashboard.razorpay.com/app/keys
+type RazorpayConfig struct {
+	KeyID         string `mapstructure:"key_id"`
+	KeySecret     string `mapstructure:"key_secret"`
+	WebhookSecret string `mapstructure:"webhook_secret"`
+	Currency      string `mapstructure:"currency"`
 }
 
 // FeaturesConfig contains feature flags for Phase 1 features.
@@ -393,6 +410,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("billing.free_trial_sms_quota", 50)
 	viper.SetDefault("billing.free_trial_push_quota", 1000)
 
+	viper.SetDefault("payment.provider", "mock")
+	viper.SetDefault("payment.razorpay.key_id", "")
+	viper.SetDefault("payment.razorpay.key_secret", "")
+	viper.SetDefault("payment.razorpay.webhook_secret", "")
+	viper.SetDefault("payment.razorpay.currency", "INR")
+
 	viper.SetDefault("oidc.enabled", false)
 	viper.SetDefault("oidc.issuer", "https://identity.monkeys.support")
 	viper.SetDefault("oidc.client_id", "")
@@ -513,6 +536,19 @@ func (c *Config) Validate() error {
 
 	if c.Security.OpsRateLimitWindowSeconds < 0 {
 		return fmt.Errorf("security.ops_rate_limit_window_seconds must be >= 0")
+	}
+
+	if c.Payment.Provider != "" && c.Payment.Provider != "mock" && c.Payment.Provider != "razorpay" {
+		return fmt.Errorf("payment.provider must be one of: mock, razorpay")
+	}
+
+	if c.Payment.Provider == "razorpay" {
+		if strings.TrimSpace(c.Payment.Razorpay.KeyID) == "" {
+			return fmt.Errorf("payment.razorpay.key_id is required when payment.provider=razorpay")
+		}
+		if strings.TrimSpace(c.Payment.Razorpay.KeySecret) == "" {
+			return fmt.Errorf("payment.razorpay.key_secret is required when payment.provider=razorpay")
+		}
 	}
 
 	return nil

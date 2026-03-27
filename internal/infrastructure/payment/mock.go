@@ -14,20 +14,31 @@ func NewMockProvider() billing.Provider {
 	return &MockProvider{}
 }
 
-// CreateCheckoutSession immediately returns success for the mock provider.
-func (p *MockProvider) CreateCheckoutSession(ctx context.Context, tenantID, tier string) (billing.CheckoutResponse, error) {
+// CreateOrder immediately returns a mock order for dev/testing.
+func (p *MockProvider) CreateOrder(ctx context.Context, tenantID, tier string, amountPaisa int64) (billing.CheckoutResponse, error) {
 	return billing.CheckoutResponse{
-		URL:     "mock_success", // The frontend can handle 'mock_success' to simulate a successful redirect
-		OrderID: "mock_order_123",
-		Tier:    tier,
+		URL:       "mock_success",
+		OrderID:   "mock_order_" + tenantID,
+		Tier:      tier,
+		AmountINR: amountPaisa,
+		Currency:  "INR",
+		KeyID:     "mock_key_id",
 	}, nil
 }
 
-// VerifyWebhook mimics verifying a webhook event. Not deeply used in the mock flow.
+// VerifyPayment always succeeds for mock — no real signature check.
+func (p *MockProvider) VerifyPayment(ctx context.Context, v billing.PaymentVerification) error {
+	return nil
+}
+
+// VerifyWebhook returns a successful mock webhook event.
 func (p *MockProvider) VerifyWebhook(payload []byte, signature string) (billing.WebhookEvent, error) {
 	return billing.WebhookEvent{
-		TenantID: "mock_tenant",
-		Tier:     "pro",
-		IsActive: true,
+		EventType: "payment.captured",
+		TenantID:  "mock_tenant",
+		Tier:      "pro",
+		OrderID:   "mock_order",
+		PaymentID: "mock_payment",
+		IsActive:  true,
 	}, nil
 }

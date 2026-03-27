@@ -66,6 +66,11 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	// Webhook playground — public receive & read endpoints
 	v1.Post("/playground/:id", c.PlaygroundHandler.ReceiveWebhook)
 	v1.Get("/playground/:id", c.PlaygroundHandler.GetPayloads)
+
+	// Payment webhooks (public, verified via signature)
+	if c.PaymentHandler != nil {
+		v1.Post("/billing/webhook", c.PaymentHandler.HandleWebhook)
+	}
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -258,6 +263,11 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	billing.Get("/usage/breakdown", c.BillingHandler.GetUsageBreakdown)
 	billing.Get("/rates", c.BillingHandler.GetRates)
 
+	if c.PaymentHandler != nil {
+		billing.Post("/checkout", c.PaymentHandler.CreateOrder)
+		billing.Post("/verify-payment", c.PaymentHandler.VerifyPayment)
+	}
+
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
@@ -365,6 +375,11 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		adminAuth.Get("/notifications/unread-count", c.DashboardNotificationHandler.GetUnreadCount)
 		adminAuth.Post("/notifications/read", c.DashboardNotificationHandler.MarkRead)
 		adminAuth.Post("/sse/token", c.SSEHandler.CreateDashboardToken)
+	}
+
+	// Internal admin action for CLI subscription renewals
+	if c.RenewalHandler != nil {
+		adminAuth.Post("/subscriptions/:id/renew", c.RenewalHandler.AdminRenew)
 	}
 
 	// ── Phase 2: Audit log routes (feature-gated) ──

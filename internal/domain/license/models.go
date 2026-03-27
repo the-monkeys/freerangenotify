@@ -10,6 +10,7 @@ const (
 	SubscriptionStatusExpired  SubscriptionStatus = "expired"
 	SubscriptionStatusCanceled SubscriptionStatus = "canceled"
 	SubscriptionStatusTrial    SubscriptionStatus = "trial"
+	SubscriptionStatusPending  SubscriptionStatus = "pending_renewal"
 )
 
 // Subscription represents a hosted subscription record.

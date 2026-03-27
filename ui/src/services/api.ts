@@ -1074,11 +1074,6 @@ export const tenantsAPI = {
   getBilling: async (id: string) => {
     const { data } = await api.get<ApiResponse<any>>(`/tenants/${id}/billing`);
     return data.data;
-  },
-
-  checkoutBilling: async (id: string, tier: string = 'pro') => {
-    const { data } = await api.post<ApiResponse<any>>(`/tenants/${id}/billing/checkout`, { tier });
-    return data;
   }
 };
 
@@ -1108,6 +1103,16 @@ export const billingAPI = {
     const { data } = await api.get('/billing/rates');
     return data;
   },
+
+  checkoutBilling: async (tier: string = 'pro') => {
+    const { data } = await api.post<any>('/billing/checkout', { tier });
+    return data;
+  },
+
+  verifyPayment: async (payload: { razorpay_order_id: string, razorpay_payment_id: string, razorpay_signature: string }) => {
+    const { data } = await api.post<any>('/billing/verify-payment', payload);
+    return data;
+  }
 };
 
 // ============= Custom Provider APIs =============

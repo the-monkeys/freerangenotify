@@ -5,7 +5,7 @@ package billing
 
 // PlanTier defines the pricing structure for a subscription plan.
 type PlanTier struct {
-	Name            string           // "free_trial" | "starter" | "growth" | "scale" | "enterprise"
+	Name            string           // "free_trial" | "pro" | "growth" | "scale" | "enterprise"
 	MonthlyFeePaisa int64            // Monthly flat fee in paisa (0 for free trial)
 	IncludedQuotas  map[string]int64 // channel -> included message count (system cred only)
 	OverageRates    map[string]int64 // channel -> paisa per message (system cred overage)
@@ -44,13 +44,13 @@ func DefaultRatesWithQuotas(emailQuota, whatsappQuota, smsQuota, pushQuota int64
 				"push":     0,
 			},
 			PlatformFees: map[string]int64{
-				"push":     0,
-				"inapp":    0,
-				"sse":      0,
+				"push":  0,
+				"inapp": 0,
+				"sse":   0,
 			},
 		},
-		"starter": {
-			Name:            "starter",
+		"pro": {
+			Name:            "pro",
 			MonthlyFeePaisa: 99900, // ₹999
 			IncludedQuotas: map[string]int64{
 				"email":    5000,
@@ -59,16 +59,16 @@ func DefaultRatesWithQuotas(emailQuota, whatsappQuota, smsQuota, pushQuota int64
 				"push":     10000,
 			},
 			OverageRates: map[string]int64{
-				"email":    15,   // ₹0.15
-				"whatsapp": 25,   // ₹0.25 (utility)
-				"sms":      30,   // ₹0.30
-				"push":     2,    // ₹0.02
+				"email":    15, // ₹0.15
+				"whatsapp": 25, // ₹0.25 (utility)
+				"sms":      30, // ₹0.30
+				"push":     2,  // ₹0.02
 			},
 			BYOCFees: map[string]int64{
-				"email":    1,    // ₹0.01
-				"whatsapp": 2,    // ₹0.02
-				"sms":      2,    // ₹0.02
-				"push":     0,    // ₹0 (user pays Apple/Google directly or free)
+				"email":    1, // ₹0.01
+				"whatsapp": 2, // ₹0.02
+				"sms":      2, // ₹0.02
+				"push":     0, // ₹0 (user pays Apple/Google directly or free)
 			},
 			PlatformFees: map[string]int64{
 				"push":  0, // push is free

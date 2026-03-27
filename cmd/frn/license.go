@@ -26,6 +26,7 @@ func newLicenseCmd() *cobra.Command {
 	cmd.AddCommand(newLicenseAttachCmd())
 	cmd.AddCommand(newLicenseVerifyCmd())
 	cmd.AddCommand(newLicensePatchCmd())
+	cmd.AddCommand(newSubscriptionRenewCmd())
 
 	return cmd
 }
@@ -313,6 +314,72 @@ func newLicenseVerifyCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
 	cmd.Flags().StringVar(&adminToken, "admin-token", "", "Admin JWT token (env: FREERANGE_ADMIN_TOKEN)")
+
+	return cmd
+}
+
+// newSubscriptionRenewCmd creates the `frn license renew` subcommand.
+// Usage: frn license renew --subscription-id <id> --months 1 --reason "sponsored"
+func newSubscriptionRenewCmd() *cobra.Command {
+	var apiURL, adminToken string
+	var subscriptionID, plan, reason string
+	var months int
+
+	cmd := &cobra.Command{
+		Use:   "renew",
+		Short: "Renew a subscription without payment (admin)",
+		Long:  "Renews a subscription for the specified number of months. No payment required. Used for sponsored/free renewals.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := LoadConfig()
+			if apiURL != "" {
+				cfg.APIURL = apiURL
+			}
+			if adminToken != "" {
+				cfg.AdminToken = adminToken
+			}
+			if cfg.APIURL == "" {
+				cfg.APIURL = "http://localhost:8080"
+			}
+			if cfg.AdminToken == "" {
+				return fmt.Errorf("admin token required: set FREERANGE_ADMIN_TOKEN or use --admin-token")
+			}
+			if subscriptionID == "" {
+				return fmt.Errorf("--subscription-id is required")
+			}
+
+			payload := map[string]interface{}{
+				"months": months,
+				"reason": reason,
+			}
+			if plan != "" {
+				payload["plan"] = plan
+			}
+
+			respBody, err := doJSONRequest(
+				http.MethodPost,
+				fmt.Sprintf("%s/v1/admin/subscriptions/%s/renew", cfg.APIURL, subscriptionID),
+				payload,
+				map[string]string{
+					"Authorization": "Bearer " + cfg.AdminToken,
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintln(os.Stdout, "Subscription renewed successfully")
+			return printJSON(respBody)
+		},
+	}
+
+	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
+	cmd.Flags().StringVar(&adminToken, "admin-token", "", "Admin JWT token (env: FREERANGE_ADMIN_TOKEN)")
+	cmd.Flags().StringVar(&subscriptionID, "subscription-id", "", "Subscription ID to renew (required)")
+	cmd.Flags().StringVar(&plan, "plan", "", "Plan tier to set (optional, keeps current if empty)")
+	cmd.Flags().IntVar(&months, "months", 1, "Number of months to renew for")
+	cmd.Flags().StringVar(&reason, "reason", "", "Reason for renewal (audit trail)")
+
+	_ = cmd.MarkFlagRequired("subscription-id")
 
 	return cmd
 }
