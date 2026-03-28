@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"math"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -55,13 +56,16 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		})
 	}
 
-	messageLimit := metaInt(sub.Metadata, "message_limit", 10000)
-	messagesSent := metaInt(sub.Metadata, "messages_sent", 0)
+	messageLimit := currentMessageLimit(sub, h.rateCard)
+	messagesSent := subscriptionMessagesSent(c.Context(), userID, sub, h.appRepo, h.usageRepo, h.billingEnabled)
+
 	usagePct := 0.0
 	if messageLimit > 0 {
 		usagePct = float64(messagesSent) / float64(messageLimit) * 100
 	}
-	daysRemaining := int(sub.CurrentPeriodEnd.Sub(now).Hours() / 24)
+
+	// Use Ceiling to ensure consistent "29 days" display as per user request
+	daysRemaining := int(math.Ceil(sub.CurrentPeriodEnd.Sub(now).Hours() / 24.0))
 	if daysRemaining < 0 {
 		daysRemaining = 0
 	}
@@ -71,6 +75,8 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		"status":               string(sub.Status),
 		"messages_sent":        messagesSent,
 		"message_limit":        messageLimit,
+		"base_message_limit":   metaInt(sub.Metadata, "base_message_limit", planMessageLimit(resolvePlan(h.rateCard, sub.Plan))),
+		"rollover_messages":    currentRolloverMessages(sub),
 		"usage_percent":        usagePct,
 		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),
 		"current_period_end":   sub.CurrentPeriodEnd.Format(time.RFC3339),
@@ -130,8 +136,8 @@ func (h *BillingHandler) AcceptTrial(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to accept trial"})
 	}
 
-	messageLimit := metaInt(sub.Metadata, "message_limit", 10000)
-	daysRemaining := int(sub.CurrentPeriodEnd.Sub(now).Hours() / 24)
+	messageLimit := currentMessageLimit(sub, h.rateCard)
+	daysRemaining := int(math.Ceil(sub.CurrentPeriodEnd.Sub(now).Hours() / 24.0))
 	if daysRemaining < 0 {
 		daysRemaining = 0
 	}
@@ -141,6 +147,7 @@ func (h *BillingHandler) AcceptTrial(c *fiber.Ctx) error {
 		"plan":               sub.Plan,
 		"status":             string(sub.Status),
 		"message_limit":      messageLimit,
+		"rollover_messages":  currentRolloverMessages(sub),
 		"current_period_end": sub.CurrentPeriodEnd.Format(time.RFC3339),
 		"days_remaining":     daysRemaining,
 		"trial_accepted_at":  now.Format(time.RFC3339),
@@ -163,6 +170,20 @@ func metaInt(meta map[string]interface{}, key string, defaultVal int) int {
 		return int(val)
 	case float64:
 		return int(val)
+	}
+	return defaultVal
+}
+
+func metaString(meta map[string]interface{}, key, defaultVal string) string {
+	if meta == nil {
+		return defaultVal
+	}
+	v, ok := meta[key]
+	if !ok {
+		return defaultVal
+	}
+	if s, ok := v.(string); ok && s != "" {
+		return s
 	}
 	return defaultVal
 }
@@ -218,15 +239,9 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 	}
 
 	// Get the user's plan tier
-	var plan billing.PlanTier
+	plan := resolvePlan(h.rateCard, "free_trial")
 	if sub != nil && sub.Plan != "" {
-		if p, ok := h.rateCard[sub.Plan]; ok {
-			plan = p
-		} else {
-			plan = h.rateCard["free_trial"]
-		}
-	} else {
-		plan = h.rateCard["free_trial"]
+		plan = resolvePlan(h.rateCard, sub.Plan)
 	}
 
 	// Convert paisa to INR for the API response
@@ -241,19 +256,19 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 
 	items := make([]breakdownItem, 0, len(summaries))
 	for _, s := range summaries {
-        var billedPaisa int64
+		var billedPaisa int64
 
 		if s.CredentialSource == billing.CredSourceSystem {
-            quota := plan.IncludedQuotas[s.Channel]
-            overage := s.MessageCount - quota
-            if overage > 0 {
-                billedPaisa = overage * plan.OverageRates[s.Channel]
-            }
+			quota := plan.IncludedQuotas[s.Channel]
+			overage := s.MessageCount - quota
+			if overage > 0 {
+				billedPaisa = overage * plan.OverageRates[s.Channel]
+			}
 		} else if s.CredentialSource == billing.CredSourceBYOC {
 			billedPaisa = s.MessageCount * plan.BYOCFees[s.Channel]
 		} else if s.CredentialSource == billing.CredSourcePlatform {
-            billedPaisa = s.MessageCount * plan.PlatformFees[s.Channel]
-        }
+			billedPaisa = s.MessageCount * plan.PlatformFees[s.Channel]
+		}
 
 		items = append(items, breakdownItem{
 			Channel:          s.Channel,
@@ -343,4 +358,3 @@ func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 		"last_updated": "2026-01-01",
 	})
 }
-

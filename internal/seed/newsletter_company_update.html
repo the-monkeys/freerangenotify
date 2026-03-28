@@ -1,248 +1,249 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.title}}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
+        body, table, td {
+            margin: 0;
+            padding: 0;
+            border-collapse: collapse;
+        }
+
         body {
-            background-color: #f9f9f9;
-            font-family: 'Roboto', sans-serif;
-            color: #555;
-            margin: 0;
-            padding: 20px;
-            line-height: 1.5;
+            background-color: #f4f4f4;
+            color: #333333;
+            font-family: Arial, Helvetica, sans-serif;
         }
 
-        .main-container {
+        .email-container {
+            width: 800px;
             max-width: 800px;
-            margin: 0 auto;
-            background-color: #ffffff;
-            overflow: hidden;
         }
 
-        .header {
-            background-color: #f1f1f1;
-            text-align: center;
-            padding: 50px 20px;
+        .section-pad {
+            padding: 56px 44px;
         }
 
-        .header-brand {
-            margin-bottom: 18px;
-        }
-
-        .header-brand p {
-            margin: 12px 0 0;
-            font-size: 14px;
-            font-weight: 700;
-            letter-spacing: 1.8px;
-            text-transform: uppercase;
-            color: #666;
-        }
-
-        .header h1 {
-            font-size: 42px;
-            font-weight: 900;
-            margin: 0;
-            color: #333;
+        .section-title {
+            margin: 0 0 12px 0;
+            font-size: 48px;
+            line-height: 1.1;
             letter-spacing: 1px;
+            font-weight: 900;
+            color: #35373d;
         }
 
-        .header p {
-            font-weight: bold;
+        .sub-title {
+            margin: 0;
             font-size: 18px;
-            margin-top: 5px;
-            color: #444;
+            line-height: 1.15;
+            font-weight: 800;
+            color: #35373d;
         }
 
-        .section {
-            display: flex;
-            align-items: center;
-            padding: 60px 50px;
-            gap: 40px;
-        }
-
-        .section.reverse {
-            flex-direction: row-reverse;
-        }
-
-        .text-content {
-            flex: 2;
-        }
-
-        .text-content h2,
-        .text-content h4,
-        .text-content p,
-        .header h1,
-        .header p,
-        .footer-note {
-            margin-top: 0;
-        }
-
-        .text-content h2 {
+        .story-title {
+            margin: 0 0 10px 0;
             font-size: 24px;
-            color: #333;
-            margin-bottom: 10px;
+            line-height: 1.22;
+            font-weight: 700;
+            color: #35373d;
         }
 
-        .text-content h4 {
+        .story-subtitle {
+            margin: 0 0 12px 0;
+            font-size: 16px;
+            line-height: 1.3;
             font-style: italic;
             font-weight: 700;
-            margin: 0 0 10px 0;
-            color: #444;
+            color: #404040;
         }
 
-        .image-content {
-            flex: 1;
-            display: flex;
-            justify-content: center;
+        .story-copy {
+            margin: 0;
+            font-size: 16px;
+            line-height: 1.55;
+            color: #363636;
         }
 
-        .editable-logo,
-        .editable-illustration {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .icon-svg {
+        .section-image {
             width: 130px;
-            fill: #f06a58;
+            height: 130px;
+            border-radius: 24px;
+            display: block;
+            object-fit: cover;
+            background-color: #f2f2f2;
         }
 
-        .header .icon-svg {
-            width: 80px;
-        }
-
-        .header .logo-img {
-            max-width: 120px;
-            max-height: 80px;
+        .fallback-logo {
+            width: 84px;
+            height: 84px;
             display: block;
             margin: 0 auto;
         }
 
-        .section-img {
-            max-width: 130px;
-            max-height: 130px;
+        .fallback-icon {
             width: 130px;
             height: 130px;
-            object-fit: cover;
-            border-radius: 24px;
             display: block;
-            background-color: #f6f6f6;
-        }
-
-        .footer {
-            padding: 16px 20px 28px;
-            text-align: center;
+            margin: 0 auto;
         }
 
         .footer-note {
+            margin: 0;
             font-size: 11px;
-            color: #888;
+            line-height: 1.5;
+            color: #8a8a8a;
             letter-spacing: 0.2px;
         }
 
         .footer-credit {
-            margin-top: 6px;
+            margin: 8px 0 0 0;
             font-size: 10px;
+            line-height: 1.4;
             color: #9a9a9a;
             letter-spacing: 0.2px;
         }
 
-        @media (max-width: 768px) {
+        @media only screen and (max-width: 820px) {
+            .email-container {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
 
-            .section,
-            .section.reverse {
-                flex-direction: column;
-                padding: 40px 20px;
-                text-align: center;
+            .section-pad {
+                padding: 34px 18px !important;
+            }
+
+            .stack-col {
+                display: block !important;
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            .mobile-center {
+                text-align: center !important;
+            }
+
+            .mobile-visual {
+                padding-top: 16px !important;
+                padding-bottom: 2px !important;
+                text-align: center !important;
+            }
+
+            .section-title {
+                font-size: 36px !important;
+                line-height: 1.15 !important;
+            }
+
+            .sub-title {
+                font-size: 16px !important;
+            }
+
+            .story-title {
+                font-size: 22px !important;
+            }
+
+            .story-subtitle {
+                font-size: 15px !important;
+            }
+
+            .story-copy {
+                font-size: 16px !important;
+                line-height: 1.52 !important;
+            }
+
+            .footer-note {
+                font-size: 11px !important;
+            }
+
+            .footer-credit {
+                font-size: 10px !important;
             }
         }
     </style>
 </head>
-
 <body>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+        <tr>
+            <td align="center" style="padding:16px 8px;">
+                <table role="presentation" width="800" cellpadding="0" cellspacing="0" border="0" class="email-container" style="background-color:#ffffff;">
+                    <tr>
+                        <td align="center" class="section-pad" style="background-color:#eeeeee;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 16px auto;">
+                                <tr>
+                                    <td align="center" data-editable="true" data-editable-type="logo">
+                                        {{if .header_logo_url}}<img src="{{.header_logo_url}}" alt="{{.company_name}}" style="max-width:120px;max-height:84px;display:block;margin:0 auto;">{{else}}<img src="https://img.icons8.com/ios-filled/100/f06a58/briefcase.png" alt="Logo icon" class="fallback-logo">{{end}}
+                                    </td>
+                                </tr>
+                            </table>
+                            <p data-editable="true" style="margin:0 0 26px 0;font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#4b4b4b;">{{.company_name}}</p>
+                            <h1 data-editable="true" class="section-title">{{.title}}</h1>
+                            <p data-editable="true" style="margin:0;font-size:18px;font-weight:700;color:#454545;">{{.subtitle}}</p>
+                        </td>
+                    </tr>
 
-    <div class="main-container">
+                    <tr>
+                        <td class="section-pad">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td class="stack-col" width="68%" valign="top" style="padding-right:26px;">
+                                        <h2 data-editable="true" class="story-title">{{.section1_heading}}</h2>
+                                        {{if .section1_subheading}}<h4 data-editable="true" class="story-subtitle">{{.section1_subheading}}</h4>{{end}}
+                                        <p data-editable="true" class="story-copy">{{.section1_body}}</p>
+                                    </td>
+                                    <td class="stack-col mobile-visual" width="32%" valign="middle" align="center" data-editable="true" data-editable-type="illustration">
+                                        {{if .section1_image_url}}<img src="{{.section1_image_url}}" alt="{{.section1_heading}}" class="section-image">{{else}}<img src="https://img.icons8.com/ios-filled/130/f06a58/quote-right.png" alt="Quote icon" class="fallback-icon">{{end}}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-        <header class="header">
-            <div class="header-brand">
-                <div class="editable-logo" data-editable="true" data-editable-type="logo">
-                    {{if .header_logo_url}}<img src="{{.header_logo_url}}" alt="{{.company_name}}"
-                        class="logo-img">{{else}}<svg class="icon-svg" viewBox="0 0 24 24" aria-label="Header logo">
-                        <path
-                            d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z" />
-                    </svg>{{end}}
-                </div>
-                <p data-editable="true">{{.company_name}}</p>
-            </div>
-            <h1 data-editable="true">{{.title}}</h1>
-            <p data-editable="true">{{.subtitle}}</p>
-        </header>
+                    <tr>
+                        <td class="section-pad">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td class="stack-col mobile-visual" width="32%" valign="middle" align="center" data-editable="true" data-editable-type="illustration" style="padding-right:26px;">
+                                        {{if .section2_image_url}}<img src="{{.section2_image_url}}" alt="{{.section2_heading}}" class="section-image">{{else}}<img src="https://img.icons8.com/ios-filled/130/f06a58/rocket.png" alt="Rocket icon" class="fallback-icon">{{end}}
+                                    </td>
+                                    <td class="stack-col" width="68%" valign="top">
+                                        <h2 data-editable="true" class="story-title">{{.section2_heading}}</h2>
+                                        {{if .section2_subheading}}<h4 data-editable="true" class="story-subtitle">{{.section2_subheading}}</h4>{{end}}
+                                        <p data-editable="true" class="story-copy">{{.section2_body}}</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-        <section class="section">
-            <div class="text-content">
-                <h2 data-editable="true">{{.section1_heading}}</h2>
-                {{if .section1_subheading}}<h4 data-editable="true">{{.section1_subheading}}</h4>{{end}}
-                <p data-editable="true">{{.section1_body}}</p>
-            </div>
-            <div class="image-content">
-                <div class="editable-illustration" data-editable="true" data-editable-type="illustration">
-                    {{if .section1_image_url}}<img src="{{.section1_image_url}}" alt="{{.section1_heading}}"
-                        class="section-img">{{else}}<svg class="icon-svg" viewBox="0 0 24 24"
-                        aria-label="Section illustration">
-                        <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z" />
-                    </svg>{{end}}
-                </div>
-            </div>
-        </section>
+                    <tr>
+                        <td class="section-pad">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td class="stack-col" width="68%" valign="top" style="padding-right:26px;">
+                                        <h2 data-editable="true" class="story-title">{{.section3_heading}}</h2>
+                                        {{if .section3_subheading}}<h4 data-editable="true" class="story-subtitle">{{.section3_subheading}}</h4>{{end}}
+                                        <p data-editable="true" class="story-copy">{{.section3_body}}</p>
+                                    </td>
+                                    <td class="stack-col mobile-visual" width="32%" valign="middle" align="center" data-editable="true" data-editable-type="illustration">
+                                        {{if .section3_image_url}}<img src="{{.section3_image_url}}" alt="{{.section3_heading}}" class="section-image">{{else}}<img src="https://img.icons8.com/ios-filled/130/f06a58/artificial-intelligence.png" alt="Innovation icon" class="fallback-icon">{{end}}
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
 
-        <section class="section reverse">
-            <div class="text-content">
-                <h2 data-editable="true">{{.section2_heading}}</h2>
-                {{if .section2_subheading}}<h4 data-editable="true">{{.section2_subheading}}</h4>{{end}}
-                <p data-editable="true">{{.section2_body}}</p>
-            </div>
-            <div class="image-content">
-                <div class="editable-illustration" data-editable="true" data-editable-type="illustration">
-                    {{if .section2_image_url}}<img src="{{.section2_image_url}}" alt="{{.section2_heading}}"
-                        class="section-img">{{else}}<svg class="icon-svg" viewBox="0 0 24 24"
-                        aria-label="Section illustration">
-                        <path
-                            d="M12 2.5s-4.5 4.5-4.5 10.5c0 1 .1 2 .3 2.9l-2.3 2.1h6.5l.5 2.5.5-2.5h6.5l-2.3-2.1c.2-.9.3-1.9.3-2.9 0-6-4.5-10.5-4.5-10.5z" />
-                    </svg>{{end}}
-                </div>
-            </div>
-        </section>
-
-        <section class="section">
-            <div class="text-content">
-                <h2 data-editable="true">{{.section3_heading}}</h2>
-                {{if .section3_subheading}}<h4 data-editable="true">{{.section3_subheading}}</h4>{{end}}
-                <p data-editable="true">{{.section3_body}}</p>
-            </div>
-            <div class="image-content">
-                <div class="editable-illustration" data-editable="true" data-editable-type="illustration">
-                    {{if .section3_image_url}}<img src="{{.section3_image_url}}" alt="{{.section3_heading}}"
-                        class="section-img">{{else}}<svg class="icon-svg" viewBox="0 0 24 24"
-                        aria-label="Section illustration">
-                        <path
-                            d="M20.41 11c-.51 0-1.02.11-1.49.33-.3-.15-.62-.24-.97-.28l.89-2.97c.05-.18-.04-.37-.22-.43-.18-.05-.37.04-.43.22l-.89 2.97c-.3-.02-.6-.01-.9.03L16 4.3c.02-.19-.12-.35-.31-.37-.19-.02-.35.12-.37.31l-.29 6.57c-.34.1-.66.26-.95.46L10.3 8.35a.376.376 0 0 0-.46-.07c-.16.1-.21.31-.11.47l3.78 3.32c-.17.34-.28.71-.34 1.1l-6.8-.57c-.19-.01-.35.13-.37.32-.01.19.13.35.32.37l6.83.58c.03.45.16.88.37 1.27l-5.06 4.55c-.14.13-.15.35-.02.49.13.14.35.15.49.02l5.09-4.58c.38.31.83.54 1.33.66l-.51 6.52c-.01.19.13.36.32.37h.02c.18 0 .34-.14.35-.32l.51-6.52c.48-.05.93-.19 1.35-.42l3.41 6.13c.09.17.31.23.48.14.17-.09.23-.31.14-.48l-3.38-6.08c.4-.3.72-.68.95-1.12l6.23 2.59c.18.07.38-.02.45-.2.07-.18-.02-.38-.2-.45l-6.22-2.58c.15-.46.22-.95.21-1.45l6.5-.81c.19-.02.32-.19.3-.38-.02-.18-.18-.32-.37-.3z" />
-                    </svg>{{end}}
-                </div>
-            </div>
-        </section>
-
-        <footer class="footer">
-            <div class="footer-note" data-editable="true">{{.footer_text}}</div>
-            <div class="footer-credit">This is from freerangenotify.com</div>
-        </footer>
-
-    </div>
-
+                    <tr>
+                        <td align="center" style="padding:18px 18px 30px 18px;">
+                            <p data-editable="true" class="footer-note">{{.footer_text}}</p>
+                            <p class="footer-credit">This is from freerangenotify.com</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
 </body>
-
 </html>

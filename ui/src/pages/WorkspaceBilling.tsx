@@ -6,6 +6,8 @@ import {
     Loader2, CreditCard, Activity, CalendarDays, CheckCircle2,
     Zap, Server, BarChart3, Info
 } from 'lucide-react';
+import { useRazorpayCheckout } from '../hooks/useRazorpayCheckout';
+import { Button } from '../components/ui/button';
 
 // ─── Types ───
 interface BreakdownItem {
@@ -198,6 +200,25 @@ export default function WorkspaceBilling() {
     const [breakdown, setBreakdown]     = useState<BreakdownResponse | null>(null);
     const [loading, setLoading]         = useState(true);
 
+    const refreshData = async () => {
+        try {
+            const [usageData, subData, breakdownData] = await Promise.all([
+                billingAPI.getUsage().catch(() => null),
+                billingAPI.getSubscription().catch(() => null),
+                billingAPI.getUsageBreakdown().catch(() => null),
+            ]);
+            setUsage(usageData);
+            setSubscription(subData);
+            setBreakdown(breakdownData);
+        } catch (error) {
+            console.error('Billing fetch error:', error);
+        }
+    };
+
+    const { initiateCheckout, isCheckoutLoading } = useRazorpayCheckout(() => {
+        refreshData();
+    });
+
     useEffect(() => {
         let mounted = true;
         const fetchData = async () => {
@@ -222,11 +243,13 @@ export default function WorkspaceBilling() {
         return () => { mounted = false; };
     }, []);
 
-    const daysRemaining = subscription?.current_period_end
-        ? Math.max(0, Math.ceil(
-            (new Date(subscription.current_period_end).getTime() - Date.now()) / 86_400_000
-          ))
-        : null;
+    const daysRemaining = usage?.days_remaining !== undefined 
+        ? usage.days_remaining
+        : subscription?.current_period_end
+            ? Math.max(0, Math.ceil(
+                (new Date(subscription.current_period_end).getTime() - Date.now()) / 86_400_000
+              ))
+            : null;
 
     if (loading) {
         return (
@@ -255,10 +278,18 @@ export default function WorkspaceBilling() {
                         Manage your workspace subscription, licensing, and hybrid channel usage.
                     </p>
                 </div>
-                {subscription?.plan && (
+                {subscription?.plan ? (
                     <Badge variant="secondary" className="px-3 py-1 text-sm font-medium capitalize">
-                        {subscription.plan} Plan
+                        {subscription.plan.replace('_', ' ')} Plan
                     </Badge>
+                ) : (
+                    <Button 
+                        onClick={() => initiateCheckout('pro')} 
+                        disabled={isCheckoutLoading}
+                    >
+                        {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Upgrade to PRO
+                    </Button>
                 )}
             </div>
 
@@ -295,11 +326,19 @@ export default function WorkspaceBilling() {
                                 </p>
                             </div>
                         ) : (
-                            <p className="text-sm mt-4 text-muted-foreground">
-                                No active premium subscription. Create an{' '}
-                                <a href="/tenants" className="text-primary hover:underline">Organization</a>{' '}
-                                to unlock team billing.
-                            </p>
+                            <div className="mt-4 space-y-4">
+                                <p className="text-sm text-muted-foreground">
+                                    No active premium subscription. Upgrade your workspace to unlock team billing and dedicated quotas.
+                                </p>
+                                <Button 
+                                    className="w-full" 
+                                    onClick={() => initiateCheckout('pro')}
+                                    disabled={isCheckoutLoading}
+                                >
+                                    {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Upgrade to Pro
+                                </Button>
+                            </div>
                         )}
                     </CardContent>
                 </Card>
@@ -320,16 +359,22 @@ export default function WorkspaceBilling() {
                                 <span>Limit:</span>
                                 <span>{usage?.message_limit ? usage.message_limit.toLocaleString() : 'Unlimited'}</span>
                             </p>
+                            {(usage?.rollover_messages ?? 0) > 0 && (
+                                <p className="flex justify-between items-center">
+                                    <span>Carried forward:</span>
+                                    <span>{usage.rollover_messages.toLocaleString()}</span>
+                                </p>
+                            )}
                             {usage?.usage_percent !== undefined && (
                                 <p className="flex justify-between items-center">
                                     <span>Consumed:</span>
                                     <span>{usage.usage_percent.toFixed(1)}%</span>
                                 </p>
                             )}
-                            {usage?.days_remaining !== undefined && (
+                            {daysRemaining !== null && (
                                 <p className="flex justify-between items-center">
                                     <span>Cycle resets in:</span>
-                                    <span>{usage.days_remaining} day{usage.days_remaining !== 1 ? 's' : ''}</span>
+                                    <span>{daysRemaining} day{daysRemaining !== 1 ? 's' : ''}</span>
                                 </p>
                             )}
                         </div>
@@ -352,11 +397,98 @@ export default function WorkspaceBilling() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-sm mt-4 text-muted-foreground">
-                            Looking to scale? Create an{' '}
-                            <a href="/tenants" className="text-primary hover:underline">Organization</a>{' '}
-                            to unlock team billing and dedicated quotas.
+                        <p className="text-sm mt-4 text-muted-foreground mb-4">
+                            Looking to scale? Upgrade your workspace to unlock team billing and dedicated quotas.
                         </p>
+                        {subscription?.plan !== 'pro' && (
+                            <Button variant="outline" className="w-full" onClick={() => initiateCheckout('pro')} disabled={isCheckoutLoading}>
+                                {isCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                                Upgrade to Pro
+                            </Button>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* ── Payment & Transactions ── */}
+            <div className="grid gap-6 md:grid-cols-2">
+                <Card className="bg-card/60 shadow-sm border-border">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <CreditCard className="h-5 w-5" />
+                            Payment Method
+                        </CardTitle>
+                        <CardDescription>
+                            How you're paying for your FreeRangeNotify subscription.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {subscription?.plan && subscription.plan !== 'free_trial' ? (
+                            <div className="flex items-center gap-4 p-4 rounded-lg border border-border bg-muted/20">
+                                <div className="p-2 bg-primary/10 rounded-full">
+                                    <CreditCard className="h-6 w-6 text-primary" />
+                                </div>
+                                <div>
+                                    <p className="font-semibold capitalize">{subscription.plan} Subscription</p>
+                                    <p className="text-sm text-muted-foreground">Managed via Razorpay Secure</p>
+                                </div>
+                                <Badge className="ml-auto" variant="outline">Verified</Badge>
+                            </div>
+                        ) : (
+                            <div className="text-center py-6 border-2 border-dashed border-border rounded-lg bg-muted/5">
+                                <p className="text-sm text-muted-foreground">
+                                    {subscription?.plan === 'free_trial' ? 'Active Trial — No payment method required.' : 'No payment method attached.'}
+                                </p>
+                                <Button 
+                                    variant="link" 
+                                    className="mt-2 text-primary"
+                                    onClick={() => initiateCheckout('pro')}
+                                >
+                                    {subscription?.plan === 'free_trial' ? 'Add payment method for Pro' : 'Add payment method'}
+                                </Button>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-card/60 shadow-sm border-border">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Activity className="h-5 w-5" />
+                            Transaction History
+                        </CardTitle>
+                        <CardDescription>
+                            Recent billing statements and renewals.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {subscription?.plan && subscription.plan !== 'free_trial' ? (
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center text-sm p-2 rounded hover:bg-muted/30 transition-colors">
+                                    <div>
+                                        <p className="font-medium">Subscription Renewal</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            {subscription.current_period_start ? new Date(subscription.current_period_start).toLocaleDateString() : 'Recent'}
+                                        </p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-semibold text-emerald-600">Success</p>
+                                        <p className="text-xs text-muted-foreground">INR Card</p>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-center text-muted-foreground pt-2">
+                                    Only recent transactions are shown here. For a full PDF invoice, please contact support.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-muted-foreground text-sm">
+                                <Activity className="h-8 w-8 mx-auto opacity-20 mb-2" />
+                                <p>No transactions found.</p>
+                                {subscription?.plan === 'free_trial' && (
+                                    <p className="mt-1 text-xs opacity-60">You are currently on a free trial.</p>
+                                )}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>

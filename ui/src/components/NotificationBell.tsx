@@ -6,12 +6,8 @@ import {
     DropdownMenuContent,
     DropdownMenuTrigger,
 } from './ui/dropdown-menu';
-import { adminAPI } from '../services/api';
+import { adminAPI, buildApiUrl } from '../services/api';
 import type { DashboardNotification } from '../types';
-
-const SSE_BASE = import.meta.env.VITE_API_BASE_URL
-    ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/v1`
-    : '/v1';
 
 interface NotificationBellProps {
     isAuthenticated: boolean;
@@ -64,7 +60,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ isAuthentica
         const connectSSE = async () => {
             try {
                 const { sse_token } = await adminAPI.createDashboardSSEToken();
-                const url = `${SSE_BASE}/sse?sse_token=${encodeURIComponent(sse_token)}`;
+                const url = buildApiUrl(`/sse?sse_token=${encodeURIComponent(sse_token)}`);
                 const es = new EventSource(url);
                 eventSourceRef.current = es;
 

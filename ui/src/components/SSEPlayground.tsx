@@ -5,7 +5,7 @@ import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { toast } from 'sonner';
 import { Radio, Loader2, Trash2, Copy, Check, Shield } from 'lucide-react';
-import { applicationsAPI, usersAPI, sseAPI } from '../services/api';
+import { applicationsAPI, usersAPI, sseAPI, buildApiUrl } from '../services/api';
 import type { Application, User } from '../types';
 
 interface SSEEvent {
@@ -118,7 +118,7 @@ export default function SSEPlayground() {
             const tokenResp = await sseAPI.createToken(apiKey, userParam);
 
             // Step 2: Connect to SSE using only the scoped token.
-            const url = `/v1/sse?sse_token=${encodeURIComponent(tokenResp.sse_token)}`;
+            const url = buildApiUrl(`/sse?sse_token=${encodeURIComponent(tokenResp.sse_token)}`);
             setSSEURL(url);
 
             const es = new EventSource(url);
@@ -181,7 +181,7 @@ export default function SSEPlayground() {
     const copyURL = () => {
         if (!sseURL) return;
         // Build absolute URL for copying
-        const abs = `${window.location.origin}${sseURL}`;
+        const abs = /^https?:\/\//i.test(sseURL) ? sseURL : `${window.location.origin}${sseURL}`;
         navigator.clipboard.writeText(abs);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);

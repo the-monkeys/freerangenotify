@@ -77,13 +77,27 @@ import type {
   SystemStats,
 } from '../types';
 
-// Use environment variable for backend URL
-// In development, Vite proxy handles routing (can use relative URLs)
-// In production (Vercel), must use absolute backend URL
+// Resolve API base URL:
+// - Local dev should use relative /v1 through Vite proxy.
+// - Hosted environments (e.g. Vercel) can use absolute VITE_API_BASE_URL.
+const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || '';
+const normalizedApiBaseUrl = rawApiBaseUrl.replace(/\/+$/, '').replace(/\/v1$/i, '');
+const isLocalUiHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const pointsToLoopbackApi = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalizedApiBaseUrl);
+export const API_V1_BASE_URL =
+  normalizedApiBaseUrl && !(isLocalUiHost && pointsToLoopbackApi)
+    ? `${normalizedApiBaseUrl}/v1`
+    : '/v1';
+
+export const buildApiUrl = (path: string) => {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_V1_BASE_URL}${normalizedPath}`;
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL
-    ? `${import.meta.env.VITE_API_BASE_URL}/v1`
-    : '/v1',
+  baseURL: API_V1_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -1074,11 +1088,6 @@ export const tenantsAPI = {
   getBilling: async (id: string) => {
     const { data } = await api.get<ApiResponse<any>>(`/tenants/${id}/billing`);
     return data.data;
-  },
-
-  checkoutBilling: async (id: string, tier: string = 'pro') => {
-    const { data } = await api.post<ApiResponse<any>>(`/tenants/${id}/billing/checkout`, { tier });
-    return data;
   }
 };
 
@@ -1108,6 +1117,16 @@ export const billingAPI = {
     const { data } = await api.get('/billing/rates');
     return data;
   },
+
+  checkoutBilling: async (tier: string = 'pro') => {
+    const { data } = await api.post<any>('/billing/checkout', { tier });
+    return data;
+  },
+
+  verifyPayment: async (payload: { razorpay_order_id: string, razorpay_payment_id: string, razorpay_signature: string }) => {
+    const { data } = await api.post<any>('/billing/verify-payment', payload);
+    return data;
+  }
 };
 
 // ============= Custom Provider APIs =============

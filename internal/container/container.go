@@ -29,6 +29,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/payment"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
@@ -95,9 +96,12 @@ type Container struct {
 	LicensingHandler             *handlers.LicensingHandler
 	OpsHandler                   *handlers.OpsHandler
 	BillingHandler               *handlers.BillingHandler
+	PaymentHandler               *handlers.PaymentHandler
+	RenewalHandler               *handlers.RenewalHandler
 
-	// Billing Metering
-	UsageRepo billing.UsageRepository
+	// Billing Metering and Payment
+	UsageRepo       billing.UsageRepository
+	PaymentProvider billing.Provider
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -440,6 +444,33 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		cfg.Billing.FreeTrialPushQuota,
 	)
 	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, repos.Application, rateCard, logger)
+
+	// Initialize Payment Provider
+	if cfg.Payment.Provider == "razorpay" {
+		container.PaymentProvider = payment.NewRazorpayProvider(
+			cfg.Payment.Razorpay.KeyID,
+			cfg.Payment.Razorpay.KeySecret,
+			cfg.Payment.Razorpay.WebhookSecret,
+			cfg.Payment.Razorpay.Currency,
+			logger,
+		)
+		logger.Info("Razorpay payment provider initialized")
+	} else {
+		container.PaymentProvider = payment.NewMockProvider()
+		logger.Info("Mock payment provider initialized (set FREERANGE_PAYMENT_PROVIDER=razorpay for production)")
+	}
+
+	container.PaymentHandler = handlers.NewPaymentHandler(
+		container.PaymentProvider,
+		repos.Subscription,
+		repos.Application,
+		rateCard,
+		cfg.Features.BillingEnabled,
+		logger,
+	)
+
+	container.RenewalHandler = handlers.NewRenewalHandler(repos.Subscription, repos.Application, rateCard, logger)
+
 	container.SSEHandler = handlers.NewSSEHandler(
 		container.SSEBroadcaster,
 		container.ApplicationService,
@@ -610,6 +641,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger.Warn("billing: failed to ensure usage index — metering may not work", zap.Error(err))
 		}
 		container.BillingHandler.SetUsageRepo(usageRepo, true)
+		container.PaymentHandler.SetUsageRepo(usageRepo, true)
+		container.RenewalHandler.SetUsageRepo(usageRepo, true)
 		container.UsageRepo = usageRepo
 		logger.Info("Billing metering enabled", zap.String("index", "frn_usage_events"))
 	} else {

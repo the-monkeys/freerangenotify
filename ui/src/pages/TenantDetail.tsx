@@ -15,8 +15,7 @@ import { Spinner } from '../components/ui/spinner';
 import EmptyState from '../components/EmptyState';
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
-import { ArrowLeft, Building2, UserPlus, Trash2, Shield, CreditCard, Rocket, LayoutDashboard } from 'lucide-react';
-import type { TenantBilling } from '../types';
+import { ArrowLeft, Building2, UserPlus, Trash2, Shield, LayoutDashboard } from 'lucide-react';
 import { useApps } from '../contexts/AppsContext';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -39,48 +38,12 @@ const TenantDetail: React.FC = () => {
   const [removeConfirm, setRemoveConfirm] = useState<TenantMember | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
 
-  // Billing states
-  const [billing, setBilling] = useState<TenantBilling | null>(null);
-  const [billingLoading, setBillingLoading] = useState(false);
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
-
   useEffect(() => {
     if (id) {
       fetchTenant();
       fetchMembers();
-      fetchBilling();
     }
   }, [id]);
-
-  const fetchBilling = async () => {
-    if (!id) return;
-    try {
-      setBillingLoading(true);
-      const data = await tenantsAPI.getBilling(id);
-      if (data) {
-        setBilling(data);
-      }
-    } catch (err) {
-      console.log('Billing tier fetch error or not available', err);
-    } finally {
-      setBillingLoading(false);
-    }
-  };
-
-  const handleUpgrade = async () => {
-    if (!id) return;
-    try {
-      setUpgradeLoading(true);
-      await tenantsAPI.checkoutBilling(id, 'pro');
-      toast.success('Mock Upgrade Successful. Organization is now Pro.');
-      fetchBilling();
-      fetchTenant();
-    } catch (err) {
-      toast.error(extractErrorMessage(err as Error, 'Failed to process upgrade'));
-    } finally {
-      setUpgradeLoading(false);
-    }
-  };
 
   const fetchTenant = async () => {
     if (!id) return;
@@ -183,10 +146,6 @@ const TenantDetail: React.FC = () => {
           <TabsTrigger value="members">
             <Shield className="h-4 w-4 mr-2" />
             Members
-          </TabsTrigger>
-          <TabsTrigger value="billing">
-            <CreditCard className="h-4 w-4 mr-2" />
-            Billing & Licensing
           </TabsTrigger>
         </TabsList>
         <TabsContent value="apps">
@@ -345,68 +304,6 @@ const TenantDetail: React.FC = () => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="billing">
-          <Card>
-            <CardHeader>
-              <CardTitle>Billing & Licensing</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {billingLoading ? (
-                <div className="flex justify-center p-8"><Spinner /></div>
-              ) : billing ? (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border border-border">
-                    <div>
-                      <h3 className="text-lg font-medium tracking-tight">
-                        Current Plan: <span className="uppercase text-primary">{billing.billing_tier || 'FREE'}</span>
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Valid until: {billing.valid_until && new Date(billing.valid_until).getFullYear() > 2000 ? new Date(billing.valid_until).toLocaleDateString() : 'N/A'}
-                      </p>
-                    </div>
-                    {billing.billing_tier !== 'pro' && (
-                      <Button onClick={handleUpgrade} disabled={upgradeLoading}>
-                        {upgradeLoading ? <Spinner className="mr-2" /> : <Rocket className="h-4 w-4 mr-2" />}
-                        Upgrade to Pro
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-muted-foreground font-medium">Max Applications</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{billing.max_apps || 1}</div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-muted-foreground font-medium">Throughput Limit</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">{billing.max_throughput || 10} <span className="text-sm font-normal text-muted-foreground">msg/sec</span></div>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {billing.billing_tier === 'pro' && (
-                    <div className="mt-8 p-4 bg-primary/10 border border-primary/20 rounded-lg text-sm text-primary">
-                      Your organization is currently on the Pro tier. You have access to all premium features including higher throughput, SLA guarantees, and premium channels.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <EmptyState
-                  title="Billing information unavailable"
-                  description="We couldn't retrieve the billing tier for this organization."
-                  action={{ label: 'Retry', onClick: fetchBilling }}
-                />
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       <ConfirmDialog

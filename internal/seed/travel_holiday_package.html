@@ -4,14 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.destination_name}}</title>
+    <style>
+        @media only screen and (max-width: 620px) {
+            .outer-pad {
+                padding: 0 !important;
+            }
+
+            .email-container {
+                width: 100% !important;
+                border-radius: 0 !important;
+            }
+
+            .hero-block {
+                padding: 30px 16px !important;
+            }
+
+            .content-pad {
+                padding: 34px 20px !important;
+            }
+
+            .headline {
+                font-size: 30px !important;
+                line-height: 1.2 !important;
+            }
+
+            .intro {
+                font-size: 17px !important;
+                margin-bottom: 28px !important;
+            }
+
+            .itinerary-box {
+                padding: 20px !important;
+            }
+
+            .cta-link {
+                padding: 14px 26px !important;
+                font-size: 14px !important;
+            }
+
+            .footer-pad {
+                padding: 22px 18px !important;
+            }
+        }
+    </style>
 </head>
 <body style="margin:0;padding:0;background-color:#fdfbf7;font-family:Georgia,serif;">
     <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color:#fdfbf7;">
         <tr>
-            <td align="center" style="padding:30px 10px;">
-                <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.05);">
+            <td align="center" style="padding:30px 10px;" class="outer-pad">
+                <table width="600" border="0" cellspacing="0" cellpadding="0" class="email-container" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,0.05);">
                     <tr>
-                        <td align="center" style="padding:40px 20px;background-color:#0f3b4c;">
+                        <td align="center" class="hero-block" style="padding:40px 20px;background-color:#0f3b4c;">
                             <img src="{{.logo_image}}" alt="Logo" width="120" style="display:block;margin-bottom:20px;border-radius:60px;" />
                             <h2 style="margin:0;color:#ffffff;font-size:14px;text-transform:uppercase;letter-spacing:3px;font-family:Arial,sans-serif;">{{.company_name}}</h2>
                         </td>
@@ -22,12 +65,12 @@
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:50px 40px;text-align:center;">
-                            <h1 style="margin:0 0 20px 0;color:#0f3b4c;font-size:36px;font-weight:normal;line-height:1.2;">{{.destination_name}}</h1>
-                            <p style="margin:0 0 40px 0;color:#4a5568;font-size:18px;line-height:1.6;">{{.destination_description}}</p>
+                        <td class="content-pad" style="padding:50px 40px;text-align:center;">
+                            <h1 class="headline" style="margin:0 0 20px 0;color:#0f3b4c;font-size:36px;font-weight:normal;line-height:1.2;">{{.destination_name}}</h1>
+                            <p class="intro" style="margin:0 0 40px 0;color:#4a5568;font-size:18px;line-height:1.6;">{{.destination_description}}</p>
                             
                             <!-- Itinerary -->
-                            <div style="background-color:#f7f9fa;border-left:4px solid #d4af37;padding:30px;text-align:left;border-radius:0 8px 8px 0;margin-bottom:40px;">
+                            <div class="itinerary-box" style="background-color:#f7f9fa;border-left:4px solid #d4af37;padding:30px;text-align:left;border-radius:0 8px 8px 0;margin-bottom:40px;">
                                 <h3 style="margin:0 0 20px 0;color:#0f3b4c;font-size:22px;">Trip Highlights</h3>
                                 <p style="margin:0 0 12px 0;color:#2d3748;font-size:16px;font-family:Arial,sans-serif;"><strong>Day 1:</strong> {{.day_1_plan}}</p>
                                 <p style="margin:0 0 12px 0;color:#2d3748;font-size:16px;font-family:Arial,sans-serif;"><strong>Day 2:</strong> {{.day_2_plan}}</p>
@@ -37,14 +80,14 @@
                             <table border="0" cellspacing="0" cellpadding="0" style="margin:0 auto;">
                                 <tr>
                                     <td align="center" style="border-radius:4px;background-color:#d4af37;">
-                                        <a href="{{.booking_url}}" style="display:inline-block;padding:16px 40px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;letter-spacing:2px;text-transform:uppercase;font-family:Arial,sans-serif;">{{.cta_text}}</a>
+                                        <a href="{{.booking_url}}" class="cta-link" style="display:inline-block;padding:16px 40px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;letter-spacing:2px;text-transform:uppercase;font-family:Arial,sans-serif;">{{.cta_text}}</a>
                                     </td>
                                 </tr>
                             </table>
                         </td>
                     </tr>
                     <tr>
-                        <td style="background-color:#0f3b4c;padding:30px 40px;text-align:center;">
+                        <td class="footer-pad" style="background-color:#0f3b4c;padding:30px 40px;text-align:center;">
                             <p style="margin:0;color:#a0aec0;font-size:12px;font-family:Arial,sans-serif;line-height:1.5;">
                                 {{.footer_text}}<br><br>
                                 <a href="{{.unsubscribe_url}}" style="color:#d4af37;text-decoration:none;">Unsubscribe</a>

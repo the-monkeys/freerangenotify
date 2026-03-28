@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"time"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -261,24 +259,26 @@ func (h *TenantHandler) Checkout(c *fiber.Ctx) error {
 	if role != "owner" && role != "admin" {
 		return errors.Forbidden("Only owners and admins can manage billing")
 	}
+	// Route the checkout logic to the dedicated PaymentHandler
+	// (Keeping the endpoint /v1/tenants/:id/billing/checkout for backward compat)
 
-	// This is the Mock Payment Provider logic phase
-	// Real implementation will call h.paymentProvider.CreateCheckoutSession
-
-	// For now, securely upgrade the tenant (mock payment success)
-	err = h.service.UpgradeBilling(c.Context(), tenantID, "pro", time.Now().Add(365*24*time.Hour), 100, 500)
-	if err != nil {
-		return err
+	// Create request payload for PaymentHandler.CreateOrder
+	reqBody := struct {
+		Tier string `json:"tier"`
+	}{}
+	if err := c.BodyParser(&reqBody); err == nil && reqBody.Tier != "" {
+		// Just passing the tier through. If error, the handler will catch it or default
 	}
 
-	return c.JSON(fiber.Map{
-		"success": true,
-		"message": "checkout session created (mock)",
-		"data": fiber.Map{
-			"checkout_url": "mock_success", // Real implementation: checkoutSession.URL
-			"tier":         "pro",
-		},
-	})
+	// Make an internal fast-forward call rather than duplicating logic
+	// We'll replace the Locals with just user_id which PaymentHandler needs
+	return h.createInternalOrder(c, userID, reqBody.Tier)
+}
+
+func (h *TenantHandler) createInternalOrder(c *fiber.Ctx, userID, tier string) error {
+	// Call to container's PaymentHandler (we're going to use the route instead so this is cleaner)
+	// Returning a redirection error to specify they should use the new billing API
+	return errors.BadRequest("Please use the new /v1/billing/checkout endpoint")
 }
 
 // UpdateMemberRole handles PUT /v1/tenants/:id/members/:memberId

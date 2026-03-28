@@ -3,7 +3,6 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { billingAPI } from '../services/api';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import DeleteAccountDialog from './DeleteAccountDialog';
@@ -60,28 +59,6 @@ const SidebarNav: React.FC = () => {
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
     const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
-    const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
-
-    React.useEffect(() => {
-        if (!user) return;
-        let mounted = true;
-        
-        const fetchSubscription = async () => {
-            try {
-                const sub = await billingAPI.getSubscription();
-                if (mounted && sub?.current_period_end) {
-                    const diffTime = new Date(sub.current_period_end).getTime() - new Date().getTime();
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    setDaysRemaining(diffDays > 0 ? diffDays : 0);
-                }
-            } catch (err) {
-                // Safely ignore if billing is unconfigured
-            }
-        };
-        
-        fetchSubscription();
-        return () => { mounted = false; };
-    }, [user]);
 
     const handleLogout = async () => {
         await logout();
@@ -174,11 +151,6 @@ const SidebarNav: React.FC = () => {
                             >
                                 {item.icon}
                                 <span className="group-data-[collapsible=icon]:hidden flex-1 leading-none">{item.label}</span>
-                                {item.id === 'billing' && daysRemaining !== null && (
-                                    <span className={`group-data-[collapsible=icon]:hidden ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${daysRemaining < 7 ? 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400' : 'bg-primary/10 text-primary'}`}>
-                                        {daysRemaining} day{daysRemaining !== 1 && 's'}
-                                    </span>
-                                )}
                             </NavLink>
                         </SidebarMenuItem>
                     ))}

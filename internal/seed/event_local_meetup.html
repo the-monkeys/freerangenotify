@@ -4,37 +4,86 @@
     <meta charset="UTF-8">
     <meta content="width=device-width, initial-scale=1" name="viewport">
     <title>{{.event_name}}</title>
+    <style>
+        @media only screen and (max-width: 620px) {
+            .outer-pad {
+                padding: 0 !important;
+            }
+
+            .email-container {
+                width: 100% !important;
+                border-radius: 0 !important;
+            }
+
+            .hero-pad {
+                padding: 42px 20px !important;
+            }
+
+            .hero-title {
+                font-size: 34px !important;
+            }
+
+            .mobile-pad {
+                padding-left: 20px !important;
+                padding-right: 20px !important;
+            }
+
+            .intro-copy {
+                font-size: 16px !important;
+                line-height: 1.55 !important;
+            }
+
+            .info-grid .info-col {
+                display: block !important;
+                width: 100% !important;
+                border-right: 0 !important;
+                border-bottom: 1px solid #e5e7eb !important;
+                padding-top: 14px !important;
+                padding-bottom: 14px !important;
+            }
+
+            .info-grid .info-col:last-child {
+                border-bottom: 0 !important;
+            }
+
+            .cta-link {
+                width: 100% !important;
+                box-sizing: border-box !important;
+                text-align: center !important;
+            }
+        }
+    </style>
 </head>
 <body style="margin:0;padding:20px;background-color:#faf5ff;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table width="100%" border="0" cellspacing="0" cellpadding="0">
         <tr>
-            <td align="center">
-                <table width="600" border="0" cellspacing="0" cellpadding="0" style="background-color:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 10px 25px rgba(147,51,234,0.1);">
+            <td align="center" class="outer-pad">
+                <table width="600" border="0" cellspacing="0" cellpadding="0" class="email-container" style="background-color:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 10px 25px rgba(147,51,234,0.1);">
                     <tr>
-                        <td style="background:linear-gradient(135deg,#c084fc,#9333ea);padding:60px 40px;text-align:center;">
+                        <td style="background:linear-gradient(135deg,#c084fc,#9333ea);padding:60px 40px;text-align:center;" class="hero-pad">
                             <div style="background-color:rgba(255,255,255,0.2);display:inline-block;padding:8px 16px;border-radius:20px;color:#ffffff;font-size:13px;font-weight:bold;margin-bottom:20px;text-transform:uppercase;letter-spacing:1px;">
                                 Local Meetup
                             </div>
-                            <h1 style="margin:0;color:#ffffff;font-size:42px;line-height:1.1;font-weight:900;">{{.event_name}}</h1>
+                            <h1 style="margin:0;color:#ffffff;font-size:42px;line-height:1.1;font-weight:900;" class="hero-title">{{.event_name}}</h1>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:40px;">
-                            <p style="margin:0 0 30px 0;color:#4b5563;font-size:18px;line-height:1.6;text-align:center;">{{.event_description}}</p>
+                        <td style="padding:40px;" class="mobile-pad">
+                            <p style="margin:0 0 30px 0;color:#4b5563;font-size:18px;line-height:1.6;text-align:center;" class="intro-copy">{{.event_description}}</p>
                             
-                            <table width="100%" border="0" cellspacing="0" cellpadding="20" style="background-color:#f3f4f6;border-radius:16px;margin-bottom:40px;">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="20" style="background-color:#f3f4f6;border-radius:16px;margin-bottom:40px;" class="info-grid">
                                 <tr>
-                                    <td width="33%" align="center" style="border-right:1px solid #e5e7eb;">
+                                    <td width="33%" align="center" style="border-right:1px solid #e5e7eb;" class="info-col">
                                         <span style="display:block;font-size:24px;margin-bottom:8px;">📅</span>
                                         <strong style="display:block;color:#1f2937;font-size:14px;">{{.event_date}}</strong>
                                         <span style="color:#6b7280;font-size:13px;">{{.event_time}}</span>
                                     </td>
-                                    <td width="33%" align="center" style="border-right:1px solid #e5e7eb;">
+                                    <td width="33%" align="center" style="border-right:1px solid #e5e7eb;" class="info-col">
                                         <span style="display:block;font-size:24px;margin-bottom:8px;">📍</span>
                                         <strong style="display:block;color:#1f2937;font-size:14px;">Location</strong>
                                         <span style="color:#6b7280;font-size:13px;">{{.event_location}}</span>
                                     </td>
-                                    <td width="33%" align="center">
+                                    <td width="33%" align="center" class="info-col">
                                         <span style="display:block;font-size:24px;margin-bottom:8px;">🍕</span>
                                         <strong style="display:block;color:#1f2937;font-size:14px;">Vibe</strong>
                                         <span style="color:#6b7280;font-size:13px;">{{.event_vibe}}</span>
@@ -45,7 +94,7 @@
                             <table border="0" cellspacing="0" cellpadding="0" style="margin:0 auto;">
                                 <tr>
                                     <td align="center" style="border-radius:12px;background-color:#9333ea;box-shadow:0 4px 14px rgba(147,51,234,0.4);">
-                                        <a href="{{.rsvp_url}}" style="display:inline-block;padding:16px 48px;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;">{{.cta_text}}</a>
+                                        <a href="{{.rsvp_url}}" style="display:inline-block;padding:16px 48px;color:#ffffff;font-size:16px;font-weight:bold;text-decoration:none;" class="cta-link">{{.cta_text}}</a>
                                     </td>
                                 </tr>
                             </table>
