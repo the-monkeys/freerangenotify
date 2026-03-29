@@ -1410,7 +1410,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <SelectContent>
                                                 <SelectItem value="email">Email</SelectItem>
                                                 {/* <SelectItem value="push">Push</SelectItem>
-                                                <SelectItem value="sms">SMS</SelectItem> */}
+                                                */}
+                                                <SelectItem value="sms">SMS</SelectItem>
                                                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                 <SelectItem value="webhook">Webhook</SelectItem>
                                                 <SelectItem value="in_app">In-App</SelectItem>
@@ -1857,7 +1858,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     <SelectContent>
                                                         <SelectItem value="email">Email</SelectItem>
                                                         {/* <SelectItem value="push">Push</SelectItem>
-                                                        <SelectItem value="sms">SMS</SelectItem> */}
+                                                        */}
+                                                        <SelectItem value="sms">SMS</SelectItem>
                                                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                         <SelectItem value="in_app">In-App</SelectItem>
                                                         <SelectItem value="sse">SSE</SelectItem>
@@ -2220,7 +2222,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 <SelectItem value="all">All</SelectItem>
                                 <SelectItem value="email">Email</SelectItem>
                                 {/* <SelectItem value="push">Push</SelectItem>
-                                <SelectItem value="sms">SMS</SelectItem> */}
+                                */}
+                                <SelectItem value="sms">SMS</SelectItem>
                                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                 <SelectItem value="webhook">Webhook</SelectItem>
                                 <SelectItem value="in_app">In-App</SelectItem>
