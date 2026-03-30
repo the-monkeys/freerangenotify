@@ -74,6 +74,11 @@ type Repository interface {
 	// DeleteAllBySource deletes all links where this app is the source.
 	DeleteAllBySource(ctx context.Context, sourceAppID string) error
 
+	// DeleteBySourceAndResource removes all links for a specific resource owned by sourceAppID.
+	// Called when an individual resource is deleted from its owning app so that stale links
+	// in any target app that imported that resource are cleaned up immediately.
+	DeleteBySourceAndResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) error
+
 	// CountByResource counts how many target apps link to a specific resource from a specific source.
 	CountByResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) (int64, error)
 

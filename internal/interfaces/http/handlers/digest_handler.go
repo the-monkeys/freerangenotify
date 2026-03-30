@@ -206,6 +206,13 @@ func (h *DigestHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
+	if h.linkRepo != nil {
+		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), appID, resourcelink.TypeDigest, id); err != nil {
+			h.logger.Warn("Failed to clean up resource links for deleted digest rule",
+				zap.String("digest_id", id), zap.String("app_id", appID), zap.Error(err))
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "digest rule deleted",

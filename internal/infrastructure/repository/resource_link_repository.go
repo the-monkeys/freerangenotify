@@ -197,6 +197,21 @@ func (r *ResourceLinkRepository) DeleteAllBySource(ctx context.Context, sourceAp
 	return r.BaseRepository.DeleteByQuery(ctx, query)
 }
 
+func (r *ResourceLinkRepository) DeleteBySourceAndResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) error {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"source_app_id": sourceAppID}},
+					{"term": map[string]interface{}{"resource_type": string(rt)}},
+					{"term": map[string]interface{}{"resource_id": resourceID}},
+				},
+			},
+		},
+	}
+	return r.BaseRepository.DeleteByQuery(ctx, query)
+}
+
 func (r *ResourceLinkRepository) CountByResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) (int64, error) {
 	query := map[string]interface{}{
 		"query": map[string]interface{}{

@@ -208,6 +208,13 @@ func (h *WorkflowHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
+	if h.linkRepo != nil {
+		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), appID, resourcelink.TypeWorkflow, id); err != nil {
+			h.logger.Warn("Failed to clean up resource links for deleted workflow",
+				zap.String("workflow_id", id), zap.String("app_id", appID), zap.Error(err))
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "workflow deleted",

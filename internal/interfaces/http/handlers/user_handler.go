@@ -248,13 +248,21 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 		return errors.BadRequest("user_id is required")
 	}
 
-	// Verify ownership before deleting
-	if _, err := h.verifyUserOwnership(c, userID); err != nil {
+	// Verify ownership before deleting; resolves external_id → internal UUID if needed.
+	u, err := h.verifyUserOwnership(c, userID)
+	if err != nil {
 		return err
 	}
 
 	if err := h.service.Delete(c.Context(), userID); err != nil {
 		return err
+	}
+
+	if h.linkRepo != nil {
+		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), u.AppID, resourcelink.TypeUser, u.UserID); err != nil {
+			h.logger.Warn("Failed to clean up resource links for deleted user",
+				zap.String("user_id", u.UserID), zap.String("app_id", u.AppID), zap.Error(err))
+		}
 	}
 
 	return c.JSON(fiber.Map{

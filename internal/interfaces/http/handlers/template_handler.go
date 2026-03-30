@@ -347,6 +347,13 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
+	if h.linkRepo != nil {
+		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), appID, resourcelink.TypeTemplate, id); err != nil {
+			h.logger.Warn("Failed to clean up resource links for deleted template",
+				zap.String("template_id", id), zap.String("app_id", appID), zap.Error(err))
+		}
+	}
+
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

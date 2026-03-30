@@ -195,6 +195,13 @@ func (h *TopicHandler) Delete(c *fiber.Ctx) error {
 		})
 	}
 
+	if h.linkRepo != nil {
+		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), appID, resourcelink.TypeTopic, id); err != nil {
+			h.logger.Warn("Failed to clean up resource links for deleted topic",
+				zap.String("topic_id", id), zap.String("app_id", appID), zap.Error(err))
+		}
+	}
+
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

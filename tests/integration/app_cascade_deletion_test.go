@@ -400,3 +400,45 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AppWithNoResources() {
 	time.Sleep(1 * time.Second)
 	s.False(s.esDocExists("applications", appID), "empty app should be deleted")
 }
+
+// TestDeleteSourceResource_CleansUpStaleLinksInTargetApps verifies that when
+// an individual resource (e.g. a template) is deleted from its owning (source)
+// app, all link records in target apps that previously imported that resource
+// are removed immediately, preventing stale / orphaned links.
+func (s *AppCascadeDeletionTestSuite) TestDeleteSourceResource_CleansUpStaleLinksInTargetApps() {
+	// 1. Create source app with a template.
+	sourceID, sourceKey := s.createApp("Resource Delete Source App")
+	s.appID = sourceID
+	s.sourceAPIKey = sourceKey
+
+	templateID := s.createTemplate(sourceKey, sourceID, "stale_link_template")
+	s.templateID = templateID
+
+	// 2. Create target app and import the template.
+	targetID, _ := s.createApp("Resource Delete Target App")
+	s.secondAppID = targetID
+
+	time.Sleep(1 * time.Second)
+	s.importResources(targetID, sourceID, []string{"templates"})
+	time.Sleep(1 * time.Second)
+
+	// Verify the link was created.
+	s.Greater(s.esDocCount("app_resource_links", "resource_id", templateID), int64(0),
+		"link should exist after import")
+
+	// 3. Delete the template from the SOURCE app (not the entire app).
+	headers := map[string]string{"Authorization": "Bearer " + sourceKey}
+	resp, body := s.makeRequest(http.MethodDelete, "/v1/templates/"+templateID, nil, headers)
+	s.True(resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent,
+		"delete template: %s", string(body))
+
+	time.Sleep(2 * time.Second)
+
+	// 4. All links pointing to the deleted template must be removed.
+	s.Equal(int64(0), s.esDocCount("app_resource_links", "resource_id", templateID),
+		"stale links should be removed after source resource deletion")
+
+	// 5. The source and target apps themselves must be unaffected.
+	s.True(s.esDocExists("applications", sourceID), "source app should still exist")
+	s.True(s.esDocExists("applications", targetID), "target app should still exist")
+}
