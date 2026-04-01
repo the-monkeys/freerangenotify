@@ -13,7 +13,7 @@ type Repository interface {
 	GetWorkflowByTrigger(ctx context.Context, appID, triggerID string) (*Workflow, error)
 	UpdateWorkflow(ctx context.Context, wf *Workflow) error
 	DeleteWorkflow(ctx context.Context, id string) error
-	ListWorkflows(ctx context.Context, appID, environmentID string, limit, offset int) ([]*Workflow, int64, error)
+	ListWorkflows(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*Workflow, int64, error)
 	CountAll(ctx context.Context) (int64, error)
 	CountByAppIDs(ctx context.Context, appIDs []string) (int64, error)
 

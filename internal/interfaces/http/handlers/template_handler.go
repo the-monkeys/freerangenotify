@@ -29,9 +29,11 @@ type TemplateHandler struct {
 	smtpProvider providers.Provider
 	logger       *zap.Logger
 	linkRepo     resourcelink.Repository
+	templateRepo template.Repository
 }
 
 func (h *TemplateHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
+func (h *TemplateHandler) SetTemplateRepo(repo template.Repository) { h.templateRepo = repo }
 
 func NewTemplateHandler(service *usecases.TemplateService, smtpProvider providers.Provider, logger *zap.Logger) *TemplateHandler {
 	return &TemplateHandler{
@@ -188,10 +190,9 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 	// Include linked templates from other apps
 	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeTemplate)
-		if len(linkedAppIDs) > 0 {
-			filter.AppIDs = append([]string{appID}, linkedAppIDs...)
-			filter.AppID = ""
+		linkedIDs, _ := h.linkRepo.GetAllLinkedResourceIDs(c.Context(), appID, resourcelink.TypeTemplate)
+		if len(linkedIDs) > 0 {
+			filter.LinkedIDs = linkedIDs
 		}
 	}
 
@@ -339,19 +340,65 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.Delete(c.Context(), id, appID); err != nil {
+	// Before deleting, check if other apps have imported this template.
+	// If so, transfer ownership to the first consumer instead of destroying it.
+	if h.linkRepo != nil && h.templateRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), appID, resourcelink.TypeTemplate, id)
+		if len(consumers) > 0 {
+			tmpl, fetchErr := h.templateRepo.GetByID(c.Context(), id)
+			if fetchErr == nil && tmpl != nil {
+				newOwner := consumers[0].TargetAppID
+				tmpl.AppID = newOwner
+				tmpl.UpdatedAt = time.Now()
+				if upErr := h.templateRepo.Update(c.Context(), tmpl); upErr != nil {
+					h.logger.Error("Failed to transfer template ownership",
+						zap.String("template_id", id), zap.String("new_owner", newOwner), zap.Error(upErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": "failed to transfer resource ownership",
+					})
+				}
+				_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+				for _, link := range consumers[1:] {
+					link.SourceAppID = newOwner
+					_ = h.linkRepo.UpdateLink(c.Context(), link)
+				}
+				h.logger.Info("Transferred template ownership to consumer app",
+					zap.String("template_id", id), zap.String("from", appID), zap.String("to", newOwner))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+		}
+	}
+
+	err := h.service.Delete(c.Context(), id, appID)
+	if err != nil {
+		// If delete fails because the template belongs to another app,
+		// check if it's a linked (imported) resource and unlink instead.
+		if h.linkRepo != nil && strings.Contains(err.Error(), "not found") {
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeTemplate, id); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported template",
+						zap.String("template_id", id), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error":   "Failed to unlink template",
+						"message": unlinkErr.Error(),
+					})
+				}
+				h.logger.Info("Unlinked imported template from target app",
+					zap.String("template_id", id), zap.String("app_id", appID))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			// Template exists but no link — stale reference from coarse-grained listing.
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "Template is not associated with this application",
+			})
+		}
 		h.logger.Error("Failed to delete template", zap.String("id", id), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   "Failed to delete template",
 			"message": err.Error(),
 		})
-	}
-
-	if h.linkRepo != nil {
-		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), appID, resourcelink.TypeTemplate, id); err != nil {
-			h.logger.Warn("Failed to clean up resource links for deleted template",
-				zap.String("template_id", id), zap.String("app_id", appID), zap.Error(err))
-		}
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

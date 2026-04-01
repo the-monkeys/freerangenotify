@@ -8,6 +8,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	appDomain "github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"go.uber.org/zap"
 )
@@ -37,6 +38,7 @@ var nonShareableIndices = []string{
 type CascadeDeleter struct {
 	linkRepo resourcelink.Repository
 	esClient *elasticsearch.Client
+	appRepo  appDomain.Repository
 	logger   *zap.Logger
 }
 
@@ -44,11 +46,13 @@ type CascadeDeleter struct {
 func NewCascadeDeleter(
 	linkRepo resourcelink.Repository,
 	esClient *elasticsearch.Client,
+	appRepo appDomain.Repository,
 	logger *zap.Logger,
 ) *CascadeDeleter {
 	return &CascadeDeleter{
 		linkRepo: linkRepo,
 		esClient: esClient,
+		appRepo:  appRepo,
 		logger:   logger,
 	}
 }
@@ -56,9 +60,14 @@ func NewCascadeDeleter(
 // DeleteAppResources runs the full cascade: adopt shared resources, delete
 // unshared resources, purge non-shareable data, and clean up all link records.
 func (d *CascadeDeleter) DeleteAppResources(ctx context.Context, appID string) error {
-	// 1. Adopt or delete shareable resources.
+	// 1. Adopt or delete shareable resources (ES-indexed types).
 	if err := d.handleShareableResources(ctx, appID); err != nil {
 		return fmt.Errorf("cascade shareable resources: %w", err)
+	}
+
+	// 1b. Adopt linked providers (embedded in app settings, not in a separate ES index).
+	if err := d.adoptProviders(ctx, appID); err != nil {
+		d.logger.Warn("Failed to adopt providers", zap.String("app_id", appID), zap.Error(err))
 	}
 
 	// 2. Delete non-shareable (app-scoped) data.
@@ -152,6 +161,78 @@ func (d *CascadeDeleter) handleShareableResources(ctx context.Context, appID str
 	// but there may be stale ones for deleted resources).
 	if err := d.linkRepo.DeleteAllBySource(ctx, appID); err != nil {
 		d.logger.Warn("Failed to delete remaining source links", zap.String("app_id", appID), zap.Error(err))
+	}
+
+	return nil
+}
+
+// adoptProviders transfers custom providers from the deleting app to consumer apps.
+// Providers are embedded in app.Settings.CustomProviders, not in a separate ES index,
+// so they need special handling outside the generic ES-based adoption loop.
+func (d *CascadeDeleter) adoptProviders(ctx context.Context, appID string) error {
+	if d.appRepo == nil {
+		return nil
+	}
+
+	rt := resourcelink.TypeProvider
+	links, err := d.linkRepo.ListBySource(ctx, appID, &rt)
+	if err != nil || len(links) == 0 {
+		return err
+	}
+
+	// Load the source app to get its provider configs.
+	srcApp, err := d.appRepo.GetByID(ctx, appID)
+	if err != nil || srcApp == nil {
+		return err
+	}
+	providerMap := make(map[string]appDomain.CustomProviderConfig, len(srcApp.Settings.CustomProviders))
+	for _, p := range srcApp.Settings.CustomProviders {
+		providerMap[p.ProviderID] = p
+	}
+
+	// Group links by resource_id (provider_id) → list of consumer links.
+	grouped := make(map[string][]*resourcelink.Link)
+	for _, l := range links {
+		grouped[l.ResourceID] = append(grouped[l.ResourceID], l)
+	}
+
+	for providerID, consumers := range grouped {
+		providerCfg, ok := providerMap[providerID]
+		if !ok {
+			continue
+		}
+
+		newOwnerAppID := consumers[0].TargetAppID
+
+		// Append the provider config to the new owner's app settings.
+		newOwnerApp, aErr := d.appRepo.GetByID(ctx, newOwnerAppID)
+		if aErr != nil || newOwnerApp == nil {
+			d.logger.Warn("Failed to load consumer app for provider adoption",
+				zap.String("target_app_id", newOwnerAppID), zap.Error(aErr))
+			continue
+		}
+
+		newOwnerApp.Settings.CustomProviders = append(newOwnerApp.Settings.CustomProviders, providerCfg)
+		if uErr := d.appRepo.Update(ctx, newOwnerApp); uErr != nil {
+			d.logger.Error("Failed to adopt provider into consumer app",
+				zap.String("provider_id", providerID),
+				zap.String("target_app_id", newOwnerAppID), zap.Error(uErr))
+			continue
+		}
+
+		// Delete the link for the new owner (they now own the provider directly).
+		_ = d.linkRepo.Delete(ctx, consumers[0].LinkID)
+
+		// Remaining consumers: re-point source to the new owner.
+		for _, link := range consumers[1:] {
+			link.SourceAppID = newOwnerAppID
+			_ = d.linkRepo.UpdateLink(ctx, link)
+		}
+
+		d.logger.Debug("Provider adopted",
+			zap.String("provider_id", providerID),
+			zap.String("new_owner", newOwnerAppID),
+			zap.Int("remaining_links", len(consumers)-1))
 	}
 
 	return nil

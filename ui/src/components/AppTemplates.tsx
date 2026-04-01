@@ -252,8 +252,10 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                 };
             });
             setDeleteTarget(null);
+            toast.success('Template deleted successfully');
         } catch (error) {
             console.error('Failed to delete template:', error);
+            toast.error(extractErrorMessage(error, 'Failed to delete template'));
         } finally {
             setDeleteLoading(false);
         }
@@ -778,187 +780,187 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                         {templates.map((tmpl) => {
                             const templateName = tmpl.name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
                             return (
-                            <Card key={tmpl.id} className="bg-card border-border/80 shadow-sm">
-                                <CardContent className="space-y-4 pt-5">
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                        <div className="min-w-0 space-y-1">
-                                            <h4 className="truncate text-base font-semibold text-foreground">{templateName}</h4>
-                                            <p className="text-sm text-muted-foreground line-clamp-1 max-w-lg">{tmpl.description || 'No description provided.'}</p>
-                                            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
-                                                <span className="font-mono">{tmpl.id}</span>
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-6 px-2"
-                                                    title="Copy Template ID"
-                                                    onClick={() => {
-                                                        navigator.clipboard.writeText(tmpl.id);
-                                                        toast.success('Template ID copied to clipboard');
-                                                    }}
-                                                >
-                                                    <Copy className="h-3.5 w-3.5" />
-                                                    Copy ID
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <Badge variant="outline" className="px-2 py-1 uppercase">
-                                                {formatChannelLabel(tmpl.channel)}
-                                            </Badge>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7"
-                                                onClick={() => fetchVersionHistory(tmpl)}
-                                            >
-                                                v{tmpl.version} History
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    {tmpl.channel === 'webhook' && (
-                                        <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                                            Target: <span className="font-medium text-foreground">{tmpl.webhook_target || 'Default application webhook'}</span>
-                                        </div>
-                                    )}
-
-                                    {(tmpl.variables || []).length > 0 && (
-                                        <div className="rounded-md border border-border/70 bg-muted/20 p-2.5">
-                                            <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-xs font-medium text-muted-foreground">
-                                                    Variables ({(tmpl.variables || []).length})
-                                                </p>
-                                                {(tmpl.variables || []).length > MAX_INLINE_TEMPLATE_VARIABLES && (
+                                <Card key={tmpl.id} className="bg-card border-border/80 shadow-sm">
+                                    <CardContent className="space-y-4 pt-5">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                            <div className="min-w-0 space-y-1">
+                                                <h4 className="truncate text-base font-semibold text-foreground">{templateName}</h4>
+                                                <p className="text-sm text-muted-foreground line-clamp-1 max-w-lg">{tmpl.description || 'No description provided.'}</p>
+                                                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                                                    <span className="font-mono">{tmpl.id}</span>
                                                     <Button
                                                         type="button"
                                                         variant="ghost"
                                                         size="sm"
-                                                        className="h-6 px-2 text-xs"
-                                                        onClick={() =>
-                                                            setExpandedTemplateVariables((prev) => ({
-                                                                ...prev,
-                                                                [tmpl.id]: !prev[tmpl.id],
-                                                            }))
-                                                        }
+                                                        className="h-6 px-2"
+                                                        title="Copy Template ID"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(tmpl.id);
+                                                            toast.success('Template ID copied to clipboard');
+                                                        }}
                                                     >
-                                                        <ChevronsUpDown className="h-3.5 w-3.5" />
-                                                        {expandedTemplateVariables[tmpl.id]
-                                                            ? 'Show fewer'
-                                                            : `Show all ${(tmpl.variables || []).length}`}
+                                                        <Copy className="h-3.5 w-3.5" />
+                                                        Copy ID
                                                     </Button>
-                                                )}
+                                                </div>
                                             </div>
-                                            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                                                {getVisibleTemplateVariables(tmpl).map((v) => (
-                                                    <Badge key={v} variant="outline" className="h-6 px-2 text-[11px]">
-                                                        {v}
-                                                    </Badge>
-                                                ))}
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Badge variant="outline" className="px-2 py-1 uppercase">
+                                                    {formatChannelLabel(tmpl.channel)}
+                                                </Badge>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-7"
+                                                    onClick={() => fetchVersionHistory(tmpl)}
+                                                >
+                                                    v{tmpl.version} History
+                                                </Button>
                                             </div>
                                         </div>
-                                    )}
 
-                                    <div className="bg-muted/40 rounded-lg border border-dashed border-border/80 p-3.5 relative">
-                                        <div className="mb-2 flex items-center justify-between">
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Template body</div>
+                                        {tmpl.channel === 'webhook' && (
+                                            <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                                                Target: <span className="font-medium text-foreground">{tmpl.webhook_target || 'Default application webhook'}</span>
+                                            </div>
+                                        )}
+
+                                        {(tmpl.variables || []).length > 0 && (
+                                            <div className="rounded-md border border-border/70 bg-muted/20 p-2.5">
+                                                <div className="mb-2 flex items-center justify-between gap-2">
+                                                    <p className="text-xs font-medium text-muted-foreground">
+                                                        Variables ({(tmpl.variables || []).length})
+                                                    </p>
+                                                    {(tmpl.variables || []).length > MAX_INLINE_TEMPLATE_VARIABLES && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-6 px-2 text-xs"
+                                                            onClick={() =>
+                                                                setExpandedTemplateVariables((prev) => ({
+                                                                    ...prev,
+                                                                    [tmpl.id]: !prev[tmpl.id],
+                                                                }))
+                                                            }
+                                                        >
+                                                            <ChevronsUpDown className="h-3.5 w-3.5" />
+                                                            {expandedTemplateVariables[tmpl.id]
+                                                                ? 'Show fewer'
+                                                                : `Show all ${(tmpl.variables || []).length}`}
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                                                    {getVisibleTemplateVariables(tmpl).map((v) => (
+                                                        <Badge key={v} variant="outline" className="h-6 px-2 text-[11px]">
+                                                            {v}
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="bg-muted/40 rounded-lg border border-dashed border-border/80 p-3.5 relative">
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Template body</div>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-[11px]"
+                                                    onClick={() => {
+                                                        setExpandedBodies(prev => ({
+                                                            ...prev,
+                                                            [tmpl.id]: !prev[tmpl.id]
+                                                        }));
+                                                    }}
+                                                >
+                                                    {expandedBodies[tmpl.id] ? 'Collapse' : 'Expand'}
+                                                </Button>
+                                            </div>
+                                            <div style={{
+                                                maxHeight: expandedBodies[tmpl.id] ? 'none' : '84px',
+                                                overflow: 'hidden',
+                                                transition: 'max-height 0.25s ease-in-out'
+                                            }}>
+                                                <pre className="m-0 select-text whitespace-pre-wrap font-mono text-xs text-foreground">{tmpl.body}</pre>
+                                            </div>
+                                            {!expandedBodies[tmpl.id] && (
+                                                <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 rounded-b-lg bg-linear-to-t from-muted/80 to-transparent" />
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2">
                                             <Button
-                                                type="button"
-                                                variant="ghost"
+                                                onClick={() => openPreviewDialog(tmpl)}
+                                                variant="outline"
                                                 size="sm"
-                                                className="h-6 px-2 text-[11px]"
-                                                onClick={() => {
-                                                    setExpandedBodies(prev => ({
-                                                        ...prev,
-                                                        [tmpl.id]: !prev[tmpl.id]
-                                                    }));
-                                                }}
+                                                title={activePreviews[tmpl.id] ? 'Close preview panel for this template' : 'Render and preview this template with sample data'}
                                             >
-                                                {expandedBodies[tmpl.id] ? 'Collapse' : 'Expand'}
+                                                <Eye className="h-3.5 w-3.5" />
+                                                Preview
+                                            </Button>
+                                            <Button
+                                                onClick={() => openDiffViewer(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                title="Compare two saved versions to see field-level changes"
+                                            >
+                                                <GitCompareArrows className="h-3.5 w-3.5" />
+                                                Compare
+                                            </Button>
+                                            <Button
+                                                onClick={() => setTestTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                title="Send a test notification/email using this template"
+                                            >
+                                                <FlaskConical className="h-3.5 w-3.5" />
+                                                Test
+                                            </Button>
+                                            <Button
+                                                onClick={() => setControlsTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                title="Edit business-safe content controls without changing raw template HTML"
+                                            >
+                                                <Settings2 className="h-3.5 w-3.5" />
+                                                Controls
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleSaveVersion(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={savingVersion}
+                                                title="Create an immutable version snapshot of the current template"
+                                            >
+                                                <Save className="h-3.5 w-3.5" />
+                                                {savingVersion ? 'Saving...' : 'Save Version'}
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleEditTemplate(tmpl)}
+                                                variant="outline"
+                                                size="sm"
+                                                title="Edit template content, variables, and metadata"
+                                            >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                                Edit
+                                            </Button>
+                                            <Button
+                                                onClick={() => handleDeleteTemplate(tmpl.id)}
+                                                variant="destructive"
+                                                size="sm"
+                                                title="Permanently delete this template"
+                                                className="border border-red-600/50"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                                Delete
                                             </Button>
                                         </div>
-                                        <div style={{
-                                            maxHeight: expandedBodies[tmpl.id] ? 'none' : '84px',
-                                            overflow: 'hidden',
-                                            transition: 'max-height 0.25s ease-in-out'
-                                        }}>
-                                            <pre className="m-0 select-text whitespace-pre-wrap font-mono text-xs text-foreground">{tmpl.body}</pre>
-                                        </div>
-                                        {!expandedBodies[tmpl.id] && (
-                                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 rounded-b-lg bg-linear-to-t from-muted/80 to-transparent" />
-                                        )}
-                                    </div>
-
-                                    <div className="flex flex-wrap gap-2">
-                                        <Button
-                                            onClick={() => openPreviewDialog(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            title={activePreviews[tmpl.id] ? 'Close preview panel for this template' : 'Render and preview this template with sample data'}
-                                        >
-                                            <Eye className="h-3.5 w-3.5" />
-                                            Preview
-                                        </Button>
-                                        <Button
-                                            onClick={() => openDiffViewer(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            title="Compare two saved versions to see field-level changes"
-                                        >
-                                            <GitCompareArrows className="h-3.5 w-3.5" />
-                                            Compare
-                                        </Button>
-                                        <Button
-                                            onClick={() => setTestTemplate(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            title="Send a test notification/email using this template"
-                                        >
-                                            <FlaskConical className="h-3.5 w-3.5" />
-                                            Test
-                                        </Button>
-                                        <Button
-                                            onClick={() => setControlsTemplate(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            title="Edit business-safe content controls without changing raw template HTML"
-                                        >
-                                            <Settings2 className="h-3.5 w-3.5" />
-                                            Controls
-                                        </Button>
-                                        <Button
-                                            onClick={() => handleSaveVersion(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            disabled={savingVersion}
-                                            title="Create an immutable version snapshot of the current template"
-                                        >
-                                            <Save className="h-3.5 w-3.5" />
-                                            {savingVersion ? 'Saving...' : 'Save Version'}
-                                        </Button>
-                                        <Button
-                                            onClick={() => handleEditTemplate(tmpl)}
-                                            variant="outline"
-                                            size="sm"
-                                            title="Edit template content, variables, and metadata"
-                                        >
-                                            <Pencil className="h-3.5 w-3.5" />
-                                            Edit
-                                        </Button>
-                                        <Button
-                                            onClick={() => handleDeleteTemplate(tmpl.id)}
-                                            variant="destructive"
-                                            size="sm"
-                                            title="Permanently delete this template"
-                                            className="border border-red-600/50"
-                                        >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                            Delete
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        )
+                                    </CardContent>
+                                </Card>
+                            )
                         })}
                     </div>
                 )}

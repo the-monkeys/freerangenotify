@@ -81,9 +81,22 @@ func (r *WorkflowRepository) DeleteWorkflow(ctx context.Context, id string) erro
 	return r.workflows.Delete(ctx, id)
 }
 
-func (r *WorkflowRepository) ListWorkflows(ctx context.Context, appID, environmentID string, limit, offset int) ([]*workflow.Workflow, int64, error) {
-	filters := []map[string]interface{}{
-		{"term": map[string]interface{}{"app_id": appID}},
+func (r *WorkflowRepository) ListWorkflows(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*workflow.Workflow, int64, error) {
+	var filters []map[string]interface{}
+	if len(linkedIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": appID}},
+					{"terms": map[string]interface{}{"id": linkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{"app_id": appID},
+		})
 	}
 	if environmentID != "" && environmentID != "default" {
 		filters = append(filters, map[string]interface{}{

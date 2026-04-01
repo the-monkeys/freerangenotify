@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ type UserHandler struct {
 	validator *validator.Validator
 	logger    *zap.Logger
 	linkRepo  resourcelink.Repository
+	userRepo  user.Repository
 }
 
 // NewUserHandler creates a new UserHandler
@@ -34,6 +36,7 @@ func NewUserHandler(service usecases.UserService, v *validator.Validator, logger
 }
 
 func (h *UserHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
+func (h *UserHandler) SetUserRepo(repo user.Repository)         { h.userRepo = repo }
 
 // getAppID extracts the authenticated app_id from Fiber context.
 func (h *UserHandler) getAppID(c *fiber.Ctx) (string, error) {
@@ -251,18 +254,64 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	// Verify ownership before deleting; resolves external_id → internal UUID if needed.
 	u, err := h.verifyUserOwnership(c, userID)
 	if err != nil {
+		// If ownership check fails, the user may be linked (imported) from another app.
+		if h.linkRepo != nil {
+			appID, _ := h.getAppID(c)
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeUser, userID)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeUser, userID); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported user",
+						zap.String("user_id", userID), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return errors.Internal("failed to unlink user", unlinkErr)
+				}
+				h.logger.Info("Unlinked imported user from target app",
+					zap.String("user_id", userID), zap.String("app_id", appID))
+				return c.JSON(fiber.Map{
+					"success": true,
+					"message": "Linked user removed from this application",
+				})
+			}
+			// User exists but no link — stale reference from coarse-grained listing.
+			// Treat as already disassociated from this app.
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "User is not associated with this application",
+			})
+		}
 		return err
+	}
+
+	// Before deleting, check if other apps have imported this resource.
+	// If so, transfer ownership to the first consumer instead of destroying it.
+	if h.linkRepo != nil && h.userRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), u.AppID, resourcelink.TypeUser, u.UserID)
+		if len(consumers) > 0 {
+			newOwner := consumers[0].TargetAppID
+			u.AppID = newOwner
+			u.UpdatedAt = time.Now()
+			if err := h.userRepo.Update(c.Context(), u); err != nil {
+				h.logger.Error("Failed to transfer user ownership",
+					zap.String("user_id", u.UserID), zap.String("new_owner", newOwner), zap.Error(err))
+				return errors.Internal("failed to transfer resource ownership", err)
+			}
+			// First consumer now owns it — remove their link record.
+			_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+			// Re-point remaining consumer links to the new owner.
+			for _, link := range consumers[1:] {
+				link.SourceAppID = newOwner
+				_ = h.linkRepo.UpdateLink(c.Context(), link)
+			}
+			h.logger.Info("Transferred user ownership to consumer app",
+				zap.String("user_id", u.UserID), zap.String("from", c.Locals("app_id").(string)), zap.String("to", newOwner))
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "User removed from this application (transferred to consumer app)",
+			})
+		}
 	}
 
 	if err := h.service.Delete(c.Context(), userID); err != nil {
 		return err
-	}
-
-	if h.linkRepo != nil {
-		if err := h.linkRepo.DeleteBySourceAndResource(c.Context(), u.AppID, resourcelink.TypeUser, u.UserID); err != nil {
-			h.logger.Warn("Failed to clean up resource links for deleted user",
-				zap.String("user_id", u.UserID), zap.String("app_id", u.AppID), zap.Error(err))
-		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -321,10 +370,9 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 
 	// Include linked users from other apps (cross-app resource linking)
 	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeUser)
-		if len(linkedAppIDs) > 0 {
-			filter.AppIDs = append([]string{appID}, linkedAppIDs...)
-			filter.AppID = ""
+		linkedIDs, _ := h.linkRepo.GetAllLinkedResourceIDs(c.Context(), appID, resourcelink.TypeUser)
+		if len(linkedIDs) > 0 {
+			filter.LinkedUserIDs = linkedIDs
 		}
 	}
 

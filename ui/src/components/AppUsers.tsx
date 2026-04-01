@@ -57,14 +57,14 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadingCSV, setUploadingCSV] = useState(false);
 
-    const { 
-        data: usersData, 
-        loading, 
-        refetch: fetchUsers 
+    const {
+        data: usersData,
+        loading,
+        refetch: fetchUsers
     } = useApiQuery(
         () => usersAPI.list(apiKey, page, pageSize),
         [apiKey, page, pageSize],
-        { 
+        {
             cacheKey: `users-${apiKey}-${page}`,
             staleTime: 60000 // 1 minute
         }
@@ -182,6 +182,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
             await usersAPI.delete(apiKey, deleteTarget.user_id);
             fetchUsers();
             setDeleteTarget(null);
+            toast.success('User deleted successfully');
         } catch (error) {
             console.error('Failed to delete user:', error);
             toast.error(extractErrorMessage(error, 'Failed to delete user'));

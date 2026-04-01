@@ -41,15 +41,15 @@ func (s *topicService) Create(ctx context.Context, appID string, req *topic.Crea
 	}
 
 	t := &topic.Topic{
-		ID:                    uuid.New().String(),
-		AppID:                 appID,
-		EnvironmentID:         req.EnvironmentID,
-		Name:                  req.Name,
-		Key:                   req.Key,
-		Description:           req.Description,
+		ID:                   uuid.New().String(),
+		AppID:                appID,
+		EnvironmentID:        req.EnvironmentID,
+		Name:                 req.Name,
+		Key:                  req.Key,
+		Description:          req.Description,
 		OnSubscribeTriggerID: req.OnSubscribeTriggerID,
-		CreatedAt:             time.Now().UTC(),
-		UpdatedAt:             time.Now().UTC(),
+		CreatedAt:            time.Now().UTC(),
+		UpdatedAt:            time.Now().UTC(),
 	}
 
 	if err := s.repo.Create(ctx, t); err != nil {
@@ -83,8 +83,8 @@ func (s *topicService) GetByKey(ctx context.Context, appID, key string) (*topic.
 	return t, nil
 }
 
-func (s *topicService) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*topic.Topic, int64, error) {
-	topics, total, err := s.repo.List(ctx, appID, environmentID, limit, offset)
+func (s *topicService) List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*topic.Topic, int64, error) {
+	topics, total, err := s.repo.List(ctx, appID, environmentID, linkedIDs, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}

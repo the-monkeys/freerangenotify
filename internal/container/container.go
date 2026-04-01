@@ -669,20 +669,26 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// ── Cross-App Resource Linking (after all feature-gated services) ──
 	container.ResourceLinkRepo = repository.NewResourceLinkRepository(dbManager.Client.GetClient(), logger)
-	cascadeDeleter := services.NewCascadeDeleter(container.ResourceLinkRepo, dbManager.Client.GetClient(), logger)
+	cascadeDeleter := services.NewCascadeDeleter(container.ResourceLinkRepo, dbManager.Client.GetClient(), repos.Application, logger)
 	container.ApplicationService.(*services.ApplicationServiceImpl).SetCascadeDeleter(cascadeDeleter)
 	services.SetAuthCascadeDeleter(container.AuthService, cascadeDeleter)
 	container.UserHandler.SetLinkRepo(container.ResourceLinkRepo)
+	container.UserHandler.SetUserRepo(repos.User)
 	container.TemplateHandler.SetLinkRepo(container.ResourceLinkRepo)
+	container.TemplateHandler.SetTemplateRepo(repos.Template)
 	if container.WorkflowHandler != nil {
 		container.WorkflowHandler.SetLinkRepo(container.ResourceLinkRepo)
+		container.WorkflowHandler.SetWorkflowRepo(repository.NewWorkflowRepository(dbManager.Client.GetClient(), logger))
 	}
 	if container.DigestHandler != nil {
 		container.DigestHandler.SetLinkRepo(container.ResourceLinkRepo)
+		container.DigestHandler.SetDigestRepo(repository.NewDigestRepository(dbManager.Client.GetClient(), logger))
 	}
 	if container.TopicHandler != nil {
 		container.TopicHandler.SetLinkRepo(container.ResourceLinkRepo)
+		container.TopicHandler.SetTopicRepo(repository.NewTopicRepository(dbManager.Client.GetClient(), logger))
 	}
+	container.CustomProviderHandler.SetLinkRepo(container.ResourceLinkRepo)
 	container.ImportHandler = handlers.NewImportHandler(
 		container.ResourceLinkRepo,
 		container.ApplicationService,

@@ -219,7 +219,7 @@ func (s *environmentService) promoteWorkflows(ctx context.Context, appID, source
 		return 0, nil
 	}
 
-	wfs, _, err := s.wfRepo.ListWorkflows(ctx, appID, sourceEnvID, 1000, 0)
+	wfs, _, err := s.wfRepo.ListWorkflows(ctx, appID, sourceEnvID, nil, 1000, 0)
 	if err != nil {
 		return 0, errors.Internal("failed to list source workflows", err)
 	}

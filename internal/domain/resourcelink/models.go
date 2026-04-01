@@ -62,6 +62,10 @@ type Repository interface {
 	// from sourceAppID into targetAppID.
 	GetLinkedResourceIDs(ctx context.Context, targetAppID, sourceAppID string, resourceType ResourceType) ([]string, error)
 
+	// GetAllLinkedResourceIDs returns all resource IDs of the given type
+	// linked into targetAppID from any source app.
+	GetAllLinkedResourceIDs(ctx context.Context, targetAppID string, resourceType ResourceType) ([]string, error)
+
 	// Exists checks whether a specific resource is already linked.
 	Exists(ctx context.Context, targetAppID string, resourceType ResourceType, resourceID string) (bool, error)
 
@@ -78,6 +82,9 @@ type Repository interface {
 	// Called when an individual resource is deleted from its owning app so that stale links
 	// in any target app that imported that resource are cleaned up immediately.
 	DeleteBySourceAndResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) error
+
+	// ListBySourceAndResource returns all links for a specific resource owned by sourceAppID.
+	ListBySourceAndResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) ([]*Link, error)
 
 	// CountByResource counts how many target apps link to a specific resource from a specific source.
 	CountByResource(ctx context.Context, sourceAppID string, resourceType ResourceType, resourceID string) (int64, error)

@@ -9,7 +9,7 @@ type Service interface {
 	Get(ctx context.Context, id, appID string) (*Workflow, error)
 	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*Workflow, error)
 	Delete(ctx context.Context, id, appID string) error
-	List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*Workflow, int64, error)
+	List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*Workflow, int64, error)
 
 	// Execution
 	Trigger(ctx context.Context, appID string, req *TriggerRequest) (*WorkflowExecution, error)

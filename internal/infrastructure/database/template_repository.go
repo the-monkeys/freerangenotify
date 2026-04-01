@@ -254,7 +254,17 @@ func (r *TemplateRepository) Update(ctx context.Context, tmpl *template.Template
 func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) ([]*template.Template, error) {
 	must := []map[string]interface{}{}
 
-	if filter.AppID != "" {
+	if len(filter.LinkedIDs) > 0 && filter.AppID != "" {
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": filter.AppID}},
+					{"terms": map[string]interface{}{"template_id": filter.LinkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else if filter.AppID != "" {
 		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{
 				"app_id": filter.AppID,
@@ -654,7 +664,17 @@ func (r *TemplateRepository) CountByFilter(ctx context.Context, filter template.
 		{"term": map[string]interface{}{"status": "active"}},
 	}
 
-	if filter.AppID != "" {
+	if len(filter.LinkedIDs) > 0 && filter.AppID != "" {
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": filter.AppID}},
+					{"terms": map[string]interface{}{"template_id": filter.LinkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else if filter.AppID != "" {
 		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{"app_id": filter.AppID},
 		})

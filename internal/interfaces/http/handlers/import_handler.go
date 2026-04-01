@@ -52,10 +52,10 @@ func NewImportHandler(
 	}
 }
 
-func (h *ImportHandler) SetTemplateService(ts *usecases.TemplateService)  { h.templateService = ts }
-func (h *ImportHandler) SetWorkflowService(ws workflow.Service)           { h.workflowService = ws }
-func (h *ImportHandler) SetDigestService(ds digest.Service)               { h.digestService = ds }
-func (h *ImportHandler) SetTopicService(ts topic.Service)                 { h.topicService = ts }
+func (h *ImportHandler) SetTemplateService(ts *usecases.TemplateService) { h.templateService = ts }
+func (h *ImportHandler) SetWorkflowService(ws workflow.Service)          { h.workflowService = ws }
+func (h *ImportHandler) SetDigestService(ds digest.Service)              { h.digestService = ds }
+func (h *ImportHandler) SetTopicService(ts topic.Service)                { h.topicService = ts }
 
 // Import handles POST /v1/apps/:id/import
 // @Summary Import resources from another app
@@ -304,7 +304,7 @@ func (h *ImportHandler) listResourceIDs(c *fiber.Ctx, appID string, rt resourcel
 		if h.workflowService == nil {
 			return nil, nil
 		}
-		wfs, _, err := h.workflowService.List(ctx, appID, "", 10000, 0)
+		wfs, _, err := h.workflowService.List(ctx, appID, "", nil, 10000, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -318,7 +318,7 @@ func (h *ImportHandler) listResourceIDs(c *fiber.Ctx, appID string, rt resourcel
 		if h.digestService == nil {
 			return nil, nil
 		}
-		rules, _, err := h.digestService.List(ctx, appID, "", 10000, 0)
+		rules, _, err := h.digestService.List(ctx, appID, "", nil, 10000, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -332,7 +332,7 @@ func (h *ImportHandler) listResourceIDs(c *fiber.Ctx, appID string, rt resourcel
 		if h.topicService == nil {
 			return nil, nil
 		}
-		topics, _, err := h.topicService.List(ctx, appID, "", 10000, 0)
+		topics, _, err := h.topicService.List(ctx, appID, "", nil, 10000, 0)
 		if err != nil {
 			return nil, err
 		}

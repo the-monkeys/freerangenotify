@@ -57,6 +57,7 @@ type Template struct {
 type Filter struct {
 	AppID         string     `json:"app_id,omitempty"`
 	AppIDs        []string   `json:"app_ids,omitempty"`
+	LinkedIDs     []string   `json:"linked_ids,omitempty"`
 	EnvironmentID string     `json:"environment_id,omitempty"`
 	Channel       string     `json:"channel,omitempty"`
 	Name          string     `json:"name,omitempty"`

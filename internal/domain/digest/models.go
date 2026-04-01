@@ -26,7 +26,7 @@ type Repository interface {
 	Create(ctx context.Context, rule *DigestRule) error
 	GetByID(ctx context.Context, id string) (*DigestRule, error)
 	GetActiveByKey(ctx context.Context, appID, digestKey string) (*DigestRule, error)
-	List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*DigestRule, int64, error)
+	List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*DigestRule, int64, error)
 	Update(ctx context.Context, rule *DigestRule) error
 	Delete(ctx context.Context, id string) error
 }
@@ -35,7 +35,7 @@ type Repository interface {
 type Service interface {
 	Create(ctx context.Context, appID string, req *CreateRequest) (*DigestRule, error)
 	Get(ctx context.Context, id, appID string) (*DigestRule, error)
-	List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*DigestRule, int64, error)
+	List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*DigestRule, int64, error)
 	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*DigestRule, error)
 	Delete(ctx context.Context, id, appID string) error
 }

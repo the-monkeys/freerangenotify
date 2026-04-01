@@ -72,13 +72,26 @@ func (r *TopicRepository) GetByKey(ctx context.Context, appID, key string) (*top
 	return &t, nil
 }
 
-func (r *TopicRepository) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*topic.Topic, int64, error) {
+func (r *TopicRepository) List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*topic.Topic, int64, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
-	filters := []map[string]interface{}{
-		{"term": map[string]interface{}{"app_id": appID}},
+	var filters []map[string]interface{}
+	if len(linkedIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": appID}},
+					{"terms": map[string]interface{}{"topic_id": linkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{"app_id": appID},
+		})
 	}
 	if environmentID != "" && environmentID != "default" {
 		filters = append(filters, map[string]interface{}{

@@ -250,7 +250,18 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 
 	var filters []map[string]interface{}
 
-	if filter.AppID != "" {
+	if len(filter.LinkedUserIDs) > 0 && filter.AppID != "" {
+		// Show the app's own users plus specifically-linked users
+		filters = append(filters, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": filter.AppID}},
+					{"terms": map[string]interface{}{"user_id": filter.LinkedUserIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else if filter.AppID != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{
 				"app_id": filter.AppID,
