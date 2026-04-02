@@ -28,7 +28,7 @@ import { CheckSquare, Archive, BellOff, Bell, Eye, X, Send, Clock, Layers, XCirc
 import { toast } from 'sonner';
 import { extractErrorMessage } from '../lib/utils';
 import { TimezonePicker } from './TimezonePicker';
-import { localInTimezoneToISO, formatInTimezone } from '../lib/timezone';
+import { localInTimezoneToISO, formatInTimezone, nowInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
 import EditablePreviewPanel from './templates/EditablePreviewPanel';
 
@@ -737,7 +737,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     const { user } = useAuth();
     const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
-    
+
     // Checks if the user needs phone verification for the current send request
     const checkVerificationAndBlock = useCallback((channel: string) => {
         if ((channel === 'whatsapp' || channel === 'sms') && !user?.phone_verified) {
@@ -749,10 +749,15 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
-        
+
         const selectedTemplate = templates.find(t => t.id === quickTemplateId);
         const channel = selectedTemplate?.channel || 'email';
         if (checkVerificationAndBlock(channel)) return;
+
+        if (quickScheduledAt && quickScheduledAt < nowInTimezone(scheduleTimezone)) {
+            toast.error('Scheduled time must be in the future.');
+            return;
+        }
 
         setQuickSending(true);
         try {
@@ -811,8 +816,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     };
 
     const executeBroadcast = async () => {
+        if (formData.scheduled_at && new Date(formData.scheduled_at) <= new Date()) {
+            toast.error('Scheduled time must be in the future.');
+            setConfirmingBroadcast(false);
+            return;
+        }
+
         if (checkVerificationAndBlock(formData.channel)) return;
-        
+
         setConfirmingBroadcast(false);
         setIsSubmitting(true);
 
@@ -868,7 +879,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
     const handleSendNotification = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
+        if (formData.scheduled_at && new Date(formData.scheduled_at) <= new Date()) {
+            toast.error('Scheduled time must be in the future.');
+            return;
+        }
+
         if (checkVerificationAndBlock(formData.channel)) return;
 
         try {
@@ -1330,6 +1346,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <Input
                                                 id="quickScheduledAt"
                                                 type="datetime-local"
+                                                min={nowInTimezone(scheduleTimezone)}
                                                 value={quickScheduledAt}
                                                 onChange={e => setQuickScheduledAt(e.target.value)}
                                             />
@@ -1667,6 +1684,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <Input
                                                     id="scheduledAt"
                                                     type="datetime-local"
+                                                    min={nowInTimezone(scheduleTimezone)}
                                                     value={formData.scheduled_at ? (() => {
                                                         try {
                                                             const d = new Date(formData.scheduled_at);
@@ -1745,6 +1763,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 <Input
                                                                     id="recurrenceEnd"
                                                                     type="datetime-local"
+                                                                    min={nowInTimezone(scheduleTimezone)}
                                                                     value={formData.recurrence?.end_date ? (() => {
                                                                         try {
                                                                             const d = new Date(formData.recurrence!.end_date!);
@@ -2094,6 +2113,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     <Input
                                                         id="broadcastScheduled"
                                                         type="datetime-local"
+                                                        min={nowInTimezone(scheduleTimezone)}
                                                         value={formData.scheduled_at ? (() => {
                                                             try {
                                                                 const d = new Date(formData.scheduled_at);
@@ -2394,9 +2414,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         </>
                     )
                 }
-                <VerifyPhoneDialog 
-                    open={isVerifyDialogOpen} 
-                    onOpenChange={setIsVerifyDialogOpen} 
+                <VerifyPhoneDialog
+                    open={isVerifyDialogOpen}
+                    onOpenChange={setIsVerifyDialogOpen}
                 />
                 <Pagination
                     currentPage={page}

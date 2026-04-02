@@ -259,7 +259,7 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 			"bool": map[string]interface{}{
 				"should": []map[string]interface{}{
 					{"term": map[string]interface{}{"app_id": filter.AppID}},
-					{"terms": map[string]interface{}{"template_id": filter.LinkedIDs}},
+					{"terms": map[string]interface{}{"id": filter.LinkedIDs}},
 				},
 				"minimum_should_match": 1,
 			},
@@ -669,7 +669,7 @@ func (r *TemplateRepository) CountByFilter(ctx context.Context, filter template.
 			"bool": map[string]interface{}{
 				"should": []map[string]interface{}{
 					{"term": map[string]interface{}{"app_id": filter.AppID}},
-					{"terms": map[string]interface{}{"template_id": filter.LinkedIDs}},
+					{"terms": map[string]interface{}{"id": filter.LinkedIDs}},
 				},
 				"minimum_should_match": 1,
 			},
