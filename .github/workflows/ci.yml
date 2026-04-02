@@ -18,6 +18,9 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    permissions:
+      checks: write          # for test-reporter annotations
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -26,12 +29,26 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       - name: Run unit tests with coverage
         run: |
-          go test -short -coverprofile=unit-coverage.out -covermode=atomic ./...
+          gotestsum --junitfile unit-results.xml -- \
+            -short -coverprofile=unit-coverage.out -covermode=atomic ./...
           go tool cover -func=unit-coverage.out | tail -1
 
+      - name: Publish unit test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Unit Test Results
+          path: unit-results.xml
+          reporter: java-junit
+          fail-on-error: true
+
       - name: Upload unit coverage artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-coverage
@@ -42,6 +59,20 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
+    permissions:
+      checks: write          # for test-reporter annotations
+      contents: read
+    env:
+      # Shared across all steps — server, worker, migrate, and tests all use these.
+      FREERANGE_DATABASE_URLS: http://localhost:9200
+      FREERANGE_REDIS_HOST: localhost
+      FREERANGE_REDIS_PORT: "6379"
+      FREERANGE_SECURITY_JWT_SECRET: ci-test-jwt-secret
+      JWT_SECRET: ci-test-jwt-secret
+      FREERANGE_SECURITY_OPS_SECRET: ci-test-ops-secret
+      FREERANGE_SECURITY_OPS_ENABLED: "true"
+      FREERANGE_APP_ENVIRONMENT: development
+      FREERANGE_APP_DEBUG: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -50,60 +81,71 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Start services
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
+      - name: Start infrastructure services
         run: |
+          # Create empty .env so docker compose doesn't fail on env_file references
+          touch .env
+
           docker compose up -d elasticsearch redis
+
           echo "Waiting for Elasticsearch..."
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             if curl -sf http://localhost:9200/_cluster/health > /dev/null 2>&1; then
-              echo "Elasticsearch ready"
+              echo "Elasticsearch ready after ~$((i*2))s"
               break
+            fi
+            if [ "$i" -eq 60 ]; then
+              echo "ERROR: Elasticsearch did not become ready in time"
+              docker compose logs elasticsearch
+              exit 1
             fi
             sleep 2
           done
+
           echo "Waiting for Redis..."
-          for i in $(seq 1 10); do
+          for i in $(seq 1 15); do
             if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
               echo "Redis ready"
               break
             fi
+            if [ "$i" -eq 15 ]; then
+              echo "ERROR: Redis did not become ready in time"
+              docker compose logs redis
+              exit 1
+            fi
             sleep 1
           done
 
-      - name: Build and start application services
-        env:
-          FREERANGE_DATABASE_URLS: http://localhost:9200
-          FREERANGE_REDIS_HOST: localhost
-          FREERANGE_REDIS_PORT: "6379"
-          FREERANGE_SECURITY_JWT_SECRET: ci-test-jwt-secret
-          JWT_SECRET: ci-test-jwt-secret
-          FREERANGE_SECURITY_OPS_SECRET: ci-test-ops-secret
-          FREERANGE_SECURITY_OPS_ENABLED: "true"
+      - name: Build application binaries
         run: |
-          # Build and run server + worker natively (faster than Docker build)
-          go build -o bin/server ./cmd/server
-          go build -o bin/worker ./cmd/worker
+          go build -o bin/server  ./cmd/server
+          go build -o bin/worker  ./cmd/worker
           go build -o bin/migrate ./cmd/migrate
 
-          # Run migration
-          ./bin/migrate &
-          MIGRATE_PID=$!
-          wait $MIGRATE_PID || true
+      - name: Run database migration
+        run: ./bin/migrate
 
-          # Start server
-          ./bin/server &
+      - name: Start server and worker
+        run: |
+          nohup ./bin/server > /tmp/server.log 2>&1 &
           echo $! > /tmp/server.pid
 
-          # Start worker
-          ./bin/worker &
+          nohup ./bin/worker > /tmp/worker.log 2>&1 &
           echo $! > /tmp/worker.pid
 
-          # Wait for server health
           echo "Waiting for notification service..."
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8080/v1/health > /dev/null 2>&1; then
-              echo "Notification service ready"
+              echo "Notification service ready after ~$((i*2))s"
               break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "ERROR: Notification service did not become healthy"
+              cat /tmp/server.log
+              exit 1
             fi
             sleep 2
           done
@@ -111,54 +153,27 @@ jobs:
       - name: Generate admin token for tests
         id: token
         run: |
-          # Register a test admin user
-          REGISTER_RESP=$(curl -sf -X POST http://localhost:8080/v1/auth/register \
-            -H "Content-Type: application/json" \
-            -d '{"email":"ci-admin@test.local","password":"CiTestP@ss123","full_name":"CI Admin"}' || echo '{}')
-
-          # If registration requires verification, generate token directly via Go
-          # using the known CI JWT secret
-          TOKEN=$(go run -mod=mod - <<'GOEOF'
-          package main
-          import (
-              "fmt"
-              "time"
-              "github.com/golang-jwt/jwt/v5"
-          )
-          func main() {
-              claims := &struct {
-                  UserID string `json:"user_id"`
-                  Email  string `json:"email"`
-                  jwt.RegisteredClaims
-              }{
-                  UserID: "00000000-0000-0000-0000-000000000001",
-                  Email:  "ci-admin@test.local",
-                  RegisteredClaims: jwt.RegisteredClaims{
-                      ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
-                      IssuedAt:  jwt.NewNumericDate(time.Now()),
-                      NotBefore: jwt.NewNumericDate(time.Now()),
-                  },
-              }
-              t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-              s, _ := t.SignedString([]byte("ci-test-jwt-secret"))
-              fmt.Print(s)
-          }
-          GOEOF
-          )
+          TOKEN=$(go run ./scripts/ci/gen_token.go)
           echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Run integration tests
         env:
           INTEGRATION_ADMIN_TOKEN: ${{ steps.token.outputs.token }}
           FREERANGE_OPS_SECRET: ci-test-ops-secret
-          FREERANGE_DATABASE_URLS: http://localhost:9200
-          FREERANGE_REDIS_HOST: localhost
-          FREERANGE_REDIS_PORT: "6379"
-          FREERANGE_SECURITY_JWT_SECRET: ci-test-jwt-secret
-          JWT_SECRET: ci-test-jwt-secret
         run: |
-          go test -v -timeout 300s -coverprofile=integration-coverage.out -covermode=atomic ./tests/integration/...
+          gotestsum --junitfile integration-results.xml -- \
+            -v -timeout 300s -coverprofile=integration-coverage.out -covermode=atomic \
+            ./tests/integration/...
           go tool cover -func=integration-coverage.out | tail -1
+
+      - name: Publish integration test results
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Integration Test Results
+          path: integration-results.xml
+          reporter: java-junit
+          fail-on-error: true
 
       - name: Upload integration coverage artifact
         if: always()
@@ -167,6 +182,16 @@ jobs:
           name: integration-coverage
           path: integration-coverage.out
           retention-days: 7
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== Server log ==="
+          cat /tmp/server.log 2>/dev/null || true
+          echo "=== Worker log ==="
+          cat /tmp/worker.log 2>/dev/null || true
+          echo "=== Elasticsearch log ==="
+          docker compose logs --tail=80 elasticsearch 2>/dev/null || true
 
       - name: Stop services
         if: always()
@@ -196,15 +221,11 @@ jobs:
 
       - name: Merge and report coverage
         run: |
-          # Install gocovmerge
           go install github.com/wadey/gocovmerge@latest
 
-          # Collect all .out files
           FILES=""
           for f in coverage/*/*.out; do
-            if [ -f "$f" ]; then
-              FILES="$FILES $f"
-            fi
+            [ -f "$f" ] && FILES="$FILES $f"
           done
 
           if [ -z "$FILES" ]; then
@@ -212,16 +233,13 @@ jobs:
             exit 0
           fi
 
-          # Merge
           gocovmerge $FILES > merged-coverage.out
 
-          # Summary
           echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           go tool cover -func=merged-coverage.out | tail -20 >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-          # Total line
           TOTAL=$(go tool cover -func=merged-coverage.out | tail -1 | awk '{print $3}')
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Total Coverage: ${TOTAL}**" >> "$GITHUB_STEP_SUMMARY"
