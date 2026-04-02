@@ -237,8 +237,8 @@ jobs:
 
       - name: Merge and report coverage
         run: |
-          go install github.com/wadey/gocovmerge@latest
-
+          # Merge coverage profiles without external tools.
+          # All profiles use atomic mode, so keep the mode line once and concat data lines.
           FILES=""
           for f in coverage/*/*.out; do
             [ -f "$f" ] && FILES="$FILES $f"
@@ -249,7 +249,10 @@ jobs:
             exit 0
           fi
 
-          gocovmerge $FILES > merged-coverage.out
+          echo "mode: atomic" > merged-coverage.out
+          for f in $FILES; do
+            grep -v "^mode:" "$f" >> merged-coverage.out || true
+          done
 
           echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
