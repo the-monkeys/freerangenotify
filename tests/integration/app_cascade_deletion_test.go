@@ -89,12 +89,18 @@ func (s *AppCascadeDeletionTestSuite) getLinks(appID string) []map[string]interf
 
 	var result map[string]interface{}
 	s.parseResponse(body, &result)
-	data, ok := result["data"].([]interface{})
-	if !ok || data == nil {
+
+	// API returns {"data": {"links": [...], "total_count": N}}
+	dataObj, ok := result["data"].(map[string]interface{})
+	if !ok || dataObj == nil {
 		return nil
 	}
-	links := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
+	linksArr, ok := dataObj["links"].([]interface{})
+	if !ok || linksArr == nil {
+		return nil
+	}
+	links := make([]map[string]interface{}, 0, len(linksArr))
+	for _, item := range linksArr {
 		links = append(links, item.(map[string]interface{}))
 	}
 	return links
