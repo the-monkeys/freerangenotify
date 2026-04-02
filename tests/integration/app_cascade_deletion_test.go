@@ -100,6 +100,17 @@ func (s *AppCascadeDeletionTestSuite) getLinks(appID string) []map[string]interf
 	return links
 }
 
+// esRefresh forces Elasticsearch to refresh the given indices so recent writes are searchable.
+func (s *AppCascadeDeletionTestSuite) esRefresh(indices ...string) {
+	for _, idx := range indices {
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_refresh", elasticsearchURL, idx), nil)
+		resp, err := s.client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}
+}
+
 // esDocCount returns the number of documents matching a term query in an ES index.
 func (s *AppCascadeDeletionTestSuite) esDocCount(index, field, value string) int64 {
 	query := map[string]interface{}{
@@ -245,7 +256,8 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AdoptsSharedResources() {
 
 	s.importResources(targetID, sourceID, []string{"users", "templates"})
 
-	time.Sleep(1 * time.Second) // Let import settle.
+	time.Sleep(2 * time.Second) // Let import settle.
+	s.esRefresh("app_resource_links")
 
 	// Verify links exist before deletion.
 	links := s.getLinks(targetID)
@@ -256,7 +268,8 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AdoptsSharedResources() {
 	s.Equal(http.StatusOK, resp.StatusCode, "delete source app: %s", string(body))
 	s.appID = "" // Prevent double-delete.
 
-	time.Sleep(2 * time.Second) // Let cascade propagate.
+	time.Sleep(3 * time.Second) // Let cascade propagate.
+	s.esRefresh("templates", "users", "app_resource_links")
 
 	// 4. Verify resources were ADOPTED, not deleted.
 	//    The template should still exist but now owned by the target app.
@@ -343,14 +356,16 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_MultipleConsumers() {
 	time.Sleep(1 * time.Second)
 	s.importResources(target1ID, sourceID, []string{"templates"})
 	s.importResources(target2ID, sourceID, []string{"templates"})
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
+	s.esRefresh("app_resource_links")
 
 	// 3. Delete the source app.
 	resp, body := s.makeRequest(http.MethodDelete, "/v1/apps/"+sourceID, nil, nil)
 	s.Equal(http.StatusOK, resp.StatusCode, "delete source app: %s", string(body))
 	s.appID = "" // Prevent double-delete.
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
+	s.esRefresh("templates", "app_resource_links")
 
 	// 4. Template should survive — adopted by one of the consumers.
 	s.True(s.esDocExists("templates", templateID), "multi-linked template should be adopted")
