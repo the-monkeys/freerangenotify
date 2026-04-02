@@ -110,9 +110,9 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	)
 
 	// Apply whatsapp: prefix to both sender and recipient (required by Twilio API)
-    if !strings.HasPrefix(fromNumber, "whatsapp:") {
-        fromNumber = "whatsapp:" + fromNumber
-    }
+	if !strings.HasPrefix(fromNumber, "whatsapp:") {
+		fromNumber = "whatsapp:" + fromNumber
+	}
 	toNumber := usr.Phone
 	if !strings.HasPrefix(toNumber, "whatsapp:") {
 		toNumber = "whatsapp:" + toNumber
@@ -175,7 +175,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 			zap.Int("http_status", resp.StatusCode),
 			zap.String("error_message", errMsg),
 			zap.String("raw_body", string(bodyBytes)))
-		return NewErrorResult(fmt.Errorf(errMsg), ErrorTypeProviderAPI), nil
+		return NewErrorResult(fmt.Errorf("%s", errMsg), ErrorTypeProviderAPI), nil
 	}
 
 	providerMsgID := twilioResp.SID

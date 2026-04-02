@@ -126,7 +126,7 @@ jobs:
           go build -o bin/migrate ./cmd/migrate
 
       - name: Run database migration
-        run: ./bin/migrate
+        run: ./bin/migrate up
 
       - name: Start server and worker
         run: |
