@@ -21,6 +21,9 @@ type OpsAuthPlaneSuite struct {
 }
 
 func TestOpsAuthPlaneSuite(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	suite.Run(t, new(OpsAuthPlaneSuite))
 }
 
