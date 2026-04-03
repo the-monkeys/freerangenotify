@@ -67,8 +67,10 @@ func (s *ImportOperationsTestSuite) createUser(apiKey, email string) string {
 }
 
 func (s *ImportOperationsTestSuite) createTemplate(apiKey, name, bodyContent string) string {
+	appID := s.appIDForKey(apiKey)
 	headers := map[string]string{"Authorization": "Bearer " + apiKey}
 	resp, body := s.makeRequest(http.MethodPost, "/v1/templates", map[string]interface{}{
+		"app_id":  appID,
 		"name":    name,
 		"channel": "email",
 		"locale":  "en",
@@ -213,6 +215,18 @@ func (s *ImportOperationsTestSuite) esDocCount(index, field, value string) int64
 	}
 	count, _ := result["count"].(float64)
 	return int64(count)
+}
+
+// appIDForKey returns the app ID associated with the given API key.
+func (s *ImportOperationsTestSuite) appIDForKey(apiKey string) string {
+	if apiKey == s.sourceKey {
+		return s.sourceAppID
+	}
+	if apiKey == s.targetKey {
+		return s.targetAppID
+	}
+	s.FailNow("unknown API key passed to appIDForKey")
+	return ""
 }
 
 func (s *ImportOperationsTestSuite) SetupTest() {
@@ -539,11 +553,11 @@ func (s *ImportOperationsTestSuite) TestDeleteLinkedUser_UnlinksFromTarget() {
 	status, _ := s.getUser(s.targetKey, uid)
 	s.Equal(http.StatusOK, status, "linked user should be accessible")
 
-	// Delete from target.
+	// Delete from target (should unlink, not destroy or transfer).
 	delStatus, result := s.deleteUser(s.targetKey, uid)
 	s.Equal(http.StatusOK, delStatus, "unlink should succeed")
 	msg, _ := result["message"].(string)
-	s.Contains(msg, "Linked", "message should indicate unlink")
+	s.Contains(msg, "removed from this application", "message should indicate removal from app")
 
 	time.Sleep(1 * time.Second)
 
@@ -670,8 +684,10 @@ func (s *ImportOperationsTestSuite) TestRenderTemplate_GoKeywordsPreserved() {
 // createTemplateBareVar creates a template with bare {{var}} syntax (no dot).
 // The API's extractVariables accepts both syntaxes so creation should succeed.
 func (s *ImportOperationsTestSuite) createTemplateBareVar(apiKey, name, bodyContent string) string {
+	appID := s.appIDForKey(apiKey)
 	headers := map[string]string{"Authorization": "Bearer " + apiKey}
 	resp, body := s.makeRequest(http.MethodPost, "/v1/templates", map[string]interface{}{
+		"app_id":  appID,
 		"name":    name,
 		"channel": "sse",
 		"locale":  "en",

@@ -259,6 +259,14 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 
 	// Verify ownership before deleting; resolves external_id → internal UUID if needed.
 	u, err := h.verifyUserOwnership(c, userID)
+	if err == nil {
+		// verifyUserOwnership succeeded — but if the user is not actually owned by
+		// this app (returned via link fallback), treat it as a linked-user delete.
+		appID, _ := h.getAppID(c)
+		if u.AppID != appID {
+			err = errors.NotFound("user", userID)
+		}
+	}
 	if err != nil {
 		// If ownership check fails, the user may be linked (imported) from another app.
 		if h.linkRepo != nil {
