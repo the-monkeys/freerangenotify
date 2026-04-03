@@ -165,7 +165,7 @@ func (s *environmentService) promoteTemplates(ctx context.Context, appID, source
 		EnvironmentID: sourceEnvID,
 		Limit:         1000,
 	}
-	templates, err := s.tmplRepo.List(ctx, filter)
+	templates, _, err := s.tmplRepo.List(ctx, filter)
 	if err != nil {
 		return 0, errors.Internal("failed to list source templates", err)
 	}
@@ -173,7 +173,7 @@ func (s *environmentService) promoteTemplates(ctx context.Context, appID, source
 	count := 0
 	for _, tmpl := range templates {
 		// Check if same-named template exists in target environment
-		existingList, _ := s.tmplRepo.List(ctx, template.Filter{
+		existingList, _, _ := s.tmplRepo.List(ctx, template.Filter{
 			AppID:         appID,
 			EnvironmentID: targetEnvID,
 			Name:          tmpl.Name,

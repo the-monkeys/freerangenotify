@@ -203,13 +203,13 @@ func TestTemplate_List(t *testing.T) {
 		Limit: 10,
 	}
 
-	results, err := service.List(ctx, filter)
+	results, _, err := service.List(ctx, filter)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
 	// List email templates only
 	filter.Channel = notification.ChannelEmail
-	results, err = service.List(ctx, filter)
+	results, _, err = service.List(ctx, filter)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "template-1", results[0].Name)
@@ -426,7 +426,7 @@ func TestTemplate_MultiLanguage(t *testing.T) {
 		Limit:  10,
 	}
 
-	results, err := service.List(ctx, filter)
+	results, _, err := service.List(ctx, filter)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, esTmpl.ID, results[0].ID)
@@ -496,13 +496,67 @@ func TestTemplate_ValidationErrors(t *testing.T) {
 	})
 }
 
+func TestTemplate_List_PaginationTotal(t *testing.T) {
+	service, repo, ctx := setupTemplateTest(t)
+	defer cleanupTemplateIndex(t, repo, ctx)
+
+	// Create 8 templates for the same app
+	for i := 0; i < 8; i++ {
+		req := &template.CreateRequest{
+			AppID:     "app-pagination",
+			Name:      fmt.Sprintf("paginated_%d", i+1),
+			Channel:   "email",
+			Body:      fmt.Sprintf("Body %d", i+1),
+			Locale:    "en",
+			Status:    "active",
+			CreatedBy: "admin",
+		}
+		_, err := service.Create(ctx, req)
+		require.NoError(t, err)
+	}
+
+	time.Sleep(1 * time.Second) // ES indexing
+
+	// Page 1: limit=3, offset=0 → 3 items, total=8
+	results, total, err := service.List(ctx, template.Filter{
+		AppID: "app-pagination", Limit: 3, Offset: 0,
+	})
+	require.NoError(t, err)
+	assert.Len(t, results, 3)
+	assert.Equal(t, int64(8), total, "total must be all matching templates, not page count")
+
+	// Page 2: limit=3, offset=3 → 3 items, total=8
+	results, total, err = service.List(ctx, template.Filter{
+		AppID: "app-pagination", Limit: 3, Offset: 3,
+	})
+	require.NoError(t, err)
+	assert.Len(t, results, 3)
+	assert.Equal(t, int64(8), total)
+
+	// Page 3: limit=3, offset=6 → 2 items, total=8
+	results, total, err = service.List(ctx, template.Filter{
+		AppID: "app-pagination", Limit: 3, Offset: 6,
+	})
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+	assert.Equal(t, int64(8), total)
+
+	// Past end: limit=3, offset=20 → 0 items, total=8
+	results, total, err = service.List(ctx, template.Filter{
+		AppID: "app-pagination", Limit: 3, Offset: 20,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, results)
+	assert.Equal(t, int64(8), total, "total should persist even when offset exceeds count")
+}
+
 func cleanupTemplateIndex(t *testing.T, repo *database.TemplateRepository, ctx context.Context) {
 	// Delete all test templates
 	filter := template.Filter{
 		Limit: 100,
 	}
 
-	templates, err := repo.List(ctx, filter)
+	templates, _, err := repo.List(ctx, filter)
 	if err != nil {
 		t.Logf("Failed to list templates for cleanup: %v", err)
 		return

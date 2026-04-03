@@ -210,13 +210,13 @@ func (s *TemplateService) Delete(ctx context.Context, id, appID string) error {
 }
 
 // List retrieves templates based on filter
-func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter) ([]*templateDomain.Template, error) {
-	templates, err := s.repo.List(ctx, filter)
+func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter) ([]*templateDomain.Template, int64, error) {
+	templates, total, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list templates: %w", err)
+		return nil, 0, fmt.Errorf("failed to list templates: %w", err)
 	}
 
-	return templates, nil
+	return templates, total, nil
 }
 
 // Render renders a template with provided data.

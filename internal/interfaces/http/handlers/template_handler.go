@@ -213,7 +213,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		filter.Limit = 50
 	}
 
-	templates, err := h.service.List(c.Context(), filter)
+	templates, total, err := h.service.List(c.Context(), filter)
 	if err != nil {
 		h.logger.Error("Failed to list templates", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -229,7 +229,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 	return c.JSON(dto.ListTemplatesResponse{
 		Templates: responses,
-		Total:     len(responses),
+		Total:     int(total),
 		Limit:     filter.Limit,
 		Offset:    filter.Offset,
 	})

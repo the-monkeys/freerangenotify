@@ -290,7 +290,7 @@ func (h *ImportHandler) listResourceIDs(c *fiber.Ctx, appID string, rt resourcel
 		if h.templateService == nil {
 			return nil, nil
 		}
-		tmpls, err := h.templateService.List(ctx, templateDomain.Filter{AppID: appID, Limit: 10000})
+		tmpls, _, err := h.templateService.List(ctx, templateDomain.Filter{AppID: appID, Limit: 10000})
 		if err != nil {
 			return nil, err
 		}
