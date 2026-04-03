@@ -39,7 +39,9 @@ func (m *mockTemplateRepo) GetByAppAndName(_ context.Context, appID, name, local
 }
 func (m *mockTemplateRepo) Update(_ context.Context, _ *templateDomain.Template) error { return nil }
 func (m *mockTemplateRepo) Delete(_ context.Context, _ string) error                   { return nil }
-func (m *mockTemplateRepo) Count(_ context.Context) (int64, error)                     { return int64(len(m.templates)), nil }
+func (m *mockTemplateRepo) Count(_ context.Context) (int64, error) {
+	return int64(len(m.templates)), nil
+}
 func (m *mockTemplateRepo) CountByFilter(_ context.Context, f templateDomain.Filter) (int64, error) {
 	count := int64(0)
 	for _, t := range m.templates {
@@ -206,4 +208,55 @@ func TestTemplateService_List_OffsetBeyondTotal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, results)
 	assert.Equal(t, int64(5), total, "total should still report all matching templates even when offset exceeds count")
+}
+
+// ─── NormalizeTemplateBody Tests ─────────────────────────────────────
+
+func TestNormalizeTemplateBody_BareVarBecomeDotted(t *testing.T) {
+	input := "Hello {{name}}, you have {{count}} items"
+	expected := "Hello {{.name}}, you have {{.count}} items"
+	assert.Equal(t, expected, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_AlreadyDotted_Unchanged(t *testing.T) {
+	input := "Hello {{.name}}, you have {{.count}} items"
+	assert.Equal(t, input, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_MixedSyntax(t *testing.T) {
+	input := "Hello {{.name}}, you have {{count}} items"
+	expected := "Hello {{.name}}, you have {{.count}} items"
+	assert.Equal(t, expected, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_KeywordsPreserved(t *testing.T) {
+	input := "{{if .name}}Hello {{.name}}{{end}}"
+	assert.Equal(t, input, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_BareKeywordsPreserved(t *testing.T) {
+	// Bare keywords without dot should NOT get dot-prefixed.
+	input := "{{if .show}}{{.name}}{{else}}hidden{{end}}"
+	assert.Equal(t, input, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_WhitespaceVariants(t *testing.T) {
+	input := "{{ name }} and {{  count  }}"
+	expected := "{{ .name }} and {{  .count  }}"
+	assert.Equal(t, expected, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_EmptyBody(t *testing.T) {
+	assert.Equal(t, "", NormalizeTemplateBody(""))
+}
+
+func TestNormalizeTemplateBody_NoTemplateVars(t *testing.T) {
+	input := "<html><body>Hello World</body></html>"
+	assert.Equal(t, input, NormalizeTemplateBody(input))
+}
+
+func TestNormalizeTemplateBody_ComplexHTMLTemplate(t *testing.T) {
+	input := `<div>{{company_name}}</div><img src="{{.logo_url}}">`
+	expected := `<div>{{.company_name}}</div><img src="{{.logo_url}}">`
+	assert.Equal(t, expected, NormalizeTemplateBody(input))
 }

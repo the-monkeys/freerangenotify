@@ -69,6 +69,12 @@ func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.Us
 		return nil, err
 	}
 	if u.AppID != appID {
+		// Fallback: check if this user is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeUser, userID); linked {
+				return u, nil
+			}
+		}
 		return nil, errors.NotFound("user", userID)
 	}
 	return u, nil

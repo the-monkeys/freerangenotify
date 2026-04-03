@@ -128,11 +128,19 @@ func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 
 	tmpl, err := h.service.GetByID(c.Context(), id, appID)
 	if err != nil {
-		h.logger.Error("Failed to get template", zap.String("id", id), zap.Error(err))
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":   "Template not found",
-			"message": err.Error(),
-		})
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				tmpl, err = h.service.GetByIDReadOnly(c.Context(), id)
+			}
+		}
+		if err != nil {
+			h.logger.Error("Failed to get template", zap.String("id", id), zap.Error(err))
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":   "Template not found",
+				"message": err.Error(),
+			})
+		}
 	}
 
 	return c.JSON(toTemplateResponse(tmpl))
@@ -302,6 +310,14 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	}
 
 	tmpl, err := h.service.Update(c.Context(), id, appID, updateReq)
+	if err != nil && err.Error() == "template not found" {
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				tmpl, err = h.service.UpdateLinked(c.Context(), id, updateReq)
+			}
+		}
+	}
 	if err != nil {
 		h.logger.Error("Failed to update template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -445,6 +461,14 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 	}
 
 	rendered, attrVars, err := h.service.Render(c.Context(), id, appID, req.Data, req.Editable)
+	if err != nil && err.Error() == "template not found" {
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				rendered, attrVars, err = h.service.RenderReadOnly(c.Context(), id, req.Data, req.Editable)
+			}
+		}
+	}
 	if err != nil {
 		h.logger.Error("Failed to render template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {

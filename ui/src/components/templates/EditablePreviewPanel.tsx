@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { SlidePanel } from '../ui/slide-panel';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -241,6 +241,7 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
         : rawVariables;
 
     const [showVariables, setShowVariables] = useState(false);
+    const genericPreviewRef = useRef<HTMLDivElement>(null);
 
     // Listen for inline-edit messages from the preview iframe.
     const handleMessage = useCallback(
@@ -261,6 +262,29 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
     }, [slidePreview, handleMessage]);
+
+    // Attach input listeners on frn-editable spans in the generic (non-iframe) preview.
+    useEffect(() => {
+        const container = genericPreviewRef.current;
+        if (!container || !slidePreview) return;
+
+        const handler = (e: Event) => {
+            const el = e.target as HTMLElement;
+            const varName = el.getAttribute('data-frn-var');
+            if (varName) {
+                onVariableEdit(slidePreview.templateId, varName, el.textContent || '');
+            }
+        };
+
+        container.querySelectorAll<HTMLElement>('[data-frn-var]').forEach((el) =>
+            el.addEventListener('input', handler),
+        );
+        return () => {
+            container.querySelectorAll<HTMLElement>('[data-frn-var]').forEach((el) =>
+                el.removeEventListener('input', handler),
+            );
+        };
+    }, [slidePreview?.templateId, currentPreview?.rendered, onVariableEdit]);
 
     return (
         <SlidePanel
@@ -407,9 +431,11 @@ const EditablePreviewPanel: React.FC<EditablePreviewPanelProps> = ({
                                 ) : slidePreview.channel === 'whatsapp' ? (
                                     <WhatsAppMobilePreview rendered={currentPreview.rendered} mediaUrl={whatsappMediaUrl} />
                                 ) : (
-                                    <div className="h-full p-4 overflow-y-auto text-sm text-foreground whitespace-pre-wrap">
-                                        {currentPreview.rendered}
-                                    </div>
+                                    <div
+                                        ref={genericPreviewRef}
+                                        className="h-full p-4 overflow-y-auto text-sm text-foreground whitespace-pre-wrap [&_.frn-editable]:outline-none [&_.frn-editable]:transition-all [&_.frn-editable]:duration-150 [&_.frn-editable]:cursor-text [&_.frn-editable]:rounded-sm [&_.frn-editable]:min-w-[1ch] [&_.frn-editable:hover]:outline-dashed [&_.frn-editable:hover]:outline-2 [&_.frn-editable:hover]:outline-blue-500 [&_.frn-editable:hover]:bg-blue-500/5 [&_.frn-editable:focus]:outline-solid [&_.frn-editable:focus]:outline-2 [&_.frn-editable:focus]:outline-blue-500 [&_.frn-editable:focus]:bg-blue-500/[0.08]"
+                                        dangerouslySetInnerHTML={{ __html: currentPreview.rendered }}
+                                    />
                                 )
                             ) : (
                                 <div className="flex items-center justify-center h-full text-muted-foreground italic">

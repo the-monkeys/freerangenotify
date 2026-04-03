@@ -25,6 +25,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/orchestrator"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -1157,7 +1158,8 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 	}
 }
 
-// renderTemplate renders a template string with data
+// renderTemplate renders a template string with data.
+// It normalizes bare {{var}} references to {{.var}} for backward compatibility.
 func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]interface{}) (string, error) {
 	if tmplStr == "" {
 		return "", nil
@@ -1167,6 +1169,7 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 		zap.String("template_string", tmplStr),
 		zap.Any("rendering_data", data))
 
+	tmplStr = usecases.NormalizeTemplateBody(tmplStr)
 	tmpl, err := stdtemplate.New("notification").Parse(tmplStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)

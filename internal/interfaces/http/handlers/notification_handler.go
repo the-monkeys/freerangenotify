@@ -13,6 +13,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"go.uber.org/zap"
 )
 
@@ -695,8 +696,10 @@ func (h *NotificationHandler) ListUnread(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"data": responses})
 }
 
-// renderTemplate renders a Go template string with the provided data
+// renderTemplate renders a Go template string with the provided data.
+// It normalizes bare {{var}} references to {{.var}} for backward compatibility.
 func renderTemplate(templateStr string, data map[string]any) (string, error) {
+	templateStr = usecases.NormalizeTemplateBody(templateStr)
 	tmpl, err := template.New("notification").Parse(templateStr)
 	if err != nil {
 		return "", err
