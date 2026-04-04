@@ -40,7 +40,7 @@ jobs:
           # Increment patch
           IFS='.' read -r major minor patch <<< "$BASE_VERSION"
           NEW_PATCH=$((patch + 1))
-          NEW_VERSION="$major.$minor.$NEW_PATCH-alpha"
+          NEW_VERSION="$major.$minor.$NEW_PATCH"
           
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "Bumping from $CURRENT_VERSION to $NEW_VERSION"

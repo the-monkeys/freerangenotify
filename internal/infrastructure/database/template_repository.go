@@ -251,10 +251,20 @@ func (r *TemplateRepository) Update(ctx context.Context, tmpl *template.Template
 }
 
 // List retrieves templates based on filter criteria
-func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) ([]*template.Template, error) {
+func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) ([]*template.Template, int64, error) {
 	must := []map[string]interface{}{}
 
-	if filter.AppID != "" {
+	if len(filter.LinkedIDs) > 0 && filter.AppID != "" {
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": filter.AppID}},
+					{"terms": map[string]interface{}{"id": filter.LinkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else if filter.AppID != "" {
 		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{
 				"app_id": filter.AppID,
@@ -358,7 +368,7 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 
 	queryData, err := json.Marshal(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query: %w", err)
+		return nil, 0, fmt.Errorf("failed to marshal query: %w", err)
 	}
 
 	req := esapi.SearchRequest{
@@ -368,23 +378,26 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 
 	res, err := req.Do(ctx, r.es.Client)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search templates: %w", err)
+		return nil, 0, fmt.Errorf("failed to search templates: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
-		return nil, fmt.Errorf("error searching templates: %s", res.String())
+		return nil, 0, fmt.Errorf("error searching templates: %s", res.String())
 	}
 
 	var result struct {
 		Hits struct {
+			Total struct {
+				Value int64 `json:"value"`
+			} `json:"total"`
 			Hits []struct {
 				Source template.Template `json:"_source"`
 			} `json:"hits"`
 		} `json:"hits"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode search result: %w", err)
+		return nil, 0, fmt.Errorf("failed to decode search result: %w", err)
 	}
 
 	templates := make([]*template.Template, len(result.Hits.Hits))
@@ -392,7 +405,7 @@ func (r *TemplateRepository) List(ctx context.Context, filter template.Filter) (
 		templates[i] = &hit.Source
 	}
 
-	return templates, nil
+	return templates, result.Hits.Total.Value, nil
 }
 
 // Delete hard-deletes a template from Elasticsearch.
@@ -654,7 +667,17 @@ func (r *TemplateRepository) CountByFilter(ctx context.Context, filter template.
 		{"term": map[string]interface{}{"status": "active"}},
 	}
 
-	if filter.AppID != "" {
+	if len(filter.LinkedIDs) > 0 && filter.AppID != "" {
+		must = append(must, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": filter.AppID}},
+					{"terms": map[string]interface{}{"id": filter.LinkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else if filter.AppID != "" {
 		must = append(must, map[string]interface{}{
 			"term": map[string]interface{}{"app_id": filter.AppID},
 		})

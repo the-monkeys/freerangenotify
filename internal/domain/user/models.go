@@ -75,6 +75,7 @@ type Device struct {
 type UserFilter struct {
 	AppID         string   `json:"app_id,omitempty"`
 	AppIDs        []string `json:"app_ids,omitempty"`
+	LinkedUserIDs []string `json:"linked_user_ids,omitempty"`
 	EnvironmentID string   `json:"environment_id,omitempty"`
 	Email         string   `json:"email,omitempty"`
 	FullName      string   `json:"full_name,omitempty"`

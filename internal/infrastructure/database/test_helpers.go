@@ -11,8 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// SetupTestElasticsearch creates a test Elasticsearch client and returns a cleanup function
+// SetupTestElasticsearch creates a test Elasticsearch client and returns a cleanup function.
+// It requires a running Elasticsearch instance and is skipped in short mode.
 func SetupTestElasticsearch(t *testing.T) (*elasticsearch.Client, func()) {
+	if testing.Short() {
+		t.Skip("skipping ES-dependent test in short mode")
+	}
 	// Connect to test Elasticsearch (assumes localhost:9200)
 	cfg := elasticsearch.Config{
 		Addresses: []string{"http://localhost:9200"},

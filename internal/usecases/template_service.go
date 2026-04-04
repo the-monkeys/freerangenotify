@@ -105,6 +105,48 @@ func (s *TemplateService) GetByID(ctx context.Context, id, appID string) (*templ
 	return tmpl, nil
 }
 
+// GetByIDReadOnly retrieves a template by ID without ownership verification.
+// Used for linked (imported) templates where the caller has already been
+// authorized via a resource link check.
+func (s *TemplateService) GetByIDReadOnly(ctx context.Context, id string) (*templateDomain.Template, error) {
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get template: %w", err)
+	}
+	return tmpl, nil
+}
+
+// RenderReadOnly renders a template without ownership verification.
+// Used for linked (imported) templates where the caller has already been
+// authorized via a resource link check.
+func (s *TemplateService) RenderReadOnly(ctx context.Context, templateID string, data map[string]interface{}, editable bool) (string, []templateDomain.AttributeVar, error) {
+	tmpl, err := s.repo.GetByID(ctx, templateID)
+	if err != nil {
+		return "", nil, fmt.Errorf("template not found: %w", err)
+	}
+
+	if tmpl.Status != "active" {
+		return "", nil, fmt.Errorf("template is not active")
+	}
+
+	body := tmpl.Body
+	var attrVars []templateDomain.AttributeVar
+	if editable {
+		attrVars = classifyAttributeVariables(body)
+		body = wrapEditableVariables(body)
+	}
+
+	rendered, err := s.renderTemplate(body, data)
+	if err != nil {
+		s.logger.Error("Failed to render template",
+			zap.String("id", templateID),
+			zap.Error(err))
+		return "", nil, fmt.Errorf("failed to render template: %w", err)
+	}
+
+	return rendered, attrVars, nil
+}
+
 // GetByName retrieves the latest active template by app ID, name, and locale
 func (s *TemplateService) GetByName(ctx context.Context, appID, name, locale string) (*templateDomain.Template, error) {
 	tmpl, err := s.repo.GetByAppAndName(ctx, appID, name, locale)
@@ -189,6 +231,69 @@ func (s *TemplateService) Update(ctx context.Context, id, appID string, req *tem
 	return tmpl, nil
 }
 
+// UpdateLinked updates a linked (imported) template without ownership verification.
+// The caller must have already confirmed that a resource link exists.
+func (s *TemplateService) UpdateLinked(ctx context.Context, id string, req *templateDomain.UpdateRequest) (*templateDomain.Template, error) {
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("template not found: %w", err)
+	}
+
+	if req.Name != nil && *req.Name != "" {
+		tmpl.Name = *req.Name
+	}
+	if req.Description != nil && *req.Description != "" {
+		tmpl.Description = *req.Description
+	}
+	if req.WebhookTarget != nil {
+		tmpl.WebhookTarget = *req.WebhookTarget
+	}
+	if req.Subject != nil {
+		tmpl.Subject = *req.Subject
+	}
+	if req.Body != nil && *req.Body != "" {
+		tmpl.Body = *req.Body
+		if req.Variables == nil || len(*req.Variables) == 0 {
+			tmpl.Variables = extractVariables(tmpl.Body)
+		}
+		if err := s.validateTemplateVariables(tmpl.Body, tmpl.Variables); err != nil {
+			return nil, fmt.Errorf("template validation failed: %w", err)
+		}
+	}
+	if req.Variables != nil && len(*req.Variables) > 0 {
+		tmpl.Variables = *req.Variables
+	}
+	if req.Metadata != nil {
+		tmpl.Metadata = req.Metadata
+	}
+	if req.Controls != nil {
+		tmpl.Controls = *req.Controls
+	}
+	if req.ControlValues != nil {
+		tmpl.ControlValues = req.ControlValues
+	}
+	if req.Status != nil && *req.Status != "" {
+		validStatuses := map[string]bool{"active": true, "inactive": true, "archived": true}
+		if !validStatuses[*req.Status] {
+			return nil, fmt.Errorf("invalid status: %s", *req.Status)
+		}
+		tmpl.Status = *req.Status
+	}
+	if req.UpdatedBy != "" {
+		tmpl.UpdatedBy = req.UpdatedBy
+	}
+
+	if err := s.repo.Update(ctx, tmpl); err != nil {
+		s.logger.Error("Failed to update linked template", zap.String("id", id), zap.Error(err))
+		return nil, fmt.Errorf("failed to update template: %w", err)
+	}
+
+	s.logger.Info("Updated linked template",
+		zap.String("id", tmpl.ID),
+		zap.String("name", tmpl.Name))
+	return tmpl, nil
+}
+
 // Delete permanently removes a template from the datastore.
 func (s *TemplateService) Delete(ctx context.Context, id, appID string) error {
 	// Verify ownership before delete
@@ -210,13 +315,13 @@ func (s *TemplateService) Delete(ctx context.Context, id, appID string) error {
 }
 
 // List retrieves templates based on filter
-func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter) ([]*templateDomain.Template, error) {
-	templates, err := s.repo.List(ctx, filter)
+func (s *TemplateService) List(ctx context.Context, filter templateDomain.Filter) ([]*templateDomain.Template, int64, error) {
+	templates, total, err := s.repo.List(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list templates: %w", err)
+		return nil, 0, fmt.Errorf("failed to list templates: %w", err)
 	}
 
-	return templates, nil
+	return templates, total, nil
 }
 
 // Render renders a template with provided data.
@@ -667,9 +772,43 @@ func classifyAttrVarType(body string, pos int) string {
 	return "attribute"
 }
 
-// renderTemplate renders a Go template with provided data
+// templateKeywordsSet contains Go template keywords and built-in functions
+// that must NOT be prefixed with a dot during normalization.
+var templateKeywordsSet = map[string]bool{
+	"if": true, "else": true, "end": true, "range": true,
+	"with": true, "define": true, "template": true, "block": true,
+	"nil": true, "not": true, "and": true, "or": true,
+	"eq": true, "ne": true, "lt": true, "le": true, "gt": true, "ge": true,
+	"print": true, "printf": true, "println": true, "len": true,
+	"index": true, "call": true, "html": true, "js": true, "urlquery": true,
+}
+
+// normalizeVarRe matches bare {{varName}} (no dot, no pipe, no space-separated args)
+// and captures the leading whitespace + variable name.
+var normalizeVarRe = regexp.MustCompile(`\{\{(\s*)(\w+)(\s*)\}\}`)
+
+// NormalizeTemplateBody rewrites bare {{varName}} references to {{.varName}}
+// so that Go's text/template parser treats them as field accesses instead of
+// undefined function calls. Already-dotted {{.varName}} and Go template
+// keywords (if, end, range, etc.) are left untouched.
+func NormalizeTemplateBody(body string) string {
+	return normalizeVarRe.ReplaceAllStringFunc(body, func(match string) string {
+		subs := normalizeVarRe.FindStringSubmatch(match)
+		if len(subs) < 4 {
+			return match
+		}
+		name := subs[2]
+		if templateKeywordsSet[name] {
+			return match
+		}
+		return "{{" + subs[1] + "." + name + subs[3] + "}}"
+	})
+}
+
+// renderTemplate renders a Go template with provided data.
+// It normalizes bare {{var}} references to {{.var}} for backward compatibility.
 func (s *TemplateService) renderTemplate(body string, data map[string]interface{}) (string, error) {
-	// Support both {{var}} and {{.var}} by ensuring data is accessible as dot
+	body = NormalizeTemplateBody(body)
 	tmpl, err := template.New("notification").Parse(body)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)

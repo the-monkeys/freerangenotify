@@ -245,6 +245,7 @@ const AppDetail: React.FC = () => {
         try {
             await applicationsAPI.delete(id);
             setConfirmAction(null);
+            toast.success('Application deleted successfully');
             navigate('/');
         } catch (error) {
             console.error('Failed to delete application:', error);

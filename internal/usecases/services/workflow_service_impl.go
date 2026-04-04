@@ -148,14 +148,14 @@ func (s *workflowService) Delete(ctx context.Context, id, appID string) error {
 	return s.repo.DeleteWorkflow(ctx, id)
 }
 
-func (s *workflowService) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*workflow.Workflow, int64, error) {
+func (s *workflowService) List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*workflow.Workflow, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	if limit > 100 {
 		limit = 100
 	}
-	return s.repo.ListWorkflows(ctx, appID, environmentID, limit, offset)
+	return s.repo.ListWorkflows(ctx, appID, environmentID, linkedIDs, limit, offset)
 }
 
 func (s *workflowService) Trigger(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, error) {

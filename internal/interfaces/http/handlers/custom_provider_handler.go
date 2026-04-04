@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -19,7 +20,10 @@ type CustomProviderHandler struct {
 	service        usecases.ApplicationService
 	membershipRepo auth.MembershipRepository
 	logger         *zap.Logger
+	linkRepo       resourcelink.Repository
 }
+
+func (h *CustomProviderHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 
 // NewCustomProviderHandler creates a new CustomProviderHandler.
 func NewCustomProviderHandler(service usecases.ApplicationService, membershipRepo auth.MembershipRepository, logger *zap.Logger) *CustomProviderHandler {
@@ -118,7 +122,7 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 		Channel:    req.Channel,
 		WebhookURL: req.WebhookURL,
 		Headers:    req.Headers,
-		SigningKey:  signingKey,
+		SigningKey: signingKey,
 		Active:     true,
 		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
@@ -171,6 +175,18 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 
 	providers := make([]application.CustomProviderConfig, len(app.Settings.CustomProviders))
 	copy(providers, app.Settings.CustomProviders)
+
+	// Merge linked providers from source apps.
+	if h.linkRepo != nil {
+		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeProvider)
+		for _, srcAppID := range linkedAppIDs {
+			srcApp, sErr := h.service.GetByID(c.Context(), srcAppID)
+			if sErr == nil && srcApp != nil {
+				providers = append(providers, srcApp.Settings.CustomProviders...)
+			}
+		}
+	}
+
 	for i := range providers {
 		if len(providers[i].SigningKey) > 4 {
 			providers[i].SigningKey = "****" + providers[i].SigningKey[len(providers[i].SigningKey)-4:]
@@ -228,7 +244,69 @@ func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 	}
 
 	if !found {
+		// Provider not in this app's settings — check if it's a linked (imported) provider.
+		if h.linkRepo != nil {
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeProvider, providerID)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeProvider, providerID); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported provider",
+						zap.String("provider_id", providerID), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return errors.Internal("failed to unlink provider", unlinkErr)
+				}
+				h.logger.Info("Unlinked imported provider from target app",
+					zap.String("provider_id", providerID), zap.String("app_id", appID))
+				return c.JSON(fiber.Map{
+					"success": true,
+					"message": "linked provider removed from this application",
+				})
+			}
+		}
 		return errors.BadRequest("custom provider not found")
+	}
+
+	// Before removing, check if other apps have imported this provider.
+	// If so, transfer the config to the first consumer instead of destroying it.
+	if h.linkRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), appID, resourcelink.TypeProvider, providerID)
+		if len(consumers) > 0 {
+			newOwner := consumers[0].TargetAppID
+			// Copy provider config to the first consumer's app settings.
+			consumerApp, cErr := h.service.GetByID(c.Context(), newOwner)
+			if cErr == nil && consumerApp != nil {
+				// Find the removed provider config.
+				var transferredConfig application.CustomProviderConfig
+				for _, cp := range app.Settings.CustomProviders {
+					if cp.ProviderID == providerID {
+						transferredConfig = cp
+						break
+					}
+				}
+				consumerApp.Settings.CustomProviders = append(consumerApp.Settings.CustomProviders, transferredConfig)
+				if upErr := h.service.UpdateSettings(c.Context(), newOwner, consumerApp.Settings); upErr != nil {
+					h.logger.Error("Failed to transfer provider to consumer",
+						zap.String("provider_id", providerID), zap.String("new_owner", newOwner), zap.Error(upErr))
+					return errors.Internal("failed to transfer provider ownership", upErr)
+				}
+			}
+			// Remove from source app settings.
+			app.Settings.CustomProviders = filtered
+			if err := h.service.UpdateSettings(c.Context(), appID, app.Settings); err != nil {
+				return err
+			}
+			// First consumer now owns it — remove their link record.
+			_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+			// Re-point remaining consumer links to the new owner.
+			for _, link := range consumers[1:] {
+				link.SourceAppID = newOwner
+				_ = h.linkRepo.UpdateLink(c.Context(), link)
+			}
+			h.logger.Info("Transferred provider to consumer app",
+				zap.String("provider_id", providerID), zap.String("from", appID), zap.String("to", newOwner))
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "custom provider removed (transferred to consumer app)",
+			})
+		}
 	}
 
 	app.Settings.CustomProviders = filtered

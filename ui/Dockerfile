@@ -13,7 +13,7 @@ RUN npm install
 # This allows hot reloading without rebuilding the image
 
 # Expose the port the Vite dev server runs on
-EXPOSE 5173
+EXPOSE 3000
 
 # Start Vite dev server accessible from host
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

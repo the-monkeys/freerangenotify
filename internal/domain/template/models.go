@@ -57,6 +57,7 @@ type Template struct {
 type Filter struct {
 	AppID         string     `json:"app_id,omitempty"`
 	AppIDs        []string   `json:"app_ids,omitempty"`
+	LinkedIDs     []string   `json:"linked_ids,omitempty"`
 	EnvironmentID string     `json:"environment_id,omitempty"`
 	Channel       string     `json:"channel,omitempty"`
 	Name          string     `json:"name,omitempty"`
@@ -75,7 +76,7 @@ type Repository interface {
 	GetByID(ctx context.Context, id string) (*Template, error)
 	GetByAppAndName(ctx context.Context, appID, name, locale string) (*Template, error)
 	Update(ctx context.Context, template *Template) error
-	List(ctx context.Context, filter Filter) ([]*Template, error)
+	List(ctx context.Context, filter Filter) ([]*Template, int64, error)
 	Count(ctx context.Context) (int64, error)
 	CountByFilter(ctx context.Context, filter Filter) (int64, error)
 	Delete(ctx context.Context, id string) error
@@ -105,7 +106,7 @@ type Service interface {
 	GetByName(ctx context.Context, appID, name, locale string) (*Template, error)
 	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*Template, error)
 	Delete(ctx context.Context, id, appID string) error
-	List(ctx context.Context, filter Filter) ([]*Template, error)
+	List(ctx context.Context, filter Filter) ([]*Template, int64, error)
 	Render(ctx context.Context, templateID, appID string, variables map[string]interface{}, editable bool) (string, []AttributeVar, error)
 	CreateVersion(ctx context.Context, templateID, appID, updatedBy string) (*Template, error)
 	GetVersions(ctx context.Context, appID, name, locale string) ([]*Template, error)

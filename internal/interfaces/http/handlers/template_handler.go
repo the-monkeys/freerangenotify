@@ -29,9 +29,11 @@ type TemplateHandler struct {
 	smtpProvider providers.Provider
 	logger       *zap.Logger
 	linkRepo     resourcelink.Repository
+	templateRepo template.Repository
 }
 
 func (h *TemplateHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
+func (h *TemplateHandler) SetTemplateRepo(repo template.Repository) { h.templateRepo = repo }
 
 func NewTemplateHandler(service *usecases.TemplateService, smtpProvider providers.Provider, logger *zap.Logger) *TemplateHandler {
 	return &TemplateHandler{
@@ -126,11 +128,19 @@ func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 
 	tmpl, err := h.service.GetByID(c.Context(), id, appID)
 	if err != nil {
-		h.logger.Error("Failed to get template", zap.String("id", id), zap.Error(err))
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error":   "Template not found",
-			"message": err.Error(),
-		})
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				tmpl, err = h.service.GetByIDReadOnly(c.Context(), id)
+			}
+		}
+		if err != nil {
+			h.logger.Error("Failed to get template", zap.String("id", id), zap.Error(err))
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error":   "Template not found",
+				"message": err.Error(),
+			})
+		}
 	}
 
 	return c.JSON(toTemplateResponse(tmpl))
@@ -188,10 +198,9 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 	// Include linked templates from other apps
 	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeTemplate)
-		if len(linkedAppIDs) > 0 {
-			filter.AppIDs = append([]string{appID}, linkedAppIDs...)
-			filter.AppID = ""
+		linkedIDs, _ := h.linkRepo.GetAllLinkedResourceIDs(c.Context(), appID, resourcelink.TypeTemplate)
+		if len(linkedIDs) > 0 {
+			filter.LinkedIDs = linkedIDs
 		}
 	}
 
@@ -212,7 +221,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		filter.Limit = 50
 	}
 
-	templates, err := h.service.List(c.Context(), filter)
+	templates, total, err := h.service.List(c.Context(), filter)
 	if err != nil {
 		h.logger.Error("Failed to list templates", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -228,7 +237,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 	return c.JSON(dto.ListTemplatesResponse{
 		Templates: responses,
-		Total:     len(responses),
+		Total:     int(total),
 		Limit:     filter.Limit,
 		Offset:    filter.Offset,
 	})
@@ -301,6 +310,14 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	}
 
 	tmpl, err := h.service.Update(c.Context(), id, appID, updateReq)
+	if err != nil && err.Error() == "template not found" {
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				tmpl, err = h.service.UpdateLinked(c.Context(), id, updateReq)
+			}
+		}
+	}
 	if err != nil {
 		h.logger.Error("Failed to update template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {
@@ -339,7 +356,60 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := h.service.Delete(c.Context(), id, appID); err != nil {
+	// Before deleting, check if other apps have imported this template.
+	// If so, transfer ownership to the first consumer instead of destroying it.
+	if h.linkRepo != nil && h.templateRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), appID, resourcelink.TypeTemplate, id)
+		if len(consumers) > 0 {
+			tmpl, fetchErr := h.templateRepo.GetByID(c.Context(), id)
+			if fetchErr == nil && tmpl != nil {
+				newOwner := consumers[0].TargetAppID
+				tmpl.AppID = newOwner
+				tmpl.UpdatedAt = time.Now()
+				if upErr := h.templateRepo.Update(c.Context(), tmpl); upErr != nil {
+					h.logger.Error("Failed to transfer template ownership",
+						zap.String("template_id", id), zap.String("new_owner", newOwner), zap.Error(upErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": "failed to transfer resource ownership",
+					})
+				}
+				_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+				for _, link := range consumers[1:] {
+					link.SourceAppID = newOwner
+					_ = h.linkRepo.UpdateLink(c.Context(), link)
+				}
+				h.logger.Info("Transferred template ownership to consumer app",
+					zap.String("template_id", id), zap.String("from", appID), zap.String("to", newOwner))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+		}
+	}
+
+	err := h.service.Delete(c.Context(), id, appID)
+	if err != nil {
+		// If delete fails because the template belongs to another app,
+		// check if it's a linked (imported) resource and unlink instead.
+		if h.linkRepo != nil && strings.Contains(err.Error(), "not found") {
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeTemplate, id); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported template",
+						zap.String("template_id", id), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error":   "Failed to unlink template",
+						"message": unlinkErr.Error(),
+					})
+				}
+				h.logger.Info("Unlinked imported template from target app",
+					zap.String("template_id", id), zap.String("app_id", appID))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			// Template exists but no link — stale reference from coarse-grained listing.
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "Template is not associated with this application",
+			})
+		}
 		h.logger.Error("Failed to delete template", zap.String("id", id), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   "Failed to delete template",
@@ -391,6 +461,14 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 	}
 
 	rendered, attrVars, err := h.service.Render(c.Context(), id, appID, req.Data, req.Editable)
+	if err != nil && err.Error() == "template not found" {
+		// Fallback: check if this template is linked (imported) to the requesting app
+		if h.linkRepo != nil {
+			if linked, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTemplate, id); linked {
+				rendered, attrVars, err = h.service.RenderReadOnly(c.Context(), id, req.Data, req.Editable)
+			}
+		}
+	}
 	if err != nil {
 		h.logger.Error("Failed to render template", zap.String("id", id), zap.Error(err))
 		if err.Error() == "template not found" {

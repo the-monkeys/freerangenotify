@@ -38,73 +38,77 @@ queue:
   retry_attempts: 3
   retry_delay: 5
 
+# Provider credentials are supplied via environment variables.
+# Viper picks them up automatically with the FREERANGE_ prefix
+# (e.g., FREERANGE_PROVIDERS_SMTP_HOST overrides providers.smtp.host).
+# Only put plain defaults here — never ${VAR:-default} shell syntax.
 providers:
   fcm:
-    server_key: "${FCM_SERVER_KEY:-}"
-    project_id: "${FCM_PROJECT_ID:-}"
+    server_key: ""
+    project_id: ""
     timeout: 30
     max_retries: 3
   
   apns:
-    key_id: "${APNS_KEY_ID:-}"
-    team_id: "${APNS_TEAM_ID:-}"
-    bundle_id: "${APNS_BUNDLE_ID:-}"
-    key_path: "${APNS_KEY_PATH:-}"
+    key_id: ""
+    team_id: ""
+    bundle_id: ""
+    key_path: ""
     production: false
   
   sendgrid:
-    api_key: "${FREERANGE_PROVIDERS_SENDGRID_API_KEY:-}"
-    from_email: "${FREERANGE_PROVIDERS_SENDGRID_FROM_EMAIL:-noreply@freerangenotify.com}"
-    from_name: "${FREERANGE_PROVIDERS_SENDGRID_FROM_NAME:-FreeRangeNotify}"
+    api_key: ""
+    from_email: "noreply@freerangenotify.com"
+    from_name: "FreeRangeNotify"
     timeout: 30
     max_retries: 3
   
   smtp:
-    host: "${FREERANGE_PROVIDERS_SMTP_HOST:-}"
-    port: "${FREERANGE_PROVIDERS_SMTP_PORT:-587}"
-    username: "${FREERANGE_PROVIDERS_SMTP_USERNAME:-}"
-    password: "${FREERANGE_PROVIDERS_SMTP_PASSWORD:-}"
-    from_email: "${FREERANGE_PROVIDERS_SMTP_FROM_EMAIL:-}"
-    from_name: "${FREERANGE_PROVIDERS_SMTP_FROM_NAME:-}"
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from_email: ""
+    from_name: ""
     timeout: 30
     max_retries: 3
   
   twilio:
-    account_sid: "${TWILIO_ACCOUNT_SID:-}"
-    auth_token: "${TWILIO_AUTH_TOKEN:-}"
-    from_number: "${TWILIO_FROM_NUMBER:-}"
+    account_sid: ""
+    auth_token: ""
+    from_number: ""
     timeout: 30
     max_retries: 3
 
   # Phase 3
   slack:
     enabled: false
-    default_webhook_url: "${FREERANGE_PROVIDERS_SLACK_DEFAULT_WEBHOOK_URL:-}"
+    default_webhook_url: ""
     timeout: 10
     max_retries: 3
 
   discord:
     enabled: false
-    default_webhook_url: "${FREERANGE_PROVIDERS_DISCORD_DEFAULT_WEBHOOK_URL:-}"
+    default_webhook_url: ""
     timeout: 10
     max_retries: 3
 
   whatsapp:
     enabled: true
-    account_sid: "${FREERANGE_PROVIDERS_WHATSAPP_ACCOUNT_SID:-}"
-    auth_token: "${FREERANGE_PROVIDERS_WHATSAPP_AUTH_TOKEN:-}"
-    from_number: "${FREERANGE_PROVIDERS_WHATSAPP_FROM_NUMBER:-}"
+    account_sid: ""
+    auth_token: ""
+    from_number: ""
     timeout: 15
     max_retries: 3
 
   # AWS SES (Phase C)
   ses:
     enabled: false
-    region: "${FREERANGE_PROVIDERS_SES_REGION:-us-east-1}"
-    access_key_id: "${FREERANGE_PROVIDERS_SES_ACCESS_KEY_ID:-}"
-    secret_access_key: "${FREERANGE_PROVIDERS_SES_SECRET_ACCESS_KEY:-}"
-    from_email: "${FREERANGE_PROVIDERS_SES_FROM_EMAIL:-}"
-    from_name: "${FREERANGE_PROVIDERS_SES_FROM_NAME:-FreeRangeNotify}"
+    region: "us-east-1"
+    access_key_id: ""
+    secret_access_key: ""
+    from_email: ""
+    from_name: "FreeRangeNotify"
 
 monitoring:
   enabled: true
@@ -113,7 +117,7 @@ monitoring:
   namespace: "freerange_dev"
 
 security:
-  jwt_secret: "${JWT_SECRET:-dev-secret-key-change-in-production}"
+  jwt_secret: "dev-secret-key-change-in-production"
   jwt_access_expiration: 15  # minutes
   jwt_refresh_expiration: 10080  # 7 days in minutes
   api_key_header: "X-API-Key"
@@ -166,7 +170,7 @@ licensing:
   hosted:
     source: "internal_es"     # internal_es | webhook_sync
   self_hosted:
-    license_key: "${FREERANGE_LICENSING_SELF_HOSTED_LICENSE_KEY:-}"
-    public_key_pem: "${FREERANGE_LICENSING_SELF_HOSTED_PUBLIC_KEY_PEM:-}"
-    license_server_url: "${FREERANGE_LICENSING_SELF_HOSTED_LICENSE_SERVER_URL:-}"
+    license_key: ""
+    public_key_pem: ""
+    license_server_url: ""
     verify_interval_seconds: 300

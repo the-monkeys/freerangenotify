@@ -94,6 +94,31 @@ func (r *ResourceLinkRepository) GetLinkedResourceIDs(ctx context.Context, targe
 	return ids, nil
 }
 
+func (r *ResourceLinkRepository) GetAllLinkedResourceIDs(ctx context.Context, targetAppID string, rt resourcelink.ResourceType) ([]string, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"target_app_id": targetAppID}},
+					{"term": map[string]interface{}{"resource_type": string(rt)}},
+				},
+			},
+		},
+		"size": 10000,
+	}
+	result, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		if id, ok := hit["resource_id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 func (r *ResourceLinkRepository) Exists(ctx context.Context, targetAppID string, rt resourcelink.ResourceType, resourceID string) (bool, error) {
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
@@ -195,6 +220,49 @@ func (r *ResourceLinkRepository) DeleteAllBySource(ctx context.Context, sourceAp
 		},
 	}
 	return r.BaseRepository.DeleteByQuery(ctx, query)
+}
+
+func (r *ResourceLinkRepository) DeleteBySourceAndResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) error {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"source_app_id": sourceAppID}},
+					{"term": map[string]interface{}{"resource_type": string(rt)}},
+					{"term": map[string]interface{}{"resource_id": resourceID}},
+				},
+			},
+		},
+	}
+	return r.BaseRepository.DeleteByQuery(ctx, query)
+}
+
+func (r *ResourceLinkRepository) ListBySourceAndResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) ([]*resourcelink.Link, error) {
+	query := map[string]interface{}{
+		"query": map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []map[string]interface{}{
+					{"term": map[string]interface{}{"source_app_id": sourceAppID}},
+					{"term": map[string]interface{}{"resource_type": string(rt)}},
+					{"term": map[string]interface{}{"resource_id": resourceID}},
+				},
+			},
+		},
+		"size": 10000,
+	}
+	result, err := r.BaseRepository.Search(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	links := make([]*resourcelink.Link, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		raw, _ := json.Marshal(hit)
+		var link resourcelink.Link
+		if err := json.Unmarshal(raw, &link); err == nil {
+			links = append(links, &link)
+		}
+	}
+	return links, nil
 }
 
 func (r *ResourceLinkRepository) CountByResource(ctx context.Context, sourceAppID string, rt resourcelink.ResourceType, resourceID string) (int64, error) {

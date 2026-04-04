@@ -68,14 +68,14 @@ func (s *digestService) Get(ctx context.Context, id, appID string) (*digest.Dige
 	return rule, nil
 }
 
-func (s *digestService) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*digest.DigestRule, int64, error) {
+func (s *digestService) List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*digest.DigestRule, int64, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	if limit > 100 {
 		limit = 100
 	}
-	return s.repo.List(ctx, appID, environmentID, limit, offset)
+	return s.repo.List(ctx, appID, environmentID, linkedIDs, limit, offset)
 }
 
 func (s *digestService) Update(ctx context.Context, id, appID string, req *digest.UpdateRequest) (*digest.DigestRule, error) {

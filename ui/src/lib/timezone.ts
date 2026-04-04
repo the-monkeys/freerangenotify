@@ -52,6 +52,13 @@ export function localInTimezoneToISO(datetimeLocal: string, timeZone: string): s
 }
 
 /**
+ * Return the current moment in the given timezone as "YYYY-MM-DDTHH:mm" (for datetime-local min).
+ */
+export function nowInTimezone(timeZone: string): string {
+  return formatInTimezone(new Date(), timeZone);
+}
+
+/**
  * Format a UTC date (ISO string or Date) in the given timezone as "yyyy-MM-dd'T'HH:mm".
  */
 export function formatInTimezone(utcDate: Date | string, timeZone: string): string {

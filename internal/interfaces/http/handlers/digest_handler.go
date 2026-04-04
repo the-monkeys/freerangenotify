@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
@@ -12,13 +13,15 @@ import (
 
 // DigestHandler handles HTTP requests for digest rule operations.
 type DigestHandler struct {
-	service   digest.Service
-	validator *validator.Validator
-	logger    *zap.Logger
-	linkRepo  resourcelink.Repository
+	service    digest.Service
+	validator  *validator.Validator
+	logger     *zap.Logger
+	linkRepo   resourcelink.Repository
+	digestRepo digest.Repository
 }
 
 func (h *DigestHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
+func (h *DigestHandler) SetDigestRepo(repo digest.Repository)     { h.digestRepo = repo }
 
 // NewDigestHandler creates a new digest handler.
 func NewDigestHandler(service digest.Service, v *validator.Validator, logger *zap.Logger) *DigestHandler {
@@ -94,22 +97,17 @@ func (h *DigestHandler) List(c *fiber.Ctx) error {
 		envID = id
 	}
 
-	rules, total, err := h.service.List(c.Context(), appID, envID, limit, offset)
+	// Include linked digest rules from other apps in a single query.
+	var linkedIDs []string
+	if h.linkRepo != nil {
+		linkedIDs, _ = h.linkRepo.GetAllLinkedResourceIDs(c.Context(), appID, resourcelink.TypeDigest)
+	}
+
+	rules, total, err := h.service.List(c.Context(), appID, envID, linkedIDs, limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-	}
-
-	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeDigest)
-		for _, srcAppID := range linkedAppIDs {
-			linked, linkedTotal, lErr := h.service.List(c.Context(), srcAppID, envID, limit, 0)
-			if lErr == nil {
-				rules = append(rules, linked...)
-				total += linkedTotal
-			}
-		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -200,7 +198,64 @@ func (h *DigestHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 
-	if err := h.service.Delete(c.Context(), id, appID); err != nil {
+	// Before deleting, check if other apps have imported this digest rule.
+	// If so, transfer ownership to the first consumer instead of destroying it.
+	if h.linkRepo != nil && h.digestRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), appID, resourcelink.TypeDigest, id)
+		if len(consumers) > 0 {
+			rule, fetchErr := h.digestRepo.GetByID(c.Context(), id)
+			if fetchErr == nil && rule != nil && rule.AppID == appID {
+				newOwner := consumers[0].TargetAppID
+				rule.AppID = newOwner
+				rule.UpdatedAt = time.Now()
+				if upErr := h.digestRepo.Update(c.Context(), rule); upErr != nil {
+					h.logger.Error("Failed to transfer digest rule ownership",
+						zap.String("digest_id", id), zap.String("new_owner", newOwner), zap.Error(upErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": "failed to transfer resource ownership",
+					})
+				}
+				_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+				for _, link := range consumers[1:] {
+					link.SourceAppID = newOwner
+					_ = h.linkRepo.UpdateLink(c.Context(), link)
+				}
+				h.logger.Info("Transferred digest rule ownership to consumer app",
+					zap.String("digest_id", id), zap.String("from", appID), zap.String("to", newOwner))
+				return c.JSON(fiber.Map{
+					"success": true,
+					"message": "digest rule removed from this application (transferred to consumer app)",
+				})
+			}
+		}
+	}
+
+	err := h.service.Delete(c.Context(), id, appID)
+	if err != nil {
+		// If the digest rule belongs to another app, check if it's linked and unlink instead.
+		if h.linkRepo != nil {
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeDigest, id)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeDigest, id); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported digest rule",
+						zap.String("digest_id", id), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": unlinkErr.Error(),
+					})
+				}
+				h.logger.Info("Unlinked imported digest rule from target app",
+					zap.String("digest_id", id), zap.String("app_id", appID))
+				return c.JSON(fiber.Map{
+					"success": true,
+					"message": "linked digest rule removed from this application",
+				})
+			}
+			// Digest rule exists but no link — stale reference from coarse-grained listing.
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "Digest rule is not associated with this application",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})

@@ -89,15 +89,32 @@ func (s *AppCascadeDeletionTestSuite) getLinks(appID string) []map[string]interf
 
 	var result map[string]interface{}
 	s.parseResponse(body, &result)
-	data, ok := result["data"].([]interface{})
-	if !ok || data == nil {
+
+	// API returns {"data": {"links": [...], "total_count": N}}
+	dataObj, ok := result["data"].(map[string]interface{})
+	if !ok || dataObj == nil {
 		return nil
 	}
-	links := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
+	linksArr, ok := dataObj["links"].([]interface{})
+	if !ok || linksArr == nil {
+		return nil
+	}
+	links := make([]map[string]interface{}, 0, len(linksArr))
+	for _, item := range linksArr {
 		links = append(links, item.(map[string]interface{}))
 	}
 	return links
+}
+
+// esRefresh forces Elasticsearch to refresh the given indices so recent writes are searchable.
+func (s *AppCascadeDeletionTestSuite) esRefresh(indices ...string) {
+	for _, idx := range indices {
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_refresh", elasticsearchURL, idx), nil)
+		resp, err := s.client.Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}
 }
 
 // esDocCount returns the number of documents matching a term query in an ES index.
@@ -245,7 +262,8 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AdoptsSharedResources() {
 
 	s.importResources(targetID, sourceID, []string{"users", "templates"})
 
-	time.Sleep(1 * time.Second) // Let import settle.
+	time.Sleep(2 * time.Second) // Let import settle.
+	s.esRefresh("app_resource_links")
 
 	// Verify links exist before deletion.
 	links := s.getLinks(targetID)
@@ -256,7 +274,8 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AdoptsSharedResources() {
 	s.Equal(http.StatusOK, resp.StatusCode, "delete source app: %s", string(body))
 	s.appID = "" // Prevent double-delete.
 
-	time.Sleep(2 * time.Second) // Let cascade propagate.
+	time.Sleep(3 * time.Second) // Let cascade propagate.
+	s.esRefresh("templates", "users", "app_resource_links")
 
 	// 4. Verify resources were ADOPTED, not deleted.
 	//    The template should still exist but now owned by the target app.
@@ -343,14 +362,16 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_MultipleConsumers() {
 	time.Sleep(1 * time.Second)
 	s.importResources(target1ID, sourceID, []string{"templates"})
 	s.importResources(target2ID, sourceID, []string{"templates"})
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
+	s.esRefresh("app_resource_links")
 
 	// 3. Delete the source app.
 	resp, body := s.makeRequest(http.MethodDelete, "/v1/apps/"+sourceID, nil, nil)
 	s.Equal(http.StatusOK, resp.StatusCode, "delete source app: %s", string(body))
 	s.appID = "" // Prevent double-delete.
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
+	s.esRefresh("templates", "app_resource_links")
 
 	// 4. Template should survive — adopted by one of the consumers.
 	s.True(s.esDocExists("templates", templateID), "multi-linked template should be adopted")
@@ -399,4 +420,46 @@ func (s *AppCascadeDeletionTestSuite) TestDeleteApp_AppWithNoResources() {
 
 	time.Sleep(1 * time.Second)
 	s.False(s.esDocExists("applications", appID), "empty app should be deleted")
+}
+
+// TestDeleteSourceResource_CleansUpStaleLinksInTargetApps verifies that when
+// an individual resource (e.g. a template) is deleted from its owning (source)
+// app, all link records in target apps that previously imported that resource
+// are removed immediately, preventing stale / orphaned links.
+func (s *AppCascadeDeletionTestSuite) TestDeleteSourceResource_CleansUpStaleLinksInTargetApps() {
+	// 1. Create source app with a template.
+	sourceID, sourceKey := s.createApp("Resource Delete Source App")
+	s.appID = sourceID
+	s.sourceAPIKey = sourceKey
+
+	templateID := s.createTemplate(sourceKey, sourceID, "stale_link_template")
+	s.templateID = templateID
+
+	// 2. Create target app and import the template.
+	targetID, _ := s.createApp("Resource Delete Target App")
+	s.secondAppID = targetID
+
+	time.Sleep(1 * time.Second)
+	s.importResources(targetID, sourceID, []string{"templates"})
+	time.Sleep(1 * time.Second)
+
+	// Verify the link was created.
+	s.Greater(s.esDocCount("app_resource_links", "resource_id", templateID), int64(0),
+		"link should exist after import")
+
+	// 3. Delete the template from the SOURCE app (not the entire app).
+	headers := map[string]string{"Authorization": "Bearer " + sourceKey}
+	resp, body := s.makeRequest(http.MethodDelete, "/v1/templates/"+templateID, nil, headers)
+	s.True(resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent,
+		"delete template: %s", string(body))
+
+	time.Sleep(2 * time.Second)
+
+	// 4. All links pointing to the deleted template must be removed.
+	s.Equal(int64(0), s.esDocCount("app_resource_links", "resource_id", templateID),
+		"stale links should be removed after source resource deletion")
+
+	// 5. The source and target apps themselves must be unaffected.
+	s.True(s.esDocExists("applications", sourceID), "source app should still exist")
+	s.True(s.esDocExists("applications", targetID), "target app should still exist")
 }

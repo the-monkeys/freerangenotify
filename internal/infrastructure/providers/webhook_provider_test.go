@@ -35,10 +35,10 @@ func TestWebhookProvider_Send(t *testing.T) {
 			// Verify Body
 			body, err := io.ReadAll(r.Body)
 			assert.NoError(t, err)
-			var payload notification.Notification
+			var payload WebhookPayload
 			err = json.Unmarshal(body, &payload)
 			assert.NoError(t, err)
-			assert.Equal(t, "123", payload.NotificationID)
+			assert.Equal(t, "123", payload.ID)
 
 			// Verify Signature
 			signature := r.Header.Get("X-Webhook-Signature")

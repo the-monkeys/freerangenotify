@@ -623,3 +623,128 @@ func (s *TemplateHTTPTestSuite) TestTemplateStatusChange() {
 	// Implementation may return error for inactive templates
 	s.True(resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest)
 }
+
+// TestListTemplatesPaginationTotal verifies the total field reflects all matching
+// templates across pages, not just the count in the current page.
+func (s *TemplateHTTPTestSuite) TestListTemplatesPaginationTotal() {
+	apiKey := s.setupForTemplateTests()
+	headers := map[string]string{"Authorization": "Bearer " + apiKey}
+
+	const totalTemplates = 7
+	for i := 0; i < totalTemplates; i++ {
+		payload := map[string]interface{}{
+			"app_id":    s.appID,
+			"name":      fmt.Sprintf("pagination_%d", i+1),
+			"channel":   "email",
+			"body":      fmt.Sprintf("Body %d", i+1),
+			"variables": []string{},
+		}
+		resp, _ := s.makeRequest(http.MethodPost, "/v1/templates", payload, headers)
+		s.Require().Equal(http.StatusCreated, resp.StatusCode)
+	}
+
+	time.Sleep(2 * time.Second) // ES indexing
+
+	// Page 1: limit=3, offset=0
+	resp, body := s.makeRequest(http.MethodGet, "/v1/templates?limit=3&offset=0", nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var page1 map[string]interface{}
+	s.parseResponse(body, &page1)
+
+	templates := page1["templates"].([]interface{})
+	total := int(page1["total"].(float64))
+	limit := int(page1["limit"].(float64))
+	offset := int(page1["offset"].(float64))
+
+	s.Equal(3, len(templates), "page 1 should contain limit items")
+	s.Equal(totalTemplates, total, "total must be all matching templates, not page count")
+	s.Equal(3, limit)
+	s.Equal(0, offset)
+
+	// Page 2: limit=3, offset=3
+	resp, body = s.makeRequest(http.MethodGet, "/v1/templates?limit=3&offset=3", nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var page2 map[string]interface{}
+	s.parseResponse(body, &page2)
+
+	templates2 := page2["templates"].([]interface{})
+	total2 := int(page2["total"].(float64))
+
+	s.Equal(3, len(templates2), "page 2 should contain limit items")
+	s.Equal(totalTemplates, total2, "total should be identical across pages")
+
+	// Page 3: limit=3, offset=6 → only 1 remaining
+	resp, body = s.makeRequest(http.MethodGet, "/v1/templates?limit=3&offset=6", nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var page3 map[string]interface{}
+	s.parseResponse(body, &page3)
+
+	templates3 := page3["templates"].([]interface{})
+	total3 := int(page3["total"].(float64))
+
+	s.Equal(1, len(templates3), "last page should contain remainder")
+	s.Equal(totalTemplates, total3, "total unchanged on last page")
+
+	// Verify no duplicate IDs across pages
+	seen := map[string]bool{}
+	allPages := [][]interface{}{templates, templates2, templates3}
+	for _, page := range allPages {
+		for _, t := range page {
+			id := t.(map[string]interface{})["id"].(string)
+			s.False(seen[id], "template %s appeared on multiple pages", id)
+			seen[id] = true
+		}
+	}
+	s.Equal(totalTemplates, len(seen), "all templates should appear exactly once across pages")
+}
+
+// TestListTemplatesPaginationWithFilter verifies that total reflects
+// the filtered count, not the unfiltered total.
+func (s *TemplateHTTPTestSuite) TestListTemplatesPaginationWithFilter() {
+	apiKey := s.setupForTemplateTests()
+	headers := map[string]string{"Authorization": "Bearer " + apiKey}
+
+	// Create 4 email and 3 push templates
+	for i := 0; i < 4; i++ {
+		payload := map[string]interface{}{
+			"app_id":  s.appID,
+			"name":    fmt.Sprintf("email_filtered_%d", i+1),
+			"channel": "email",
+			"body":    "Email body",
+		}
+		resp, _ := s.makeRequest(http.MethodPost, "/v1/templates", payload, headers)
+		s.Require().Equal(http.StatusCreated, resp.StatusCode)
+	}
+	for i := 0; i < 3; i++ {
+		payload := map[string]interface{}{
+			"app_id":  s.appID,
+			"name":    fmt.Sprintf("push_filtered_%d", i+1),
+			"channel": "push",
+			"body":    "Push body",
+		}
+		resp, _ := s.makeRequest(http.MethodPost, "/v1/templates", payload, headers)
+		s.Require().Equal(http.StatusCreated, resp.StatusCode)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Filter by channel=email with small page
+	resp, body := s.makeRequest(http.MethodGet, "/v1/templates?channel=email&limit=2&offset=0", nil, headers)
+	s.Require().Equal(http.StatusOK, resp.StatusCode)
+
+	var result map[string]interface{}
+	s.parseResponse(body, &result)
+
+	templates := result["templates"].([]interface{})
+	total := int(result["total"].(float64))
+
+	s.Equal(2, len(templates), "page should have limit items")
+	s.Equal(4, total, "total should reflect email-only count, not all 7 templates")
+
+	for _, t := range templates {
+		s.Equal("email", t.(map[string]interface{})["channel"])
+	}
+}

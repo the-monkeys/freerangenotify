@@ -135,3 +135,4 @@ deploy/
 abc.json
 ui/a.json
 cmd/newsletter-broadcaster/*
+elasticsearch/*

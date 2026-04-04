@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
@@ -16,9 +17,11 @@ type TopicHandler struct {
 	validator *validator.Validator
 	logger    *zap.Logger
 	linkRepo  resourcelink.Repository
+	topicRepo topic.Repository
 }
 
 func (h *TopicHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
+func (h *TopicHandler) SetTopicRepo(repo topic.Repository)       { h.topicRepo = repo }
 
 // NewTopicHandler creates a new topic handler.
 func NewTopicHandler(service topic.Service, v *validator.Validator, logger *zap.Logger) *TopicHandler {
@@ -94,22 +97,17 @@ func (h *TopicHandler) List(c *fiber.Ctx) error {
 		envID = id
 	}
 
-	topics, total, err := h.service.List(c.Context(), appID, envID, limit, offset)
+	// Include linked topics from other apps in a single query.
+	var linkedIDs []string
+	if h.linkRepo != nil {
+		linkedIDs, _ = h.linkRepo.GetAllLinkedResourceIDs(c.Context(), appID, resourcelink.TypeTopic)
+	}
+
+	topics, total, err := h.service.List(c.Context(), appID, envID, linkedIDs, limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
-	}
-
-	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeTopic)
-		for _, srcAppID := range linkedAppIDs {
-			linked, linkedTotal, lErr := h.service.List(c.Context(), srcAppID, envID, limit, 0)
-			if lErr == nil {
-				topics = append(topics, linked...)
-				total += linkedTotal
-			}
-		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -189,7 +187,58 @@ func (h *TopicHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
 
-	if err := h.service.Delete(c.Context(), id, appID); err != nil {
+	// Before deleting, check if other apps have imported this topic.
+	// If so, transfer ownership to the first consumer instead of destroying it.
+	if h.linkRepo != nil && h.topicRepo != nil {
+		consumers, _ := h.linkRepo.ListBySourceAndResource(c.Context(), appID, resourcelink.TypeTopic, id)
+		if len(consumers) > 0 {
+			t, fetchErr := h.topicRepo.GetByID(c.Context(), id)
+			if fetchErr == nil && t != nil && t.AppID == appID {
+				newOwner := consumers[0].TargetAppID
+				t.AppID = newOwner
+				t.UpdatedAt = time.Now()
+				if upErr := h.topicRepo.Update(c.Context(), t); upErr != nil {
+					h.logger.Error("Failed to transfer topic ownership",
+						zap.String("topic_id", id), zap.String("new_owner", newOwner), zap.Error(upErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": "failed to transfer resource ownership",
+					})
+				}
+				_ = h.linkRepo.Delete(c.Context(), consumers[0].LinkID)
+				for _, link := range consumers[1:] {
+					link.SourceAppID = newOwner
+					_ = h.linkRepo.UpdateLink(c.Context(), link)
+				}
+				h.logger.Info("Transferred topic ownership to consumer app",
+					zap.String("topic_id", id), zap.String("from", appID), zap.String("to", newOwner))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+		}
+	}
+
+	err := h.service.Delete(c.Context(), id, appID)
+	if err != nil {
+		// If the topic belongs to another app, check if it's linked and unlink instead.
+		if h.linkRepo != nil {
+			exists, _ := h.linkRepo.Exists(c.Context(), appID, resourcelink.TypeTopic, id)
+			if exists {
+				if unlinkErr := h.linkRepo.DeleteByTargetAndResource(c.Context(), appID, resourcelink.TypeTopic, id); unlinkErr != nil {
+					h.logger.Error("Failed to unlink imported topic",
+						zap.String("topic_id", id), zap.String("app_id", appID), zap.Error(unlinkErr))
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+						"error": unlinkErr.Error(),
+					})
+				}
+				h.logger.Info("Unlinked imported topic from target app",
+					zap.String("topic_id", id), zap.String("app_id", appID))
+				return c.SendStatus(fiber.StatusNoContent)
+			}
+			// Topic exists but no link — stale reference from coarse-grained listing.
+			return c.JSON(fiber.Map{
+				"success": true,
+				"message": "Topic is not associated with this application",
+			})
+		}
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})

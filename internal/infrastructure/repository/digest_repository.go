@@ -69,9 +69,22 @@ func (r *DigestRepository) GetActiveByKey(ctx context.Context, appID, digestKey 
 	return &rule, nil
 }
 
-func (r *DigestRepository) List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*digest.DigestRule, int64, error) {
-	filters := []map[string]interface{}{
-		{"term": map[string]interface{}{"app_id": appID}},
+func (r *DigestRepository) List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*digest.DigestRule, int64, error) {
+	var filters []map[string]interface{}
+	if len(linkedIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"bool": map[string]interface{}{
+				"should": []map[string]interface{}{
+					{"term": map[string]interface{}{"app_id": appID}},
+					{"terms": map[string]interface{}{"id": linkedIDs}},
+				},
+				"minimum_should_match": 1,
+			},
+		})
+	} else {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{"app_id": appID},
+		})
 	}
 	if environmentID != "" && environmentID != "default" {
 		filters = append(filters, map[string]interface{}{

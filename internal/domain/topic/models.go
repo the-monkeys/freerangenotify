@@ -7,16 +7,16 @@ import (
 
 // Topic represents a named subscriber group within an application.
 type Topic struct {
-	ID                    string    `json:"id" es:"topic_id"`
-	AppID                 string    `json:"app_id" es:"app_id"`
-	EnvironmentID         string    `json:"environment_id,omitempty" es:"environment_id"`
-	Name                  string    `json:"name" es:"name"`
-	Key                   string    `json:"key" es:"key"` // Machine-readable slug (e.g., "project-123-watchers")
-	Description           string    `json:"description,omitempty" es:"description"`
+	ID                   string    `json:"id" es:"topic_id"`
+	AppID                string    `json:"app_id" es:"app_id"`
+	EnvironmentID        string    `json:"environment_id,omitempty" es:"environment_id"`
+	Name                 string    `json:"name" es:"name"`
+	Key                  string    `json:"key" es:"key"` // Machine-readable slug (e.g., "project-123-watchers")
+	Description          string    `json:"description,omitempty" es:"description"`
 	OnSubscribeTriggerID string    `json:"on_subscribe_trigger_id,omitempty" es:"on_subscribe_trigger_id"` // Phase 4: workflow to trigger on subscribe
-	SubscriberCount       int64     `json:"subscriber_count" es:"-"` // Populated on list, not persisted
-	CreatedAt             time.Time `json:"created_at" es:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at" es:"updated_at"`
+	SubscriberCount      int64     `json:"subscriber_count" es:"-"`                                        // Populated on list, not persisted
+	CreatedAt            time.Time `json:"created_at" es:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at" es:"updated_at"`
 }
 
 // TopicSubscription links a user to a topic.
@@ -31,10 +31,10 @@ type TopicSubscription struct {
 
 // CreateRequest is the input for creating a new topic.
 type CreateRequest struct {
-	Name                  string `json:"name" validate:"required,min=1,max=255"`
-	Key                   string `json:"key" validate:"required,min=1,max=128"`
-	Description           string `json:"description,omitempty" validate:"max=1024"`
-	EnvironmentID         string `json:"environment_id,omitempty"`
+	Name                 string `json:"name" validate:"required,min=1,max=255"`
+	Key                  string `json:"key" validate:"required,min=1,max=128"`
+	Description          string `json:"description,omitempty" validate:"max=1024"`
+	EnvironmentID        string `json:"environment_id,omitempty"`
 	OnSubscribeTriggerID string `json:"on_subscribe_trigger_id,omitempty"` // Phase 4: workflow to trigger on subscribe
 }
 
@@ -45,9 +45,9 @@ type AddSubscribersRequest struct {
 
 // UpdateRequest is the input for updating a topic.
 type UpdateRequest struct {
-	Name                  *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
-	Description           *string `json:"description,omitempty" validate:"omitempty,max=1024"`
-	OnSubscribeTriggerID  *string `json:"on_subscribe_trigger_id,omitempty"` // Phase 4: workflow to trigger on subscribe
+	Name                 *string `json:"name,omitempty" validate:"omitempty,min=1,max=255"`
+	Description          *string `json:"description,omitempty" validate:"omitempty,max=1024"`
+	OnSubscribeTriggerID *string `json:"on_subscribe_trigger_id,omitempty"` // Phase 4: workflow to trigger on subscribe
 }
 
 // Repository defines data access for topics and subscriptions.
@@ -56,7 +56,7 @@ type Repository interface {
 	Create(ctx context.Context, topic *Topic) error
 	GetByID(ctx context.Context, id string) (*Topic, error)
 	GetByKey(ctx context.Context, appID, key string) (*Topic, error)
-	List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*Topic, int64, error)
+	List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*Topic, int64, error)
 	Update(ctx context.Context, topic *Topic) error
 	Delete(ctx context.Context, id string) error
 
@@ -74,7 +74,7 @@ type Service interface {
 	Create(ctx context.Context, appID string, req *CreateRequest) (*Topic, error)
 	Get(ctx context.Context, id, appID string) (*Topic, error)
 	GetByKey(ctx context.Context, appID, key string) (*Topic, error)
-	List(ctx context.Context, appID, environmentID string, limit, offset int) ([]*Topic, int64, error)
+	List(ctx context.Context, appID, environmentID string, linkedIDs []string, limit, offset int) ([]*Topic, int64, error)
 	Update(ctx context.Context, id, appID string, req *UpdateRequest) (*Topic, error)
 	Delete(ctx context.Context, id, appID string) error
 	AddSubscribers(ctx context.Context, topicID, appID string, userIDs []string) error
