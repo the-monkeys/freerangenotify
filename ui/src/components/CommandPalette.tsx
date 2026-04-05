@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useApps } from '../contexts/AppsContext';
 import {
     Search, LayoutGrid, Workflow, Timer, Tag, BarChart3, ScrollText,
-    BookOpen, Plus, KeyRound, ArrowRight, Building2,
+    BookOpen, Plus, KeyRound, ArrowRight,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -59,7 +59,8 @@ const CommandPalette: React.FC = () => {
     const items = useMemo((): CommandItem[] => {
         const navItems: CommandItem[] = [
             { id: 'nav-apps', label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, section: 'Navigation', action: () => go('/apps'), keywords: 'apps list' },
-            { id: 'nav-tenants', label: 'Organizations', icon: <Building2 className="h-4 w-4" />, section: 'Navigation', action: () => go('/tenants'), keywords: 'organizations tenants teams' },
+            // Organizations nav temporarily hidden
+            // { id: 'nav-tenants', label: 'Organizations', icon: <Building2 className="h-4 w-4" />, section: 'Navigation', action: () => go('/tenants'), keywords: 'organizations tenants teams' },
             { id: 'nav-workflows', label: 'Workflows', icon: <Workflow className="h-4 w-4" />, section: 'Navigation', action: () => go('/workflows'), keywords: 'automation pipelines' },
             { id: 'nav-digest', label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, section: 'Navigation', action: () => go('/digest-rules'), keywords: 'batching aggregation' },
             { id: 'nav-topics', label: 'Topics', icon: <Tag className="h-4 w-4" />, section: 'Navigation', action: () => go('/topics'), keywords: 'subscriptions broadcast' },
