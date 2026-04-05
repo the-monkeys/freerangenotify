@@ -145,6 +145,13 @@ type QueueConfig struct {
 	MaxRetries    int    `mapstructure:"max_retries"`
 	RetryDelay    int    `mapstructure:"retry_delay"`
 	MaxRetryDelay int    `mapstructure:"max_retry_delay"`
+
+	// Scheduler / catch-up controls
+	SchedulerBatchSize            int `mapstructure:"scheduler_batch_size" yaml:"scheduler_batch_size"`                           // notifications pulled per tick from scheduled queue
+	SchedulerLateThresholdMs      int `mapstructure:"scheduler_late_threshold_ms" yaml:"scheduler_late_threshold_ms"`             // log as late when exceeded
+	ScheduleCatchupWindowMinutes  int `mapstructure:"schedule_catchup_window_minutes" yaml:"schedule_catchup_window_minutes"`     // workflow cron catch-up window
+	ScheduleCatchupMaxRuns        int `mapstructure:"schedule_catchup_max_runs" yaml:"schedule_catchup_max_runs"`                 // safety cap per poll
+	WorkflowDelayCatchupBatchSize int `mapstructure:"workflow_delay_catchup_batch_size" yaml:"workflow_delay_catchup_batch_size"` // delayed workflow steps drained per poll
 }
 
 // ProvidersConfig contains external provider configurations
@@ -377,6 +384,11 @@ func Load() (*Config, error) {
 	viper.SetDefault("queue.max_retries", 3)
 	viper.SetDefault("queue.retry_delay", 5)
 	viper.SetDefault("queue.max_retry_delay", 300) // 5 minutes
+	viper.SetDefault("queue.scheduler_batch_size", 200)
+	viper.SetDefault("queue.scheduler_late_threshold_ms", 60000)
+	viper.SetDefault("queue.schedule_catchup_window_minutes", 1440) // 24h
+	viper.SetDefault("queue.schedule_catchup_max_runs", 100)
+	viper.SetDefault("queue.workflow_delay_catchup_batch_size", 500)
 
 	viper.SetDefault("monitoring.enabled", true)
 	viper.SetDefault("monitoring.port", 9090)
