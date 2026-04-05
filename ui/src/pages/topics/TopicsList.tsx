@@ -462,10 +462,20 @@ const TopicsList: React.FC<TopicsListProps> = ({ apiKey: propApiKey, embedded })
                             {subscribers.map((sub) => (
                                 <div
                                     key={sub.id}
-                                    className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-muted/50"
+                                    className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-muted/50 gap-3"
                                 >
-                                    <div>
-                                        <span className="font-mono text-xs">{sub.user_id}</span>
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-medium truncate">
+                                            {sub.full_name?.trim() || sub.email || sub.user_id}
+                                        </p>
+                                        {(sub.email || sub.full_name) && (
+                                            <p className="text-xs text-muted-foreground truncate">
+                                                {sub.email || sub.full_name}
+                                            </p>
+                                        )}
+                                        <p className="text-[11px] text-muted-foreground font-mono truncate">
+                                            {sub.user_id}
+                                        </p>
                                         <p className="text-xs text-muted-foreground">
                                             since {timeAgo(sub.created_at)}
                                         </p>

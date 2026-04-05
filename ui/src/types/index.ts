@@ -696,6 +696,8 @@ export interface TopicSubscription {
     topic_id: string;
     app_id: string;
     user_id: string;
+    email?: string;
+    full_name?: string;
     created_at: string;
 }
 

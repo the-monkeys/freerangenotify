@@ -136,3 +136,5 @@ abc.json
 ui/a.json
 cmd/newsletter-broadcaster/*
 elasticsearch/*
+docker-compose.restore.yml
+scripts/restore-es-snapshot.ps1

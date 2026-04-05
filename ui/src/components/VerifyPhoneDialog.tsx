@@ -6,7 +6,7 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from './ui/dialog';
+} from './ui/dialog.tsx';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';

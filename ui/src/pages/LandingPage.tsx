@@ -23,6 +23,7 @@ const LandingPage: React.FC = () => {
     const [typedText, setTypedText] = useState('');
     const [phraseIndex, setPhraseIndex] = useState(0);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [userCount, setUserCount] = useState<number | null>(null);
 
     const handleGetStarted = () => {
         if (isAuthenticated) {
@@ -87,6 +88,18 @@ const LandingPage: React.FC = () => {
         return () => clearTimeout(timeout);
     }, [typedText, isDeleting, phraseIndex]);
 
+    useEffect(() => {
+        // Fetch public stats without requiring auth; ignore failures.
+        fetch('/v1/public/stats')
+            .then((res) => res.ok ? res.json() : null)
+            .then((data) => {
+                if (data && typeof data.user_count === 'number') {
+                    setUserCount(data.user_count);
+                }
+            })
+            .catch(() => { /* ignore */ });
+    }, []);
+
     return (
         <div className="bg-[radial-gradient(circle_at_top_left,rgba(255,85,66,0.08),transparent_45%),radial-gradient(circle_at_bottom_right,rgba(18,18,18,0.08),transparent_40%)] text-foreground">
             <Header />
@@ -149,7 +162,7 @@ const LandingPage: React.FC = () => {
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.5, delay: 0.12, ease: 'easeOut' }}
-                            className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-12 sm:mt-14"
+                            className="grid grid-cols-1 sm:grid-cols-4 gap-3 mt-12 sm:mt-14"
                         >
                             <Card className="border-border/70 bg-card/95 py-5">
                                 <CardContent className="space-y-1">
@@ -167,6 +180,14 @@ const LandingPage: React.FC = () => {
                                 <CardContent className="space-y-1">
                                     <p className="text-2xl font-semibold">Real-time</p>
                                     <p className="text-sm text-muted-foreground">Live stream + analytics</p>
+                                </CardContent>
+                            </Card>
+                            <Card className="border-border/70 bg-card/95 py-5">
+                                <CardContent className="space-y-1">
+                                    <p className="text-2xl font-semibold">
+                                        {userCount !== null ? userCount.toLocaleString('en-IN') : '—'}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">Registered users</p>
                                 </CardContent>
                             </Card>
                         </motion.div>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { digestRulesAPI, applicationsAPI, notificationsAPI } from '../../services/api';
-import type { DigestRule, DigestRuleStatus, CreateDigestRuleRequest, Application, Notification } from '../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { digestRulesAPI, applicationsAPI, notificationsAPI, templatesAPI } from '../../services/api';
+import type { DigestRule, DigestRuleStatus, CreateDigestRuleRequest, Application, Notification, Template } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
 import ResourcePicker from '../../components/ResourcePicker';
 import SkeletonTable from '../../components/SkeletonTable';
@@ -143,6 +143,16 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
     const [formChannel, setFormChannel] = useState('email');
     const [formTemplateId, setFormTemplateId] = useState('');
     const [formMaxBatch, setFormMaxBatch] = useState(50);
+    const [templates, setTemplates] = useState<Template[]>([]);
+    const [loadingTemplates, setLoadingTemplates] = useState(false);
+    const currentAppId = editingRule?.app_id || selectedAppId || null;
+    const filteredTemplates = useMemo(() => {
+        return templates.filter((t) => {
+            const channelMatch = t.channel === formChannel;
+            const appMatch = currentAppId ? t.app_id === currentAppId : true; // backwards compatible
+            return channelMatch && appMatch;
+        });
+    }, [templates, formChannel, currentAppId]);
 
     // Delete
     const [deleteTarget, setDeleteTarget] = useState<DigestRule | null>(null);
@@ -186,6 +196,18 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
         setFormMaxBatch(rule.max_batch);
         setShowEditor(true);
     };
+
+    useEffect(() => {
+        if (!showEditor) return;
+        const key = propApiKey || ownApiKey;
+        if (!key) return;
+        setLoadingTemplates(true);
+        // API enforces a max page size; use 100 to stay within limits
+        templatesAPI.list(key, 100, 0)
+            .then(res => setTemplates(res.templates || []))
+            .catch(() => { /* ignore */ })
+            .finally(() => setLoadingTemplates(false));
+    }, [showEditor, propApiKey, ownApiKey]);
 
     const handleSave = async () => {
         if (!apiKey || !formName.trim() || !formKey.trim() || !formTemplateId) {
@@ -491,8 +513,28 @@ const DigestRulesList: React.FC<DigestRulesListProps> = ({ apiKey: propApiKey, e
                         </Select>
                     </div>
                     <div className="space-y-2">
-                        <Label>Template ID <span className="text-destructive">*</span></Label>
-                        <Input value={formTemplateId} onChange={(e) => setFormTemplateId(e.target.value)} placeholder="Template ID for digest summary" className="font-mono" />
+                        <Label>Template <span className="text-destructive">*</span></Label>
+                        <Select value={formTemplateId} onValueChange={setFormTemplateId} disabled={loadingTemplates}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Select a template" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {filteredTemplates.map((tpl) => (
+                                    <SelectItem key={tpl.id} value={tpl.id}>
+                                        {tpl.name} ({tpl.channel})
+                                    </SelectItem>
+                                ))}
+                                {filteredTemplates.length === 0 && (
+                                    <SelectItem value={formTemplateId || 'custom'}>
+                                        {loadingTemplates ? 'Loading...' : 'No templates for this channel'}
+                                    </SelectItem>
+                                )}
+                            </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">Templates are filtered by the selected channel.</p>
+                        {formTemplateId && !templates.find(t => t.id === formTemplateId) && (
+                            <p className="text-xs text-amber-600">Using custom template ID: {formTemplateId}</p>
+                        )}
                     </div>
                     <div className="space-y-2">
                         <Label>Max Batch Size</Label>

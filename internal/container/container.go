@@ -125,6 +125,7 @@ type Container struct {
 	// Audit Logs (Phase 2 — feature-gated)
 	AuditService audit.Service
 	AuditHandler *handlers.AuditHandler
+	PublicHandler *handlers.PublicHandler
 
 	// RBAC / Team Management (Phase 2 — feature-gated)
 	TeamService    auth.TeamService
@@ -599,6 +600,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		topicRepo := repository.NewTopicRepository(dbManager.Client.GetClient(), logger)
 		container.TopicService = services.NewTopicService(topicRepo, logger)
 		container.TopicHandler = handlers.NewTopicHandler(container.TopicService, container.Validator, logger)
+		container.TopicHandler.SetUserRepo(repos.User)
 
 		// Wire topic service into notification service for fan-out
 		if ns, ok := container.NotificationService.(*usecases.NotificationService); ok {
@@ -626,6 +628,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.AuditHandler = handlers.NewAuditHandler(container.AuditService, repos.Application, logger)
 		logger.Info("Audit logging enabled")
 	}
+
+	// Public handler (aggregate, no auth)
+	container.PublicHandler = handlers.NewPublicHandler(repos.User)
 
 	// ── Phase 2: RBAC (feature-gated) ──
 	if cfg.Features.RBACEnabled {
