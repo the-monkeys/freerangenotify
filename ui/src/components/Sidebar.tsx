@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, Building2, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
+import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -30,7 +30,8 @@ interface NavItem {
 
 const mainItems: NavItem[] = [
     { label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, to: '/apps' },
-    { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants' },
+    // Organizations tab hidden temporarily
+    // { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants' },
     { label: 'Workflows', icon: <Workflow className="h-4 w-4" />, to: '/workflows' },
     { label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, to: '/digest-rules' },
     { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics' },

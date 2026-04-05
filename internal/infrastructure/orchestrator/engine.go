@@ -25,9 +25,10 @@ type Engine struct {
 	logger       *zap.Logger
 	metrics      *metrics.NotificationMetrics
 
-	workerCount int
-	wg          sync.WaitGroup
-	stopChan    chan struct{}
+	workerCount      int
+	delayedBatchSize int
+	wg               sync.WaitGroup
+	stopChan         chan struct{}
 }
 
 // NewEngine creates a new workflow orchestrator engine.
@@ -39,16 +40,21 @@ func NewEngine(
 	logger *zap.Logger,
 	metrics *metrics.NotificationMetrics,
 	workerCount int,
+	delayedBatchSize int,
 ) *Engine {
+	if delayedBatchSize <= 0 {
+		delayedBatchSize = 100
+	}
 	return &Engine{
-		workflowRepo: workflowRepo,
-		notifService: notifService,
-		wfQueue:      wfQueue,
-		redisClient:  redisClient,
-		logger:       logger,
-		metrics:      metrics,
-		workerCount:  workerCount,
-		stopChan:     make(chan struct{}),
+		workflowRepo:     workflowRepo,
+		notifService:     notifService,
+		wfQueue:          wfQueue,
+		redisClient:      redisClient,
+		logger:           logger,
+		metrics:          metrics,
+		workerCount:      workerCount,
+		delayedBatchSize: delayedBatchSize,
+		stopChan:         make(chan struct{}),
 	}
 }
 
@@ -457,20 +463,25 @@ func (e *Engine) delayedPoller(ctx context.Context) {
 		case <-e.stopChan:
 			return
 		case <-ticker.C:
-			items, err := e.wfQueue.GetDelayedWorkflowItems(ctx, 100)
-			if err != nil {
-				e.logger.Error("Failed to get delayed workflow items", zap.Error(err))
-				continue
-			}
-			for _, item := range items {
-				if err := e.wfQueue.EnqueueWorkflow(ctx, item); err != nil {
-					e.logger.Error("Failed to re-enqueue delayed workflow item", zap.Error(err))
-				} else {
-					e.logger.Info("Delayed workflow item moved to queue",
-						zap.String("execution_id", item.ExecutionID),
-						zap.String("step_id", item.StepID))
-				}
-			}
+			e.processDelayedOnce(ctx)
+		}
+	}
+}
+
+// processDelayedOnce moves due delayed workflow items to the main queue (single tick).
+func (e *Engine) processDelayedOnce(ctx context.Context) {
+	items, err := e.wfQueue.GetDelayedWorkflowItems(ctx, int64(e.delayedBatchSize))
+	if err != nil {
+		e.logger.Error("Failed to get delayed workflow items", zap.Error(err))
+		return
+	}
+	for _, item := range items {
+		if err := e.wfQueue.EnqueueWorkflow(ctx, item); err != nil {
+			e.logger.Error("Failed to re-enqueue delayed workflow item", zap.Error(err))
+		} else {
+			e.logger.Info("Delayed workflow item moved to queue",
+				zap.String("execution_id", item.ExecutionID),
+				zap.String("step_id", item.StepID))
 		}
 	}
 }

@@ -38,6 +38,8 @@ type ProcessorConfig struct {
 	RetryDelay      time.Duration
 	MaxRetryDelay   time.Duration
 	ShutdownTimeout time.Duration
+	ScheduledBatch  int
+	LateThreshold   time.Duration
 }
 
 // NotificationProcessor processes notifications from the queue
@@ -87,6 +89,12 @@ func NewNotificationProcessor(
 	config ProcessorConfig,
 	metrics *metrics.NotificationMetrics,
 ) *NotificationProcessor {
+	if config.ScheduledBatch <= 0 {
+		config.ScheduledBatch = 200
+	}
+	if config.LateThreshold <= 0 {
+		config.LateThreshold = 60 * time.Second
+	}
 	return &NotificationProcessor{
 		queue:            q,
 		notifRepo:        notifRepo,
@@ -953,7 +961,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			p.logger.Info("Scheduler stopping")
 			return
 		case <-ticker.C:
-			scheduledItems, err := p.queue.GetScheduledItems(ctx, 100)
+			scheduledItems, err := p.queue.GetScheduledItems(ctx, int64(p.config.ScheduledBatch))
 			if err != nil {
 				p.logger.Error("Failed to get scheduled items from Redis", zap.Error(err))
 			} else if len(scheduledItems) > 0 {
@@ -969,6 +977,22 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				}
 				if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
 					p.logger.Error("Failed to bulk update status for Redis items", zap.Error(err))
+				}
+
+				// Late detection (best effort)
+				if p.config.LateThreshold > 0 {
+					now := time.Now()
+					for _, id := range ids {
+						if notif, err := p.notifRepo.GetByID(ctx, id); err == nil && notif.ScheduledAt != nil {
+							delay := now.Sub(*notif.ScheduledAt)
+							if delay > p.config.LateThreshold {
+								p.logger.Warn("Scheduled notification delivered late",
+									zap.String("notification_id", id),
+									zap.Duration("delayed_by", delay),
+									zap.Time("scheduled_at", *notif.ScheduledAt))
+							}
+						}
+					}
 				}
 			}
 
@@ -1007,6 +1031,22 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 			}
 			if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
 				p.logger.Error("Failed to bulk update status from ES", zap.Error(err))
+			}
+
+			// Late detection for fallback path
+			if p.config.LateThreshold > 0 {
+				now := time.Now()
+				for _, notif := range pending {
+					if notif.ScheduledAt != nil {
+						delay := now.Sub(*notif.ScheduledAt)
+						if delay > p.config.LateThreshold {
+							p.logger.Warn("Pending scheduled notification delivered late via ES fallback",
+								zap.String("notification_id", notif.NotificationID),
+								zap.Duration("delayed_by", delay),
+								zap.Time("scheduled_at", *notif.ScheduledAt))
+						}
+					}
+				}
 			}
 		}
 	}

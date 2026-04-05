@@ -235,6 +235,8 @@ func main() {
 			RetryDelay:      5 * time.Second,
 			MaxRetryDelay:   5 * time.Minute,
 			ShutdownTimeout: 30 * time.Second,
+			ScheduledBatch:  cfg.Queue.SchedulerBatchSize,
+			LateThreshold:   time.Duration(cfg.Queue.SchedulerLateThresholdMs) * time.Millisecond,
 		},
 		c.Metrics,
 	)
@@ -267,6 +269,7 @@ func main() {
 			logger,
 			c.Metrics,
 			cfg.Queue.Workers,
+			cfg.Queue.WorkflowDelayCatchupBatchSize,
 		)
 		workflowEngine.Start(processorCtx)
 		logger.Info("Workflow engine started")
@@ -279,6 +282,10 @@ func main() {
 			c.TopicService,
 			c.DatabaseManager.Repositories.User,
 			logger,
+			orchestrator.SchedulePollerConfig{
+				CatchupWindowMinutes: cfg.Queue.ScheduleCatchupWindowMinutes,
+				CatchupMaxRuns:       cfg.Queue.ScheduleCatchupMaxRuns,
+			},
 		)
 		schedulePoller.Start(processorCtx)
 		logger.Info("Schedule poller started")

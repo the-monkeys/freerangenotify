@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -50,7 +51,7 @@ func AuditMiddleware(auditService audit.Service, logger *zap.Logger) fiber.Handl
 			Action:     action,
 			Resource:   resource,
 			ResourceID: extractResourceID(c.Path()),
-			IPAddress:  c.IP(),
+			IPAddress:  clientIP(c),
 			UserAgent:  c.Get("User-Agent"),
 		}
 
@@ -124,4 +125,53 @@ func extractResourceID(path string) string {
 		}
 	}
 	return ""
+}
+
+// clientIP returns the best-effort client IP.
+// If the direct peer is a private/loopback address (typical when behind nginx),
+// it will prefer the first X-Forwarded-For / X-Real-IP value. Otherwise it
+// returns the peer IP to avoid spoofing.
+func clientIP(c *fiber.Ctx) string {
+	peer := c.IP()
+	if peer == "" {
+		return ""
+	}
+
+	if !isPrivateOrLoopback(net.ParseIP(peer)) {
+		return peer
+	}
+
+	xff := c.Get(fiber.HeaderXForwardedFor)
+	if xff != "" {
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			if ip := strings.TrimSpace(parts[0]); ip != "" && net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+	if rip := c.Get("X-Real-IP"); rip != "" && net.ParseIP(strings.TrimSpace(rip)) != nil {
+		return strings.TrimSpace(rip)
+	}
+	return peer
+}
+
+func isPrivateOrLoopback(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	// IPv4 private ranges
+	privateRanges := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	for _, cidr := range privateRanges {
+		_, block, _ := net.ParseCIDR(cidr)
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	// IPv6 ULA fc00::/7
+	_, ula, _ := net.ParseCIDR("fc00::/7")
+	return ula.Contains(ip)
 }
