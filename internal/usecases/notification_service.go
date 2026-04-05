@@ -186,6 +186,22 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 			return nil, fmt.Errorf("user not found: %w", err)
 		}
 
+		// Channel-specific contact validation (skip instead of error)
+		switch req.Channel {
+		case notification.ChannelSMS, notification.ChannelWhatsApp:
+			if contact := notification.NormalizePhone(u.Phone); contact == "" {
+				s.logger.Warn("Skipping send: missing phone for SMS/WhatsApp",
+					zap.String("user_id", req.UserID), zap.String("channel", string(req.Channel)))
+				return nil, nil
+			}
+		case notification.ChannelEmail:
+			if contact := notification.NormalizeEmail(u.Email); contact == "" {
+				s.logger.Warn("Skipping send: missing email",
+					zap.String("user_id", req.UserID))
+				return nil, nil
+			}
+		}
+
 		// Check global DND
 		if u.Preferences.DND && req.Priority != notification.PriorityCritical {
 			return nil, notification.ErrDNDEnabled
@@ -409,6 +425,7 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 
 	var notifications []*notification.Notification
 	var queueItems []queue.NotificationQueueItem
+	seenContacts := make(map[string]struct{})
 
 	// Create notifications for each user
 	for _, userID := range req.UserIDs {
@@ -419,6 +436,36 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 				zap.String("user_id", userID), zap.Error(err))
 			continue
 		}
+
+		// Normalize contact for channel and skip if missing
+		var contactKey string
+		switch req.Channel {
+		case notification.ChannelSMS, notification.ChannelWhatsApp:
+			phone := notification.NormalizePhone(u.Phone)
+			if phone == "" {
+				s.logger.Debug("Missing phone for SMS/WhatsApp, skipping",
+					zap.String("user_id", userID))
+				continue
+			}
+			contactKey = string(req.Channel) + ":" + phone
+		case notification.ChannelEmail:
+			email := notification.NormalizeEmail(u.Email)
+			if email == "" {
+				s.logger.Debug("Missing email for email channel, skipping",
+					zap.String("user_id", userID))
+				continue
+			}
+			contactKey = string(req.Channel) + ":" + email
+		default:
+			// other channels: dedup by user id
+			contactKey = string(req.Channel) + ":" + u.UserID
+		}
+
+		// Deduplicate within this bulk request
+		if _, exists := seenContacts[contactKey]; exists {
+			continue
+		}
+		seenContacts[contactKey] = struct{}{}
 
 		// Check global DND
 		if u.Preferences.DND && req.Priority != notification.PriorityCritical {
