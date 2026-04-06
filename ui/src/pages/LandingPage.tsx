@@ -187,7 +187,7 @@ const LandingPage: React.FC = () => {
                                     <p className="text-2xl font-semibold">
                                         {userCount !== null ? userCount.toLocaleString('en-IN') : '—'}
                                     </p>
-                                    <p className="text-sm text-muted-foreground">Registered users</p>
+                                    <p className="text-sm text-muted-foreground">Organizations + Accounts</p>
                                 </CardContent>
                             </Card>
                         </motion.div>

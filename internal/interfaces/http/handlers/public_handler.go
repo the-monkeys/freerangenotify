@@ -2,22 +2,21 @@ package handlers
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 )
 
 // PublicHandler exposes non-authenticated, aggregate-only endpoints.
 type PublicHandler struct {
-	userRepo user.Repository
+	authRepo auth.Repository
 }
 
-func NewPublicHandler(userRepo user.Repository) *PublicHandler {
-	return &PublicHandler{userRepo: userRepo}
+func NewPublicHandler(authRepo auth.Repository) *PublicHandler {
+	return &PublicHandler{authRepo: authRepo}
 }
 
 // GetStats returns aggregate public stats (no PII).
 func (h *PublicHandler) GetStats(c *fiber.Ctx) error {
-	// Count all users; repository enforces multi-tenant scoping via filter if provided.
-	count, err := h.userRepo.Count(c.Context(), user.UserFilter{})
+	count, err := h.authRepo.CountUsers(c.Context())
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to fetch stats"})
 	}

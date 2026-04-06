@@ -142,6 +142,9 @@ type Repository interface {
 	GetRefreshToken(ctx context.Context, token string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, tokenID string) error
 	RevokeAllUserTokens(ctx context.Context, userID string) error
+
+	// Aggregate queries
+	CountUsers(ctx context.Context) (int64, error)
 }
 
 // Service defines the business logic interface for authentication

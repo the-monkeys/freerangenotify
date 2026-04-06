@@ -38,7 +38,7 @@ The integration tests verify the complete functionality of all API endpoints by 
 
 1. Docker and Docker Compose installed
 2. Services running via `docker-compose up -d`
-3. Go 1.24+ installed
+3. Go 1.26+ installed
 
 ## Running Tests
 
@@ -262,7 +262,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.24'
+          go-version: '1.26.1'
       
       - name: Start services
         run: docker-compose up -d

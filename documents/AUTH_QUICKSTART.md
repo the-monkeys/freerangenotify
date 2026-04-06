@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Docker and Docker Compose installed
-- Go 1.21+ installed
+- Go 1.26+ installed
 - Node.js 18+ and npm installed
 
 ## Step 1: Environment Setup

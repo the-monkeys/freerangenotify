@@ -11,7 +11,7 @@ env:
   REGISTRY: ghcr.io
   BACKEND_IMAGE: ${{ github.repository }}
   UI_IMAGE: ${{ github.repository }}-ui
-  GO_VERSION: "1.24"
+  GO_VERSION: "1.26.1"
 
 jobs:
   # ── Unit Tests + Coverage ──────────────────────────────────
@@ -22,9 +22,9 @@ jobs:
       checks: write          # for test-reporter annotations
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -40,7 +40,7 @@ jobs:
 
       - name: Publish unit test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Unit Test Results
           path: unit-results.xml
@@ -49,7 +49,7 @@ jobs:
 
       - name: Upload unit coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unit-coverage
           path: unit-coverage.out
@@ -74,9 +74,9 @@ jobs:
       FREERANGE_APP_ENVIRONMENT: development
       FREERANGE_APP_DEBUG: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -184,7 +184,7 @@ jobs:
 
       - name: Publish integration test results
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Integration Test Results
           path: integration-results.xml
@@ -193,7 +193,7 @@ jobs:
 
       - name: Upload integration coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: integration-coverage
           path: integration-coverage.out
@@ -223,16 +223,17 @@ jobs:
     needs: [unit-tests, integration-tests]
     if: always() && needs.unit-tests.result == 'success'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
+          pattern: '*-coverage'
           path: coverage
 
       - name: Merge and report coverage
@@ -265,7 +266,7 @@ jobs:
           echo "Total Coverage: ${TOTAL}"
 
       - name: Upload merged coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: merged-coverage
           path: merged-coverage.out
@@ -280,21 +281,21 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}
           tags: |
@@ -304,7 +305,7 @@ jobs:
             type=semver,pattern={{version}}
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -323,21 +324,21 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.UI_IMAGE }}
           tags: |
@@ -347,7 +348,7 @@ jobs:
             type=semver,pattern={{version}}
 
       - name: Build and push UI image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./ui
           file: ./ui/Dockerfile.prod

@@ -269,3 +269,29 @@ func (r *authRepository) RevokeRefreshToken(ctx context.Context, tokenID string)
 func (r *authRepository) RevokeAllUserTokens(ctx context.Context, userID string) error {
 	return r.tokenStore.RevokeAllUserTokens(ctx, userID)
 }
+
+// CountUsers returns the total number of registered auth users.
+func (r *authRepository) CountUsers(ctx context.Context) (int64, error) {
+	req := esapi.CountRequest{
+		Index: []string{authUsersIndex},
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count auth users: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return 0, fmt.Errorf("error counting auth users: %s", res.String())
+	}
+
+	var result struct {
+		Count int64 `json:"count"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to decode count response: %w", err)
+	}
+
+	return result.Count, nil
+}
