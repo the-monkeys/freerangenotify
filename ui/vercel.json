@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/v1/:path*",
-      "destination": "https://api.freerangenotify.com/v1/:path*"
+      "destination": "https://freerangenotify.monkeys.support/v1/:path*"
     },
     {
       "source": "/(.*)",
