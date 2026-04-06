@@ -233,6 +233,7 @@ jobs:
       - name: Download coverage artifacts
         uses: actions/download-artifact@v7
         with:
+          pattern: '*-coverage'
           path: coverage
 
       - name: Merge and report coverage
