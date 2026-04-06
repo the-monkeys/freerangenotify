@@ -60,6 +60,11 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	// Health check
 	v1.Get("/health", c.HealthHandler.Check)
 
+	// Public stats (aggregate only, no auth)
+	if c.PublicHandler != nil {
+		v1.Get("/public/stats", c.PublicHandler.GetStats)
+	}
+
 	// SSE endpoint
 	v1.Get("/sse", c.SSEHandler.Connect)
 

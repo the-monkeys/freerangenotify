@@ -20,6 +20,19 @@ const Header: React.FC = () => {
         setMobileOpen(false);
     }, [location.pathname]);
 
+    const scrollToPricing = () => {
+        const doScroll = () => {
+            const el = document.getElementById('pricing');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+        };
+        if (location.pathname === '/') {
+            doScroll();
+        } else {
+            navigate('/', { replace: false });
+            setTimeout(doScroll, 80);
+        }
+    };
+
     const navItems = [
         {
             label: 'Home',
@@ -33,8 +46,8 @@ const Header: React.FC = () => {
         },
         {
             label: 'Pricing',
-            path: '/pricing',
-            active: location.pathname === '/pricing',
+            path: '/',
+            active: location.pathname === '/',
         },
         ...(isAuthenticated
             ? [
@@ -54,8 +67,8 @@ const Header: React.FC = () => {
 
     const navClass = (active: boolean) =>
         `inline-flex rounded-md px-3 py-2 text-sm transition-colors ${active
-            ? 'underline underline-offset-4 decoration-foreground/70 text-foreground'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+        ? 'underline underline-offset-4 decoration-foreground/70 text-foreground'
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
         }`;
 
     const handleLogout = async () => {
@@ -91,9 +104,18 @@ const Header: React.FC = () => {
                         <ul className="flex items-center gap-1">
                             {navItems.map((item) => (
                                 <li key={item.path}>
-                                    <Link to={item.path} className={navClass(item.active)}>
-                                        {item.label}
-                                    </Link>
+                                    {item.label === 'Pricing' ? (
+                                        <button
+                                            onClick={scrollToPricing}
+                                            className={navClass(item.active)}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ) : (
+                                        <Link to={item.path} className={navClass(item.active)}>
+                                            {item.label}
+                                        </Link>
+                                    )}
                                 </li>
                             ))}
                         </ul>
@@ -150,13 +172,22 @@ const Header: React.FC = () => {
                             <ul className="space-y-1">
                                 {navItems.map((item) => (
                                     <li key={item.path}>
-                                        <Link
-                                            to={item.path}
-                                            onClick={closeMobile}
-                                            className={`block ${navClass(item.active)}`}
-                                        >
-                                            {item.label}
-                                        </Link>
+                                        {item.label === 'Pricing' ? (
+                                            <button
+                                                onClick={() => { closeMobile(); scrollToPricing(); }}
+                                                className={`block w-full text-left ${navClass(item.active)}`}
+                                            >
+                                                {item.label}
+                                            </button>
+                                        ) : (
+                                            <Link
+                                                to={item.path}
+                                                onClick={closeMobile}
+                                                className={`block ${navClass(item.active)}`}
+                                            >
+                                                {item.label}
+                                            </Link>
+                                        )}
                                     </li>
                                 ))}
                             </ul>

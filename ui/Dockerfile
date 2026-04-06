@@ -1,18 +1,14 @@
 FROM node:20-alpine
 
-# Set the working directory
 WORKDIR /app
 
-# Copy package files for dependency installation
+# Install deps first for better cache
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Note: Source code will be mounted via volume in docker-compose
-# This allows hot reloading without rebuilding the image
+# Copy app source into image (no bind mount needed)
+COPY . .
 
-# Expose the port the Vite dev server runs on
 EXPOSE 3000
 
 # Start Vite dev server accessible from host

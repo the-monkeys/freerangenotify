@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -18,10 +19,12 @@ type TopicHandler struct {
 	logger    *zap.Logger
 	linkRepo  resourcelink.Repository
 	topicRepo topic.Repository
+	userRepo  user.Repository
 }
 
 func (h *TopicHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 func (h *TopicHandler) SetTopicRepo(repo topic.Repository)       { h.topicRepo = repo }
+func (h *TopicHandler) SetUserRepo(repo user.Repository)         { h.userRepo = repo }
 
 // NewTopicHandler creates a new topic handler.
 func NewTopicHandler(service topic.Service, v *validator.Validator, logger *zap.Logger) *TopicHandler {
@@ -399,9 +402,36 @@ func (h *TopicHandler) GetSubscribers(c *fiber.Ctx) error {
 		})
 	}
 
+	// Enrich with user details (email/full_name) when repo is available; keep backward compatible.
+	var enriched []fiber.Map
+	if h.userRepo != nil {
+		for _, sub := range subs {
+			item := fiber.Map{
+				"id":         sub.ID,
+				"topic_id":   sub.TopicID,
+				"app_id":     sub.AppID,
+				"user_id":    sub.UserID,
+				"created_at": sub.CreatedAt,
+			}
+			if u, err := h.userRepo.GetByID(c.Context(), sub.UserID); err == nil && u != nil {
+				item["email"] = u.Email
+				if u.FullName != "" {
+					item["full_name"] = u.FullName
+				}
+			}
+			enriched = append(enriched, item)
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    subs,
-		"total":   total,
+		"data": func() interface{} {
+			if h.userRepo != nil {
+				return enriched
+			} else {
+				return subs
+			}
+		}(),
+		"total": total,
 	})
 }

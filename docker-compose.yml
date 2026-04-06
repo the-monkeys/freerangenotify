@@ -108,14 +108,11 @@ services:
       - "3000:3000"
     environment:
       - NODE_OPTIONS=--max-old-space-size=1024
-      - CHOKIDAR_USEPOLLING=${CHOKIDAR_USEPOLLING:-false}
-      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-1000}
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=1000
       # API_PROXY_TARGET is server-side only (Vite proxy), not exposed to browser
       - API_PROXY_TARGET=http://notification-service:8080
       # Do NOT set VITE_API_BASE_URL here — browser must use /v1 (relative) to hit the proxy
-    volumes:
-      - ./ui:/app # Mount source code for hot reloading
-      - /app/node_modules # Prevent overwriting node_modules
     networks:
       - freerange-network
     depends_on:

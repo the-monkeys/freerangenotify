@@ -23,6 +23,7 @@ const SSOCallback = lazy(() => import('./pages/SSOCallback'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const AcceptableUsePolicy = lazy(() => import('./pages/AcceptableUsePolicy'));
+const Pricing = lazy(() => import('./pages/Pricing'));
 const AppsList = lazy(() => import('./pages/AppsList'));
 const TenantsList = lazy(() => import('./pages/TenantsList'));
 const TenantDetail = lazy(() => import('./pages/TenantDetail'));
@@ -62,6 +63,7 @@ const App: React.FC = () => {
                   <Routes>
                     {/* Landing page — standalone, no layout wrapper */}
                     <Route path="/" element={<LandingPage />} />
+                    <Route path="/pricing" element={<Pricing />} />
 
                     {/* Auth routes — centered card layout */}
                     <Route element={<AuthLayout />}>
