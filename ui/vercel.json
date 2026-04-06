@@ -1,5 +1,12 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/v1/:path*",
+      "destination": "https://freerangenotify.monkeys.support/v1/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
   ]
 }
