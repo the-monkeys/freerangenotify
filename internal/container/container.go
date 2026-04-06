@@ -123,8 +123,8 @@ type Container struct {
 	TopicHandler *handlers.TopicHandler
 
 	// Audit Logs (Phase 2 — feature-gated)
-	AuditService audit.Service
-	AuditHandler *handlers.AuditHandler
+	AuditService  audit.Service
+	AuditHandler  *handlers.AuditHandler
 	PublicHandler *handlers.PublicHandler
 
 	// RBAC / Team Management (Phase 2 — feature-gated)
@@ -630,7 +630,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}
 
 	// Public handler (aggregate, no auth)
-	container.PublicHandler = handlers.NewPublicHandler(repos.User)
+	container.PublicHandler = handlers.NewPublicHandler(authRepo)
 
 	// ── Phase 2: RBAC (feature-gated) ──
 	if cfg.Features.RBACEnabled {
