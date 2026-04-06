@@ -11,7 +11,7 @@ A generic, pluggable notification service built in Go that provides real-time, m
 ## Getting Started
 
 ### Prerequisites
-- Go 1.24+
+- Go 1.26+
 - Docker and Docker Compose
 - Elasticsearch 8.11.0
 - Redis 7.x
@@ -106,7 +106,7 @@ curl -X POST http://localhost:8080/v1/users/{user_id}/devices \
 
 ## Architecture
 Built using Clean Architecture principles with:
-- **Framework**: Go 1.24 + Fiber v2.52.9
+- **Framework**: Go 1.26 + Fiber v2.52.9
 - **Database**: Elasticsearch 8.11.0
 - **Cache/Queue**: Redis 7.x
 - **Monitoring**: Prometheus + Grafana
