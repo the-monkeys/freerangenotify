@@ -168,6 +168,40 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 	})
 }
 
+// GetByExternalID handles GET /v1/users/by-external-id/:external_id
+// @Summary Get a user by external ID
+// @Description Retrieve a single user by their external_id within the authenticated app
+// @Tags Users
+// @Produce json
+// @Param external_id path string true "External ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/by-external-id/{external_id} [get]
+func (h *UserHandler) GetByExternalID(c *fiber.Ctx) error {
+	appID, err := h.getAppID(c)
+	if err != nil {
+		return err
+	}
+
+	externalID := c.Params("external_id")
+	if externalID == "" {
+		return errors.BadRequest("external_id is required")
+	}
+
+	u, err := h.service.GetByExternalID(c.Context(), appID, externalID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    dto.ToUserResponse(u),
+	})
+}
+
 // Update handles PUT /v1/users/:id
 // @Summary Update a user
 // @Description Update an existing user's information
@@ -370,12 +404,13 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 	offset := (page - 1) * pageSize
 
 	filter := user.UserFilter{
-		AppID:    appID,
-		Email:    c.Query("email"),
-		Timezone: c.Query("timezone"),
-		Language: c.Query("language"),
-		Limit:    pageSize,
-		Offset:   offset,
+		AppID:      appID,
+		ExternalID: c.Query("external_id"),
+		Email:      c.Query("email"),
+		Timezone:   c.Query("timezone"),
+		Language:   c.Query("language"),
+		Limit:      pageSize,
+		Offset:     offset,
 	}
 
 	if envID, ok := c.Locals("environment_id").(string); ok {

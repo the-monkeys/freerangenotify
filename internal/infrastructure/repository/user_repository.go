@@ -291,6 +291,14 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 		})
 	}
 
+	if filter.ExternalID != "" {
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"external_id": filter.ExternalID,
+			},
+		})
+	}
+
 	if filter.Timezone != "" {
 		filters = append(filters, map[string]interface{}{
 			"term": map[string]interface{}{

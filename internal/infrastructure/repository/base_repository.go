@@ -8,6 +8,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -94,7 +95,7 @@ func (r *BaseRepository) GetByID(ctx context.Context, id string) (map[string]int
 	defer res.Body.Close()
 
 	if res.StatusCode == 404 {
-		return nil, fmt.Errorf("document not found")
+		return nil, errors.NotFound(r.indexName, id)
 	}
 
 	if res.IsError() {
@@ -164,7 +165,7 @@ func (r *BaseRepository) Delete(ctx context.Context, id string) error {
 	defer res.Body.Close()
 
 	if res.StatusCode == 404 {
-		return fmt.Errorf("document not found")
+		return errors.NotFound(r.indexName, id)
 	}
 
 	if res.IsError() {

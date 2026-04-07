@@ -124,3 +124,42 @@ func TestBuildUserQuery_NoFilters(t *testing.T) {
 	_, hasMatchAll := query["match_all"]
 	assert.True(t, hasMatchAll, "empty filter should produce match_all query")
 }
+
+func TestBuildUserQuery_ExternalID(t *testing.T) {
+	repo := &UserRepository{}
+	filter := user.UserFilter{
+		AppID:      "app-1",
+		ExternalID: "monkeys-user-123",
+	}
+	q := repo.buildUserQuery(filter)
+
+	query := q["query"].(map[string]interface{})
+	boolQ := query["bool"].(map[string]interface{})
+	must := boolQ["must"].([]map[string]interface{})
+
+	// Should have 2 must clauses: app_id + external_id
+	assert.Len(t, must, 2)
+
+	appTerm := must[0]["term"].(map[string]interface{})
+	assert.Equal(t, "app-1", appTerm["app_id"])
+
+	extTerm := must[1]["term"].(map[string]interface{})
+	assert.Equal(t, "monkeys-user-123", extTerm["external_id"])
+}
+
+func TestBuildUserQuery_ExternalID_WithEmail(t *testing.T) {
+	repo := &UserRepository{}
+	filter := user.UserFilter{
+		AppID:      "app-1",
+		ExternalID: "ext-456",
+		Email:      "test@example.com",
+	}
+	q := repo.buildUserQuery(filter)
+
+	query := q["query"].(map[string]interface{})
+	boolQ := query["bool"].(map[string]interface{})
+	must := boolQ["must"].([]map[string]interface{})
+
+	// Should have 3 must clauses: app_id + email + external_id
+	assert.Len(t, must, 3)
+}

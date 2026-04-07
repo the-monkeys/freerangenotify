@@ -112,6 +112,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	applyAuth(users)
 	users.Post("/", c.UserHandler.Create)
 	users.Post("/bulk", c.UserHandler.BulkCreate)
+	users.Get("/by-external-id/:external_id", c.UserHandler.GetByExternalID)
 	users.Get("/:id", c.UserHandler.GetByID)
 	users.Put("/:id", c.UserHandler.Update)
 	users.Delete("/:id", c.UserHandler.Delete)

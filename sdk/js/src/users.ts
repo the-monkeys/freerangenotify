@@ -5,32 +5,42 @@ import type {
   User,
   UserListResponse,
   BulkCreateUsersResult,
+  BulkCreateUsersParams,
   AddDeviceParams,
   Device,
   Preferences,
 } from './types';
 
 export class UsersClient {
-  constructor(private readonly http: HttpClient) {}
+  constructor(private readonly http: HttpClient) { }
 
   async create(params: CreateUserParams): Promise<User> {
     return this.http.request<User>('POST', '/users/', params);
   }
 
-  async bulkCreate(users: CreateUserParams[]): Promise<BulkCreateUsersResult> {
-    return this.http.request<BulkCreateUsersResult>('POST', '/users/bulk', { users });
+  /** Register multiple users. Use skip_existing or upsert to handle duplicates. */
+  async bulkCreate(params: BulkCreateUsersParams): Promise<BulkCreateUsersResult> {
+    return this.http.request<BulkCreateUsersResult>('POST', '/users/bulk', params);
   }
 
-  async get(userId: string): Promise<User> {
-    return this.http.request<User>('GET', `/users/${userId}`);
+  /** Retrieve a user by internal UUID or external_id. */
+  async get(identifier: string): Promise<User> {
+    return this.http.request<User>('GET', `/users/${identifier}`);
   }
 
-  async update(userId: string, params: UpdateUserParams): Promise<User> {
-    return this.http.request<User>('PUT', `/users/${userId}`, params);
+  /** Retrieve a user by their external_id. */
+  async getByExternalId(externalId: string): Promise<User> {
+    return this.http.request<User>('GET', `/users/by-external-id/${externalId}`);
   }
 
-  async delete(userId: string): Promise<void> {
-    await this.http.request('DELETE', `/users/${userId}`);
+  /** Update a user. Accepts internal UUID or external_id. */
+  async update(identifier: string, params: UpdateUserParams): Promise<User> {
+    return this.http.request<User>('PUT', `/users/${identifier}`, params);
+  }
+
+  /** Delete a user. Accepts internal UUID or external_id. */
+  async delete(identifier: string): Promise<void> {
+    await this.http.request('DELETE', `/users/${identifier}`);
   }
 
   async list(page?: number, pageSize?: number): Promise<UserListResponse> {

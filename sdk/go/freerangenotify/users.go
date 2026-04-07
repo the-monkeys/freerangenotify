@@ -22,36 +22,45 @@ func (u *UsersClient) Create(ctx context.Context, params CreateUserParams) (*Use
 }
 
 // BulkCreate registers multiple users in a single request.
-func (u *UsersClient) BulkCreate(ctx context.Context, users []CreateUserParams) (*BulkCreateUsersResult, error) {
+// Set SkipExisting to silently skip duplicates, or Upsert to update existing users.
+func (u *UsersClient) BulkCreate(ctx context.Context, params BulkCreateUsersParams) (*BulkCreateUsersResult, error) {
 	var result BulkCreateUsersResult
-	payload := map[string]interface{}{"users": users}
-	if err := u.client.do(ctx, "POST", "/users/bulk", payload, &result); err != nil {
+	if err := u.client.do(ctx, "POST", "/users/bulk", params, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// Get retrieves a user by their internal UUID.
-func (u *UsersClient) Get(ctx context.Context, userID string) (*User, error) {
+// Get retrieves a user by their internal UUID or external_id.
+func (u *UsersClient) Get(ctx context.Context, identifier string) (*User, error) {
 	var result User
-	if err := u.client.do(ctx, "GET", "/users/"+userID, nil, &result); err != nil {
+	if err := u.client.do(ctx, "GET", "/users/"+identifier, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// Update modifies an existing user's profile.
-func (u *UsersClient) Update(ctx context.Context, userID string, params UpdateUserParams) (*User, error) {
+// GetByExternalID retrieves a user by their external_id.
+func (u *UsersClient) GetByExternalID(ctx context.Context, externalID string) (*User, error) {
 	var result User
-	if err := u.client.do(ctx, "PUT", "/users/"+userID, params, &result); err != nil {
+	if err := u.client.do(ctx, "GET", "/users/by-external-id/"+externalID, nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// Delete removes a user.
-func (u *UsersClient) Delete(ctx context.Context, userID string) error {
-	return u.client.do(ctx, "DELETE", "/users/"+userID, nil, nil)
+// Update modifies an existing user's profile. Accepts internal UUID or external_id.
+func (u *UsersClient) Update(ctx context.Context, identifier string, params UpdateUserParams) (*User, error) {
+	var result User
+	if err := u.client.do(ctx, "PUT", "/users/"+identifier, params, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// Delete removes a user. Accepts internal UUID or external_id.
+func (u *UsersClient) Delete(ctx context.Context, identifier string) error {
+	return u.client.do(ctx, "DELETE", "/users/"+identifier, nil, nil)
 }
 
 // List returns a paginated list of users.

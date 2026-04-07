@@ -15,10 +15,10 @@ import (
 
 // UserServiceImpl implements the UserService interface
 type UserServiceImpl struct {
-	repo          user.Repository
-	appRepo       application.Repository   // Phase 5: optional, for on-user-created trigger
-	workflowSvc   workflow.Service        // Phase 5: optional
-	logger        *zap.Logger
+	repo        user.Repository
+	appRepo     application.Repository // Phase 5: optional, for on-user-created trigger
+	workflowSvc workflow.Service       // Phase 5: optional
+	logger      *zap.Logger
 }
 
 // NewUserService creates a new UserService
@@ -75,7 +75,7 @@ func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
 	// Phase 5: On-user-created workflow trigger (fire-and-forget)
 	s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
 
-	s.logger.Info("User created successfully", zap.String("user_id", u.UserID))
+	s.logger.Debug("User created successfully", zap.String("user_id", u.UserID))
 	return nil
 }
 
@@ -87,6 +87,9 @@ func (s *UserServiceImpl) GetByID(ctx context.Context, userID string) (*user.Use
 
 	u, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFound("User", userID)
+		}
 		s.logger.Error("Failed to get user", zap.String("user_id", userID), zap.Error(err))
 		return nil, errors.DatabaseError("get user", err)
 	}
@@ -105,6 +108,9 @@ func (s *UserServiceImpl) GetByEmail(ctx context.Context, appID, email string) (
 
 	u, err := s.repo.GetByEmail(ctx, appID, email)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFound("User", email)
+		}
 		s.logger.Error("Failed to get user by email", zap.Error(err))
 		return nil, errors.DatabaseError("get user by email", err)
 	}
@@ -123,6 +129,9 @@ func (s *UserServiceImpl) GetByExternalID(ctx context.Context, appID, externalID
 
 	u, err := s.repo.GetByExternalID(ctx, appID, externalID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFound("User", externalID)
+		}
 		s.logger.Error("Failed to get user by external_id", zap.Error(err))
 		return nil, errors.DatabaseError("get user by external_id", err)
 	}
@@ -142,6 +151,9 @@ func (s *UserServiceImpl) Update(ctx context.Context, u *user.User) error {
 	// Check if user exists
 	existing, err := s.repo.GetByID(ctx, u.UserID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return errors.NotFound("User", u.UserID)
+		}
 		return errors.DatabaseError("check user existence", err)
 	}
 	if existing == nil {
@@ -168,6 +180,9 @@ func (s *UserServiceImpl) Delete(ctx context.Context, userID string) error {
 	// Check if user exists
 	existing, err := s.repo.GetByID(ctx, userID)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return errors.NotFound("User", userID)
+		}
 		return errors.DatabaseError("check user existence", err)
 	}
 	if existing == nil {

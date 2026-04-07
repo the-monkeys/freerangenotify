@@ -14,6 +14,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -153,6 +154,17 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 		if err == notification.ErrQuietHours {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": err.Error(),
+			})
+		}
+
+		// Check if it's a typed AppError (e.g., NotFound from resolveUserID)
+		if appErr, ok := err.(*errors.AppError); ok {
+			return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{
+				"success": false,
+				"error": fiber.Map{
+					"code":    appErr.Code,
+					"message": appErr.Message,
+				},
 			})
 		}
 

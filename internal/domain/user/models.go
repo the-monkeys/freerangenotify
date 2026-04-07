@@ -77,6 +77,7 @@ type UserFilter struct {
 	AppIDs        []string `json:"app_ids,omitempty"`
 	LinkedUserIDs []string `json:"linked_user_ids,omitempty"`
 	EnvironmentID string   `json:"environment_id,omitempty"`
+	ExternalID    string   `json:"external_id,omitempty"`
 	Email         string   `json:"email,omitempty"`
 	FullName      string   `json:"full_name,omitempty"`
 	Timezone      string   `json:"timezone,omitempty"`
