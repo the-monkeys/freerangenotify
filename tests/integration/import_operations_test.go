@@ -169,7 +169,7 @@ func (s *ImportOperationsTestSuite) deleteUser(apiKey, userID string) (int, map[
 
 func (s *ImportOperationsTestSuite) esDocExists(index, docID string) bool {
 	req, _ := http.NewRequest(http.MethodHead,
-		fmt.Sprintf("%s/%s/_doc/%s", elasticsearchURL, index, docID), nil)
+		fmt.Sprintf("%s/%s/_doc/%s", resolvedESURL(), index, docID), nil)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return false
@@ -180,7 +180,7 @@ func (s *ImportOperationsTestSuite) esDocExists(index, docID string) bool {
 
 func (s *ImportOperationsTestSuite) esGetField(index, docID, field string) interface{} {
 	req, _ := http.NewRequest(http.MethodGet,
-		fmt.Sprintf("%s/%s/_doc/%s", elasticsearchURL, index, docID), nil)
+		fmt.Sprintf("%s/%s/_doc/%s", resolvedESURL(), index, docID), nil)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil
@@ -198,7 +198,7 @@ func (s *ImportOperationsTestSuite) esGetField(index, docID, field string) inter
 func (s *ImportOperationsTestSuite) esDocCount(index, field, value string) int64 {
 	body := fmt.Sprintf(`{"query":{"term":{"%s":"%s"}}}`, field, value)
 	req, _ := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/%s/_count", elasticsearchURL, index),
+		fmt.Sprintf("%s/%s/_count", resolvedESURL(), index),
 		strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)

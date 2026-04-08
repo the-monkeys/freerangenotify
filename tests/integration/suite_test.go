@@ -16,11 +16,26 @@ import (
 )
 
 const (
-	baseURL            = "http://localhost:8080"
-	elasticsearchURL   = "http://localhost:9200"
+	defaultBaseURL     = "http://127.0.0.1:8080"
+	defaultESURL       = "http://127.0.0.1:9200"
 	testTimeout        = 30 * time.Second
 	healthCheckRetries = 30
 )
+
+// resolvedBaseURL returns the base URL from env or default (127.0.0.1 to avoid IPv6 issues on Windows).
+func resolvedBaseURL() string {
+	if v := os.Getenv("INTEGRATION_BASE_URL"); v != "" {
+		return v
+	}
+	return defaultBaseURL
+}
+
+func resolvedESURL() string {
+	if v := os.Getenv("INTEGRATION_ES_URL"); v != "" {
+		return v
+	}
+	return defaultESURL
+}
 
 // IntegrationTestSuite provides common setup for all integration tests
 type IntegrationTestSuite struct {
@@ -90,7 +105,7 @@ func (s *IntegrationTestSuite) waitForServices() {
 
 	// Wait for notification service
 	for i := 0; i < healthCheckRetries; i++ {
-		resp, err := s.client.Get(baseURL + "/health")
+		resp, err := s.client.Get(resolvedBaseURL() + "/health")
 		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
 			s.T().Log("Notification service is ready")
@@ -107,7 +122,7 @@ func (s *IntegrationTestSuite) waitForServices() {
 
 	// Wait for Elasticsearch
 	for i := 0; i < healthCheckRetries; i++ {
-		resp, err := s.client.Get(elasticsearchURL + "/_cluster/health")
+		resp, err := s.client.Get(resolvedESURL() + "/_cluster/health")
 		if err == nil && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated) {
 			resp.Body.Close()
 			s.T().Log("Elasticsearch is ready")
@@ -131,7 +146,7 @@ func (s *IntegrationTestSuite) cleanupTestData() {
 	indices := []string{"applications", "users", "notifications", "templates", "analytics"}
 
 	for _, index := range indices {
-		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_delete_by_query", elasticsearchURL, index), bytes.NewBuffer([]byte(`{"query":{"match_all":{}}}`)))
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_delete_by_query", resolvedESURL(), index), bytes.NewBuffer([]byte(`{"query":{"match_all":{}}}`)))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := s.client.Do(req)
 		if err == nil && resp != nil {
@@ -152,7 +167,7 @@ func (s *IntegrationTestSuite) makeRequest(method, path string, body interface{}
 		bodyReader = bytes.NewBuffer(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, baseURL+path, bodyReader)
+	req, err := http.NewRequest(method, resolvedBaseURL()+path, bodyReader)
 	s.Require().NoError(err, "Failed to create request")
 
 	req.Header.Set("Content-Type", "application/json")
@@ -218,7 +233,7 @@ func (s *IntegrationTestSuite) assertError(body []byte, expectedCode string) map
 
 // Helper methods for cleanup
 func (s *IntegrationTestSuite) deleteApplication(appID string) {
-	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/v1/apps/"+appID, nil)
+	req, _ := http.NewRequest(http.MethodDelete, resolvedBaseURL()+"/v1/apps/"+appID, nil)
 	if s.adminToken != "" {
 		req.Header.Set("Authorization", "Bearer "+s.adminToken)
 	}
@@ -229,7 +244,7 @@ func (s *IntegrationTestSuite) deleteApplication(appID string) {
 }
 
 func (s *IntegrationTestSuite) deleteUser(userID, apiKey string) {
-	req, _ := http.NewRequest(http.MethodDelete, baseURL+"/v1/users/"+userID, nil)
+	req, _ := http.NewRequest(http.MethodDelete, resolvedBaseURL()+"/v1/users/"+userID, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	resp, _ := s.client.Do(req)
 	if resp != nil {

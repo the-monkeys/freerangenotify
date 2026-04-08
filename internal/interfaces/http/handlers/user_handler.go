@@ -57,10 +57,13 @@ func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.Us
 
 	// Try direct lookup first (UUID). If not a valid UUID, resolve via external_id.
 	if _, parseErr := uuid.Parse(userID); parseErr != nil {
+		h.logger.Debug("verifyUserOwnership: resolving external_id", zap.String("external_id", userID), zap.String("app_id", appID))
 		u, lookupErr := h.service.GetByExternalID(c.Context(), appID, userID)
 		if lookupErr != nil {
+			h.logger.Debug("verifyUserOwnership: external_id resolution failed", zap.String("external_id", userID), zap.Error(lookupErr))
 			return nil, errors.NotFound("user", userID)
 		}
+		h.logger.Debug("verifyUserOwnership: external_id resolved", zap.String("external_id", userID), zap.String("user_id", u.UserID))
 		return u, nil
 	}
 
@@ -297,6 +300,12 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 		// verifyUserOwnership succeeded — but if the user is not actually owned by
 		// this app (returned via link fallback), treat it as a linked-user delete.
 		appID, _ := h.getAppID(c)
+		h.logger.Debug("Delete: ownership check",
+			zap.String("param", userID),
+			zap.String("resolved_user_id", u.UserID),
+			zap.String("u.AppID", u.AppID),
+			zap.String("ctx_appID", appID),
+			zap.Bool("match", u.AppID == appID))
 		if u.AppID != appID {
 			err = errors.NotFound("user", userID)
 		}
@@ -358,7 +367,7 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 		}
 	}
 
-	if err := h.service.Delete(c.Context(), userID); err != nil {
+	if err := h.service.Delete(c.Context(), u.UserID); err != nil {
 		return err
 	}
 
