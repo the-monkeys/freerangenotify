@@ -120,6 +120,7 @@ export interface ListNotificationsOptions {
 // ── User Types ──
 
 export interface CreateUserParams {
+    full_name?: string;
     email?: string;
     phone?: string;
     timezone?: string;
@@ -130,6 +131,7 @@ export interface CreateUserParams {
 }
 
 export interface UpdateUserParams {
+    full_name?: string;
     external_id?: string;
     email?: string;
     phone?: string;
@@ -143,6 +145,7 @@ export interface User {
     user_id: string;
     app_id: string;
     external_id: string;
+    full_name: string;
     email: string;
     phone: string;
     timezone: string;
@@ -165,6 +168,12 @@ export interface BulkCreateUsersResult {
     created: number;
     total: number;
     errors?: string[];
+}
+
+export interface BulkCreateUsersParams {
+    users: CreateUserParams[];
+    skip_existing?: boolean;
+    upsert?: boolean;
 }
 
 export interface Preferences {

@@ -115,6 +115,7 @@ type NotificationListResponse struct {
 
 // CreateUserParams holds parameters for registering a new user.
 type CreateUserParams struct {
+	FullName    string       `json:"full_name,omitempty"`
 	Email       string       `json:"email,omitempty"`
 	Phone       string       `json:"phone,omitempty"`
 	Timezone    string       `json:"timezone,omitempty"`
@@ -126,6 +127,7 @@ type CreateUserParams struct {
 
 // UpdateUserParams holds parameters for updating an existing user.
 type UpdateUserParams struct {
+	FullName    string       `json:"full_name,omitempty"`
 	ExternalID  string       `json:"external_id,omitempty"`
 	Email       string       `json:"email,omitempty"`
 	Phone       string       `json:"phone,omitempty"`
@@ -140,6 +142,7 @@ type User struct {
 	UserID      string       `json:"user_id"`
 	AppID       string       `json:"app_id"`
 	ExternalID  string       `json:"external_id"`
+	FullName    string       `json:"full_name"`
 	Email       string       `json:"email"`
 	Phone       string       `json:"phone"`
 	Timezone    string       `json:"timezone"`
@@ -164,6 +167,13 @@ type BulkCreateUsersResult struct {
 	Created int      `json:"created"`
 	Total   int      `json:"total"`
 	Errors  []string `json:"errors,omitempty"`
+}
+
+// BulkCreateUsersParams holds parameters for a bulk user creation or upsert.
+type BulkCreateUsersParams struct {
+	Users        []CreateUserParams `json:"users"`
+	SkipExisting bool               `json:"skip_existing,omitempty"`
+	Upsert       bool               `json:"upsert,omitempty"`
 }
 
 // Preferences holds user notification preferences.

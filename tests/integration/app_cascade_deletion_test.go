@@ -109,7 +109,7 @@ func (s *AppCascadeDeletionTestSuite) getLinks(appID string) []map[string]interf
 // esRefresh forces Elasticsearch to refresh the given indices so recent writes are searchable.
 func (s *AppCascadeDeletionTestSuite) esRefresh(indices ...string) {
 	for _, idx := range indices {
-		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_refresh", elasticsearchURL, idx), nil)
+		req, _ := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/%s/_refresh", resolvedESURL(), idx), nil)
 		resp, err := s.client.Do(req)
 		if err == nil {
 			resp.Body.Close()
@@ -127,7 +127,7 @@ func (s *AppCascadeDeletionTestSuite) esDocCount(index, field, value string) int
 	body, _ := json.Marshal(query)
 
 	req, err := http.NewRequest(http.MethodPost,
-		fmt.Sprintf("%s/%s/_count", elasticsearchURL, index),
+		fmt.Sprintf("%s/%s/_count", resolvedESURL(), index),
 		bytes.NewReader(body))
 	s.Require().NoError(err)
 	req.Header.Set("Content-Type", "application/json")
@@ -152,7 +152,7 @@ func (s *AppCascadeDeletionTestSuite) esDocCount(index, field, value string) int
 // esDocExists checks if a specific document exists in an ES index.
 func (s *AppCascadeDeletionTestSuite) esDocExists(index, docID string) bool {
 	req, _ := http.NewRequest(http.MethodHead,
-		fmt.Sprintf("%s/%s/_doc/%s", elasticsearchURL, index, docID), nil)
+		fmt.Sprintf("%s/%s/_doc/%s", resolvedESURL(), index, docID), nil)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return false
@@ -164,7 +164,7 @@ func (s *AppCascadeDeletionTestSuite) esDocExists(index, docID string) bool {
 // esGetField retrieves a single field from a document.
 func (s *AppCascadeDeletionTestSuite) esGetField(index, docID, field string) interface{} {
 	req, _ := http.NewRequest(http.MethodGet,
-		fmt.Sprintf("%s/%s/_doc/%s", elasticsearchURL, index, docID), nil)
+		fmt.Sprintf("%s/%s/_doc/%s", resolvedESURL(), index, docID), nil)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil

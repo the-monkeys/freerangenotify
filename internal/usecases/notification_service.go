@@ -17,6 +17,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -107,7 +108,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	if req.UserID != "" {
 		resolvedID, err := s.resolveUserID(ctx, req.AppID, req.UserID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve user: %w", err)
+			return nil, err
 		}
 		req.UserID = resolvedID
 	}
@@ -182,6 +183,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	} else {
 		u, err = s.userRepo.GetByID(ctx, req.UserID)
 		if err != nil {
+			if errors.IsNotFound(err) {
+				return nil, errors.NotFound("user", req.UserID)
+			}
 			s.logger.Error("Failed to get user", zap.String("user_id", req.UserID), zap.Error(err))
 			return nil, fmt.Errorf("user not found: %w", err)
 		}
@@ -982,7 +986,8 @@ func (s *NotificationService) resolveUserID(ctx context.Context, appID, identifi
 		return u.UserID, nil
 	}
 
-	return "", fmt.Errorf("user %q not found; use a valid user_id, email address, external_id, or internal UUID", identifier)
+	return "", errors.NotFound("user", identifier).
+		WithMetadata("hint", "use a valid user_id, email address, external_id, or internal UUID")
 }
 
 // resolveTemplate resolves a template reference by name or UUID.
