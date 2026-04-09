@@ -23,6 +23,7 @@ const SSOCallback = lazy(() => import('./pages/SSOCallback'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const AcceptableUsePolicy = lazy(() => import('./pages/AcceptableUsePolicy'));
+const DataDeletion = lazy(() => import('./pages/DataDeletion'));
 const Pricing = lazy(() => import('./pages/Pricing'));
 const AppsList = lazy(() => import('./pages/AppsList'));
 const TenantsList = lazy(() => import('./pages/TenantsList'));
@@ -109,6 +110,7 @@ const App: React.FC = () => {
                     <Route path="/terms" element={<TermsOfService />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     <Route path="/acceptable-use" element={<AcceptableUsePolicy />} />
+                    <Route path="/data-deletion" element={<DataDeletion />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>

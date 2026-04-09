@@ -34,6 +34,9 @@ const Footer: React.FC = () => {
                             <Button asChild variant="link" size="sm">
                                 <Link to="/acceptable-use">Acceptable Use</Link>
                             </Button>
+                            <Button asChild variant="link" size="sm">
+                                <Link to="/data-deletion">Data Deletion</Link>
+                            </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">
                             &copy; {currentYear} BUDDHICINTAKA PVT. LTD. All rights reserved.
