@@ -692,21 +692,30 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		}
 	}
 
-	// If it's WhatsApp, inject app-specific Twilio credentials when configured.
+	// If it's WhatsApp, inject app-specific credentials (Twilio or Meta) when configured.
 	if notif.Channel == notification.ChannelWhatsApp {
 		app, err := p.appRepo.GetByID(ctx, notif.AppID)
 		isByoc := false
 		if err == nil && app != nil && app.Settings.WhatsApp != nil {
 			waCfg := app.Settings.WhatsApp
+			// Twilio BYOC: has AccountSID + AuthToken
 			if waCfg.AccountSID != "" && waCfg.AuthToken != "" {
 				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, waCfg)
-				p.logger.Debug("Using app WhatsApp config",
+				p.logger.Debug("Using app WhatsApp config (Twilio BYOC)",
 					zap.String("app_id", notif.AppID))
+				isByoc = true
+			}
+			// Meta BYOC: provider explicitly set to "meta" with Meta credentials
+			if !isByoc && waCfg.Provider == "meta" && waCfg.MetaPhoneNumberID != "" && waCfg.MetaAccessToken != "" {
+				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, waCfg)
+				p.logger.Debug("Using app WhatsApp config (Meta BYOC)",
+					zap.String("app_id", notif.AppID),
+					zap.String("phone_number_id", waCfg.MetaPhoneNumberID))
 				isByoc = true
 			}
 		}
 
-		// Phase 3: Phone verification gate for system credentials
+		// Phone verification gate for system credentials (non-BYOC only)
 		if !isByoc && app != nil {
 			adminUser, err := p.authService.GetCurrentUser(ctx, app.AdminUserID)
 			if err != nil {
@@ -775,6 +784,53 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		}
 	}
 
+	// Explicit WhatsApp provider routing: the provider-manager default is map-iteration-order
+	// dependent (see local/TWILIO_META_PRODUCTION_PLAN.md). Route deterministically based on
+	// payload shape and app BYOC configuration:
+	//   1. content_sid in data => Twilio Content API (Twilio-only concept) - force "whatsapp"
+	//   2. app.Settings.WhatsApp.Provider == "meta" => "meta_whatsapp"
+	//   3. otherwise => Twilio "whatsapp" (system credentials or Twilio BYOC)
+	if notif.Channel == notification.ChannelWhatsApp {
+		waProviderChain := []string{"whatsapp", "meta_whatsapp"}
+		if notif.Content.Data != nil {
+			if sid, _ := notif.Content.Data["content_sid"].(string); sid != "" {
+				waProviderChain = []string{"whatsapp"}
+				p.logger.Info("Forcing Twilio WhatsApp provider (content_sid present)",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("content_sid", sid))
+				// Strip any Meta BYOC config that was injected earlier; content_sid requires Twilio.
+				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, nil)
+			}
+		}
+		if len(waProviderChain) > 1 && app != nil && app.Settings.WhatsApp != nil {
+			if app.Settings.WhatsApp.Provider == "meta" {
+				waProviderChain = []string{"meta_whatsapp", "whatsapp"}
+			}
+		}
+		result, waErr := p.providerManager.SendWithFallback(ctx, notif, usr, waProviderChain)
+		if waErr != nil {
+			p.logger.Error("WhatsApp provider send failed",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Strings("chain", waProviderChain),
+				zap.Error(waErr))
+			return fmt.Errorf("whatsapp send failed: %w", waErr)
+		}
+		if result == nil || !result.Success {
+			errType := ""
+			if result != nil {
+				errType = result.ErrorType
+			}
+			return fmt.Errorf("whatsapp delivery failed: %s", errType)
+		}
+		if result.ProviderMessageID != "" {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["provider_message_id"] = result.ProviderMessageID
+		}
+		return nil
+	}
+
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
 		// Phase 3: If no built-in provider found, try custom providers on the app
@@ -819,6 +875,17 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 
 	if !result.Success {
 		return fmt.Errorf("provider delivery failed: %s", result.ErrorType)
+	}
+
+	if result.ProviderMessageID != "" {
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["provider_message_id"] = result.ProviderMessageID
+		for k, v := range result.Metadata {
+			notif.Metadata[k] = v
+		}
+		_ = p.notifRepo.Update(ctx, notif)
 	}
 
 	return nil

@@ -68,6 +68,17 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 		}
 		templateID = tmpl.ID
 		channel = notification.Channel(tmpl.Channel)
+	} else if req.Data != nil {
+		if _, ok := req.Data["content_sid"]; ok {
+			// Twilio Content Template: content_sid in data is sufficient, no FRN template needed
+			if req.Channel != "" {
+				channel = notification.Channel(req.Channel)
+			} else {
+				channel = notification.ChannelWhatsApp
+			}
+		} else {
+			return nil, fmt.Errorf("either 'template' or 'body' must be provided")
+		}
 	} else {
 		return nil, fmt.Errorf("either 'template' or 'body' must be provided")
 	}

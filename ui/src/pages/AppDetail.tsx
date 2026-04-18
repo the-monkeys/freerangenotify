@@ -14,6 +14,10 @@ import TopicsList from './topics/TopicsList';
 import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
 import TemplateLibrary from './TemplateLibrary';
+import WhatsAppConnect from '../components/whatsapp/WhatsAppConnect';
+import WhatsAppTemplates from './whatsapp/WhatsAppTemplates';
+import WhatsAppConversations from './whatsapp/WhatsAppConversations';
+import TwilioWhatsAppTemplates from './whatsapp/TwilioWhatsAppTemplates';
 
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -26,14 +30,14 @@ import { Checkbox } from '../components/ui/checkbox';
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuItem } from '../components/ui/sidebar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion';
 import { toast } from 'sonner';
-import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2 } from 'lucide-react';
+import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2, MessageCircle } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { useApiQuery } from '../hooks/use-api-query';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
 
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import' | 'browse-library';
+type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import' | 'browse-library' | 'whatsapp';
 
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import', 'browse-library'];
+const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import', 'browse-library', 'whatsapp'];
 
 interface TabDef {
     id: TabId;
@@ -58,6 +62,7 @@ const TAB_GROUPS: { label: string; tabs: TabDef[] }[] = [
             { id: 'workflows', label: 'Workflows', icon: <Workflow className="h-4 w-4" /> },
             { id: 'schedules', label: 'Schedules', icon: <Timer className="h-4 w-4" /> },
             { id: 'topics', label: 'Topics', icon: <MessageSquare className="h-4 w-4" /> },
+            { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-4 w-4" /> },
             { id: 'team', label: 'Team', icon: <UsersRound className="h-4 w-4" /> },
             { id: 'providers', label: 'Providers', icon: <Plug className="h-4 w-4" /> },
             { id: 'import', label: 'Import', icon: <Link2 className="h-4 w-4" /> },
@@ -435,6 +440,15 @@ const AppDetail: React.FC = () => {
                         )}
                         {app && activeTab === 'notifications' && (
                             <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
+                        )}
+
+                        {app && activeTab === 'whatsapp' && (
+                            <div className="space-y-8">
+                                <WhatsAppConnect appId={app.app_id} />
+                                <TwilioWhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
+                                <WhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
+                                <WhatsAppConversations apiKey={app.api_key} appId={app.app_id} />
+                            </div>
                         )}
 
                         {activeTab === 'settings' && (
@@ -970,6 +984,12 @@ const AppDetail: React.FC = () => {
                                             <AccordionItem value="whatsapp-channel" className="border bg-card rounded-lg px-4">
                                                 <AccordionTrigger className="text-base font-semibold hover:no-underline">WhatsApp Channel Configuration</AccordionTrigger>
                                                 <AccordionContent className="pt-4 pb-4">
+                                                    <div className="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800">
+                                                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                                                            For Meta WhatsApp Business (Embedded Signup, templates, inbox), use the <button type="button" className="underline font-medium" onClick={() => setActiveTab('whatsapp')}>WhatsApp tab</button> instead.
+                                                            The settings below are for Twilio WhatsApp only.
+                                                        </p>
+                                                    </div>
                                                     <div className="p-4 border border-border rounded bg-muted mb-8 space-y-6">
                                                         <p className="text-sm text-muted-foreground">
                                                             Configure per-app Twilio WhatsApp credentials. Leave empty to use system defaults.

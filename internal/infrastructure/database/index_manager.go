@@ -74,6 +74,9 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		// Platform dashboard notifications (in-app + SSE for org invites, etc.)
 		"dashboard_notifications": im.templates.GetDashboardNotificationsTemplate,
 		"subscriptions":           im.templates.GetSubscriptionsTemplate,
+
+		// WhatsApp Meta Tech Provider — inbound messages
+		"whatsapp_messages": im.templates.GetWhatsAppMessagesTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

@@ -22,6 +22,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/billingrepo"
@@ -149,6 +150,16 @@ type Container struct {
 
 	// Phase 7: Inbound Webhooks (feature-gated with Workflow)
 	InboundWebhookHandler *handlers.InboundWebhookHandler
+
+	// WhatsApp Meta Tech Provider (feature-gated)
+	WhatsAppService             whatsapp.Service
+	MetaWebhookHandler          *handlers.MetaWebhookHandler
+	WhatsAppAdminHandler        *handlers.WhatsAppAdminHandler
+	WhatsAppTemplateHandler     *handlers.WhatsAppTemplateHandler
+	WhatsAppConversationHandler *handlers.WhatsAppConversationHandler
+
+	// Twilio Content Templates
+	TwilioTemplateHandler *handlers.TwilioTemplateHandler
 
 	// Tenant/Organization (Phase C1)
 	TenantService tenant.Service
@@ -652,6 +663,65 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger.Info("Billing metering enabled", zap.String("index", "frn_usage_events"))
 	} else {
 		logger.Warn("Billing metering is DISABLED. Set FREERANGE_FEATURES_BILLING_ENABLED=true for production.")
+	}
+
+	// ── WhatsApp Meta Tech Provider (feature-gated) ──
+	if cfg.Features.WhatsAppMetaEnabled {
+		waRepo := repository.NewWhatsAppRepository(dbManager.Client.GetClient(), logger)
+		container.WhatsAppService = services.NewWhatsAppService(
+			waRepo,
+			repos.Application,
+			repos.Notification,
+			container.SSEBroadcaster,
+			container.WorkflowService,
+			redisClient,
+			logger,
+		)
+		container.MetaWebhookHandler = handlers.NewMetaWebhookHandler(
+			container.WhatsAppService,
+			repos.Application,
+			cfg.Providers.MetaWhatsApp.AppSecret,
+			cfg.Providers.MetaWhatsApp.WebhookVerify,
+			logger,
+		)
+
+		webhookURL := ""
+		if cfg.Server.PublicURL != "" {
+			webhookURL = cfg.Server.PublicURL + "/v1/webhooks/meta/whatsapp"
+		}
+		container.WhatsAppAdminHandler = handlers.NewWhatsAppAdminHandler(
+			container.ApplicationService,
+			container.MembershipRepo,
+			repos.Application,
+			cfg.Providers.MetaWhatsApp.MetaAppID,
+			cfg.Providers.MetaWhatsApp.MetaAppSecret,
+			cfg.Providers.MetaWhatsApp.APIVersion,
+			webhookURL,
+			logger,
+		)
+		container.WhatsAppTemplateHandler = handlers.NewWhatsAppTemplateHandler(
+			repos.Application,
+			container.SSEBroadcaster,
+			cfg.Providers.MetaWhatsApp.APIVersion,
+			logger,
+		)
+		container.MetaWebhookHandler.SetTemplateHandler(container.WhatsAppTemplateHandler)
+		container.WhatsAppConversationHandler = handlers.NewWhatsAppConversationHandler(
+			container.WhatsAppService,
+			logger,
+		)
+		logger.Info("WhatsApp Meta integration enabled (webhook receiver, inbound messaging, embedded signup, template management, inbox)")
+	}
+
+	// ── Twilio Content Templates ──
+	if cfg.Providers.Twilio.AccountSID != "" && cfg.Providers.Twilio.AuthToken != "" {
+		container.TwilioTemplateHandler = handlers.NewTwilioTemplateHandler(
+			container.SSEBroadcaster,
+			cfg.Providers.Twilio.AccountSID,
+			cfg.Providers.Twilio.AuthToken,
+			logger,
+		)
+		logger.Info("Twilio Content Template management enabled")
 	}
 
 	// ── Phase 6: Multi-Environment (feature-gated) ──
