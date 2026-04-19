@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI } from '../services/api';
+import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI } from '../services/api';
+import type { TwilioContentTemplate } from '../types';
 import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import VerifyPhoneDialog from './VerifyPhoneDialog';
@@ -31,6 +32,7 @@ import { TimezonePicker } from './TimezonePicker';
 import { localInTimezoneToISO, formatInTimezone, nowInTimezone } from '../lib/timezone';
 import Papa from 'papaparse';
 import EditablePreviewPanel from './templates/EditablePreviewPanel';
+import WhatsAppPreview from './whatsapp/WhatsAppPreview';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -128,6 +130,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         { cacheKey: `templates-list-${apiKey}`, staleTime: 60000 }
     );
     const templates = useMemo(() => templatesData?.templates || [], [templatesData]);
+
+    // 3b. Twilio Content Templates (for WhatsApp)
+    const { data: twilioData } = useApiQuery(
+        () => twilioTemplatesAPI.list(apiKey),
+        [apiKey],
+        { cacheKey: `twilio-templates-${apiKey}`, staleTime: 60000 }
+    );
+    const twilioApproved = useMemo<TwilioContentTemplate[]>(() => {
+        const all: TwilioContentTemplate[] = twilioData?.contents || [];
+        return all.filter(t => t.approval_requests?.status === 'approved');
+    }, [twilioData]);
 
     // 4. Workflows
     const { data: workflowsData } = useApiQuery(
@@ -498,6 +511,53 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     // Filtered templates by channel
     const filteredTemplates = useMemo(() => (templates || []).filter(t => t.channel === formData.channel), [templates, formData.channel]);
 
+    // Helper: check if a template selection is a Twilio Content Template
+    const isTwilioSelection = (id: string) => id.startsWith('twilio:');
+    const extractTwilioSid = (id: string) => id.slice('twilio:'.length);
+    const findTwilioTemplate = (id: string) => twilioApproved.find(t => t.sid === extractTwilioSid(id));
+
+    // Selected Twilio template (memoised) — used to drive variable inputs and preview
+    const quickSelectedTwilioTemplate = useMemo<TwilioContentTemplate | undefined>(() => {
+        if (!isTwilioSelection(quickTemplateId)) return undefined;
+        return findTwilioTemplate(quickTemplateId);
+    }, [quickTemplateId, twilioApproved]);
+
+    // Ordered list of Twilio variable keys for the selected template
+    const quickTwilioVariableKeys = useMemo<string[]>(() => {
+        if (!quickSelectedTwilioTemplate?.variables) return [];
+        // Sort numeric keys ascending, keep non-numeric in insertion order after
+        const keys = Object.keys(quickSelectedTwilioTemplate.variables);
+        const numeric = keys.filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+        const named = keys.filter(k => !/^\d+$/.test(k));
+        return [...numeric, ...named];
+    }, [quickSelectedTwilioTemplate]);
+
+    // Inline Twilio preview toggle (does not reuse EditablePreviewPanel since Twilio
+    // content lives locally and doesn't need a server render call)
+    const [twilioPreviewOpen, setTwilioPreviewOpen] = useState(false);
+
+    // Form tabs (Bulk Send + Broadcast) share formData.template_id. Twilio vars live
+    // in a separate record so they can drive both variable inputs and the inline preview
+    // without polluting dataInput. They are serialized into content_variables at send time.
+    const [formTwilioVars, setFormTwilioVars] = useState<Record<string, string>>({});
+    const [formTwilioPreviewOpen, setFormTwilioPreviewOpen] = useState(false);
+
+    const formSelectedTwilioTemplate = useMemo<TwilioContentTemplate | undefined>(() => {
+        if (!isTwilioSelection(formData.template_id || '')) return undefined;
+        return findTwilioTemplate(formData.template_id!);
+    }, [formData.template_id, twilioApproved]);
+
+    const formTwilioVariableKeys = useMemo<string[]>(() => {
+        if (!formSelectedTwilioTemplate?.variables) return [];
+        const keys = Object.keys(formSelectedTwilioTemplate.variables);
+        const numeric = keys.filter(k => /^\d+$/.test(k)).sort((a, b) => Number(a) - Number(b));
+        const named = keys.filter(k => !/^\d+$/.test(k));
+        return [...numeric, ...named];
+    }, [formSelectedTwilioTemplate]);
+
+    // Twilio variables now drive content_variables through quickData / formTwilioVars
+    // directly at send time — no helper needed.
+
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
     const quickVariables = useMemo(() => {
@@ -750,8 +810,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const handleQuickSend = async () => {
         if (!quickTo || !quickTemplateId) return;
 
-        const selectedTemplate = templates.find(t => t.id === quickTemplateId);
-        const channel = selectedTemplate?.channel || 'email';
+        const isTwilio = isTwilioSelection(quickTemplateId);
+        const selectedTemplate = isTwilio ? undefined : templates.find(t => t.id === quickTemplateId);
+        const channel = isTwilio ? 'whatsapp' : (selectedTemplate?.channel || 'email');
         if (checkVerificationAndBlock(channel)) return;
 
         if (quickScheduledAt && quickScheduledAt < nowInTimezone(scheduleTimezone)) {
@@ -763,10 +824,25 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         try {
             const selectedDigestRule = quickDigestRuleId ? digestRules.find(r => r.id === quickDigestRuleId) : null;
             const scheduledAt = quickScheduledAt ? scheduleToISO(quickScheduledAt, scheduleTimezone) : undefined;
+
+            // Build send payload — Twilio Content Template sends content_sid via data
+            const twilioTpl = isTwilio ? findTwilioTemplate(quickTemplateId) : undefined;
+            // For Twilio: quickData contains user-typed variable values keyed by variable name
+            // (e.g. "1", "2"). Bundle them into content_variables JSON string and attach
+            // content_sid. Do NOT pass the raw variable keys at the top level — the provider
+            // only reads content_sid + content_variables.
+            const sendData = isTwilio && twilioTpl
+                ? {
+                    content_sid: twilioTpl.sid,
+                    content_variables: JSON.stringify(quickData || {}),
+                }
+                : (Object.keys(quickData).length > 0 ? quickData : undefined);
+
             await quickSendAPI.send(apiKey, {
                 to: quickTo,
-                template: quickSelectedTemplate?.name || quickTemplateId,
-                data: Object.keys(quickData).length > 0 ? quickData : undefined,
+                template: isTwilio ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
+                channel: isTwilio ? 'whatsapp' : undefined,
+                data: sendData,
                 priority: quickPriority as any,
                 scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
@@ -836,18 +912,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             }
 
             const useWorkflow = !!broadcastWorkflowTriggerId;
+            const isTwilio = isTwilioSelection(formData.template_id || '');
             if (!useWorkflow && !formData.template_id) {
                 toast.error('Select a template or a workflow to trigger');
                 setIsSubmitting(false);
                 return;
             }
 
+            const twilioTpl = isTwilio ? findTwilioTemplate(formData.template_id!) : undefined;
             const broadcastDigestRule = broadcastDigestRuleId ? digestRules.find(r => r.id === broadcastDigestRuleId) : null;
+            const twilioPayload = isTwilio && twilioTpl ? {
+                content_sid: twilioTpl.sid,
+                content_variables: JSON.stringify(formTwilioVars || {}),
+            } : null;
             const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
-                template_id: useWorkflow ? undefined : formData.template_id,
-                data: customData,
+                template_id: (useWorkflow || isTwilio) ? undefined : formData.template_id,
+                data: twilioPayload ? { ...twilioPayload, ...customData } : customData,
                 scheduled_at: formData.scheduled_at,
                 workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
                 topic_key: broadcastTopicKey || undefined,
@@ -861,6 +943,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setBroadcastWorkflowTriggerId('');
             setBroadcastTopicKey('');
             setBroadcastDigestRuleId('');
+            setFormTwilioVars({});
+            setFormTwilioPreviewOpen(false);
             clearFormMedia();
             refresh();
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
@@ -902,12 +986,19 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             }
 
             const advDigestRule = advDigestRuleId ? digestRules.find(r => r.id === advDigestRuleId) : null;
+            const isTwilio = isTwilioSelection(formData.template_id || '');
+            const twilioTpl = isTwilio ? findTwilioTemplate(formData.template_id!) : undefined;
+            const twilioPayload = isTwilio && twilioTpl ? {
+                content_sid: twilioTpl.sid,
+                content_variables: JSON.stringify(formTwilioVars || {}),
+            } : null;
+            const finalData = twilioPayload ? { ...twilioPayload, ...customData } : customData;
             const payload: NotificationRequest = {
                 user_id: '',
                 channel: formData.channel,
                 priority: formData.priority,
-                template_id: formData.template_id || undefined,
-                data: customData,
+                template_id: isTwilio ? undefined : (formData.template_id || undefined),
+                data: finalData,
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
                 workflow_trigger_id: formData.workflow_trigger_id || undefined,
@@ -980,6 +1071,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setSelectedTargets([]);
             setDataInput('');
             setAdvDigestRuleId('');
+            setFormTwilioVars({});
+            setFormTwilioPreviewOpen(false);
             clearFormMedia();
             toast.success('Notification(s) sent successfully!');
         } catch (error) {
@@ -1094,25 +1187,40 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Select value={quickTemplateId} onValueChange={(value) => {
 
                                             setQuickTemplateId(value);
-                                            // Pre-fill variables with sample_data
-                                            const selected = templates.find(t => t.id === value);
-                                            if (selected?.channel !== 'whatsapp' && quickMedia?.previewUrl) {
-                                                URL.revokeObjectURL(quickMedia.previewUrl);
-                                                setQuickMedia(null);
-                                            }
-                                            const sample = getSampleData(selected);
-                                            if (Object.keys(sample).length > 0) {
-                                                setQuickData(
-                                                    selected?.channel === 'whatsapp' && quickMedia
-                                                        ? { ...sample, media_url: quickMedia.url }
-                                                        : sample,
-                                                );
+                                            setTwilioPreviewOpen(false);
+                                            if (isTwilioSelection(value)) {
+                                                const tpl = findTwilioTemplate(value);
+                                                // Seed quickData with one empty entry per Twilio variable key
+                                                // so the variable-input grid picks them up. content_sid is
+                                                // injected at send time in handleQuickSend.
+                                                if (tpl?.variables) {
+                                                    const seed: Record<string, string> = {};
+                                                    for (const k of Object.keys(tpl.variables)) seed[k] = '';
+                                                    setQuickData(seed);
+                                                } else {
+                                                    setQuickData({});
+                                                }
                                             } else {
-                                                setQuickData(
-                                                    selected?.channel === 'whatsapp' && quickMedia
-                                                        ? { media_url: quickMedia.url }
-                                                        : {},
-                                                );
+                                                // Pre-fill variables with sample_data
+                                                const selected = templates.find(t => t.id === value);
+                                                if (selected?.channel !== 'whatsapp' && quickMedia?.previewUrl) {
+                                                    URL.revokeObjectURL(quickMedia.previewUrl);
+                                                    setQuickMedia(null);
+                                                }
+                                                const sample = getSampleData(selected);
+                                                if (Object.keys(sample).length > 0) {
+                                                    setQuickData(
+                                                        selected?.channel === 'whatsapp' && quickMedia
+                                                            ? { ...sample, media_url: quickMedia.url }
+                                                            : sample,
+                                                    );
+                                                } else {
+                                                    setQuickData(
+                                                        selected?.channel === 'whatsapp' && quickMedia
+                                                            ? { media_url: quickMedia.url }
+                                                            : {},
+                                                    );
+                                                }
                                             }
                                         }}>
                                             <SelectTrigger>
@@ -1122,6 +1230,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 {(templates || []).map(t => (
                                                     <SelectItem key={t.id} value={t.id}>{t.name} ({t.channel})</SelectItem>
                                                 ))}
+                                                {twilioApproved.length > 0 && (
+                                                    <>
+                                                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Twilio WhatsApp Templates</div>
+                                                        {twilioApproved.map(t => (
+                                                            <SelectItem key={t.sid} value={`twilio:${t.sid}`}>
+                                                                {t.friendly_name} (whatsapp)
+                                                            </SelectItem>
+                                                        ))}
+                                                    </>
+                                                )}
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -1174,6 +1292,54 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <p className="text-xs text-muted-foreground">
                                                 Fill variable values through the preview panel.
                                             </p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Twilio Content Template variables + inline WhatsApp preview */}
+                                {quickSelectedTwilioTemplate && (
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium flex items-center gap-2">
+                                                Template Variables
+                                                {quickTwilioVariableKeys.length > 0 && (
+                                                    <Badge variant="secondary" className="text-xs">{quickTwilioVariableKeys.length}</Badge>
+                                                )}
+                                                <span className="text-xs text-muted-foreground font-normal">• Twilio content template</span>
+                                            </span>
+                                        </div>
+                                        {quickTwilioVariableKeys.length === 0 ? (
+                                            <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {quickTwilioVariableKeys.map((k) => {
+                                                    const label = quickSelectedTwilioTemplate.variables?.[k] || k;
+                                                    const currentVal = quickData[k] || '';
+                                                    return (
+                                                        <div key={k} className="space-y-1">
+                                                            <Label className="text-xs text-muted-foreground">
+                                                                <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                                {label !== k && <span>{label}</span>}
+                                                            </Label>
+                                                            <Input
+                                                                value={currentVal}
+                                                                onChange={(e) => setQuickData((d) => ({ ...d, [k]: e.target.value }))}
+                                                                placeholder={`Value for {{${k}}}`}
+                                                                className={currentVal ? '' : 'text-muted-foreground'}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {twilioPreviewOpen && (
+                                            <div className="pt-2 flex justify-center">
+                                                <WhatsAppPreview
+                                                    template={quickSelectedTwilioTemplate}
+                                                    variables={quickData}
+                                                    header={quickSelectedTwilioTemplate.friendly_name}
+                                                />
+                                            </div>
                                         )}
                                     </div>
                                 )}
@@ -1367,11 +1533,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     {quickTemplateId && (
                                         <Button
                                             variant="outline"
-                                            disabled={!!activePreviews[quickTemplateId]?.loading || !quickTemplateId}
-                                            onClick={renderQuickPreview}
+                                            disabled={
+                                                !quickSelectedTwilioTemplate &&
+                                                (!!activePreviews[quickTemplateId]?.loading || !quickTemplateId)
+                                            }
+                                            onClick={() => {
+                                                if (quickSelectedTwilioTemplate) {
+                                                    setTwilioPreviewOpen((v) => !v);
+                                                } else {
+                                                    renderQuickPreview();
+                                                }
+                                            }}
                                         >
                                             <Eye className="w-4 h-4 mr-1" />
-                                            {activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview'}
+                                            {quickSelectedTwilioTemplate
+                                                ? (twilioPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                : (activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview')}
                                         </Button>
                                     )}
                                     <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
@@ -1441,14 +1618,28 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Select
                                             value={formData.template_id || ''}
                                             onValueChange={(value) => {
-                                                setFormData({ ...formData, template_id: value });
-                                                // Pre-fill variables with sample_data from template metadata
-                                                const selected = templates.find(t => t.id === value);
-                                                const sample = getSampleData(selected);
-                                                if (Object.keys(sample).length > 0) {
-                                                    setDataInput(JSON.stringify(sample, null, 2));
-                                                } else {
+                                                if (isTwilioSelection(value)) {
+                                                    const tpl = findTwilioTemplate(value);
+                                                    setFormData({ ...formData, template_id: value });
+                                                    // Seed Twilio var inputs; clear JSON data block
+                                                    const seed: Record<string, string> = {};
+                                                    if (tpl?.variables) {
+                                                        for (const k of Object.keys(tpl.variables)) seed[k] = '';
+                                                    }
+                                                    setFormTwilioVars(seed);
+                                                    setFormTwilioPreviewOpen(false);
                                                     setDataInput('');
+                                                } else {
+                                                    setFormData({ ...formData, template_id: value });
+                                                    setFormTwilioVars({});
+                                                    setFormTwilioPreviewOpen(false);
+                                                    const selected = templates.find(t => t.id === value);
+                                                    const sample = getSampleData(selected);
+                                                    if (Object.keys(sample).length > 0) {
+                                                        setDataInput(JSON.stringify(sample, null, 2));
+                                                    } else {
+                                                        setDataInput('');
+                                                    }
                                                 }
                                             }}
                                         >
@@ -1456,17 +1647,27 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <SelectValue placeholder="Select a template" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {filteredTemplates.length === 0 ? (
+                                                {filteredTemplates.map(t => (
+                                                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                                ))}
+                                                {formData.channel === 'whatsapp' && twilioApproved.length > 0 && (
+                                                    <>
+                                                        {filteredTemplates.length > 0 && <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Twilio Content Templates</div>}
+                                                        {filteredTemplates.length === 0 && <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Twilio Content Templates</div>}
+                                                        {twilioApproved.map(t => (
+                                                            <SelectItem key={t.sid} value={`twilio:${t.sid}`}>
+                                                                {t.friendly_name} (Twilio)
+                                                            </SelectItem>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || twilioApproved.length === 0) && (
                                                     <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
-                                                ) : (
-                                                    filteredTemplates.map(t => (
-                                                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                                                    ))
                                                 )}
                                             </SelectContent>
                                         </Select>
-                                        {filteredTemplates.length === 0 && (
-                                            <p className="text-xs text-amber-600">No templates found for the "{formData.channel}" channel. Create one in the Templates tab.</p>
+                                        {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || twilioApproved.length === 0) && (
+                                            <p className="text-xs text-amber-600">No templates found for the &quot;{formData.channel}&quot; channel. Create one in the Templates tab.</p>
                                         )}
                                     </div>
 
@@ -1507,6 +1708,56 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     </>
                                                 ) : (
                                                     <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Twilio Content Template variables + inline WhatsApp preview */}
+                                    {formSelectedTwilioTemplate && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-medium flex items-center gap-2">
+                                                        Template Variables
+                                                        {formTwilioVariableKeys.length > 0 && (
+                                                            <Badge variant="secondary" className="text-xs">{formTwilioVariableKeys.length}</Badge>
+                                                        )}
+                                                        <span className="text-xs text-muted-foreground font-normal">• Twilio content template</span>
+                                                    </span>
+                                                </div>
+                                                {formTwilioVariableKeys.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {formTwilioVariableKeys.map((k) => {
+                                                            const label = formSelectedTwilioTemplate.variables?.[k] || k;
+                                                            const currentVal = formTwilioVars[k] || '';
+                                                            return (
+                                                                <div key={k} className="space-y-1">
+                                                                    <Label className="text-xs text-muted-foreground">
+                                                                        <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                                        {label !== k && <span>{label}</span>}
+                                                                    </Label>
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setFormTwilioVars((d) => ({ ...d, [k]: e.target.value }))}
+                                                                        placeholder={`Value for {{${k}}}`}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {formTwilioPreviewOpen && (
+                                                    <div className="pt-2 flex justify-center">
+                                                        <WhatsAppPreview
+                                                            template={formSelectedTwilioTemplate}
+                                                            variables={formTwilioVars}
+                                                            header={formSelectedTwilioTemplate.friendly_name}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
@@ -1811,11 +2062,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Button
                                             type="button"
                                             variant="outline"
-                                            onClick={() => renderSendPreview('advanced')}
-                                            disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
+                                            onClick={() => {
+                                                if (formSelectedTwilioTemplate) {
+                                                    setFormTwilioPreviewOpen((v) => !v);
+                                                } else {
+                                                    renderSendPreview('advanced');
+                                                }
+                                            }}
+                                            disabled={
+                                                !formSelectedTwilioTemplate &&
+                                                (!!activePreviews[formData.template_id || '']?.loading || !formData.template_id)
+                                            }
                                         >
                                             <Eye className="h-4 w-4 mr-1" />
-                                            {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
+                                            {formSelectedTwilioTemplate
+                                                ? (formTwilioPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
                                         </Button>
                                         <Button
                                             type="button"
@@ -1825,6 +2087,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 setSelectedUsers([]);
                                                 setSelectedTargets([]);
                                                 setDataInput('');
+                                                setFormTwilioVars({});
+                                                setFormTwilioPreviewOpen(false);
                                                 clearFormMedia();
                                             }}
                                         >
@@ -1890,7 +2154,21 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <Select
                                                     value={formData.template_id || ''}
                                                     onValueChange={(val) => {
+                                                        if (isTwilioSelection(val)) {
+                                                            const tpl = findTwilioTemplate(val);
+                                                            setFormData({ ...formData, template_id: val });
+                                                            const seed: Record<string, string> = {};
+                                                            if (tpl?.variables) {
+                                                                for (const k of Object.keys(tpl.variables)) seed[k] = '';
+                                                            }
+                                                            setFormTwilioVars(seed);
+                                                            setFormTwilioPreviewOpen(false);
+                                                            setDataInput('');
+                                                            return;
+                                                        }
                                                         setFormData({ ...formData, template_id: val });
+                                                        setFormTwilioVars({});
+                                                        setFormTwilioPreviewOpen(false);
                                                         const selected = templates.find(t => t.id === val);
                                                         const sample = getSampleData(selected);
                                                         if (Object.keys(sample).length > 0) {
@@ -1904,12 +2182,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         <SelectValue placeholder="Select a template" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {filteredTemplates.length === 0 ? (
+                                                        {filteredTemplates.length === 0 && !(formData.channel === 'whatsapp' && twilioApproved.length > 0) ? (
                                                             <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
                                                         ) : (
                                                             filteredTemplates.map(t => (
                                                                 <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                                                             ))
+                                                        )}
+                                                        {formData.channel === 'whatsapp' && twilioApproved.length > 0 && (
+                                                            <>
+                                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Twilio WhatsApp Templates</div>
+                                                                {twilioApproved.map(t => (
+                                                                    <SelectItem key={t.sid} value={`twilio:${t.sid}`}>
+                                                                        {t.friendly_name}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </>
                                                         )}
                                                     </SelectContent>
                                                 </Select>
@@ -1991,6 +2279,54 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     </>
                                                 ) : (
                                                     <p className="text-xs text-muted-foreground">This template has more than 2 variables. Fill values through the <strong>Preview</strong> panel.</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Twilio Content Template variables + inline WhatsApp preview */}
+                                        {formSelectedTwilioTemplate && (
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-medium flex items-center gap-2">
+                                                        Template Variables
+                                                        {formTwilioVariableKeys.length > 0 && (
+                                                            <Badge variant="secondary" className="text-xs">{formTwilioVariableKeys.length}</Badge>
+                                                        )}
+                                                        <span className="text-xs text-muted-foreground font-normal">• Twilio content template</span>
+                                                    </span>
+                                                </div>
+                                                {formTwilioVariableKeys.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {formTwilioVariableKeys.map((k) => {
+                                                            const label = formSelectedTwilioTemplate.variables?.[k] || k;
+                                                            const currentVal = formTwilioVars[k] || '';
+                                                            return (
+                                                                <div key={k} className="space-y-1">
+                                                                    <Label className="text-xs text-muted-foreground">
+                                                                        <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                                        {label !== k && <span>{label}</span>}
+                                                                    </Label>
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setFormTwilioVars((d) => ({ ...d, [k]: e.target.value }))}
+                                                                        placeholder={`Value for {{${k}}}`}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {formTwilioPreviewOpen && (
+                                                    <div className="pt-2 flex justify-center">
+                                                        <WhatsAppPreview
+                                                            template={formSelectedTwilioTemplate}
+                                                            variables={formTwilioVars}
+                                                            header={formSelectedTwilioTemplate.friendly_name}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
@@ -2144,11 +2480,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <Button
                                                     type="button"
                                                     variant="outline"
-                                                    onClick={() => renderSendPreview('broadcast')}
-                                                    disabled={!!activePreviews[formData.template_id || '']?.loading || !formData.template_id}
+                                                    onClick={() => {
+                                                        if (formSelectedTwilioTemplate) {
+                                                            setFormTwilioPreviewOpen((v) => !v);
+                                                        } else {
+                                                            renderSendPreview('broadcast');
+                                                        }
+                                                    }}
+                                                    disabled={
+                                                        !formSelectedTwilioTemplate &&
+                                                        (!!activePreviews[formData.template_id || '']?.loading || !formData.template_id)
+                                                    }
                                                 >
                                                     <Eye className="h-4 w-4 mr-1" />
-                                                    {(formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview'}
+                                                    {formSelectedTwilioTemplate
+                                                        ? (formTwilioPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                        : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
                                                 </Button>
                                                 <Button
                                                     type="submit"

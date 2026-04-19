@@ -97,12 +97,6 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		), nil
 	}
 
-	// Build message body
-	messageBody := notif.Content.Body
-	if notif.Content.Title != "" {
-		messageBody = fmt.Sprintf("*%s*\n\n%s", notif.Content.Title, notif.Content.Body)
-	}
-
 	// Twilio Messages API endpoint
 	apiURL := fmt.Sprintf(
 		"https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json",
@@ -121,12 +115,33 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	data := url.Values{
 		"To":   {toNumber},
 		"From": {fromNumber},
-		"Body": {messageBody},
 	}
 
-	// Attach media if present
-	if notif.Content.MediaURL != "" {
-		data.Set("MediaUrl", notif.Content.MediaURL)
+	// Check for Twilio Content Template mode (content_sid in notification data).
+	// Content Templates are required for business-initiated WhatsApp messages
+	// outside the 24-hour customer service window.
+	contentSid, _ := notif.Content.Data["content_sid"].(string)
+	if contentSid != "" {
+		data.Set("ContentSid", contentSid)
+		if vars, ok := notif.Content.Data["content_variables"].(map[string]interface{}); ok {
+			varsJSON, _ := json.Marshal(vars)
+			data.Set("ContentVariables", string(varsJSON))
+		}
+		p.logger.Debug("Using Twilio Content Template",
+			zap.String("notification_id", notif.NotificationID),
+			zap.String("content_sid", contentSid))
+	} else {
+		// Free-form text mode (only works within 24h customer service window)
+		messageBody := notif.Content.Body
+		if notif.Content.Title != "" {
+			messageBody = fmt.Sprintf("*%s*\n\n%s", notif.Content.Title, notif.Content.Body)
+		}
+		data.Set("Body", messageBody)
+
+		// Attach media if present
+		if notif.Content.MediaURL != "" {
+			data.Set("MediaUrl", notif.Content.MediaURL)
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(data.Encode()))

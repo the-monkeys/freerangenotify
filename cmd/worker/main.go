@@ -114,6 +114,15 @@ func main() {
 			"timeout":     float64(cfg.Providers.WhatsApp.Timeout),
 			"max_retries": float64(cfg.Providers.WhatsApp.MaxRetries),
 		},
+		"meta_whatsapp": {
+			"enabled":         cfg.Providers.MetaWhatsApp.Enabled,
+			"phone_number_id": cfg.Providers.MetaWhatsApp.PhoneNumberID,
+			"waba_id":         cfg.Providers.MetaWhatsApp.WABAID,
+			"access_token":    cfg.Providers.MetaWhatsApp.AccessToken,
+			"api_version":     cfg.Providers.MetaWhatsApp.APIVersion,
+			"timeout":         float64(cfg.Providers.MetaWhatsApp.Timeout),
+			"max_retries":     float64(cfg.Providers.MetaWhatsApp.MaxRetries),
+		},
 		"resend": {
 			"enabled":    cfg.Providers.Resend.Enabled,
 			"api_key":    cfg.Providers.Resend.APIKey,

@@ -101,6 +101,19 @@ providers:
     timeout: 15
     max_retries: 3
 
+  meta_whatsapp:
+    enabled: false
+    phone_number_id: ""
+    waba_id: ""
+    access_token: ""
+    api_version: "v23.0"
+    app_secret: ""       # Meta App Secret for webhook X-Hub-Signature-256 verification
+    webhook_verify: ""   # Verification token for Meta webhook subscription (hub.verify_token)
+    timeout: 15
+    max_retries: 3
+    meta_app_id: ""      # Facebook App ID for Embedded Signup OAuth flow
+    meta_app_secret: ""  # Facebook App Secret for token exchange (keep secret!)
+
   # AWS SES (Phase C)
   ses:
     enabled: false
@@ -127,6 +140,7 @@ security:
     allowed_origins:
       - "http://localhost:3000"
       - "http://localhost:8080"
+      - "https://*.ngrok-free.app"  # for Meta OAuth testing via ngrok
     allowed_methods:
       - "GET"
       - "POST"
@@ -160,6 +174,8 @@ features:
   snooze_enabled: true
   # Phase 6
   multi_environment_enabled: true
+  # WhatsApp Meta Cloud API (Tech Provider)
+  whatsapp_meta_enabled: false
 
 licensing:
   enabled: false

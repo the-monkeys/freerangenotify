@@ -2,41 +2,56 @@
 
 This guide walks through how **Monkeys** — a community blogging platform where users write, discover, and collaborate on content — integrates FreeRangeNotify for real-time and persistent in-app notifications.
 
-It covers everything end-to-end: creating the application, setting up templates for the events that matter, sending notifications from the Monkeys backend, and consuming them on the frontend.
+It covers everything end-to-end: creating the application, setting up templates for the events that matter, managing the user lifecycle, sending notifications from the Monkeys backend, and consuming them on the frontend.
 
 > This is a reference implementation. It is redacted of all keys, secrets, and internal identifiers. Use it as a blueprint for your own integration.
 
 ---
 
-## Architecture Decision: In-App + SSE
+## Architecture Decision: In-App + SSE + Email
 
-Monkeys uses **both channels together** for every notification:
+Monkeys uses **up to three channels** per notification event:
 
 | Channel | Role |
 |---|---|
 | `in_app` | Writes the notification to the persistent inbox in Elasticsearch. The user sees it whether they are online now or return a week later. |
 | `sse` | Pushes a real-time signal to any open browser tab. Triggers the frontend to re-fetch the inbox immediately — the user sees the badge count jump without a page refresh. |
+| `email` | Sends an email for high-priority security and account events. Used alongside `in_app` to reach users who may not be actively browsing. |
 
-The rule is simple: **`in_app` stores it, `sse` signals it.** Two sends per event, two templates per event.
+The rule is: **`in_app` stores it, `sse` signals it, `email` escalates it.** Every event gets `in_app`. SSE is added for events the user should see immediately. Email is reserved for security-critical events (login detected, password changed, email changed, account deleted).
 
 ---
 
 ## What Gets Notified
 
-Not every event in Monkeys warrants a user notification. Many (login, logout, profile edits) are audit log entries for internal ops tooling. The table below is the set that creates a notification a *different user* needs to see.
+Monkeys notifications fall into two categories: **social/collaboration events** (triggered by other users' actions) and **security/account events** (triggered by the user's own actions that they should be aware of for security purposes).
+
+### Social & Collaboration Events
 
 | Event | Channels | Category | Priority |
 |---|---|---|---|
 | Someone followed you | `in_app` + `sse` | `social` | `normal` |
-| Someone commented on your blog | `in_app` + `sse` | `social` | `normal` |
-| Someone liked your blog | `in_app` | `social` | `low` |
-| You were invited as a co-author | `in_app` + `sse` | `collaboration` | `high` |
+| Someone commented on your blog | `in_app` + `sse` | `social` | `normal` | *(planned — constant defined, consumer not yet wired)* |
+| Someone liked your blog | `in_app` + `sse` | `social` | `low` |
+| You were invited as a co-author | `in_app` + `sse` + `email` | `collaboration` | `high` |
 | Co-author invite accepted | `in_app` + `sse` | `collaboration` | `normal` |
 | Co-author invite declined | `in_app` | `collaboration` | `normal` |
 | You were removed as co-author | `in_app` + `sse` | `collaboration` | `normal` |
 | A co-authored blog was published | `in_app` + `sse` | `content` | `normal` |
+
+### Security & Account Events
+
+| Event | Channels | Category | Priority |
+|---|---|---|---|
 | Your email was verified | `in_app` | `security` | `high` |
-| Your password was changed | `in_app` | `security` | `high` |
+| New login detected | `in_app` + `sse` + `email` | `security` | `high` |
+| Your password was changed | `in_app` + `email` | `security` | `high` |
+| Password reset requested | `in_app` + `email` | `security` | `high` |
+| Your email was changed | `in_app` + `email` | `security` | `normal` |
+| Your username was changed | `in_app` | `security` | `normal` |
+| Your account was deleted | `in_app` + `email` | `account` | `high` |
+| Your account was deactivated | `in_app` | `account` | `normal` |
+| Your account was reactivated | `in_app` | `account` | `normal` |
 
 ---
 
@@ -68,9 +83,11 @@ The `api_key` is used for all subsequent API calls. It **never** goes to the fro
 
 ---
 
-## Step 2: Register Users on Sign-Up
+## Step 2: Register Users and Manage the User Lifecycle
 
-When a user joins Monkeys, the backend registers them in FreeRangeNotify immediately after account creation. The Monkeys username is passed as `user_id` and stored as the `external_id` — this means you can use the Monkeys username everywhere in the FRN API without tracking internal UUIDs.
+### User Registration
+
+When a user joins Monkeys (via email/password or Google OAuth), the backend registers them in FreeRangeNotify immediately after account creation. The Monkeys username is passed as the `external_id` — this means you can use the Monkeys username everywhere in the FRN API without tracking internal UUIDs.
 
 ```bash
 # Called from the Monkeys sign-up service after the user record is created
@@ -79,11 +96,53 @@ curl -X POST https://freerangenotify.monkeys.support/v1/users/ \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
-    "user_id": "alice_monkeys"
+    "full_name": "Alice Smith",
+    "external_id": "alice_monkeys"
   }'
 ```
 
+The equivalent Go SDK call:
+
+```go
+client.SDK.Users.Create(ctx, frn.CreateUserParams{
+    FullName:   "Alice Smith",
+    Email:      "user@example.com",
+    ExternalID: "alice_monkeys",
+})
+```
+
 > FreeRangeNotify resolves the Monkeys username (`alice_monkeys`) automatically in every subsequent API call — for sending notifications, SSE connections, and subscriber hash generation. No internal UUID needs to be stored or forwarded.
+
+### Bulk Sync on Startup
+
+On service startup, Monkeys syncs all existing active users to FRN using the bulk create endpoint. This ensures users who existed before the FRN integration are registered. The `skip_existing` flag silently skips users already in FRN.
+
+```go
+client.SDK.Users.BulkCreate(ctx, frn.BulkCreateUsersParams{
+    Users:        createParams, // []frn.CreateUserParams from the DB
+    SkipExisting: true,
+})
+```
+
+### Auto-Register on "User Not Found"
+
+If a notification send fails because the user doesn't exist in FRN (404), the notification service auto-registers the user and retries the send once. This handles edge cases where a user slips through the bulk sync.
+
+### User Lifecycle Operations
+
+The Monkeys notification service handles the full user lifecycle via RabbitMQ events:
+
+| Event | FRN Operation | SDK Method |
+|---|---|---|
+| `user_register` | Create user | `Users.Create()` |
+| `email_changed` | Update email | `Users.Update(identifier, {Email})` |
+| `username_changed` | Update external_id | `Users.Update(oldUsername, {ExternalID: newUsername})` |
+| `user_account_delete` | Delete user | `Users.Delete(identifier)` |
+| `user_deactivated` | Enable DND | `Users.UpdatePreferences(identifier, {DND: true})` |
+| `user_reactivated` | Disable DND | `Users.UpdatePreferences(identifier, {DND: false})` |
+| `preferences_changed` | Sync prefs | `Users.UpdatePreferences(identifier, {EmailEnabled, PushEnabled})` |
+
+All SDK methods accept the Monkeys username (external_id) as the `identifier` — no need to look up FRN internal UUIDs.
 
 ---
 
@@ -186,30 +245,90 @@ curl -X POST https://freerangenotify.monkeys.support/v1/templates/ \
   }'
 ```
 
+### Security: Login Detected
+
+Each login detected event sends up to three templates: in_app, SSE (real-time alert), and email.
+
+```bash
+# in_app template
+curl -X POST https://freerangenotify.monkeys.support/v1/templates/ \
+  -H "X-API-Key: FRN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_id": "app-monkeys-xxx",
+    "name": "login_detected_inapp",
+    "channel": "in_app",
+    "subject": "New login from {{.client}} ({{.ip_address}}) via {{.login_method}}",
+    "body": "We detected a new login to your account. If this was not you, secure your account.",
+    "variables": ["ip_address", "client", "login_method"],
+    "locale": "en",
+    "metadata": { "category": "security" }
+  }'
+
+# email template
+curl -X POST https://freerangenotify.monkeys.support/v1/templates/ \
+  -H "X-API-Key: FRN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "app_id": "app-monkeys-xxx",
+    "name": "login_detected_email",
+    "channel": "email",
+    "subject": "New login to your account",
+    "body": "We detected a new login from {{.client}} ({{.ip_address}}) via {{.login_method}}. If this was not you, secure your account.",
+    "variables": ["ip_address", "client", "login_method"],
+    "locale": "en",
+    "metadata": { "category": "security" }
+  }'
+```
+
 ### Full Template Reference
 
 Once created, store template names in a constants file in the Monkeys backend — you reference them by name, not UUID.
 
 ```go
-// internal/notifications/templates.go
+// constants/frn_templates.go
 
 const (
-    TplNewFollowerInApp     = "new_follower_inapp"
-    TplNewFollowerSSE       = "new_follower_sse"
-    TplNewCommentInApp      = "new_comment_inapp"
-    TplNewCommentSSE        = "new_comment_sse"
-    TplBlogLikedInApp       = "blog_liked_inapp"
-    TplCoAuthorInviteInApp  = "coauthor_invite_inapp"
-    TplCoAuthorInviteSSE    = "coauthor_invite_sse"
-    TplCoAuthorAcceptInApp  = "coauthor_accept_inapp"
-    TplCoAuthorAcceptSSE    = "coauthor_accept_sse"
-    TplCoAuthorDeclineInApp = "coauthor_decline_inapp"
-    TplCoAuthorRemovedInApp = "coauthor_removed_inapp"
-    TplCoAuthorRemovedSSE   = "coauthor_removed_sse"
-    TplBlogPublishedInApp   = "blog_published_coauthor_inapp"
-    TplBlogPublishedSSE     = "blog_published_coauthor_sse"
-    TplPasswordChangedInApp = "password_changed_inapp"
-    TplEmailVerifiedInApp   = "email_verified_inapp"
+    // Social
+    FRNTplNewFollowerInApp = "new_follower_inapp"
+    FRNTplNewFollowerSSE   = "new_follower_sse"
+    FRNTplNewCommentInApp  = "new_comment_inapp"
+    FRNTplNewCommentSSE    = "new_comment_sse"
+    FRNTplBlogLikedInApp   = "blog_liked_inapp"
+    FRNTplBlogLikedSSE     = "blog_liked_sse"
+
+    // Collaboration
+    FRNTplCoAuthorInviteInApp  = "coauthor_invite_inapp"
+    FRNTplCoAuthorInviteSSE    = "coauthor_invite_sse"
+    FRNTplCoAuthorInviteEmail  = "coauthor_invite_email"
+    FRNTplCoAuthorAcceptInApp  = "coauthor_accept_inapp"
+    FRNTplCoAuthorAcceptSSE    = "coauthor_accept_sse"
+    FRNTplCoAuthorDeclineInApp = "coauthor_decline_inapp"
+    FRNTplCoAuthorRemovedInApp = "coauthor_removed_inapp"
+    FRNTplCoAuthorRemovedSSE   = "coauthor_removed_sse"
+
+    // Content
+    FRNTplBlogPublishedCoAuthorInApp = "blog_published_coauthor_inapp"
+    FRNTplBlogPublishedCoAuthorSSE   = "blog_published_coauthor_sse"
+
+    // Security
+    FRNTplPasswordChangedInApp  = "password_changed_inapp"
+    FRNTplPasswordChangedEmail  = "password_changed_email"
+    FRNTplEmailVerifiedInApp    = "email_verified_inapp"
+    FRNTplLoginDetectedInApp    = "login_detected_inapp"
+    FRNTplLoginDetectedSSE      = "login_detected_sse"
+    FRNTplLoginDetectedEmail    = "login_detected_email"
+    FRNTplPasswordResetReqInApp = "password_reset_requested_inapp"
+    FRNTplPasswordResetReqEmail = "password_reset_requested_email"
+    FRNTplEmailChangedInApp     = "email_changed_inapp"
+    FRNTplEmailChangedEmail     = "email_changed_email"
+    FRNTplUsernameChangedInApp  = "username_changed_inapp"
+
+    // Account lifecycle
+    FRNTplAccountDeletedInApp     = "account_deleted_inapp"
+    FRNTplAccountDeletedEmail     = "account_deleted_email"
+    FRNTplAccountDeactivatedInApp = "account_deactivated_inapp"
+    FRNTplAccountReactivatedInApp = "account_reactivated_inapp"
 )
 ```
 
@@ -217,7 +336,7 @@ const (
 
 ## Step 4: Send Notifications from the Monkeys Backend
 
-The Monkeys backend sends two notifications per event — one `in_app` and one `sse`. Both use the corresponding template and identical `data` payload.
+The Monkeys backend sends up to three notifications per event — `in_app` (always), `sse` (for real-time), and `email` (for security events). All use the corresponding template and identical `data` payload.
 
 ### Helper: send both channels
 

@@ -95,6 +95,8 @@ type FeaturesConfig struct {
 	SnoozeEnabled             bool `mapstructure:"snooze_enabled" yaml:"snooze_enabled"`
 	// Phase 6
 	MultiEnvironmentEnabled bool `mapstructure:"multi_environment_enabled" yaml:"multi_environment_enabled"`
+	// WhatsApp Meta Cloud API (Tech Provider)
+	WhatsAppMetaEnabled bool `mapstructure:"whatsapp_meta_enabled" yaml:"whatsapp_meta_enabled"`
 }
 
 // AppConfig contains application-level configuration
@@ -165,8 +167,9 @@ type ProvidersConfig struct {
 	// Phase 3
 	Slack    SlackProviderConfig    `mapstructure:"slack"`
 	Discord  DiscordProviderConfig  `mapstructure:"discord"`
-	WhatsApp WhatsAppProviderConfig `mapstructure:"whatsapp"`
-	Resend   ResendProviderConfig   `mapstructure:"resend"`
+	WhatsApp     WhatsAppProviderConfig     `mapstructure:"whatsapp"`
+	MetaWhatsApp MetaWhatsAppProviderConfig `mapstructure:"meta_whatsapp"`
+	Resend       ResendProviderConfig       `mapstructure:"resend"`
 	Postmark PostmarkProviderConfig `mapstructure:"postmark"`
 	Mailgun  MailgunProviderConfig  `mapstructure:"mailgun"`
 	SES      SESProviderConfig      `mapstructure:"ses"`
@@ -201,7 +204,7 @@ type DiscordProviderConfig struct {
 	MaxRetries        int    `mapstructure:"max_retries"`
 }
 
-// WhatsAppProviderConfig contains WhatsApp provider configuration (Phase 3)
+// WhatsAppProviderConfig contains WhatsApp provider configuration (Phase 3, Twilio-backed)
 type WhatsAppProviderConfig struct {
 	Enabled    bool   `mapstructure:"enabled"`
 	AccountSID string `mapstructure:"account_sid"`
@@ -209,6 +212,23 @@ type WhatsAppProviderConfig struct {
 	FromNumber string `mapstructure:"from_number"`
 	Timeout    int    `mapstructure:"timeout"`
 	MaxRetries int    `mapstructure:"max_retries"`
+}
+
+// MetaWhatsAppProviderConfig contains Meta Cloud API WhatsApp provider configuration.
+type MetaWhatsAppProviderConfig struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	PhoneNumberID string `mapstructure:"phone_number_id"`
+	WABAID        string `mapstructure:"waba_id"`
+	AccessToken   string `mapstructure:"access_token"`
+	APIVersion    string `mapstructure:"api_version"`
+	AppSecret     string `mapstructure:"app_secret"`      // For webhook X-Hub-Signature-256 verification
+	WebhookVerify string `mapstructure:"webhook_verify"`   // hub.verify_token for webhook registration
+	Timeout       int    `mapstructure:"timeout"`
+	MaxRetries    int    `mapstructure:"max_retries"`
+
+	// Embedded Signup OAuth credentials (our FRN Meta App)
+	MetaAppID     string `mapstructure:"meta_app_id"`     // Facebook App ID (Embedded Signup)
+	MetaAppSecret string `mapstructure:"meta_app_secret"` // Facebook App Secret (token exchange)
 }
 
 // ResendProviderConfig contains Resend email provider configuration
@@ -416,6 +436,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("features.sse_hmac_enforced", false)
 	viper.SetDefault("features.trial_welcome_enabled", true)
 	viper.SetDefault("features.billing_enabled", false)
+	viper.SetDefault("features.whatsapp_meta_enabled", false)
+
+	viper.SetDefault("providers.meta_whatsapp.enabled", false)
+	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")
+	viper.SetDefault("providers.meta_whatsapp.timeout", 15)
+	viper.SetDefault("providers.meta_whatsapp.max_retries", 3)
 
 	viper.SetDefault("billing.free_trial_email_quota", 500)
 	viper.SetDefault("billing.free_trial_whatsapp_quota", 50)

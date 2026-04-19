@@ -1175,6 +1175,168 @@ export const authExtendedAPI = {
   },
 };
 
+// ============= Twilio Content Template APIs (API-key-protected) =============
+export const twilioTemplatesAPI = {
+  list: async (apiKey: string, search?: string) => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    const qs = params.toString() ? `?${params}` : '';
+    const { data } = await api.get<ApiResponse<any>>(`/twilio/templates/${qs}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  get: async (apiKey: string, contentSid: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/twilio/templates/${contentSid}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  create: async (apiKey: string, payload: { friendly_name: string; language: string; types: Record<string, any>; variables?: Record<string, string> }) => {
+    const { data } = await api.post<ApiResponse<any>>('/twilio/templates/', payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  update: async (apiKey: string, contentSid: string, payload: Record<string, any>) => {
+    const { data } = await api.put<ApiResponse<any>>(`/twilio/templates/${contentSid}`, payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  delete: async (apiKey: string, contentSid: string) => {
+    await api.delete(`/twilio/templates/${contentSid}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+  },
+
+  submitApproval: async (apiKey: string, contentSid: string, payload: { name: string; category: string }) => {
+    const { data } = await api.post<ApiResponse<any>>(`/twilio/templates/${contentSid}/approve`, payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  getApprovalStatus: async (apiKey: string, contentSid: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/twilio/templates/${contentSid}/approval`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  sync: async (apiKey: string, contentSid: string) => {
+    const { data } = await api.post<ApiResponse<any>>(`/twilio/templates/${contentSid}/sync`, {}, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  preview: async (apiKey: string, contentSid: string, variables: Record<string, string>) => {
+    const { data } = await api.post<ApiResponse<any>>(`/twilio/templates/${contentSid}/preview`, { variables }, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+};
+
+// ============= WhatsApp Admin APIs (JWT-protected) =============
+export const whatsappAdminAPI = {
+  getStatus: async (appId: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/admin/whatsapp/${appId}/status`);
+    return data.data;
+  },
+
+  connect: async (payload: { code: string; app_id: string }) => {
+    const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/connect', payload);
+    return data.data;
+  },
+
+  disconnect: async (appId: string) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`);
+    return data;
+  },
+
+  subscribeWebhooks: async (appId: string) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/subscribe-webhooks`);
+    return data;
+  },
+};
+
+// ============= WhatsApp Template APIs (API-key-protected) =============
+export const whatsappTemplatesAPI = {
+  create: async (apiKey: string, payload: Record<string, any>) => {
+    const { data } = await api.post<ApiResponse<any>>('/whatsapp/templates/', payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  list: async (apiKey: string, filters?: { name?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.name) params.set('name', filters.name);
+    if (filters?.status) params.set('status', filters.status);
+    const { data } = await api.get<ApiResponse<any>>(`/whatsapp/templates/?${params}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  get: async (apiKey: string, name: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/whatsapp/templates/${name}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  delete: async (apiKey: string, name: string) => {
+    await api.delete(`/whatsapp/templates/${name}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+  },
+
+  sync: async (apiKey: string, name: string) => {
+    const { data } = await api.post<ApiResponse<any>>(`/whatsapp/templates/${name}/sync`, {}, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+};
+
+// ============= WhatsApp Conversation APIs (API-key-protected) =============
+export const whatsappConversationsAPI = {
+  list: async (apiKey: string, limit = 50, offset = 0) => {
+    const { data } = await api.get<ApiResponse<any[]> & { total: number }>(`/whatsapp/conversations/?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return { conversations: data.data, total: data.total };
+  },
+
+  getMessages: async (apiKey: string, contactId: string, limit = 50, offset = 0) => {
+    const { data } = await api.get<ApiResponse<any[]> & { total: number }>(`/whatsapp/conversations/${contactId}/messages?limit=${limit}&offset=${offset}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return { messages: data.data, total: data.total };
+  },
+
+  reply: async (apiKey: string, contactId: string, payload: { text?: string; template_name?: string }) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/whatsapp/conversations/${contactId}/reply`, payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data;
+  },
+
+  markRead: async (apiKey: string, contactId: string) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/whatsapp/conversations/${contactId}/read`, {}, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data;
+  },
+};
+
 // ============= Media Upload APIs =============
 export const mediaAPI = {
   upload: async (apiKey: string, file: File) => {

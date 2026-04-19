@@ -111,9 +111,85 @@ export interface SendGridConfig {
 }
 
 export interface WhatsAppConfig {
-    account_sid: string;
-    auth_token: string;
-    from_number: string;
+    account_sid?: string;
+    auth_token?: string;
+    from_number?: string;
+    // Meta Cloud API fields (populated via Embedded Signup)
+    provider?: 'twilio' | 'meta';
+    meta_phone_number_id?: string;
+    meta_waba_id?: string;
+    meta_access_token?: string;
+    meta_business_id?: string;
+    connection_status?: 'connected' | 'disconnected' | '';
+    connected_at?: string;
+    display_phone_number?: string;
+    quality_rating?: string;
+}
+
+// ============= WhatsApp Meta Types =============
+export interface WhatsAppConnectionStatus {
+    connected: boolean;
+    provider: string;
+    connection_status?: string;
+    connected_at?: string;
+    phone_number_id?: string;
+    waba_id?: string;
+    display_phone?: string;
+    quality_rating?: string;
+    business_id?: string;
+    message?: string;
+}
+
+export interface WhatsAppMetaTemplate {
+    id: string;
+    name: string;
+    language: string;
+    status: string;
+    category: string;
+    components?: any[];
+}
+
+export interface WhatsAppConversation {
+    contact_wa_id: string;
+    contact_name?: string;
+    last_message?: string;
+    last_message_at?: string;
+    unread_count?: number;
+    csw_open?: boolean;
+}
+
+export interface WhatsAppMessage {
+    id: string;
+    app_id: string;
+    meta_message_id?: string;
+    contact_wa_id: string;
+    contact_name?: string;
+    direction: 'inbound' | 'outbound';
+    message_type: string;
+    body?: string;
+    media_url?: string;
+    timestamp: string;
+    status?: string;
+    metadata?: Record<string, any>;
+}
+
+// ============= Twilio Content Template Types =============
+export interface TwilioContentTemplate {
+    sid: string;
+    friendly_name: string;
+    language: string;
+    types: Record<string, any>;
+    variables?: Record<string, string>;
+    date_created: string;
+    date_updated: string;
+    approval_requests?: {
+        name?: string;
+        status?: string;
+        category?: string;
+        rejection_reason?: string;
+        content_type?: string;
+        allow_category_change?: boolean;
+    };
 }
 
 export interface SMSConfig {

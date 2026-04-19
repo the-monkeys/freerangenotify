@@ -1065,3 +1065,40 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 		},
 	}
 }
+
+// GetWhatsAppMessagesTemplate returns the Elasticsearch mapping for the whatsapp_messages index.
+func (it *IndexTemplates) GetWhatsAppMessagesTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id":                 map[string]interface{}{"type": "keyword"},
+				"app_id":             map[string]interface{}{"type": "keyword"},
+				"waba_id":            map[string]interface{}{"type": "keyword"},
+				"phone_number_id":    map[string]interface{}{"type": "keyword"},
+				"contact_wa_id":      map[string]interface{}{"type": "keyword"},
+				"contact_name":       map[string]interface{}{"type": "text"},
+				"user_id":            map[string]interface{}{"type": "keyword"},
+				"direction":          map[string]interface{}{"type": "keyword"},
+				"message_type":       map[string]interface{}{"type": "keyword"},
+				"meta_message_id":    map[string]interface{}{"type": "keyword"},
+				"timestamp":          map[string]interface{}{"type": "date"},
+				"text_body":          map[string]interface{}{"type": "text"},
+				"media_url":          map[string]interface{}{"type": "keyword"},
+				"media_mime_type":    map[string]interface{}{"type": "keyword"},
+				"latitude":           map[string]interface{}{"type": "float"},
+				"longitude":          map[string]interface{}{"type": "float"},
+				"context_message_id": map[string]interface{}{"type": "keyword"},
+				"is_forwarded":       map[string]interface{}{"type": "boolean"},
+				"raw_payload": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"created_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
