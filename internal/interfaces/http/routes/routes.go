@@ -76,6 +76,13 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	if c.PaymentHandler != nil {
 		v1.Post("/billing/webhook", c.PaymentHandler.HandleWebhook)
 	}
+
+	// Meta WhatsApp webhooks (public, verified via X-Hub-Signature-256 inside handler)
+	if c.MetaWebhookHandler != nil {
+		metaWH := v1.Group("/webhooks/meta")
+		metaWH.Get("/whatsapp", c.MetaWebhookHandler.VerifyWebhook)
+		metaWH.Post("/whatsapp", c.MetaWebhookHandler.HandleWebhook)
+	}
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -224,6 +231,42 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		webhooks.Post("/inbound", licenseCheck, c.InboundWebhookHandler.Receive)
 	}
 
+	// ── WhatsApp Template Management (feature-gated) ──
+	if c.WhatsAppTemplateHandler != nil {
+		waTpl := v1.Group("/whatsapp/templates")
+		applyAuth(waTpl)
+		waTpl.Post("/", c.WhatsAppTemplateHandler.CreateTemplate)
+		waTpl.Get("/", c.WhatsAppTemplateHandler.ListTemplates)
+		waTpl.Get("/:name", c.WhatsAppTemplateHandler.GetTemplate)
+		waTpl.Delete("/:name", c.WhatsAppTemplateHandler.DeleteTemplate)
+		waTpl.Post("/:name/sync", c.WhatsAppTemplateHandler.SyncTemplate)
+	}
+
+	// ── Twilio Content Template Management ──
+	if c.TwilioTemplateHandler != nil {
+		twilioTpl := v1.Group("/twilio/templates")
+		applyAuth(twilioTpl)
+		twilioTpl.Post("/", c.TwilioTemplateHandler.CreateTemplate)
+		twilioTpl.Get("/", c.TwilioTemplateHandler.ListTemplates)
+		twilioTpl.Get("/:content_sid", c.TwilioTemplateHandler.GetTemplate)
+		twilioTpl.Put("/:content_sid", c.TwilioTemplateHandler.UpdateTemplate)
+		twilioTpl.Delete("/:content_sid", c.TwilioTemplateHandler.DeleteTemplate)
+		twilioTpl.Post("/:content_sid/approve", c.TwilioTemplateHandler.SubmitApproval)
+		twilioTpl.Get("/:content_sid/approval", c.TwilioTemplateHandler.GetApprovalStatus)
+		twilioTpl.Post("/:content_sid/sync", c.TwilioTemplateHandler.SyncTemplate)
+		twilioTpl.Post("/:content_sid/preview", c.TwilioTemplateHandler.PreviewTemplate)
+	}
+
+	// ── WhatsApp Conversation Inbox (feature-gated) ──
+	if c.WhatsAppConversationHandler != nil {
+		waConv := v1.Group("/whatsapp/conversations")
+		applyAuth(waConv)
+		waConv.Get("/", c.WhatsAppConversationHandler.ListConversations)
+		waConv.Get("/:contact_id/messages", c.WhatsAppConversationHandler.GetMessages)
+		waConv.Post("/:contact_id/reply", licenseCheck, c.WhatsAppConversationHandler.Reply)
+		waConv.Post("/:contact_id/read", c.WhatsAppConversationHandler.MarkRead)
+	}
+
 	// ── Phase 1: Digest rules routes (feature-gated) ──
 	if c.DigestHandler != nil {
 		digestRules := v1.Group("/digest-rules")
@@ -279,7 +322,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
 	adminAuth.Post("/logout", c.AuthHandler.Logout)
 	adminAuth.Post("/change-password", c.AuthHandler.ChangePassword)
-	
+
 	// Phone verification
 	adminAuth.Post("/phone/send-otp", c.AuthHandler.SendPhoneOTP)
 	adminAuth.Post("/phone/verify-otp", c.AuthHandler.VerifyPhoneOTP)
@@ -317,6 +360,17 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Post("/:id/providers", c.CustomProviderHandler.Register)
 	apps.Get("/:id/providers", c.CustomProviderHandler.List)
 	apps.Delete("/:id/providers/:provider_id", c.CustomProviderHandler.Remove)
+
+	// WhatsApp Meta Embedded Signup & Connection Management (feature-gated)
+	if c.WhatsAppAdminHandler != nil {
+		waAdmin := v1.Group("/admin/whatsapp")
+		waAdmin.Use(jwtAuth)
+		waAdmin.Get("/:app_id/status", c.WhatsAppAdminHandler.GetStatus)
+		waAdmin.Post("/connect", c.WhatsAppAdminHandler.Connect)
+		waAdmin.Post("/manual-connect", c.WhatsAppAdminHandler.ManualConnect)
+		waAdmin.Post("/:app_id/disconnect", c.WhatsAppAdminHandler.Disconnect)
+		waAdmin.Post("/:app_id/subscribe-webhooks", c.WhatsAppAdminHandler.SubscribeWebhooks)
+	}
 
 	// Phase 6: Multi-Environment Management (feature-gated)
 	if c.EnvironmentHandler != nil {

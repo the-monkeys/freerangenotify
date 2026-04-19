@@ -145,24 +145,25 @@ type Content struct {
 
 // NotificationFilter represents query filters for notifications
 type NotificationFilter struct {
-	AppID         string                 `json:"app_id,omitempty"`
-	AppIDs        []string               `json:"app_ids,omitempty"`
-	EnvironmentID string                 `json:"environment_id,omitempty"`
-	UserID        string                 `json:"user_id,omitempty"`
-	Channel       Channel                `json:"channel,omitempty"`
-	Status        Status                 `json:"status,omitempty"`
-	Priority      Priority               `json:"priority,omitempty"`
-	TemplateID    string                 `json:"template_id,omitempty"`
-	FromDate      *time.Time             `json:"from_date,omitempty"`
-	ToDate        *time.Time             `json:"to_date,omitempty"`
-	Category      string                 `json:"category,omitempty"`
-	DigestKey     string                 `json:"digest_key,omitempty"` // Filter by metadata.digest_key (for digest rule run history)
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-	Page          int                    `json:"page,omitempty"`
-	PageSize      int                    `json:"page_size,omitempty"`
-	SortBy        string                 `json:"sort_by,omitempty"`
-	SortOrder     string                 `json:"sort_order,omitempty"` // "asc" or "desc"
-	Cursor        string                 `json:"cursor,omitempty"`     // opaque cursor for search_after pagination
+	AppID             string                 `json:"app_id,omitempty"`
+	AppIDs            []string               `json:"app_ids,omitempty"`
+	EnvironmentID     string                 `json:"environment_id,omitempty"`
+	UserID            string                 `json:"user_id,omitempty"`
+	Channel           Channel                `json:"channel,omitempty"`
+	Status            Status                 `json:"status,omitempty"`
+	Priority          Priority               `json:"priority,omitempty"`
+	TemplateID        string                 `json:"template_id,omitempty"`
+	FromDate          *time.Time             `json:"from_date,omitempty"`
+	ToDate            *time.Time             `json:"to_date,omitempty"`
+	Category          string                 `json:"category,omitempty"`
+	DigestKey         string                 `json:"digest_key,omitempty"`          // Filter by metadata.digest_key (for digest rule run history)
+	ProviderMessageID string                 `json:"provider_message_id,omitempty"` // Filter by metadata.provider_message_id (delivery status webhooks)
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+	Page              int                    `json:"page,omitempty"`
+	PageSize          int                    `json:"page_size,omitempty"`
+	SortBy            string                 `json:"sort_by,omitempty"`
+	SortOrder         string                 `json:"sort_order,omitempty"` // "asc" or "desc"
+	Cursor            string                 `json:"cursor,omitempty"`     // opaque cursor for search_after pagination
 }
 
 // DefaultFilter returns a filter with default values
@@ -318,7 +319,8 @@ func (n *Notification) Validate() error {
 	if !n.Status.Valid() {
 		return ErrInvalidStatus
 	}
-	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" {
+	hasContentSid := n.Content.Data != nil && n.Content.Data["content_sid"] != nil
+	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid {
 		return ErrEmptyContent
 	}
 	return nil
@@ -434,7 +436,8 @@ func (r *BulkSendRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
+	hasContentSid := r.Data != nil && r.Data["content_sid"] != nil
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") && !hasContentSid {
 		return ErrEmptyContent
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {

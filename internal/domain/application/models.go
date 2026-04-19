@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"time"
+
+	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 )
 
 // Application represents an application entity
@@ -42,6 +44,7 @@ type Settings struct {
 	SubscriberThrottle     map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"`               // Phase 2
 	OnUserCreatedTriggerID string                              `json:"on_user_created_trigger_id,omitempty" es:"on_user_created_trigger_id"` // Phase 5: workflow to trigger on user create
 	InboundWebhookConfig   *InboundWebhookConfig               `json:"inbound_webhook_config,omitempty" es:"inbound_webhook_config"`         // Phase 7: inbound webhook config (secret, event mapping)
+	WhatsAppInbound        *whatsapp.InboundConfig              `json:"whatsapp_inbound,omitempty" es:"whatsapp_inbound"`                      // WhatsApp Meta inbound config
 }
 
 // InboundWebhookConfig holds configuration for receiving inbound webhooks (Phase 7)
@@ -114,11 +117,27 @@ type DiscordAppConfig struct {
 	WebhookURL string `json:"webhook_url,omitempty" es:"webhook_url"`
 }
 
-// WhatsAppAppConfig holds per-app Twilio WhatsApp credentials (Phase 3)
+// WhatsAppAppConfig holds per-app WhatsApp credentials (Phase 3).
+// Provider field selects "twilio" (default) or "meta".
 type WhatsAppAppConfig struct {
-	AccountSID string `json:"account_sid" es:"account_sid"`
-	AuthToken  string `json:"auth_token" es:"auth_token"`
-	FromNumber string `json:"from_number" es:"from_number"`
+	Provider string `json:"provider,omitempty" es:"provider"` // "twilio" (default) or "meta"
+
+	// Twilio fields (used when Provider == "" or "twilio")
+	AccountSID string `json:"account_sid,omitempty" es:"account_sid"`
+	AuthToken  string `json:"auth_token,omitempty" es:"auth_token"`
+	FromNumber string `json:"from_number,omitempty" es:"from_number"`
+
+	// Meta Cloud API fields (used when Provider == "meta")
+	MetaPhoneNumberID string `json:"meta_phone_number_id,omitempty" es:"meta_phone_number_id"`
+	MetaWABAID        string `json:"meta_waba_id,omitempty" es:"meta_waba_id"`
+	MetaAccessToken   string `json:"meta_access_token,omitempty" es:"meta_access_token"`
+
+	// Embedded Signup metadata (populated during OAuth connect flow)
+	MetaBusinessID     string `json:"meta_business_id,omitempty" es:"meta_business_id"`
+	ConnectionStatus   string `json:"connection_status,omitempty" es:"connection_status"` // connected, disconnected, pending
+	ConnectedAt        string `json:"connected_at,omitempty" es:"connected_at"`
+	DisplayPhoneNumber string `json:"display_phone_number,omitempty" es:"display_phone_number"`
+	QualityRating      string `json:"quality_rating,omitempty" es:"quality_rating"`
 }
 
 // SMSAppConfig holds per-app Twilio SMS credentials

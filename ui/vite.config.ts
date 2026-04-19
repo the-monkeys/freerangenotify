@@ -15,16 +15,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       host: "0.0.0.0",
+      allowedHosts: true,
       watch: {
-        usePolling: env.CHOKIDAR_USEPOLLING === "true",
-        interval: Number(env.CHOKIDAR_INTERVAL || 1000),
+        usePolling: process.env.CHOKIDAR_USEPOLLING === "true" || env.CHOKIDAR_USEPOLLING === "true",
+        interval: Number(process.env.CHOKIDAR_INTERVAL || env.CHOKIDAR_INTERVAL || 1000),
         ignored: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
       },
       proxy: {
         "/v1": {
-          // API_PROXY_TARGET is server-side only (not exposed to browser)
-          // Falls back to VITE_API_BASE_URL for local dev, then localhost
-          target: env.API_PROXY_TARGET || env.VITE_API_BASE_URL || "http://localhost:8080",
+          target: process.env.API_PROXY_TARGET || env.API_PROXY_TARGET || env.VITE_API_BASE_URL || "http://localhost:8080",
           changeOrigin: true,
           secure: false,
         },
