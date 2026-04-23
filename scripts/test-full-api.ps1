@@ -1,7 +1,20 @@
+param(
+    [ValidateSet("full", "webhook-v2")]
+    [string]$Suite = "full",
+    [string]$BaseUrl = "http://localhost:8080",
+    [string]$AdminToken = ""
+)
+
 # FreeRangeNotify Full API Test Script using curl.exe
 # Refactored to use temporary files for request bodies to avoid Windows shell quoting issues.
 
-$baseUrl = "http://localhost:8080"
+if ($Suite -eq "webhook-v2") {
+    $webhookScript = Join-Path $PSScriptRoot "test-webhook-v2.ps1"
+    & $webhookScript -BaseUrl $BaseUrl -AdminToken $AdminToken
+    exit $LASTEXITCODE
+}
+
+$baseUrl = $BaseUrl
 $outputFile = "full_api_test_results.txt"
 $bodyFile = "req_body.txt"
 $ErrorActionPreference = "Continue"

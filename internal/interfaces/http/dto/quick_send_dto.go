@@ -7,11 +7,12 @@ import "time"
 type QuickSendRequest struct {
 	// Recipient: email address, external user ID, or internal UUID.
 	// If recipient doesn't exist as a user, auto-creates one (email only).
-	To string `json:"to" validate:"required"`
+	// Optional for webhook-like channels (webhook, discord, slack, teams).
+	To string `json:"to" validate:"omitempty"`
 
-	// Channel: push, email, sms, webhook, in_app, sse, whatsapp.
+	// Channel: push, email, sms, webhook, in_app, sse, whatsapp, discord, slack, teams.
 	// Optional if Template is specified (inferred from template).
-	Channel string `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse whatsapp"`
+	Channel string `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse whatsapp discord slack teams"`
 
 	// Template reference: name (string) or UUID.
 	// Optional if Subject+Body are provided (inline content).

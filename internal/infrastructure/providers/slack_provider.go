@@ -11,13 +11,14 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
 	"go.uber.org/zap"
 )
 
 // SlackConfig holds configuration for the Slack provider.
 type SlackConfig struct {
-	Config                     // Common: Timeout, MaxRetries, RetryDelay
-	DefaultWebhookURL string  // App-level fallback webhook URL
+	Config                   // Common: Timeout, MaxRetries, RetryDelay
+	DefaultWebhookURL string // App-level fallback webhook URL
 }
 
 // SlackProvider delivers notifications to Slack via Incoming Webhooks.
@@ -138,41 +139,5 @@ func init() {
 
 // buildPayload constructs a Slack Block Kit message.
 func (p *SlackProvider) buildPayload(notif *notification.Notification) map[string]interface{} {
-	blocks := []map[string]interface{}{
-		{
-			"type": "section",
-			"text": map[string]interface{}{
-				"type": "mrkdwn",
-				"text": fmt.Sprintf("*%s*\n%s", notif.Content.Title, notif.Content.Body),
-			},
-		},
-	}
-
-	// Add action URL button if present in data
-	if notif.Content.Data != nil {
-		if actionURL, ok := notif.Content.Data["action_url"].(string); ok && actionURL != "" {
-			actionLabel := "View"
-			if label, ok := notif.Content.Data["action_label"].(string); ok && label != "" {
-				actionLabel = label
-			}
-			blocks = append(blocks, map[string]interface{}{
-				"type": "actions",
-				"elements": []map[string]interface{}{
-					{
-						"type": "button",
-						"text": map[string]interface{}{
-							"type": "plain_text",
-							"text": actionLabel,
-						},
-						"url": actionURL,
-					},
-				},
-			})
-		}
-	}
-
-	return map[string]interface{}{
-		"text":   notif.Content.Title, // Fallback for notifications/accessibility
-		"blocks": blocks,
-	}
+	return render.BuildSlackPayload(notif)
 }

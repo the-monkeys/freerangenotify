@@ -44,7 +44,7 @@ type Settings struct {
 	SubscriberThrottle     map[string]SubscriberThrottleConfig `json:"subscriber_throttle,omitempty" es:"subscriber_throttle"`               // Phase 2
 	OnUserCreatedTriggerID string                              `json:"on_user_created_trigger_id,omitempty" es:"on_user_created_trigger_id"` // Phase 5: workflow to trigger on user create
 	InboundWebhookConfig   *InboundWebhookConfig               `json:"inbound_webhook_config,omitempty" es:"inbound_webhook_config"`         // Phase 7: inbound webhook config (secret, event mapping)
-	WhatsAppInbound        *whatsapp.InboundConfig              `json:"whatsapp_inbound,omitempty" es:"whatsapp_inbound"`                      // WhatsApp Meta inbound config
+	WhatsAppInbound        *whatsapp.InboundConfig             `json:"whatsapp_inbound,omitempty" es:"whatsapp_inbound"`                     // WhatsApp Meta inbound config
 }
 
 // InboundWebhookConfig holds configuration for receiving inbound webhooks (Phase 7)
@@ -149,15 +149,24 @@ type SMSAppConfig struct {
 
 // CustomProviderConfig defines a user-registered custom delivery channel (Phase 3).
 // Stored in app Settings.CustomProviders.
+//
+// Phase 7 (Webhook channel expansion) adds:
+//   - Kind: explicit rendering adapter (generic | discord | slack | teams).
+//     Empty string means "infer from WebhookURL host" for backward compatibility
+//     with rows created before the field existed.
+//   - SignatureVersion: "v1" (body-only HMAC, legacy default) or "v2"
+//     (timestamp + body HMAC with 5-min replay window). Empty == "v1".
 type CustomProviderConfig struct {
-	ProviderID string            `json:"provider_id" es:"provider_id"`
-	Name       string            `json:"name" es:"name"`
-	Channel    string            `json:"channel" es:"channel"`
-	WebhookURL string            `json:"webhook_url" es:"webhook_url"`
-	Headers    map[string]string `json:"headers,omitempty" es:"headers"`
-	SigningKey string            `json:"signing_key" es:"signing_key"`
-	Active     bool              `json:"active" es:"active"`
-	CreatedAt  string            `json:"created_at,omitempty" es:"created_at"`
+	ProviderID       string            `json:"provider_id" es:"provider_id"`
+	Name             string            `json:"name" es:"name"`
+	Channel          string            `json:"channel" es:"channel"`
+	Kind             string            `json:"kind,omitempty" es:"kind"`
+	WebhookURL       string            `json:"webhook_url" es:"webhook_url"`
+	Headers          map[string]string `json:"headers,omitempty" es:"headers"`
+	SigningKey       string            `json:"signing_key" es:"signing_key"`
+	SignatureVersion string            `json:"signature_version,omitempty" es:"signature_version"`
+	Active           bool              `json:"active" es:"active"`
+	CreatedAt        string            `json:"created_at,omitempty" es:"created_at"`
 }
 
 // ApplicationFilter represents query filters for applications

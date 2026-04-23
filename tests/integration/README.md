@@ -62,6 +62,13 @@ $env:INTEGRATION_ADMIN_TOKEN="<admin_jwt>"
 go test -v ./tests/integration/...
 ```
 
+### Run webhook-v2 integration suite
+```powershell
+$env:INTEGRATION_WEBHOOK_V2="true"
+$env:INTEGRATION_ADMIN_TOKEN="<admin_jwt>"
+go test -v ./tests/integration/webhook
+```
+
 ### Run specific test suite
 ```powershell
 # Run only application tests
@@ -92,6 +99,7 @@ go test ./...
 ### Environment variables
 - `INTEGRATION_TESTS=false`: skip all integration tests
 - `INTEGRATION_LEGACY=true`: run legacy suites (`Application`, `User`, `TemplateHTTP`, `NotificationHTTP`)
+- `INTEGRATION_WEBHOOK_V2=true`: run webhook-v2 provider integration suite in `tests/integration/webhook`
 - `INTEGRATION_ADMIN_TOKEN`: admin JWT used for legacy `/v1/apps` requests if no Authorization header is explicitly set
 - `FREERANGE_ADMIN_TOKEN`: fallback for `INTEGRATION_ADMIN_TOKEN`
 

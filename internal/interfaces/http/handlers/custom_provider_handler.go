@@ -3,13 +3,16 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -58,10 +61,12 @@ func (h *CustomProviderHandler) authorizeProviderAccess(c *fiber.Ctx, appID, use
 
 // registerCustomProviderRequest is the request body for registering a custom provider.
 type registerCustomProviderRequest struct {
-	Name       string            `json:"name" validate:"required,min=1,max=50"`
-	Channel    string            `json:"channel" validate:"required,min=1,max=50"`
-	WebhookURL string            `json:"webhook_url" validate:"required,url"`
-	Headers    map[string]string `json:"headers,omitempty"`
+	Name             string            `json:"name" validate:"required,min=1,max=50"`
+	Channel          string            `json:"channel" validate:"required,min=1,max=50"`
+	Kind             string            `json:"kind,omitempty" validate:"omitempty,oneof=generic discord slack teams"`
+	WebhookURL       string            `json:"webhook_url" validate:"required,url"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	SignatureVersion string            `json:"signature_version,omitempty" validate:"omitempty,oneof=v1 v2"`
 }
 
 // Register registers a new custom provider for an application.
@@ -103,6 +108,23 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 		return errors.BadRequest("invalid request body")
 	}
 
+	// Phase 7: infer kind from URL host when omitted, then enforce host match
+	// so users cannot paste a Slack URL into a provider tagged discord.
+	kind := req.Kind
+	if kind == "" {
+		kind = inferProviderKind(req.WebhookURL)
+	}
+	if err := validateProviderURLSecurity(req.WebhookURL); err != nil {
+		return errors.BadRequest(err.Error())
+	}
+	if err := validateProviderURLForKind(kind, req.WebhookURL); err != nil {
+		return errors.BadRequest(err.Error())
+	}
+	signatureVersion := req.SignatureVersion
+	if signatureVersion == "" {
+		signatureVersion = "v1" // preserve existing receiver contract for new rows
+	}
+
 	for _, cp := range app.Settings.CustomProviders {
 		if cp.Name == req.Name && cp.Active {
 			return errors.BadRequest("a custom provider named '" + req.Name + "' already exists")
@@ -117,14 +139,16 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 	signingKey := hex.EncodeToString(signingKeyBytes)
 
 	provider := application.CustomProviderConfig{
-		ProviderID: uuid.New().String(),
-		Name:       req.Name,
-		Channel:    req.Channel,
-		WebhookURL: req.WebhookURL,
-		Headers:    req.Headers,
-		SigningKey: signingKey,
-		Active:     true,
-		CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		ProviderID:       uuid.New().String(),
+		Name:             req.Name,
+		Channel:          req.Channel,
+		Kind:             kind,
+		WebhookURL:       req.WebhookURL,
+		Headers:          req.Headers,
+		SigningKey:       signingKey,
+		SignatureVersion: signatureVersion,
+		Active:           true,
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
 	}
 
 	app.Settings.CustomProviders = append(app.Settings.CustomProviders, provider)
@@ -196,6 +220,135 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data":    providers,
+	})
+}
+
+// Test sends a synthetic notification to a registered provider endpoint.
+// POST /v1/apps/:id/providers/:provider_id/test — requires admin or owner role
+func (h *CustomProviderHandler) Test(c *fiber.Ctx) error {
+	appID := c.Params("id")
+	providerID := c.Params("provider_id")
+	if appID == "" || providerID == "" {
+		return errors.BadRequest("app ID and provider ID are required")
+	}
+
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("authentication required")
+	}
+
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
+	if err != nil {
+		return err
+	}
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to test custom providers")
+	}
+
+	idx := findCustomProviderIndex(app.Settings.CustomProviders, providerID)
+	if idx < 0 {
+		return errors.BadRequest("custom provider not found")
+	}
+	cp := app.Settings.CustomProviders[idx]
+	if !cp.Active {
+		return errors.BadRequest("custom provider is inactive")
+	}
+
+	now := time.Now().UTC()
+	notif := &notification.Notification{
+		NotificationID: uuid.New().String(),
+		AppID:          appID,
+		UserID:         userID,
+		Channel:        notification.Channel(cp.Channel),
+		Priority:       notification.PriorityNormal,
+		Status:         notification.StatusPending,
+		Content: notification.Content{
+			Title: "FreeRangeNotify Provider Test",
+			Body:  "This is a test delivery from provider settings.",
+		},
+		Metadata: map[string]interface{}{
+			"source":      "provider_test",
+			"provider_id": cp.ProviderID,
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	customProvider := providers.NewCustomProvider(
+		cp.Name, cp.Channel, cp.Kind, cp.WebhookURL, cp.SigningKey, cp.SignatureVersion, cp.Headers, h.logger,
+	)
+	result, sendErr := customProvider.Send(c.Context(), notif, nil)
+	if sendErr != nil {
+		return errors.Internal("failed to send provider test notification", sendErr)
+	}
+	if result == nil || !result.Success {
+		if result != nil && result.Error != nil {
+			return errors.Internal("provider test delivery failed", result.Error)
+		}
+		return errors.Internal("provider test delivery failed", fmt.Errorf("provider returned unsuccessful result"))
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"provider_id":         cp.ProviderID,
+			"provider_name":       cp.Name,
+			"provider_message_id": result.ProviderMessageID,
+			"delivery_time_ms":    result.DeliveryTime.Milliseconds(),
+			"metadata":            result.Metadata,
+		},
+	})
+}
+
+// RotateSigningKey rotates a provider signing key and returns the new key once.
+// POST /v1/apps/:id/providers/:provider_id/rotate — requires admin or owner role
+func (h *CustomProviderHandler) RotateSigningKey(c *fiber.Ctx) error {
+	appID := c.Params("id")
+	providerID := c.Params("provider_id")
+	if appID == "" || providerID == "" {
+		return errors.BadRequest("app ID and provider ID are required")
+	}
+
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("authentication required")
+	}
+
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
+	if err != nil {
+		return err
+	}
+	if role != auth.RoleOwner && role != auth.RoleAdmin {
+		return errors.Forbidden("admin or owner role required to rotate provider signing keys")
+	}
+
+	idx := findCustomProviderIndex(app.Settings.CustomProviders, providerID)
+	if idx < 0 {
+		return errors.BadRequest("custom provider not found")
+	}
+
+	signingKeyBytes := make([]byte, 32)
+	if _, err := rand.Read(signingKeyBytes); err != nil {
+		h.logger.Error("Failed to rotate signing key", zap.Error(err))
+		return errors.BadRequest("failed to rotate signing key")
+	}
+	signingKey := hex.EncodeToString(signingKeyBytes)
+
+	app.Settings.CustomProviders[idx].SigningKey = signingKey
+	if err := h.service.UpdateSettings(c.Context(), appID, app.Settings); err != nil {
+		return err
+	}
+
+	h.logger.Info("Custom provider signing key rotated",
+		zap.String("app_id", appID),
+		zap.String("provider_id", providerID))
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"provider_id": providerID,
+			"signing_key": signingKey,
+		},
 	})
 }
 
@@ -323,4 +476,13 @@ func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 		"success": true,
 		"message": "custom provider removed",
 	})
+}
+
+func findCustomProviderIndex(providers []application.CustomProviderConfig, providerID string) int {
+	for i := range providers {
+		if providers[i].ProviderID == providerID {
+			return i
+		}
+	}
+	return -1
 }

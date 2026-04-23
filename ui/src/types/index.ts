@@ -315,7 +315,7 @@ export interface Notification {
     notification_id: string;
     app_id: string;
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp' | 'discord' | 'slack' | 'teams';
     priority: 'low' | 'normal' | 'high' | 'critical';
     status: string;
     content: {
@@ -343,7 +343,7 @@ export interface Notification {
 
 export interface NotificationRequest {
     user_id: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp' | 'discord' | 'slack' | 'teams';
     priority: 'low' | 'normal' | 'high' | 'critical';
     title?: string;
     body?: string;
@@ -370,7 +370,7 @@ export interface BulkNotificationRequest {
 }
 
 export interface BroadcastNotificationRequest {
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp' | 'discord' | 'slack' | 'teams';
     priority: 'low' | 'normal' | 'high' | 'critical';
     title?: string;
     body?: string;
@@ -440,8 +440,9 @@ export interface CreateTemplateRequest {
     app_id: string;
     name: string;
     description?: string;
-    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp';
+    channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp' | 'discord' | 'slack' | 'teams';
     webhook_target?: string;
+    payload_kind?: 'generic' | 'discord' | 'slack' | 'teams';
     subject?: string;
     body: string;
     variables?: string[];
@@ -947,13 +948,18 @@ export interface AcceptTrialResponse {
 }
 
 // ============= Custom Provider Types =============
+export type ProviderKind = 'generic' | 'discord' | 'slack' | 'teams';
+export type ProviderSignatureVersion = 'v1' | 'v2';
+
 export interface CustomProvider {
     provider_id: string;
     name: string;
     channel: string;
+    kind?: ProviderKind;
     webhook_url: string;
     headers?: Record<string, string>;
     signing_key?: string;
+    signature_version?: ProviderSignatureVersion;
     active: boolean;
     created_at: string;
 }
@@ -961,8 +967,23 @@ export interface CustomProvider {
 export interface RegisterProviderRequest {
     name: string;
     channel: string;
+    kind?: ProviderKind;
     webhook_url: string;
     headers?: Record<string, string>;
+    signature_version?: ProviderSignatureVersion;
+}
+
+export interface ProviderTestResponse {
+    provider_id: string;
+    provider_name: string;
+    provider_message_id: string;
+    delivery_time_ms: number;
+    metadata?: Record<string, any>;
+}
+
+export interface ProviderRotateResponse {
+    provider_id: string;
+    signing_key: string;
 }
 
 // ============= Presence Types =============

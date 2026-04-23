@@ -642,12 +642,37 @@ const AppTemplates: React.FC<AppTemplatesProps> = ({ appId, apiKey, webhooks }) 
                                         <SelectItem value="sms">SMS</SelectItem>
                                         <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                         <SelectItem value="webhook">Webhook</SelectItem>
+                                        <SelectItem value="discord">Discord</SelectItem>
+                                        <SelectItem value="slack">Slack</SelectItem>
+                                        <SelectItem value="teams">Microsoft Teams</SelectItem>
                                         <SelectItem value="in_app">In-App</SelectItem>
                                         <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
                         </div>
+                        {formData.channel === 'webhook' && (
+                            <div className="space-y-2">
+                                <Label htmlFor="payloadKind">Payload Kind</Label>
+                                <Select
+                                    value={(formData as any).payload_kind || 'generic'}
+                                    onValueChange={(value) => setFormData({ ...formData, payload_kind: value } as any)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="generic">Generic (standard FRN envelope)</SelectItem>
+                                        <SelectItem value="discord">Discord (embed format)</SelectItem>
+                                        <SelectItem value="slack">Slack (Block Kit format)</SelectItem>
+                                        <SelectItem value="teams">Teams (Adaptive Card format)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Override the payload format for generic webhook URLs. Useful for Zapier, n8n, or self-hosted receivers.
+                                </p>
+                            </div>
+                        )}
                         {formData.channel === 'webhook' && webhooks && Object.keys(webhooks).length > 0 && (
                             <div className="space-y-2">
                                 <Label htmlFor="webhookTarget">Webhook Target</Label>

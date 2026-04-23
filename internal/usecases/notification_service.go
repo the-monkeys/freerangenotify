@@ -177,9 +177,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		}
 	}
 
-	if req.UserID == "" && req.Channel == notification.ChannelWebhook {
+	if req.UserID == "" && isWebhookLikeChannel(req.Channel) {
 		// Log that we are processing an anonymous webhook
-		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID))
+		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID), zap.String("channel", string(req.Channel)))
 	} else {
 		u, err = s.userRepo.GetByID(ctx, req.UserID)
 		if err != nil {

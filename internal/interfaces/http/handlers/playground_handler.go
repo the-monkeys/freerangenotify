@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -155,9 +159,13 @@ func (h *PlaygroundHandler) GetPayloads(c *fiber.Ctx) error {
 		})
 	}
 
+	// Optional signing key from query param for signature verification.
+	signingKey := c.Query("signing_key")
+
 	payloads := make([]json.RawMessage, 0, len(raw))
 	for _, r := range raw {
-		payloads = append(payloads, json.RawMessage(r))
+		enriched := h.enrichPayloadRecord([]byte(r), signingKey)
+		payloads = append(payloads, enriched)
 	}
 
 	return c.JSON(fiber.Map{
@@ -165,6 +173,137 @@ func (h *PlaygroundHandler) GetPayloads(c *fiber.Ctx) error {
 		"payloads": payloads,
 		"count":    len(payloads),
 	})
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Payload enrichment helpers
+// ──────────────────────────────────────────────────────────────────
+
+// enrichPayloadRecord takes a stored payload record and adds metadata:
+// - payload_version: extracted from X-Webhook-Payload-Version header
+// - rich_fields_detected: list of rich Content fields found in the body
+// - signature_valid: boolean, computed when a signing_key is provided
+func (h *PlaygroundHandler) enrichPayloadRecord(raw []byte, signingKey string) json.RawMessage {
+	var record map[string]interface{}
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return raw
+	}
+
+	// Extract body bytes for signature verification.
+	var bodyBytes []byte
+	if bodyRaw, ok := record["body"]; ok {
+		bodyBytes, _ = json.Marshal(bodyRaw)
+	}
+
+	// Extract headers (case-insensitive lookup).
+	headers, _ := record["headers"].(map[string]interface{})
+
+	// payload_version from X-Webhook-Payload-Version header.
+	payloadVersion := headerValue(headers, "X-Webhook-Payload-Version")
+	if payloadVersion == "" {
+		payloadVersion = "1.0"
+	}
+	record["payload_version"] = payloadVersion
+
+	// rich_fields_detected by inspecting body keys.
+	record["rich_fields_detected"] = detectRichFields(bodyBytes)
+
+	// signature_valid when a signing key is provided.
+	if signingKey != "" {
+		record["signature_valid"] = h.verifySignature(headers, bodyBytes, signingKey)
+	}
+
+	out, err := json.Marshal(record)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// verifySignature checks the X-Webhook-Signature header against the body
+// using either v1 (body-only) or v2 (timestamp.body) HMAC-SHA256.
+func (h *PlaygroundHandler) verifySignature(headers map[string]interface{}, body []byte, key string) bool {
+	sig := headerValue(headers, "X-Webhook-Signature")
+	if sig == "" {
+		sig = headerValue(headers, "X-FRN-Signature")
+	}
+	if sig == "" {
+		return false
+	}
+
+	ts := headerValue(headers, "X-Webhook-Timestamp")
+
+	// Try v2 first (timestamp present).
+	if ts != "" {
+		mac := hmac.New(sha256.New, []byte(key))
+		mac.Write([]byte(ts))
+		mac.Write([]byte("."))
+		mac.Write(body)
+		expected := hex.EncodeToString(mac.Sum(nil))
+		if hmac.Equal([]byte(sig), []byte(expected)) {
+			return true
+		}
+	}
+
+	// Fall back to v1 (body-only).
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(sig), []byte(expected))
+}
+
+// detectRichFields inspects a JSON body and returns the list of rich webhook
+// content fields that are present (non-null, non-empty).
+func detectRichFields(body []byte) []string {
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil
+	}
+
+	// Check top-level content object (generic webhook) or direct fields.
+	content := parsed
+	if c, ok := parsed["content"].(map[string]interface{}); ok {
+		content = c
+	}
+
+	richKeys := []string{"attachments", "actions", "fields", "mentions", "poll", "style"}
+	var detected []string
+	for _, k := range richKeys {
+		v, ok := content[k]
+		if !ok || v == nil {
+			continue
+		}
+		switch vv := v.(type) {
+		case []interface{}:
+			if len(vv) > 0 {
+				detected = append(detected, k)
+			}
+		case map[string]interface{}:
+			if len(vv) > 0 {
+				detected = append(detected, k)
+			}
+		}
+	}
+	return detected
+}
+
+// headerValue performs a case-insensitive lookup in the headers map.
+// Headers from Fiber's GetReqHeaders may be stored as string or []interface{}.
+func headerValue(headers map[string]interface{}, key string) string {
+	for k, v := range headers {
+		if !strings.EqualFold(k, key) {
+			continue
+		}
+		switch vv := v.(type) {
+		case string:
+			return vv
+		case []interface{}:
+			if len(vv) > 0 {
+				return fmt.Sprintf("%v", vv[0])
+			}
+		}
+	}
+	return ""
 }
 
 // ──────────────────────────────────────────────────────────────────

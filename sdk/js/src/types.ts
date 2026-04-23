@@ -69,10 +69,63 @@ export interface BroadcastResult {
     notifications: SendResult[];
 }
 
+export interface ContentAttachment {
+    type: 'image' | 'video' | 'file' | 'audio';
+    url: string;
+    name?: string;
+    mime_type?: string;
+    size?: number;
+    alt_text?: string;
+}
+
+export interface ContentAction {
+    type: 'link' | 'submit' | 'dismiss';
+    label: string;
+    url?: string;
+    value?: string;
+    style?: 'primary' | 'danger' | 'default';
+}
+
+export interface ContentField {
+    key: string;
+    value: string;
+    inline?: boolean;
+}
+
+export interface ContentMention {
+    platform: 'discord' | 'slack' | 'teams';
+    platform_id: string;
+    display?: string;
+}
+
+export interface ContentPollChoice {
+    label: string;
+    emoji?: string;
+}
+
+export interface ContentPoll {
+    question: string;
+    choices: ContentPollChoice[];
+    multi_select?: boolean;
+    duration_hours?: number;
+}
+
+export interface ContentStyle {
+    severity?: 'info' | 'success' | 'warning' | 'danger';
+    color?: string;
+}
+
 export interface NotificationContent {
     title: string;
     body: string;
     data?: Record<string, unknown>;
+    media_url?: string;
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface NotificationResponse {
