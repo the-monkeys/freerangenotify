@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { providersAPI } from '../../services/api';
-import type { CustomProvider, ProviderKind, ProviderSignatureVersion } from '../../types';
+import type { CustomProvider, ProviderKind } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
 import { extractErrorMessage } from '../../lib/utils';
 import { Button } from '../ui/button';
@@ -28,20 +28,7 @@ interface AppProvidersProps {
     appId: string;
 }
 
-// Channels that accept a custom webhook-based provider. Discord, Slack,
-// and Teams are first-class backend channels — users can now register
-// per-app webhook URLs directly from this tab.
-const CHANNEL_OPTIONS = [
-    { value: 'webhook', label: 'Webhook' },
-    { value: 'discord', label: 'Discord' },
-    { value: 'slack', label: 'Slack' },
-    { value: 'teams', label: 'Microsoft Teams' },
-    { value: 'email', label: 'Email' },
-    { value: 'push', label: 'Push' },
-    { value: 'sms', label: 'SMS' },
-    { value: 'whatsapp', label: 'WhatsApp' },
-    { value: 'sse', label: 'SSE' },
-];
+
 
 // inferKind mirrors the backend's custom_provider_kind.go logic so the UI
 // can show an immediate "Detected: Discord/Slack/Teams" badge.

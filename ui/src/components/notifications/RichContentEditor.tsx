@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -13,7 +13,6 @@ import type {
     ContentField,
     ContentMention,
     ContentPoll,
-    ContentPollChoice,
     ContentStyle,
 } from '../channels/ChannelPreview';
 
