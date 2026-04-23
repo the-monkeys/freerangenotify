@@ -24,6 +24,15 @@ var (
 	ErrCannotSnooze          = errors.New("notification cannot be snoozed")
 	ErrCannotArchive         = errors.New("notification cannot be archived")
 	ErrInvalidSnoozeDuration = errors.New("invalid snooze duration")
+
+	// Rich content validation (Phase 7 — Webhook channel expansion).
+	ErrTooManyAttachments = errors.New("content.attachments: at most 10 allowed")
+	ErrInvalidAttachment  = errors.New("content.attachments: each item requires type and url")
+	ErrTooManyActions     = errors.New("content.actions: at most 5 allowed")
+	ErrInvalidAction      = errors.New("content.actions: type and label required; url required for link actions")
+	ErrTooManyFields      = errors.New("content.fields: at most 25 allowed")
+	ErrInvalidField       = errors.New("content.fields: each item requires key and value")
+	ErrInvalidPoll        = errors.New("content.poll: question plus 2–10 non-empty choices required")
 )
 
 // IsValidationError checks if an error is a validation error

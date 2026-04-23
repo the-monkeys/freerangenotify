@@ -36,8 +36,9 @@ type Template struct {
 	EnvironmentID string                 `json:"environment_id,omitempty" es:"environment_id"`
 	Name          string                 `json:"name" es:"name"`
 	Description   string                 `json:"description" es:"description"`
-	Channel       string                 `json:"channel" es:"channel"`                         // push, email, sms, webhook
+	Channel       string                 `json:"channel" es:"channel"`                         // push, email, sms, webhook, slack, discord, teams, whatsapp, sse
 	WebhookTarget string                 `json:"webhook_target,omitempty" es:"webhook_target"` // Specific webhook target name
+	PayloadKind   string                 `json:"payload_kind,omitempty" es:"payload_kind"`     // Phase 7: generic|discord|slack|teams — forces renderer for channel=webhook
 	Subject       string                 `json:"subject,omitempty" es:"subject"`               // for email
 	Body          string                 `json:"body" es:"body"`
 	Variables     []string               `json:"variables" es:"variables"`                     // template variables like {{user_name}}
@@ -120,8 +121,9 @@ type CreateRequest struct {
 	AppID         string                 `json:"app_id" validate:"required"`
 	Name          string                 `json:"name" validate:"required,min=1,max=100"`
 	Description   string                 `json:"description"`
-	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook sse slack discord whatsapp"`
+	Channel       string                 `json:"channel" validate:"required,oneof=push email sms webhook sse slack discord whatsapp teams"`
 	WebhookTarget string                 `json:"webhook_target,omitempty"`
+	PayloadKind   string                 `json:"payload_kind,omitempty" validate:"omitempty,oneof=generic discord slack teams"`
 	Subject       string                 `json:"subject,omitempty"`
 	Body          string                 `json:"body" validate:"required"`
 	Variables     []string               `json:"variables,omitempty"`
@@ -136,6 +138,7 @@ type UpdateRequest struct {
 	Name          *string                `json:"name,omitempty" validate:"omitempty,min=1,max=100"`
 	Description   *string                `json:"description,omitempty"`
 	WebhookTarget *string                `json:"webhook_target,omitempty"`
+	PayloadKind   *string                `json:"payload_kind,omitempty" validate:"omitempty,oneof=generic discord slack teams"`
 	Subject       *string                `json:"subject,omitempty"`
 	Body          *string                `json:"body,omitempty"`
 	Variables     *[]string              `json:"variables,omitempty"`

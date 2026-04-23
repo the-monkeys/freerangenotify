@@ -11,13 +11,14 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
 	"go.uber.org/zap"
 )
 
 // DiscordConfig holds configuration for the Discord provider.
 type DiscordConfig struct {
-	Config                     // Common: Timeout, MaxRetries, RetryDelay
-	DefaultWebhookURL string  // App-level fallback webhook URL
+	Config                   // Common: Timeout, MaxRetries, RetryDelay
+	DefaultWebhookURL string // App-level fallback webhook URL
 }
 
 // DiscordProvider delivers notifications to Discord via Incoming Webhooks.
@@ -141,21 +142,5 @@ func init() {
 
 // buildPayload constructs a Discord webhook payload with embeds.
 func (p *DiscordProvider) buildPayload(notif *notification.Notification) map[string]interface{} {
-	embed := map[string]interface{}{
-		"title":       notif.Content.Title,
-		"description": notif.Content.Body,
-		"color":       3447003, // Discord blue (#3498DB)
-	}
-
-	// Add URL field if action_url is present
-	if notif.Content.Data != nil {
-		if actionURL, ok := notif.Content.Data["action_url"].(string); ok && actionURL != "" {
-			embed["url"] = actionURL
-		}
-	}
-
-	return map[string]interface{}{
-		"content": notif.Content.Title,
-		"embeds":  []map[string]interface{}{embed},
-	}
+	return render.BuildDiscordPayload(notif)
 }

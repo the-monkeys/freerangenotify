@@ -13,6 +13,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
 	"go.uber.org/zap"
 )
 
@@ -36,27 +37,10 @@ type HTTPClient interface {
 }
 
 // WebhookPayload represents the data sent to the webhook endpoint
-type WebhookPayload struct {
-	ID         string                 `json:"id"`
-	AppID      string                 `json:"app_id"`
-	UserID     string                 `json:"user_id"`
-	Channel    string                 `json:"channel"`
-	Priority   string                 `json:"priority"`
-	Status     string                 `json:"status"`
-	TemplateID string                 `json:"template_id"`
-	Template   *TemplateInfo          `json:"template,omitempty"`
-	Content    notification.Content   `json:"content"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt  time.Time              `json:"created_at"`
-}
+type WebhookPayload = render.GenericWebhookPayload
 
 // TemplateInfo contains template details for the receiver
-type TemplateInfo struct {
-	Name      string   `json:"name"`
-	Subject   string   `json:"subject"`
-	Body      string   `json:"body"`
-	Variables []string `json:"variables"`
-}
+type TemplateInfo = render.TemplateInfo
 
 // NewWebhookProvider creates a new Webhook provider
 func NewWebhookProvider(config WebhookConfig, logger *zap.Logger) (Provider, error) {
@@ -102,19 +86,8 @@ func (p *WebhookProvider) Send(ctx context.Context, notif *notification.Notifica
 		zap.String("template_id", notif.TemplateID),
 		zap.String("url", targetURL))
 
-	// Prepare Payload using the structured WebhookPayload
-	webhookPayload := WebhookPayload{
-		ID:         notif.NotificationID,
-		AppID:      notif.AppID,
-		UserID:     notif.UserID,
-		Channel:    string(notif.Channel),
-		Priority:   string(notif.Priority),
-		Status:     string(notif.Status),
-		TemplateID: notif.TemplateID,
-		Content:    notif.Content,
-		Metadata:   notif.Metadata,
-		CreatedAt:  notif.CreatedAt,
-	}
+	// Prepare payload using deterministic renderer helpers.
+	webhookPayload := render.BuildGenericWebhookPayload(notif)
 
 	payload, err := json.Marshal(webhookPayload)
 	if err != nil {

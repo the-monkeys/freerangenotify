@@ -141,6 +141,132 @@ type Content struct {
 	Body     string                 `json:"body" es:"body"`
 	Data     map[string]interface{} `json:"data,omitempty" es:"data"`
 	MediaURL string                 `json:"media_url,omitempty" es:"media_url"`
+
+	// Rich webhook fields (Phase 7 — Webhook channel expansion).
+	// All fields are optional and omitted when empty, preserving the legacy
+	// JSON shape for back-compat. Per-platform renderers silently drop
+	// fields their target does not support.
+	Attachments []Attachment `json:"attachments,omitempty" es:"attachments"`
+	Actions     []Action     `json:"actions,omitempty"     es:"actions"`
+	Fields      []Field      `json:"fields,omitempty"      es:"fields"`
+	Mentions    []Mention    `json:"mentions,omitempty"    es:"mentions"`
+	Poll        *Poll        `json:"poll,omitempty"        es:"poll"`
+	Style       *Style       `json:"style,omitempty"       es:"style"`
+}
+
+// Attachment describes a media or file attachment referenced by URL.
+// Size is in bytes when known; zero means unknown/not validated.
+type Attachment struct {
+	Type     string `json:"type"                 es:"type"` // image | video | file | audio
+	URL      string `json:"url"                  es:"url"`
+	Name     string `json:"name,omitempty"       es:"name"`
+	MimeType string `json:"mime_type,omitempty"  es:"mime_type"`
+	Size     int64  `json:"size,omitempty"       es:"size"`
+	AltText  string `json:"alt_text,omitempty"   es:"alt_text"`
+}
+
+// Action describes a call-to-action button.
+// type=link renders as an OpenUrl / link button on all platforms.
+// type=submit requires an inbound-webhook receiver (out of scope for
+// Phase A of the webhook expansion).
+type Action struct {
+	Type  string `json:"type"                es:"type"` // link | submit | dismiss
+	Label string `json:"label"               es:"label"`
+	URL   string `json:"url,omitempty"       es:"url"`
+	Value string `json:"value,omitempty"     es:"value"`
+	Style string `json:"style,omitempty"     es:"style"` // primary | danger | default
+}
+
+// Field is a key/value pair rendered as Discord embed fields,
+// Slack section fields, or Teams AdaptiveCard FactSet entries.
+type Field struct {
+	Key    string `json:"key"              es:"key"`
+	Value  string `json:"value"            es:"value"`
+	Inline bool   `json:"inline,omitempty" es:"inline"`
+}
+
+// Mention represents a platform-specific user / channel mention.
+// PlatformID is the raw id expected by the target platform
+// (e.g. Slack user id "U1234567" or Discord user id).
+type Mention struct {
+	Platform   string `json:"platform"           es:"platform"` // discord | slack | teams
+	PlatformID string `json:"platform_id"        es:"platform_id"`
+	Display    string `json:"display,omitempty"  es:"display"`
+}
+
+// Poll defines a multiple-choice poll.
+// DurationHours is advisory; each platform clamps to its own limits.
+type Poll struct {
+	Question      string       `json:"question"                es:"question"`
+	Choices       []PollChoice `json:"choices"                 es:"choices"`
+	MultiSelect   bool         `json:"multi_select,omitempty"  es:"multi_select"`
+	DurationHours int          `json:"duration_hours,omitempty" es:"duration_hours"`
+}
+
+// PollChoice is one selectable option in a Poll.
+type PollChoice struct {
+	Label string `json:"label"           es:"label"`
+	Emoji string `json:"emoji,omitempty" es:"emoji"`
+}
+
+// Style carries presentation hints applied across renderers.
+type Style struct {
+	Severity string `json:"severity,omitempty" es:"severity"` // info | success | warning | danger
+	Color    string `json:"color,omitempty"    es:"color"`    // hex override, e.g. "#3498DB"
+}
+
+// Validate checks rich-content invariants. It is a no-op when only the
+// legacy fields (Title / Body / Data / MediaURL) are populated, so existing
+// callers see no behavior change.
+func (c *Content) Validate() error {
+	if len(c.Attachments) > 10 {
+		return ErrTooManyAttachments
+	}
+	for i := range c.Attachments {
+		a := c.Attachments[i]
+		if a.Type == "" || a.URL == "" {
+			return ErrInvalidAttachment
+		}
+	}
+
+	if len(c.Actions) > 5 {
+		return ErrTooManyActions
+	}
+	for i := range c.Actions {
+		a := c.Actions[i]
+		if a.Type == "" || a.Label == "" {
+			return ErrInvalidAction
+		}
+		if a.Type == "link" && a.URL == "" {
+			return ErrInvalidAction
+		}
+	}
+
+	if len(c.Fields) > 25 {
+		return ErrTooManyFields
+	}
+	for i := range c.Fields {
+		f := c.Fields[i]
+		if f.Key == "" || f.Value == "" {
+			return ErrInvalidField
+		}
+	}
+
+	if c.Poll != nil {
+		if c.Poll.Question == "" {
+			return ErrInvalidPoll
+		}
+		if len(c.Poll.Choices) < 2 || len(c.Poll.Choices) > 10 {
+			return ErrInvalidPoll
+		}
+		for i := range c.Poll.Choices {
+			if c.Poll.Choices[i].Label == "" {
+				return ErrInvalidPoll
+			}
+		}
+	}
+
+	return nil
 }
 
 // NotificationFilter represents query filters for notifications
@@ -322,6 +448,9 @@ func (n *Notification) Validate() error {
 	hasContentSid := n.Content.Data != nil && n.Content.Data["content_sid"] != nil
 	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid {
 		return ErrEmptyContent
+	}
+	if err := n.Content.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

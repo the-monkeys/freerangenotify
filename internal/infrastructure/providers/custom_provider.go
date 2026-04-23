@@ -10,36 +10,52 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
 	"go.uber.org/zap"
 )
 
 // CustomProvider delivers notifications to a user-registered webhook endpoint.
 // It acts as a generic relay, signing payloads with HMAC-SHA256 for security.
 type CustomProvider struct {
-	name       string
-	channel    notification.Channel
-	webhookURL string
-	headers    map[string]string
-	signingKey string
-	httpClient *http.Client
-	logger     *zap.Logger
+	name             string
+	channel          notification.Channel
+	kind             string
+	webhookURL       string
+	headers          map[string]string
+	signingKey       string
+	signatureVersion string
+	httpClient       *http.Client
+	logger           *zap.Logger
 }
 
 // NewCustomProvider creates a custom webhook-based provider.
-func NewCustomProvider(name, channel, webhookURL, signingKey string, headers map[string]string, logger *zap.Logger) *CustomProvider {
+func NewCustomProvider(name, channel, kind, webhookURL, signingKey, signatureVersion string, headers map[string]string, logger *zap.Logger) *CustomProvider {
+	normalizedKind := strings.ToLower(strings.TrimSpace(kind))
+	if normalizedKind == "" {
+		normalizedKind = inferProviderKindFromURL(webhookURL)
+	}
+	normalizedSignatureVersion := strings.ToLower(strings.TrimSpace(signatureVersion))
+	if normalizedSignatureVersion != "v2" {
+		normalizedSignatureVersion = "v1"
+	}
+
 	return &CustomProvider{
-		name:       name,
-		channel:    notification.Channel(channel),
-		webhookURL: webhookURL,
-		headers:    headers,
-		signingKey: signingKey,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		logger:     logger,
+		name:             name,
+		channel:          notification.Channel(channel),
+		kind:             normalizedKind,
+		webhookURL:       webhookURL,
+		headers:          headers,
+		signingKey:       signingKey,
+		signatureVersion: normalizedSignatureVersion,
+		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		logger:           logger,
 	}
 }
 
@@ -50,14 +66,20 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 	var body []byte
 	var err error
 
-	// Detect well-known services and format payload to match their API
-	switch {
-	case strings.Contains(p.webhookURL, "discord.com/api/webhooks"):
-		body, err = json.Marshal(p.buildDiscordPayload(notif))
-	case strings.Contains(p.webhookURL, "hooks.slack.com/services"):
-		body, err = json.Marshal(p.buildSlackPayload(notif))
+	// Prefer explicit provider kind; fallback to URL-based inference for legacy rows.
+	payloadKind := p.kind
+	if payloadKind == "" {
+		payloadKind = inferProviderKindFromURL(p.webhookURL)
+	}
+	switch payloadKind {
+	case "discord":
+		body, err = json.Marshal(render.BuildCustomDiscordPayload(notif))
+	case "slack":
+		body, err = json.Marshal(render.BuildCustomSlackPayload(notif))
+	case "teams":
+		body, err = json.Marshal(render.BuildTeamsPayload(notif, p.webhookURL))
 	default:
-		body, err = json.Marshal(p.buildStandardPayload(notif, usr))
+		body, err = json.Marshal(render.BuildCustomStandardPayload(notif, p.channel, usr))
 	}
 	if err != nil {
 		return NewErrorResult(fmt.Errorf("failed to marshal custom payload: %w", err), ErrorTypeInvalid), nil
@@ -77,12 +99,14 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 		req.Header.Set(k, v)
 	}
 
-	// HMAC-SHA256 signature
+	// Emit canonical signature header and keep X-FRN-Signature in parallel during migration.
 	if p.signingKey != "" {
-		mac := hmac.New(sha256.New, []byte(p.signingKey))
-		mac.Write(body)
-		signature := hex.EncodeToString(mac.Sum(nil))
+		signature, timestamp := p.sign(body)
+		req.Header.Set("X-Webhook-Signature", signature)
 		req.Header.Set("X-FRN-Signature", signature)
+		if timestamp != "" {
+			req.Header.Set("X-Webhook-Timestamp", timestamp)
+		}
 	}
 
 	resp, err := p.httpClient.Do(req)
@@ -122,74 +146,37 @@ func (p *CustomProvider) IsHealthy(_ context.Context) bool { return true }
 // Close releases provider resources.
 func (p *CustomProvider) Close() error { return nil }
 
-// buildStandardPayload builds the default FreeRangeNotify webhook payload.
-func (p *CustomProvider) buildStandardPayload(notif *notification.Notification, usr *user.User) map[string]interface{} {
-	payload := map[string]interface{}{
-		"notification_id": notif.NotificationID,
-		"app_id":          notif.AppID,
-		"user_id":         notif.UserID,
-		"channel":         string(p.channel),
-		"content":         notif.Content,
-		"metadata":        notif.Metadata,
-		"priority":        string(notif.Priority),
-		"category":        notif.Category,
-		"created_at":      notif.CreatedAt,
+func inferProviderKindFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "generic"
 	}
-	if usr != nil {
-		payload["user"] = map[string]interface{}{
-			"email":       usr.Email,
-			"phone":       usr.Phone,
-			"external_id": usr.ExternalID,
-			"timezone":    usr.Timezone,
-			"language":    usr.Language,
-		}
-	}
-	return payload
-}
-
-// buildDiscordPayload formats the notification for Discord's webhook API.
-// Discord expects: {"content": "string message"} with optional embeds.
-func (p *CustomProvider) buildDiscordPayload(notif *notification.Notification) map[string]interface{} {
-	text := formatContentString(notif.Content)
-
-	payload := map[string]interface{}{
-		"content": text,
-	}
-
-	// If there's a title, use a Discord embed for richer formatting
-	if notif.Content.Title != "" {
-		payload["embeds"] = []map[string]interface{}{
-			{
-				"title":       notif.Content.Title,
-				"description": notif.Content.Body,
-			},
-		}
-		// When using embeds, content can be empty
-		payload["content"] = nil
-	}
-
-	return payload
-}
-
-// buildSlackPayload formats the notification for Slack's incoming webhook API.
-// Slack expects: {"text": "string message"} with optional blocks.
-func (p *CustomProvider) buildSlackPayload(notif *notification.Notification) map[string]interface{} {
-	text := formatContentString(notif.Content)
-	return map[string]interface{}{
-		"text": text,
+	host := strings.ToLower(u.Host)
+	path := strings.ToLower(u.Path)
+	switch {
+	case (strings.Contains(host, "discord.com") || strings.Contains(host, "discordapp.com")) && strings.HasPrefix(path, "/api/webhooks"):
+		return "discord"
+	case strings.Contains(host, "hooks.slack.com"):
+		return "slack"
+	case strings.HasSuffix(host, "webhook.office.com"):
+		return "teams"
+	case strings.Contains(host, "logic.azure.com") && strings.Contains(path, "/workflows/"):
+		return "teams"
+	default:
+		return "generic"
 	}
 }
 
-// formatContentString converts a Content struct into a readable plain-text string.
-func formatContentString(c notification.Content) string {
-	if c.Title != "" && c.Body != "" {
-		return c.Title + "\n" + c.Body
+func (p *CustomProvider) sign(body []byte) (string, string) {
+	mac := hmac.New(sha256.New, []byte(p.signingKey))
+	timestamp := ""
+
+	if p.signatureVersion == "v2" {
+		timestamp = strconv.FormatInt(time.Now().UTC().Unix(), 10)
+		mac.Write([]byte(timestamp))
+		mac.Write([]byte("."))
 	}
-	if c.Body != "" {
-		return c.Body
-	}
-	if c.Title != "" {
-		return c.Title
-	}
-	return ""
+	mac.Write(body)
+
+	return hex.EncodeToString(mac.Sum(nil)), timestamp
 }
