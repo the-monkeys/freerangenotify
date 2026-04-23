@@ -98,9 +98,71 @@ type NotificationResponse struct {
 
 // NotificationContent holds the rendered content of a notification.
 type NotificationContent struct {
-	Title string                 `json:"title"`
-	Body  string                 `json:"body"`
-	Data  map[string]interface{} `json:"data,omitempty"`
+	Title    string                 `json:"title"`
+	Body     string                 `json:"body"`
+	Data     map[string]interface{} `json:"data,omitempty"`
+	MediaURL string                 `json:"media_url,omitempty"`
+
+	// Rich webhook fields
+	Attachments []ContentAttachment `json:"attachments,omitempty"`
+	Actions     []ContentAction     `json:"actions,omitempty"`
+	Fields      []ContentField      `json:"fields,omitempty"`
+	Mentions    []ContentMention    `json:"mentions,omitempty"`
+	Poll        *ContentPoll        `json:"poll,omitempty"`
+	Style       *ContentStyle       `json:"style,omitempty"`
+}
+
+// ContentAttachment describes a media or file attachment.
+type ContentAttachment struct {
+	Type     string `json:"type"` // image | video | file | audio
+	URL      string `json:"url"`
+	Name     string `json:"name,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+	Size     int64  `json:"size,omitempty"`
+	AltText  string `json:"alt_text,omitempty"`
+}
+
+// ContentAction describes a call-to-action button.
+type ContentAction struct {
+	Type  string `json:"type"` // link | submit | dismiss
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+	Value string `json:"value,omitempty"`
+	Style string `json:"style,omitempty"` // primary | danger | default
+}
+
+// ContentField is a key/value pair rendered as embed fields / FactSet entries.
+type ContentField struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Inline bool   `json:"inline,omitempty"`
+}
+
+// ContentMention represents a platform-specific user/channel mention.
+type ContentMention struct {
+	Platform   string `json:"platform"`
+	PlatformID string `json:"platform_id"`
+	Display    string `json:"display,omitempty"`
+}
+
+// ContentPoll defines a multiple-choice poll.
+type ContentPoll struct {
+	Question      string              `json:"question"`
+	Choices       []ContentPollChoice `json:"choices"`
+	MultiSelect   bool                `json:"multi_select,omitempty"`
+	DurationHours int                 `json:"duration_hours,omitempty"`
+}
+
+// ContentPollChoice is one selectable option in a Poll.
+type ContentPollChoice struct {
+	Label string `json:"label"`
+	Emoji string `json:"emoji,omitempty"`
+}
+
+// ContentStyle carries presentation hints.
+type ContentStyle struct {
+	Severity string `json:"severity,omitempty"` // info | success | warning | danger
+	Color    string `json:"color,omitempty"`    // hex override
 }
 
 // NotificationListResponse is a paginated list of notifications.

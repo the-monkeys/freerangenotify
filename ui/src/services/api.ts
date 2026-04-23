@@ -58,6 +58,8 @@ import type {
   InviteTenantMemberRequest,
   CustomProvider,
   RegisterProviderRequest,
+  ProviderTestResponse,
+  ProviderRotateResponse,
   PresenceCheckInRequest,
   BatchNotificationRequest,
   CancelBatchRequest,
@@ -1143,6 +1145,16 @@ export const providersAPI = {
 
   remove: async (appId: string, providerId: string) => {
     await api.delete(`/apps/${appId}/providers/${providerId}`);
+  },
+
+  test: async (appId: string, providerId: string) => {
+    const { data } = await api.post<ApiResponse<ProviderTestResponse>>(`/apps/${appId}/providers/${providerId}/test`);
+    return data.data;
+  },
+
+  rotate: async (appId: string, providerId: string) => {
+    const { data } = await api.post<ApiResponse<ProviderRotateResponse>>(`/apps/${appId}/providers/${providerId}/rotate`);
+    return data.data;
   },
 };
 

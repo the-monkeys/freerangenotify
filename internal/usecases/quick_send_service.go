@@ -43,13 +43,7 @@ func NewQuickSendService(
 
 // Send resolves human-readable identifiers and delegates to the notification service.
 func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.QuickSendRequest) (*dto.QuickSendResponse, error) {
-	// 1. Resolve recipient
-	userID, err := s.resolveRecipient(ctx, appID, req.To)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve recipient %q: %w", req.To, err)
-	}
-
-	// 2. Resolve template (or use inline content)
+	// 1. Resolve template (or use inline content) — done first so we know the channel.
 	var templateID string
 	var channel notification.Channel
 
@@ -83,9 +77,24 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 		return nil, fmt.Errorf("either 'template' or 'body' must be provided")
 	}
 
-	// 3. Channel: explicit > inferred from template
+	// 2. Channel: explicit > inferred from template
 	if req.Channel != "" {
 		channel = notification.Channel(req.Channel)
+	}
+
+	// 3. Resolve recipient — webhook-like channels deliver to a URL, not a user.
+	var userID string
+	if isWebhookLikeChannel(channel) {
+		userID = ""
+	} else {
+		if req.To == "" {
+			return nil, fmt.Errorf("'to' is required for %s channel", channel)
+		}
+		var err error
+		userID, err = s.resolveRecipient(ctx, appID, req.To)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve recipient %q: %w", req.To, err)
+		}
 	}
 
 	// 4. Priority: default to "normal"
@@ -240,3 +249,15 @@ func (s *QuickSendService) createTransientTemplate(ctx context.Context, appID st
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// isWebhookLikeChannel returns true for channels that deliver to a URL endpoint
+// rather than a specific user (webhook, discord, slack, teams).
+func isWebhookLikeChannel(ch notification.Channel) bool {
+	switch ch {
+	case notification.ChannelWebhook, notification.ChannelDiscord,
+		notification.ChannelSlack, notification.ChannelTeams:
+		return true
+	default:
+		return false
+	}
+}
