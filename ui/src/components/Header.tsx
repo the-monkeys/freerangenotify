@@ -46,8 +46,8 @@ const Header: React.FC = () => {
         },
         {
             label: 'Pricing',
-            path: '/',
-            active: location.pathname === '/',
+            path: '/pricing',
+            active: location.pathname === '/pricing',
         },
         ...(isAuthenticated
             ? [
