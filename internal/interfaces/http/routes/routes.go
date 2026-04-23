@@ -359,6 +359,8 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// Phase 3: Custom Provider Management
 	apps.Post("/:id/providers", c.CustomProviderHandler.Register)
 	apps.Get("/:id/providers", c.CustomProviderHandler.List)
+	apps.Post("/:id/providers/:provider_id/test", c.CustomProviderHandler.Test)
+	apps.Post("/:id/providers/:provider_id/rotate", c.CustomProviderHandler.RotateSigningKey)
 	apps.Delete("/:id/providers/:provider_id", c.CustomProviderHandler.Remove)
 
 	// WhatsApp Meta Embedded Signup & Connection Management (feature-gated)

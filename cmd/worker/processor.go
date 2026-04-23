@@ -842,7 +842,7 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 						zap.String("provider", cp.Name),
 						zap.String("channel", cp.Channel))
 					customProvider := providers.NewCustomProvider(
-						cp.Name, cp.Channel, cp.WebhookURL, cp.SigningKey, cp.Headers, p.logger,
+						cp.Name, cp.Channel, cp.Kind, cp.WebhookURL, cp.SigningKey, cp.SignatureVersion, cp.Headers, p.logger,
 					)
 					customResult, customErr := customProvider.Send(ctx, notif, usr)
 					if customErr == nil && customResult != nil && customResult.Success {

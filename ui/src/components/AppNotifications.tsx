@@ -33,6 +33,8 @@ import { localInTimezoneToISO, formatInTimezone, nowInTimezone } from '../lib/ti
 import Papa from 'papaparse';
 import EditablePreviewPanel from './templates/EditablePreviewPanel';
 import WhatsAppPreview from './whatsapp/WhatsAppPreview';
+import RichContentEditor, { emptyRichContent, isRichContentEmpty, richContentToPayload, type RichContentData } from './notifications/RichContentEditor';
+import ChannelPreview from './channels/ChannelPreview';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -501,12 +503,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
     const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
+    const [quickRichContent, setQuickRichContent] = useState<RichContentData>(emptyRichContent());
     const [quickMedia, setQuickMedia] = useState<{ url: string; previewUrl: string; type: string; name: string } | null>(null);
     const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
     const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
     const [activePreviews, setActivePreviews] = useState<Record<string, { data: string; rendered: string; loading: boolean }>>({});
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
-    const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
+    const [advRichContent, setAdvRichContent] = useState<RichContentData>(emptyRichContent()); const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
     // Filtered templates by channel
     const filteredTemplates = useMemo(() => (templates || []).filter(t => t.channel === formData.channel), [templates, formData.channel]);
@@ -558,8 +561,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     // Twilio variables now drive content_variables through quickData / formTwilioVars
     // directly at send time — no helper needed.
 
+    // Channels that deliver to an endpoint, not a user — recipient is irrelevant.
+    const WEBHOOK_LIKE_CHANNELS = ['webhook', 'discord', 'slack', 'teams'];
+
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
+    const isQuickWebhookLike = quickSelectedTemplate ? WEBHOOK_LIKE_CHANNELS.includes(quickSelectedTemplate.channel) : false;
     const quickVariables = useMemo(() => {
         const vars = quickSelectedTemplate?.variables || [];
         return quickSelectedTemplate?.body ? sortVariablesByAppearance(vars, quickSelectedTemplate.body) : vars;
@@ -808,9 +815,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     }, [user]);
 
     const handleQuickSend = async () => {
-        if (!quickTo || !quickTemplateId) return;
+        const isTwilioCheck = isTwilioSelection(quickTemplateId);
+        const selTpl = isTwilioCheck ? undefined : templates.find(t => t.id === quickTemplateId);
+        const isWebhookLike = selTpl ? WEBHOOK_LIKE_CHANNELS.includes(selTpl.channel) : false;
+        if (!quickTemplateId || (!isWebhookLike && !quickTo)) return;
 
-        const isTwilio = isTwilioSelection(quickTemplateId);
+        const isTwilio = isTwilioCheck;
         const selectedTemplate = isTwilio ? undefined : templates.find(t => t.id === quickTemplateId);
         const channel = isTwilio ? 'whatsapp' : (selectedTemplate?.channel || 'email');
         if (checkVerificationAndBlock(channel)) return;
@@ -839,10 +849,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 : (Object.keys(quickData).length > 0 ? quickData : undefined);
 
             await quickSendAPI.send(apiKey, {
-                to: quickTo,
+                to: isWebhookLike ? '' : quickTo,
                 template: isTwilio ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
                 channel: isTwilio ? 'whatsapp' : undefined,
-                data: sendData,
+                data: {
+                    ...sendData,
+                    ...(!isRichContentEmpty(quickRichContent) ? richContentToPayload(quickRichContent) : {}),
+                },
                 priority: quickPriority as any,
                 scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
@@ -979,7 +992,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             }
 
             const userIds = selectedUsers.length > 0 ? selectedUsers : (formData.user_id ? [formData.user_id] : []);
-            const requiresUser = formData.channel !== 'webhook';
+            const requiresUser = !WEBHOOK_LIKE_CHANNELS.includes(formData.channel);
             if (requiresUser && userIds.length === 0) {
                 toast.error('Select at least one user.');
                 return;
@@ -993,12 +1006,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 content_variables: JSON.stringify(formTwilioVars || {}),
             } : null;
             const finalData = twilioPayload ? { ...twilioPayload, ...customData } : customData;
+            const richPayload = !isRichContentEmpty(advRichContent) ? richContentToPayload(advRichContent) : {};
             const payload: NotificationRequest = {
                 user_id: '',
                 channel: formData.channel,
                 priority: formData.priority,
                 template_id: isTwilio ? undefined : (formData.template_id || undefined),
-                data: finalData,
+                data: { ...finalData, ...richPayload },
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
                 workflow_trigger_id: formData.workflow_trigger_id || undefined,
@@ -1141,14 +1155,18 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 <p className={SEND_FORM_INFO_CLASS}>Send a notification using email or user ID and a template name. No UUIDs required.</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="quickTo">To (Recipient)</Label>
+                                        <Label htmlFor="quickTo">
+                                            To (Recipient)
+                                            {isQuickWebhookLike && <span className="font-normal text-muted-foreground text-xs"> (N/A for webhook channels)</span>}
+                                        </Label>
                                         {quickToManual ? (
                                             <>
                                                 <Input
                                                     id="quickTo"
-                                                    value={quickTo}
+                                                    value={isQuickWebhookLike ? '' : quickTo}
                                                     onChange={e => setQuickTo(e.target.value)}
-                                                    placeholder="john@example.com or external_id"
+                                                    placeholder={isQuickWebhookLike ? 'Not required for webhook channels' : 'john@example.com or external_id'}
+                                                    disabled={isQuickWebhookLike}
                                                 />
                                                 <button
                                                     type="button"
@@ -1160,9 +1178,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </>
                                         ) : (
                                             <>
-                                                <Select value={quickTo} onValueChange={setQuickTo}>
+                                                <Select value={isQuickWebhookLike ? '__webhook__' : quickTo} onValueChange={setQuickTo} disabled={isQuickWebhookLike}>
                                                     <SelectTrigger>
-                                                        <SelectValue placeholder="Select a user" />
+                                                        <SelectValue placeholder={isQuickWebhookLike ? 'Not required for webhook channels' : 'Select a user'} />
                                                     </SelectTrigger>
                                                     <SelectContent>
                                                         {users.map(u => (
@@ -1529,6 +1547,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
+                                {/* Rich Content Editor — visible for webhook/discord/slack/teams channels */}
+                                {quickSelectedTemplate && ['webhook', 'discord', 'slack', 'teams'].includes(quickSelectedTemplate.channel) && (
+                                    <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
+                                        <RichContentEditor value={quickRichContent} onChange={setQuickRichContent} />
+                                        {!isRichContentEmpty(quickRichContent) && (
+                                            <ChannelPreview
+                                                channel={quickSelectedTemplate.channel}
+                                                content={{
+                                                    title: quickSelectedTemplate.name,
+                                                    body: quickSelectedTemplate.body?.slice(0, 200),
+                                                    ...richContentToPayload(quickRichContent),
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                )}
+
                                 <div className="flex justify-end gap-2">
                                     {quickTemplateId && (
                                         <Button
@@ -1551,7 +1586,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 : (activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview')}
                                         </Button>
                                     )}
-                                    <Button onClick={handleQuickSend} disabled={quickSending || !quickTo || !quickTemplateId}>
+                                    <Button onClick={handleQuickSend} disabled={quickSending || (!isQuickWebhookLike && !quickTo) || !quickTemplateId}>
                                         {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
@@ -1566,12 +1601,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     <div className="space-y-2">
                                         <Label htmlFor="recipient">
                                             Recipients (Users)
-                                            {formData.channel === 'webhook' && <span className="font-normal text-muted-foreground text-xs"> (Optional)</span>}
+                                            {WEBHOOK_LIKE_CHANNELS.includes(formData.channel) && <span className="font-normal text-muted-foreground text-xs"> (N/A for webhook channels)</span>}
                                         </Label>
                                         <UserMultiSelect
                                             users={users}
-                                            value={selectedUsers}
+                                            value={WEBHOOK_LIKE_CHANNELS.includes(formData.channel) ? [] : selectedUsers}
                                             onChange={setSelectedUsers}
+                                            disabled={WEBHOOK_LIKE_CHANNELS.includes(formData.channel)}
                                         />
                                         <p className="text-xs text-muted-foreground">Select notification recipients. These are users created in the Users tab.</p>
                                     </div>
@@ -1608,6 +1644,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <SelectItem value="sms">SMS</SelectItem>
                                                 <SelectItem value="whatsapp">WhatsApp</SelectItem>
                                                 <SelectItem value="webhook">Webhook</SelectItem>
+                                                <SelectItem value="discord">Discord</SelectItem>
+                                                <SelectItem value="slack">Slack</SelectItem>
+                                                <SelectItem value="teams">Microsoft Teams</SelectItem>
                                                 <SelectItem value="in_app">In-App</SelectItem>
                                                 <SelectItem value="sse">SSE (Server-Sent Events)</SelectItem>
                                             </SelectContent>
@@ -2057,6 +2096,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Rich Content Editor — visible for webhook/discord/slack/teams channels */}
+                                {['webhook', 'discord', 'slack', 'teams'].includes(formData.channel) && (
+                                    <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
+                                        <RichContentEditor value={advRichContent} onChange={setAdvRichContent} />
+                                    </div>
+                                )}
+
                                 <div className="flex justify-end mt-6">
                                     <div className="flex gap-2">
                                         <Button
@@ -3101,7 +3148,8 @@ const UserMultiSelect: React.FC<{
     users: User[] | undefined;
     value: string[];
     onChange: (value: string[]) => void;
-}> = ({ users, value, onChange }) => {
+    disabled?: boolean;
+}> = ({ users, value, onChange, disabled }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     const normalizedQuery = searchTerm.trim().toLowerCase();
@@ -3129,8 +3177,8 @@ const UserMultiSelect: React.FC<{
         <div className="space-y-2">
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" type="button" className="w-full justify-between h-9 rounded-lg">
-                        <span className="truncate text-left">{selectorLabel}</span>
+                    <Button variant="outline" type="button" className="w-full justify-between h-9 rounded-lg" disabled={disabled}>
+                        <span className="truncate text-left">{disabled ? 'Not required for webhook channels' : selectorLabel}</span>
                         <span className="text-xs text-muted-foreground">{selectedCount}/{totalUsers}</span>
                     </Button>
                 </DialogTrigger>

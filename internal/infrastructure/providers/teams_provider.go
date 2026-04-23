@@ -11,6 +11,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
 	"go.uber.org/zap"
 )
 
@@ -52,7 +53,7 @@ func (p *TeamsProvider) Send(ctx context.Context, notif *notification.Notificati
 		), nil
 	}
 
-	payload := p.buildAdaptiveCard(notif)
+	payload := p.buildAdaptiveCard(notif, webhookURL)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return NewErrorResult(fmt.Errorf("failed to marshal Teams payload: %w", err), ErrorTypeInvalid), nil
@@ -88,10 +89,10 @@ func (p *TeamsProvider) Send(ctx context.Context, notif *notification.Notificati
 	return result, nil
 }
 
-func (p *TeamsProvider) GetName() string                                { return "teams" }
-func (p *TeamsProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelTeams }
-func (p *TeamsProvider) IsHealthy(_ context.Context) bool               { return true }
-func (p *TeamsProvider) Close() error                                   { return nil }
+func (p *TeamsProvider) GetName() string                           { return "teams" }
+func (p *TeamsProvider) GetSupportedChannel() notification.Channel { return notification.ChannelTeams }
+func (p *TeamsProvider) IsHealthy(_ context.Context) bool          { return true }
+func (p *TeamsProvider) Close() error                              { return nil }
 
 // resolveWebhookURL determines the target Teams webhook.
 // Priority: notification metadata > default config.
@@ -105,60 +106,8 @@ func (p *TeamsProvider) resolveWebhookURL(notif *notification.Notification) stri
 }
 
 // buildAdaptiveCard constructs a Teams Adaptive Card payload.
-func (p *TeamsProvider) buildAdaptiveCard(notif *notification.Notification) map[string]interface{} {
-	card := map[string]interface{}{
-		"type":    "message",
-		"attachments": []map[string]interface{}{
-			{
-				"contentType": "application/vnd.microsoft.card.adaptive",
-				"contentUrl":  nil,
-				"content": map[string]interface{}{
-					"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-					"type":    "AdaptiveCard",
-					"version": "1.4",
-					"body": p.buildCardBody(notif),
-				},
-			},
-		},
-	}
-	return card
-}
-
-func (p *TeamsProvider) buildCardBody(notif *notification.Notification) []map[string]interface{} {
-	body := []map[string]interface{}{
-		{
-			"type":   "TextBlock",
-			"text":   notif.Content.Title,
-			"weight": "Bolder",
-			"size":   "Medium",
-		},
-		{
-			"type": "TextBlock",
-			"text": notif.Content.Body,
-			"wrap": true,
-		},
-	}
-
-	if notif.Content.Data != nil {
-		if actionURL, ok := notif.Content.Data["action_url"].(string); ok && actionURL != "" {
-			actionLabel := "View"
-			if label, ok := notif.Content.Data["action_label"].(string); ok && label != "" {
-				actionLabel = label
-			}
-			body = append(body, map[string]interface{}{
-				"type": "ActionSet",
-				"actions": []map[string]interface{}{
-					{
-						"type":  "Action.OpenUrl",
-						"title": actionLabel,
-						"url":   actionURL,
-					},
-				},
-			})
-		}
-	}
-
-	return body
+func (p *TeamsProvider) buildAdaptiveCard(notif *notification.Notification, webhookURL string) map[string]interface{} {
+	return render.BuildTeamsPayload(notif, webhookURL)
 }
 
 func init() {
