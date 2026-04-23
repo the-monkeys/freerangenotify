@@ -32,6 +32,17 @@ func (c Channel) Valid() bool {
 	}
 }
 
+// isWebhookLikeChannel returns true for channels that deliver to a URL
+// endpoint rather than a specific user (webhook, discord, slack, teams).
+func isWebhookLikeChannel(ch Channel) bool {
+	switch ch {
+	case ChannelWebhook, ChannelDiscord, ChannelSlack, ChannelTeams:
+		return true
+	default:
+		return false
+	}
+}
+
 // String returns the string representation of the channel
 func (c Channel) String() string {
 	return string(c)
@@ -492,7 +503,7 @@ func (r *SendRequest) Validate() error {
 	}
 	// Conditional UserID validation — TopicID can substitute for UserID
 	if r.UserID == "" && r.TopicID == "" {
-		if r.Channel != ChannelWebhook {
+		if !isWebhookLikeChannel(r.Channel) {
 			return ErrInvalidUserID
 		}
 		// For webhook, if UserID is empty, we must have a webhook_url OR webhook_target in Data OR a TemplateID
@@ -526,7 +537,16 @@ func (r *SendRequest) Validate() error {
 		return ErrInvalidPriority
 	}
 	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
-		return ErrTemplateRequired
+		// Allow Twilio Content Templates: content_sid in Data is sufficient
+		hasContentSID := false
+		if r.Data != nil {
+			if _, ok := r.Data["content_sid"]; ok {
+				hasContentSID = true
+			}
+		}
+		if !hasContentSID {
+			return ErrTemplateRequired
+		}
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime
