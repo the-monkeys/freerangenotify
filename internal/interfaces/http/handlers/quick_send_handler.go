@@ -2,11 +2,14 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
 )
@@ -74,7 +77,46 @@ func (h *QuickSendHandler) Send(c *fiber.Ctx) error {
 
 	result, err := h.service.Send(c.Context(), appID, &req)
 	if err != nil {
-		h.logger.Error("Quick-send failed", zap.String("app_id", appID), zap.Error(err))
+		// Known business errors — log as Warn, not Error
+		if errors.Is(err, notification.ErrDNDEnabled) || errors.Is(err, notification.ErrQuietHours) ||
+			errors.Is(err, notification.ErrRateLimitExceeded) || errors.Is(err, notification.ErrTemplateNotFound) ||
+			notification.IsValidationError(err) {
+			h.logger.Warn("Quick-send rejected", zap.String("app_id", appID), zap.Error(err))
+		} else {
+			h.logger.Error("Quick-send failed", zap.String("app_id", appID), zap.Error(err))
+		}
+
+		// Validation errors → 400
+		if notification.IsValidationError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// DND / Quiet hours → 403 Forbidden
+		if errors.Is(err, notification.ErrDNDEnabled) || errors.Is(err, notification.ErrQuietHours) {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Rate limit → 429
+		if errors.Is(err, notification.ErrRateLimitExceeded) {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Template / user not found → 404
+		if errors.Is(err, notification.ErrTemplateNotFound) {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+		}
+
+		// Typed AppError (e.g. NotFound from user resolution)
+		if appErr, ok := err.(*pkgerrors.AppError); ok {
+			return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{
+				"success": false,
+				"error": fiber.Map{
+					"code":    appErr.Code,
+					"message": appErr.Message,
+				},
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 

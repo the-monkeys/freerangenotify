@@ -32,9 +32,9 @@ func (c Channel) Valid() bool {
 	}
 }
 
-// isWebhookLikeChannel returns true for channels that deliver to a URL
+// IsWebhookLikeChannel returns true for channels that deliver to a URL
 // endpoint rather than a specific user (webhook, discord, slack, teams).
-func isWebhookLikeChannel(ch Channel) bool {
+func IsWebhookLikeChannel(ch Channel) bool {
 	switch ch {
 	case ChannelWebhook, ChannelDiscord, ChannelSlack, ChannelTeams:
 		return true
@@ -431,7 +431,7 @@ func (n *Notification) Validate() error {
 		return ErrInvalidAppID
 	}
 	if n.UserID == "" {
-		if !isWebhookLikeChannel(n.Channel) {
+		if !IsWebhookLikeChannel(n.Channel) {
 			return ErrInvalidUserID
 		}
 		// For webhook-like channels, check if we have the URL in metadata
@@ -503,7 +503,7 @@ func (r *SendRequest) Validate() error {
 	}
 	// Conditional UserID validation — TopicID can substitute for UserID
 	if r.UserID == "" && r.TopicID == "" {
-		if !isWebhookLikeChannel(r.Channel) {
+		if !IsWebhookLikeChannel(r.Channel) {
 			return ErrInvalidUserID
 		}
 		// For webhook, if UserID is empty, we must have a webhook_url OR webhook_target in Data OR a TemplateID
