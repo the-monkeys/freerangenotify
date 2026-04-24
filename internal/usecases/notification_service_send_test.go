@@ -663,3 +663,588 @@ func TestNotificationService_Send(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to create notification")
 	})
 }
+
+// ─── SendBulk Tests ───────────────────────────────────────────────────────
+
+// mockNotifRepoBulk tracks BulkUpdateStatus calls.
+type mockNotifRepoBulk struct {
+	mockNotifRepoSend
+	bulkStatusIDs    []string
+	bulkStatusTarget notification.Status
+}
+
+func (m *mockNotifRepoBulk) BulkUpdateStatus(ctx context.Context, ids []string, status notification.Status) error {
+	m.bulkStatusIDs = ids
+	m.bulkStatusTarget = status
+	return nil
+}
+
+// mockQueueBulk tracks EnqueueBatch calls with configurable error.
+type mockQueueBulk struct {
+	mockQueue
+	batchErr error
+}
+
+func (m *mockQueueBulk) EnqueueBatch(ctx context.Context, items []notifqueue.NotificationQueueItem) error {
+	if m.batchErr != nil {
+		return m.batchErr
+	}
+	m.batch = append(m.batch, items...)
+	return nil
+}
+
+func newBulkServiceForTest(
+	users map[string]*user.User,
+	apps map[string]*application.Application,
+	nrepo *mockNotifRepoBulk,
+	q *mockQueueBulk,
+	lim *mockLimiterSend,
+) *NotificationService {
+	if nrepo == nil {
+		nrepo = &mockNotifRepoBulk{}
+	}
+	if q == nil {
+		q = &mockQueueBulk{}
+	}
+	if lim == nil {
+		lim = &mockLimiterSend{allowed: true}
+	}
+	return NewNotificationService(
+		nrepo,
+		&mockUserRepoSend{mockUserRepo{users: users}},
+		&mockAppRepoSend{apps: apps},
+		&mockTemplateRepoNSC{},
+		q,
+		zap.NewNop(),
+		NotificationServiceConfig{MaxRetries: 3},
+		nil,
+		lim,
+	).(*NotificationService)
+}
+
+func TestNotificationService_SendBulk(t *testing.T) {
+	t.Run("successful bulk send to two users", func(t *testing.T) {
+		u1 := defaultUser()
+		u2 := &user.User{
+			UserID: "user-2", AppID: "app-1",
+			Email: "bob@example.com", Phone: "+15559876543",
+			Preferences: user.Preferences{
+				EmailEnabled: boolPtr(true),
+			},
+		}
+		users := map[string]*user.User{u1.UserID: u1, u2.UserID: u2}
+		nrepo := &mockNotifRepoBulk{}
+		q := &mockQueueBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, q, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "user-2"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 2)
+		assert.Len(t, nrepo.created, 2)
+		assert.Len(t, q.batch, 2)
+		assert.Equal(t, notification.StatusQueued, nrepo.bulkStatusTarget)
+		assert.Len(t, nrepo.bulkStatusIDs, 2)
+	})
+
+	t.Run("validation error — empty AppID", func(t *testing.T) {
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nil, nil, nil)
+
+		_, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hi",
+			Body:     "Body",
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, notification.ErrInvalidAppID)
+	})
+
+	t.Run("validation error — empty UserIDs", func(t *testing.T) {
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nil, nil, nil)
+
+		_, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hi",
+			Body:     "Body",
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, notification.ErrInvalidUserID)
+	})
+
+	t.Run("validation error — no content", func(t *testing.T) {
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nil, nil, nil)
+
+		_, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, notification.ErrEmptyContent)
+	})
+
+	t.Run("content_sid in data passes validation", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelWhatsApp,
+			Priority: notification.PriorityNormal,
+			Data:     map[string]interface{}{"content_sid": "HX123abc"},
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("media_url in data passes validation", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelWhatsApp,
+			Priority: notification.PriorityNormal,
+			Data:     map[string]interface{}{"media_url": "https://example.com/file.pdf"},
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		// media_url promoted to Content.MediaURL
+		assert.Equal(t, "https://example.com/file.pdf", nrepo.created[0].Content.MediaURL)
+	})
+
+	t.Run("explicit MediaURL field passes validation", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelWhatsApp,
+			Priority: notification.PriorityNormal,
+			MediaURL: "https://example.com/image.png",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "https://example.com/image.png", nrepo.created[0].Content.MediaURL)
+	})
+
+	t.Run("explicit MediaURL takes precedence over data.media_url", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelWhatsApp,
+			Priority: notification.PriorityNormal,
+			MediaURL: "https://example.com/explicit.png",
+			Data:     map[string]interface{}{"media_url": "https://example.com/data.png"},
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "https://example.com/explicit.png", nrepo.created[0].Content.MediaURL)
+	})
+
+	t.Run("unknown user skipped", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		q := &mockQueueBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, q, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "nonexistent"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "user-1", results[0].UserID)
+	})
+
+	t.Run("DND user skipped for non-critical", func(t *testing.T) {
+		u1 := defaultUser()
+		u2 := &user.User{
+			UserID: "user-2", AppID: "app-1",
+			Email: "bob@example.com", Phone: "+15559876543",
+			Preferences: user.Preferences{
+				DND:          true,
+				EmailEnabled: boolPtr(true),
+			},
+		}
+		users := map[string]*user.User{u1.UserID: u1, u2.UserID: u2}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "user-2"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "user-1", results[0].UserID)
+	})
+
+	t.Run("DND user included for critical priority", func(t *testing.T) {
+		u1 := defaultUser()
+		u2 := &user.User{
+			UserID: "user-2", AppID: "app-1",
+			Email: "bob@example.com", Phone: "+15559876543",
+			Preferences: user.Preferences{
+				DND:          true,
+				EmailEnabled: boolPtr(true),
+			},
+		}
+		users := map[string]*user.User{u1.UserID: u1, u2.UserID: u2}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "user-2"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityCritical,
+			Title:    "URGENT",
+			Body:     "System down",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 2)
+	})
+
+	t.Run("missing phone for WhatsApp skipped", func(t *testing.T) {
+		u := defaultUser()
+		u.Phone = ""
+		users := map[string]*user.User{u.UserID: u}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelWhatsApp,
+			Priority: notification.PriorityNormal,
+			Data:     map[string]interface{}{"content_sid": "HX123"},
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("missing email for email channel skipped", func(t *testing.T) {
+		u := defaultUser()
+		u.Email = ""
+		users := map[string]*user.User{u.UserID: u}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("channel disabled in preferences skipped", func(t *testing.T) {
+		u := defaultUser()
+		u.Preferences.EmailEnabled = boolPtr(false)
+		users := map[string]*user.User{u.UserID: u}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("duplicate contacts deduplicated", func(t *testing.T) {
+		u1 := defaultUser()
+		// u2 has same email as u1
+		u2 := &user.User{
+			UserID: "user-2", AppID: "app-1",
+			Email: "alice@example.com", Phone: "+15551234567",
+			Preferences: user.Preferences{
+				EmailEnabled: boolPtr(true),
+			},
+		}
+		users := map[string]*user.User{u1.UserID: u1, u2.UserID: u2}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "user-2"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1, "duplicate email should be deduplicated")
+	})
+
+	t.Run("daily limit exceeded skips user", func(t *testing.T) {
+		u := defaultUser()
+		u.Preferences.DailyLimit = 5
+		users := map[string]*user.User{u.UserID: u}
+		lim := &mockLimiterSend{
+			incrementAndResp: map[string]bool{"user:user-1": false},
+		}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, lim)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+	})
+
+	t.Run("daily limit exceeded allows critical", func(t *testing.T) {
+		u := defaultUser()
+		u.Preferences.DailyLimit = 5
+		users := map[string]*user.User{u.UserID: u}
+		lim := &mockLimiterSend{
+			incrementAndResp: map[string]bool{"user:user-1": false},
+		}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, lim)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityCritical,
+			Title:    "URGENT",
+			Body:     "Fire",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("metadata copied to notifications", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+			Metadata: map[string]interface{}{"digest_key": "daily"},
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		assert.Equal(t, "daily", results[0].Metadata["digest_key"])
+	})
+
+	t.Run("scheduled bulk notifications use scheduled queue", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		q := &mockQueueBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, q, nil)
+
+		future := time.Now().Add(2 * time.Hour)
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:       "app-1",
+			UserIDs:     []string{"user-1"},
+			Channel:     notification.ChannelEmail,
+			Priority:    notification.PriorityNormal,
+			Title:       "Later",
+			Body:        "Scheduled",
+			ScheduledAt: &future,
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1)
+		// Should NOT be in the regular batch queue
+		assert.Len(t, q.batch, 0)
+	})
+
+	t.Run("EnqueueBatch failure returns error with partial results", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		q := &mockQueueBulk{batchErr: fmt.Errorf("redis down")}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, q, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to bulk enqueue")
+		// Notifications were still created in repo
+		assert.Len(t, results, 1)
+	})
+
+	t.Run("repo create failure skips user", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{mockNotifRepoSend: mockNotifRepoSend{createErr: fmt.Errorf("es unavailable")}}
+		q := &mockQueueBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, q, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+		assert.Len(t, q.batch, 0)
+	})
+
+	t.Run("content fields preserved", func(t *testing.T) {
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityHigh,
+			Title:    "Alert",
+			Body:     "Something happened",
+			Data:     map[string]interface{}{"key": "value"},
+			Category: "alerts",
+			MediaURL: "https://example.com/img.png",
+		})
+
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		n := results[0]
+		assert.Equal(t, "Alert", n.Content.Title)
+		assert.Equal(t, "Something happened", n.Content.Body)
+		assert.Equal(t, "value", n.Content.Data["key"])
+		assert.Equal(t, "https://example.com/img.png", n.Content.MediaURL)
+		assert.Equal(t, "alerts", n.Category)
+		assert.Equal(t, notification.PriorityHigh, n.Priority)
+	})
+
+	t.Run("SMS dedup by phone number", func(t *testing.T) {
+		u1 := defaultUser()
+		// u2 has same phone as u1
+		u2 := &user.User{
+			UserID: "user-2", AppID: "app-1",
+			Email: "bob@example.com", Phone: "+15551234567",
+			Preferences: user.Preferences{
+				SMSEnabled: boolPtr(true),
+			},
+		}
+		users := map[string]*user.User{u1.UserID: u1, u2.UserID: u2}
+		nrepo := &mockNotifRepoBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, nil, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1", "user-2"},
+			Channel:  notification.ChannelSMS,
+			Priority: notification.PriorityNormal,
+			Title:    "Code",
+			Body:     "Your code is 1234",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 1, "duplicate phone should be deduplicated")
+	})
+
+	t.Run("invalid channel fails validation", func(t *testing.T) {
+		svc := newBulkServiceForTest(defaultUsers(), defaultApps(), nil, nil, nil)
+
+		_, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.Channel("invalid"),
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, notification.ErrInvalidChannel)
+	})
+
+	t.Run("all users skipped returns empty results no error", func(t *testing.T) {
+		// All users have DND
+		u := defaultUser()
+		u.Preferences.DND = true
+		users := map[string]*user.User{u.UserID: u}
+		nrepo := &mockNotifRepoBulk{}
+		q := &mockQueueBulk{}
+		svc := newBulkServiceForTest(users, defaultApps(), nrepo, q, nil)
+
+		results, err := svc.SendBulk(context.Background(), notification.BulkSendRequest{
+			AppID:    "app-1",
+			UserIDs:  []string{"user-1"},
+			Channel:  notification.ChannelEmail,
+			Priority: notification.PriorityNormal,
+			Title:    "Hello",
+			Body:     "World",
+		})
+
+		require.NoError(t, err)
+		assert.Len(t, results, 0)
+		assert.Len(t, q.batch, 0)
+	})
+}
