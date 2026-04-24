@@ -431,10 +431,10 @@ func (n *Notification) Validate() error {
 		return ErrInvalidAppID
 	}
 	if n.UserID == "" {
-		if n.Channel != ChannelWebhook {
+		if !isWebhookLikeChannel(n.Channel) {
 			return ErrInvalidUserID
 		}
-		// For webhook, check if we have the URL in metadata
+		// For webhook-like channels, check if we have the URL in metadata
 		hasURL := false
 		if n.Metadata != nil {
 			if _, ok := n.Metadata["webhook_url"]; ok {
@@ -442,7 +442,7 @@ func (n *Notification) Validate() error {
 			}
 		}
 
-		// If no explicit URL, we must have a TemplateID which can resolve via WebhookTarget
+		// If no explicit URL, we must have a TemplateID which can resolve via provider config
 		if !hasURL && n.TemplateID == "" {
 			return ErrInvalidUserID
 		}

@@ -167,6 +167,31 @@ func TestNotificationValidate(t *testing.T) {
 			ErrInvalidUserID,
 		},
 		{
+			"Discord channel with empty UserID and TemplateID is valid",
+			&Notification{NotificationID: "notif-123", AppID: "app-123", Channel: ChannelDiscord, TemplateID: "tmpl-1", Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}},
+			nil,
+		},
+		{
+			"Slack channel with empty UserID and TemplateID is valid",
+			&Notification{NotificationID: "notif-123", AppID: "app-123", Channel: ChannelSlack, TemplateID: "tmpl-1", Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}},
+			nil,
+		},
+		{
+			"Teams channel with empty UserID and TemplateID is valid",
+			&Notification{NotificationID: "notif-123", AppID: "app-123", Channel: ChannelTeams, TemplateID: "tmpl-1", Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}},
+			nil,
+		},
+		{
+			"Discord channel with empty UserID and no TemplateID requires webhook_url",
+			&Notification{NotificationID: "notif-123", AppID: "app-123", Channel: ChannelDiscord, Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}},
+			ErrInvalidUserID,
+		},
+		{
+			"Webhook-like channel with metadata webhook_url is valid",
+			&Notification{NotificationID: "notif-123", AppID: "app-123", Channel: ChannelDiscord, Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}, Metadata: map[string]interface{}{"webhook_url": "https://discord.com/api/webhooks/123/abc"}},
+			nil,
+		},
+		{
 			"Invalid Channel",
 			&Notification{NotificationID: "notif-123", AppID: "app-123", UserID: "user-123", Channel: Channel("invalid"), Priority: PriorityNormal, Status: StatusPending, Content: Content{Title: "Test"}},
 			ErrInvalidChannel,
