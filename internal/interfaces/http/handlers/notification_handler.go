@@ -221,7 +221,44 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 	// Send bulk notifications
 	notifications, err := h.service.SendBulk(c.Context(), bulkReq)
 	if err != nil {
-		h.logger.Error("Failed to send bulk notifications", zap.Error(err))
+		// Known business errors — log as Warn, not Error
+		if err == notification.ErrRateLimitExceeded || err == notification.ErrDNDEnabled ||
+			err == notification.ErrQuietHours || notification.IsValidationError(err) {
+			h.logger.Warn("Bulk notification rejected", zap.Error(err))
+		} else {
+			h.logger.Error("Failed to send bulk notifications", zap.Error(err))
+		}
+
+		if notification.IsValidationError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		if err == notification.ErrRateLimitExceeded {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		if err == notification.ErrDNDEnabled {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		if err == notification.ErrQuietHours {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		if appErr, ok := err.(*errors.AppError); ok {
+			return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{
+				"success": false,
+				"error": fiber.Map{
+					"code":    appErr.Code,
+					"message": appErr.Message,
+				},
+			})
+		}
+
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})

@@ -177,7 +177,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		}
 	}
 
-	if req.UserID == "" && isWebhookLikeChannel(req.Channel) {
+	if req.UserID == "" && notification.IsWebhookLikeChannel(req.Channel) {
 		// Log that we are processing an anonymous webhook
 		s.logger.Debug("Processing anonymous webhook", zap.String("app_id", req.AppID), zap.String("channel", string(req.Channel)))
 	} else {
@@ -208,6 +208,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 		// Check global DND
 		if u.Preferences.DND && req.Priority != notification.PriorityCritical {
+			s.logger.Warn("User has DND enabled, blocking non-critical notification",
+				zap.String("user_id", req.UserID),
+				zap.String("channel", string(req.Channel)),
+				zap.String("priority", string(req.Priority)))
 			return nil, notification.ErrDNDEnabled
 		}
 

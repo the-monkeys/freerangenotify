@@ -71,10 +71,10 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 				channel = notification.ChannelWhatsApp
 			}
 		} else {
-			return nil, fmt.Errorf("either 'template' or 'body' must be provided")
+			return nil, notification.ErrEmptyContent
 		}
 	} else {
-		return nil, fmt.Errorf("either 'template' or 'body' must be provided")
+		return nil, notification.ErrEmptyContent
 	}
 
 	// 2. Channel: explicit > inferred from template
@@ -84,7 +84,7 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 
 	// 3. Resolve recipient — webhook-like channels deliver to a URL, not a user.
 	var userID string
-	if isWebhookLikeChannel(channel) {
+	if notification.IsWebhookLikeChannel(channel) {
 		userID = ""
 	} else {
 		if req.To == "" {
@@ -249,15 +249,3 @@ func (s *QuickSendService) createTransientTemplate(ctx context.Context, appID st
 }
 
 func boolPtr(b bool) *bool { return &b }
-
-// isWebhookLikeChannel returns true for channels that deliver to a URL endpoint
-// rather than a specific user (webhook, discord, slack, teams).
-func isWebhookLikeChannel(ch notification.Channel) bool {
-	switch ch {
-	case notification.ChannelWebhook, notification.ChannelDiscord,
-		notification.ChannelSlack, notification.ChannelTeams:
-		return true
-	default:
-		return false
-	}
-}

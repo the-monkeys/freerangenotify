@@ -332,11 +332,12 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				return
 			}
 		}
-	} else if notif.Channel == notification.ChannelWebhook {
-		// Anonymous webhook, continue without user
-		logger.Debug("Processing anonymous webhook without user record")
+	} else if notification.IsWebhookLikeChannel(notif.Channel) {
+		// Anonymous webhook-like channel (webhook, discord, slack, teams), continue without user
+		logger.Debug("Processing anonymous webhook-like channel without user record",
+			zap.String("channel", string(notif.Channel)))
 	} else {
-		// No user ID and not a webhook? Should have been caught by validation, but fail safe here.
+		// No user ID and not a webhook-like channel? Should have been caught by validation, but fail safe here.
 		logger.Error("Missing user ID for non-webhook channel")
 		p.handleFailure(ctx, notif, item, "missing user id")
 		return
@@ -494,7 +495,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				}
 			}
 
-			if notif.Channel == notification.ChannelWebhook && target != "" {
+			if notification.IsWebhookLikeChannel(notif.Channel) && target != "" {
 				app, err := p.appRepo.GetByID(ctx, notif.AppID)
 				if err != nil {
 					logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
@@ -521,7 +522,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					// 2. Try custom providers (the current storage mechanism)
 					if !resolved {
 						for _, cp := range app.Settings.CustomProviders {
-							if cp.Name == target && cp.Channel == string(notification.ChannelWebhook) && cp.Active {
+							if cp.Name == target && cp.Channel == string(notif.Channel) && cp.Active {
 								if notif.Metadata == nil {
 									notif.Metadata = make(map[string]interface{})
 								}
