@@ -457,7 +457,8 @@ func (n *Notification) Validate() error {
 		return ErrInvalidStatus
 	}
 	hasContentSid := n.Content.Data != nil && n.Content.Data["content_sid"] != nil
-	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid {
+	hasMedia := n.Content.MediaURL != "" || (n.Content.Data != nil && n.Content.Data["media_url"] != nil)
+	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid && !hasMedia {
 		return ErrEmptyContent
 	}
 	if err := n.Content.Validate(); err != nil {
@@ -561,14 +562,15 @@ type BulkSendRequest struct {
 	UserIDs       []string               `json:"user_ids" validate:"required,min=1"`
 	Channel       Channel                `json:"channel" validate:"required"`
 	Priority      Priority               `json:"priority" validate:"required"`
-	Title         string                 `json:"title" validate:"required"`
-	Body          string                 `json:"body" validate:"required"`
+	Title         string                 `json:"title,omitempty"`
+	Body          string                 `json:"body,omitempty"`
 	Data          map[string]interface{} `json:"data,omitempty"`
 	TemplateID    string                 `json:"template_id,omitempty"`
 	Category      string                 `json:"category,omitempty"`
 	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"` // Digest: {"digest_key": "rule_key"}
+	MediaURL      string                 `json:"media_url,omitempty"`
 }
 
 // Validate validates the bulk send request
@@ -586,7 +588,8 @@ func (r *BulkSendRequest) Validate() error {
 		return ErrInvalidPriority
 	}
 	hasContentSid := r.Data != nil && r.Data["content_sid"] != nil
-	if r.TemplateID == "" && (r.Title == "" || r.Body == "") && !hasContentSid {
+	hasMedia := r.MediaURL != "" || (r.Data != nil && r.Data["media_url"] != nil)
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") && !hasContentSid && !hasMedia {
 		return ErrEmptyContent
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {

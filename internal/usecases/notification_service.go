@@ -516,9 +516,10 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			Priority:       req.Priority,
 			Status:         notification.StatusPending,
 			Content: notification.Content{
-				Title: req.Title,
-				Body:  req.Body,
-				Data:  req.Data,
+				Title:    req.Title,
+				Body:     req.Body,
+				Data:     req.Data,
+				MediaURL: req.MediaURL,
 			},
 			Category:    req.Category,
 			TemplateID:  req.TemplateID,
@@ -526,6 +527,13 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			RetryCount:  0,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
+		}
+
+		// Promote data.media_url → Content.MediaURL when not set explicitly
+		if notif.Content.MediaURL == "" {
+			if mu, ok := req.Data["media_url"].(string); ok && mu != "" {
+				notif.Content.MediaURL = mu
+			}
 		}
 		if req.Metadata != nil {
 			notif.Metadata = make(map[string]interface{})

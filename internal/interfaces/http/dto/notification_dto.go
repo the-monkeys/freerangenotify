@@ -73,13 +73,14 @@ type BulkSendNotificationRequest struct {
 	UserIDs     []string               `json:"user_ids" validate:"required,min=1"`
 	Channel     string                 `json:"channel" validate:"required,oneof=push email sms webhook in_app whatsapp"`
 	Priority    string                 `json:"priority" validate:"required,oneof=low normal high critical"`
-	Title       string                 `json:"title" validate:"required"`
-	Body        string                 `json:"body" validate:"required"`
+	Title       string                 `json:"title,omitempty"`
+	Body        string                 `json:"body,omitempty"`
 	Data        map[string]interface{} `json:"data,omitempty"`
 	TemplateID  string                 `json:"template_id,omitempty"`
 	Category    string                 `json:"category,omitempty"`
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"` // Digest: {"digest_key": "rule_key"}
+	MediaURL    string                 `json:"media_url,omitempty" validate:"omitempty,url"`
 }
 
 // ToBulkSendRequest converts DTO to domain BulkSendRequest
@@ -96,6 +97,7 @@ func (r *BulkSendNotificationRequest) ToBulkSendRequest(appID string) notificati
 		Category:    r.Category,
 		ScheduledAt: r.ScheduledAt,
 		Metadata:    r.Metadata,
+		MediaURL:    r.MediaURL,
 	}
 }
 
