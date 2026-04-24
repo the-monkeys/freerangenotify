@@ -123,9 +123,13 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	contentSid, _ := notif.Content.Data["content_sid"].(string)
 	if contentSid != "" {
 		data.Set("ContentSid", contentSid)
+		// content_variables may arrive as map[string]interface{} (from standard send)
+		// or as a JSON string (from quick-send UI). Handle both.
 		if vars, ok := notif.Content.Data["content_variables"].(map[string]interface{}); ok {
 			varsJSON, _ := json.Marshal(vars)
 			data.Set("ContentVariables", string(varsJSON))
+		} else if varsStr, ok := notif.Content.Data["content_variables"].(string); ok && varsStr != "" {
+			data.Set("ContentVariables", varsStr)
 		}
 		p.logger.Debug("Using Twilio Content Template",
 			zap.String("notification_id", notif.NotificationID),

@@ -511,6 +511,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [advDigestRuleId, setAdvDigestRuleId] = useState<string>('');
     const [advRichContent, setAdvRichContent] = useState<RichContentData>(emptyRichContent()); const [broadcastDigestRuleId, setBroadcastDigestRuleId] = useState<string>('');
 
+    // ── Free-form WhatsApp state ──
+    const [quickFreeformBody, setQuickFreeformBody] = useState('');
+    const [quickFreeformTitle, setQuickFreeformTitle] = useState('');
+    const isFreeformWhatsApp = quickTemplateId === 'freeform:whatsapp';
+
     // Filtered templates by channel
     const filteredTemplates = useMemo(() => (templates || []).filter(t => t.channel === formData.channel), [templates, formData.channel]);
 
@@ -815,14 +820,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     }, [user]);
 
     const handleQuickSend = async () => {
-        const isTwilioCheck = isTwilioSelection(quickTemplateId);
-        const selTpl = isTwilioCheck ? undefined : templates.find(t => t.id === quickTemplateId);
+        const isFreeform = isFreeformWhatsApp;
+        const isTwilioCheck = !isFreeform && isTwilioSelection(quickTemplateId);
+        const selTpl = (isTwilioCheck || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
         const isWebhookLike = selTpl ? WEBHOOK_LIKE_CHANNELS.includes(selTpl.channel) : false;
-        if (!quickTemplateId || (!isWebhookLike && !quickTo)) return;
+        if (!quickTemplateId || (!isWebhookLike && !isFreeform && !quickTo)) return;
+        if (isFreeform && !quickTo) return;
+        if (isFreeform && !quickFreeformBody.trim()) {
+            toast.error('Message body is required for free-form WhatsApp messages.');
+            return;
+        }
 
         const isTwilio = isTwilioCheck;
-        const selectedTemplate = isTwilio ? undefined : templates.find(t => t.id === quickTemplateId);
-        const channel = isTwilio ? 'whatsapp' : (selectedTemplate?.channel || 'email');
+        const selectedTemplate = (isTwilio || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
+        const channel = (isTwilio || isFreeform) ? 'whatsapp' : (selectedTemplate?.channel || 'email');
         if (checkVerificationAndBlock(channel)) return;
 
         if (quickScheduledAt && quickScheduledAt < nowInTimezone(scheduleTimezone)) {
@@ -846,12 +857,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     content_sid: twilioTpl.sid,
                     content_variables: JSON.stringify(quickData || {}),
                 }
-                : (Object.keys(quickData).length > 0 ? quickData : undefined);
+                : isFreeform
+                    ? (quickMedia ? { media_url: quickMedia.url } : undefined)
+                    : (Object.keys(quickData).length > 0 ? quickData : undefined);
 
             await quickSendAPI.send(apiKey, {
                 to: isWebhookLike ? '' : quickTo,
-                template: isTwilio ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
-                channel: isTwilio ? 'whatsapp' : undefined,
+                template: (isTwilio || isFreeform) ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
+                channel: (isTwilio || isFreeform) ? 'whatsapp' : undefined,
+                subject: isFreeform && quickFreeformTitle ? quickFreeformTitle : undefined,
+                body: isFreeform ? quickFreeformBody : undefined,
                 data: {
                     ...sendData,
                     ...(!isRichContentEmpty(quickRichContent) ? richContentToPayload(quickRichContent) : {}),
@@ -881,6 +896,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
             setQuickWebhookUrl('');
+            setQuickFreeformBody('');
+            setQuickFreeformTitle('');
             if (quickMedia?.previewUrl) {
                 URL.revokeObjectURL(quickMedia.previewUrl);
             }
@@ -1258,6 +1275,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         ))}
                                                     </>
                                                 )}
+                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">WhatsApp Direct</div>
+                                                <SelectItem value="freeform:whatsapp">
+                                                    Free-form message (24h window)
+                                                </SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -1361,6 +1382,105 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
                                     </div>
                                 )}
+                                {/* Free-form WhatsApp message (24h customer service window) */}
+                                {isFreeformWhatsApp && (
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium flex items-center gap-2">
+                                                Free-form WhatsApp Message
+                                                <Badge variant="secondary" className="text-xs">24h window</Badge>
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            Send a direct message without a pre-approved template. Only works within 24 hours of the user&apos;s last incoming message.
+                                        </p>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Title (optional, shown bold)</Label>
+                                            <Input
+                                                value={quickFreeformTitle}
+                                                onChange={(e) => setQuickFreeformTitle(e.target.value)}
+                                                placeholder="e.g. Order Update"
+                                                className="h-8 text-sm"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-xs">Message Body</Label>
+                                            <textarea
+                                                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                                value={quickFreeformBody}
+                                                onChange={(e) => setQuickFreeformBody(e.target.value)}
+                                                placeholder="Type your WhatsApp message here..."
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Media attachment for free-form WhatsApp or non-Twilio WhatsApp templates */}
+                                {(isFreeformWhatsApp || quickSelectedTemplate?.channel === 'whatsapp') && (
+                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
+                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image Attachment (optional)</Label>
+                                        {!quickMedia && (
+                                            <label
+                                                htmlFor="quickMediaUploadFreeform"
+                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-5 cursor-pointer hover:bg-muted/50 transition-colors"
+                                            >
+                                                <UploadCloud className="h-7 w-7 text-muted-foreground" />
+                                                <span className="text-sm font-medium">Click to upload image</span>
+                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP — max 16 MB</span>
+                                                <input
+                                                    id="quickMediaUploadFreeform"
+                                                    type="file"
+                                                    accept="image/jpeg,image/png,image/gif,image/webp"
+                                                    className="hidden"
+                                                    onChange={async (e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (!file) return;
+                                                        if (file.size > 16 * 1024 * 1024) {
+                                                            toast.error(`${file.name} is too large (max 16 MB)`);
+                                                            return;
+                                                        }
+                                                        const localUrl = URL.createObjectURL(file);
+                                                        try {
+                                                            toast.info(`Uploading ${file.name}...`);
+                                                            const result = await mediaAPI.upload(apiKey, file);
+                                                            setQuickMedia(prev => {
+                                                                if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+                                                                return { url: result.url, previewUrl: localUrl, type: file.type, name: file.name };
+                                                            });
+                                                            setQuickData(d => ({ ...d, media_url: result.url }));
+                                                            toast.success('Image uploaded');
+                                                        } catch (err) {
+                                                            URL.revokeObjectURL(localUrl);
+                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                        )}
+                                        {quickMedia && (
+                                            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <img src={quickMedia.previewUrl} alt={quickMedia.name} className="h-12 w-12 rounded object-cover border border-border" />
+                                                    <div className="min-w-0">
+                                                        <p className="text-sm font-medium truncate">{quickMedia.name}</p>
+                                                        <p className="text-xs text-muted-foreground truncate">{quickMedia.url}</p>
+                                                    </div>
+                                                </div>
+                                                <Button
+                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => {
+                                                        URL.revokeObjectURL(quickMedia.previewUrl);
+                                                        setQuickMedia(null);
+                                                        setQuickData(d => { const next = { ...d }; delete next.media_url; return next; });
+                                                    }}
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 {quickSelectedTemplate?.channel === 'webhook' && (
                                     webhooks && Object.keys(webhooks).length > 0 ? (
                                         <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
@@ -1383,85 +1503,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <p className="text-xs text-muted-foreground mt-1">Go to the <strong>Providers</strong> tab to add webhook endpoints.</p>
                                         </div>
                                     )
-                                )}
-                                {quickSelectedTemplate?.channel === 'whatsapp' && (
-                                    <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Image Attachment (optional)</Label>
-                                        {!quickMedia && (
-                                            <label
-                                                htmlFor="quickMediaUpload"
-                                                className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 p-5 cursor-pointer hover:bg-muted/50 transition-colors"
-                                            >
-                                                <UploadCloud className="h-7 w-7 text-muted-foreground" />
-                                                <span className="text-sm font-medium">Click to upload image</span>
-                                                <span className="text-xs text-muted-foreground">JPEG, PNG, GIF, WebP — max 16 MB</span>
-                                                <input
-                                                    id="quickMediaUpload"
-                                                    type="file"
-                                                    accept="image/jpeg,image/png,image/gif,image/webp"
-                                                    className="hidden"
-                                                    onChange={async (e) => {
-                                                        const file = e.target.files?.[0];
-                                                        if (!file) return;
-                                                        if (file.size > 16 * 1024 * 1024) {
-                                                            toast.error(`${file.name} is too large (max 16 MB)`);
-                                                            return;
-                                                        }
-
-                                                        const localUrl = URL.createObjectURL(file);
-                                                        try {
-                                                            toast.info(`Uploading ${file.name}...`);
-                                                            const result = await mediaAPI.upload(apiKey, file);
-                                                            setQuickMedia((prev) => {
-                                                                if (prev?.previewUrl) {
-                                                                    URL.revokeObjectURL(prev.previewUrl);
-                                                                }
-                                                                return {
-                                                                    url: result.url,
-                                                                    previewUrl: localUrl,
-                                                                    type: file.type,
-                                                                    name: file.name,
-                                                                };
-                                                            });
-                                                            setQuickData((d) => ({ ...d, media_url: result.url }));
-                                                            toast.success('Image uploaded');
-                                                        } catch (err) {
-                                                            URL.revokeObjectURL(localUrl);
-                                                            toast.error(`Upload failed for ${file.name}: ` + extractErrorMessage(err));
-                                                        }
-                                                    }}
-                                                />
-                                            </label>
-                                        )}
-
-                                        {quickMedia && (
-                                            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                    <img src={quickMedia.previewUrl} alt={quickMedia.name} className="h-12 w-12 rounded object-cover border border-border" />
-                                                    <div className="min-w-0">
-                                                        <p className="text-sm font-medium truncate">{quickMedia.name}</p>
-                                                        <p className="text-xs text-muted-foreground truncate">{quickMedia.url}</p>
-                                                    </div>
-                                                </div>
-                                                <Button
-                                                    className="bg-red-400/10 hover:bg-red-400/20 text-red-500 border-red-200"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        URL.revokeObjectURL(quickMedia.previewUrl);
-                                                        setQuickMedia(null);
-                                                        setQuickData((d) => {
-                                                            const next = { ...d };
-                                                            delete next.media_url;
-                                                            return next;
-                                                        });
-                                                    }}
-                                                >
-                                                    <X className="h-3.5 w-3.5" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
                                 )}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
