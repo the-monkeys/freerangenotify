@@ -139,3 +139,12 @@ elasticsearch/*
 docker-compose.restore.yml
 scripts/restore-es-snapshot.ps1
 prod/*
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+e2e/.state/
+e2e/.env

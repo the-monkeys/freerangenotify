@@ -532,3 +532,121 @@ For API support or questions:
 - Email: support@freerangenotify.com
 - Documentation: http://localhost:8080/swagger/
 - GitHub: https://github.com/the-monkeys/freerangenotify
+
+---
+
+## Webhook Rich Content (Discord / Slack / Teams)
+
+The `POST /v1/notifications`, `POST /v1/notifications/bulk`, `POST /v1/notifications/broadcast`, and `POST /v1/notifications/quick-send` endpoints accept the following **optional** top-level fields when the resolved channel is `webhook` (or kind-specific aliases `discord`, `slack`, `teams`). Unsupported fields for a given target degrade gracefully — a payload that requests a poll on Slack will render the choices as a numbered list rather than failing.
+
+### Per-provider capability matrix
+
+| Field         | Discord  | Slack       | Teams      | Generic webhook |
+| ------------- | -------- | ----------- | ---------- | --------------- |
+| `attachments` | yes      | yes         | yes        | passed through  |
+| `actions`     | markdown | buttons     | buttons    | passed through  |
+| `fields`      | yes      | yes         | FactSet    | passed through  |
+| `mentions`    | yes      | yes         | yes        | n/a             |
+| `poll`        | native   | numbered    | numbered   | passed through  |
+| `style.color` | yes      | sidebar bar | themeColor | n/a             |
+
+Notes:
+- Discord incoming webhooks do not accept interactive components, so `actions` render as a markdown link list inside the embed.
+- Slack and Microsoft Teams incoming webhooks have no native poll element, so `poll` renders as a numbered list of choices in the message body.
+- `style.severity` accepts `info | success | warning | danger` and is mapped to a per-provider color preset. `style.color` (hex) overrides the preset.
+- `mentions[].platform` must equal the resolved target (`discord` / `slack` / `teams`); mentions whose platform does not match are silently dropped by the renderer.
+
+### Example: Slack alert with fields, actions, and severity color
+
+```http
+POST /v1/notifications
+Authorization: Bearer frn_app_<API_KEY>
+Content-Type: application/json
+
+{
+  "user_id": "u_alice",
+  "channel": "webhook",
+  "priority": "high",
+  "webhook_target": "Slack Alerts",
+  "title": "Database CPU > 90%",
+  "body": "Sustained high CPU on db-prod-1 for 5m.",
+  "fields": [
+    { "key": "Host",     "value": "db-prod-1", "inline": true },
+    { "key": "Region",   "value": "us-east-1", "inline": true },
+    { "key": "Severity", "value": "high",      "inline": true }
+  ],
+  "actions": [
+    { "type": "link", "label": "Acknowledge", "url": "https://oncall.example.com/ack/123", "style": "primary" },
+    { "type": "link", "label": "Runbook",     "url": "https://wiki.example.com/runbooks/db-cpu" }
+  ],
+  "style": { "severity": "danger" }
+}
+```
+
+### Example: Discord poll with attachment
+
+```http
+POST /v1/notifications
+Authorization: Bearer frn_app_<API_KEY>
+Content-Type: application/json
+
+{
+  "user_id": "u_team_lead",
+  "channel": "webhook",
+  "priority": "normal",
+  "webhook_target": "Discord Alerts",
+  "title": "Friday lunch order",
+  "body": "Vote by 11:30.",
+  "poll": {
+    "question": "Where to?",
+    "choices": [
+      { "label": "Tacos" },
+      { "label": "Pizza" },
+      { "label": "Sushi" }
+    ],
+    "duration_hours": 2
+  },
+  "attachments": [
+    { "type": "image", "url": "https://picsum.photos/seed/lunch/600/300", "name": "menu.jpg" }
+  ]
+}
+```
+
+### SDK helpers
+
+The Go and JavaScript SDKs ship one-line builders that pre-populate `channel` and `webhook_target`:
+
+```go
+// Go
+import "github.com/the-monkeys/freerangenotify/sdk/go/freerangenotify"
+
+p := freerangenotify.NewSlackAlert("Slack Alerts", "Database CPU > 90%", "Sustained high CPU on db-prod-1 for 5m.", "danger").
+    WithFields(
+        freerangenotify.ContentField{Key: "Host", Value: "db-prod-1", Inline: true},
+        freerangenotify.ContentField{Key: "Region", Value: "us-east-1", Inline: true},
+    ).
+    WithActions(
+        freerangenotify.ContentAction{Type: "link", Label: "Acknowledge", URL: "https://oncall.example.com/ack/123", Style: "primary"},
+    ).
+    To("u_alice")
+_, _ = client.Notifications.Send(ctx, p)
+```
+
+```ts
+// TypeScript
+import { FreeRangeNotify, webhook } from '@freerangenotify/sdk';
+
+const params = {
+    ...webhook.slack('Slack Alerts', 'Database CPU > 90%', 'Sustained high CPU on db-prod-1 for 5m.', 'danger'),
+    user_id: 'u_alice',
+    fields: [
+        { key: 'Host',   value: 'db-prod-1', inline: true },
+        { key: 'Region', value: 'us-east-1', inline: true },
+    ],
+    actions: [
+        { type: 'link', label: 'Acknowledge', url: 'https://oncall.example.com/ack/123', style: 'primary' },
+    ],
+};
+await client.notifications.send(params);
+```
+

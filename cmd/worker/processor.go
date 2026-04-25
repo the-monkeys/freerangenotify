@@ -527,6 +527,16 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 									notif.Metadata = make(map[string]interface{})
 								}
 								notif.Metadata["webhook_url"] = cp.WebhookURL
+								// Record the resolved custom provider name so the send
+								// path can dispatch directly to it. Without this the
+								// notification would first be routed through the generic
+								// WebhookProvider — which posts FRN's envelope shape and
+								// is rejected by Slack/Discord/Teams — and the fallback
+								// loop iterates ALL custom providers in registration
+								// order. That caused Slack-targeted notifications to
+								// land in Discord when Discord Alerts was the first
+								// provider on the app.
+								notif.Metadata["custom_provider_name"] = cp.Name
 								logger.Info("Resolved webhook target from custom provider",
 									zap.String("notification_id", notif.NotificationID),
 									zap.String("target_name", target),
@@ -766,6 +776,58 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 
 	// Check for provider fallback chains
 	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+
+	// Short-circuit: webhook channel notifications whose target was resolved
+	// to a registered custom provider must dispatch directly through that
+	// provider. The generic WebhookProvider posts FRN's envelope JSON, which
+	// Slack/Discord/Teams reject (typically 400/404), and falling back through
+	// the custom-provider loop in registration order can deliver a message to
+	// the wrong destination (e.g. a Slack-targeted alert landing in Discord).
+	if err == nil && app != nil && notification.IsWebhookLikeChannel(notif.Channel) && notif.Metadata != nil {
+		if name, ok := notif.Metadata["custom_provider_name"].(string); ok && name != "" {
+			for _, cp := range app.Settings.CustomProviders {
+				if cp.Name != name || cp.Channel != string(notif.Channel) || !cp.Active {
+					continue
+				}
+				p.logger.Info("Dispatching directly to resolved custom provider",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("provider", cp.Name),
+					zap.String("kind", cp.Kind))
+				customProvider := providers.NewCustomProvider(
+					cp.Name, cp.Channel, cp.Kind, cp.WebhookURL, cp.SigningKey, cp.SignatureVersion, cp.Headers, p.logger,
+				)
+				customResult, customErr := customProvider.Send(ctx, notif, usr)
+				if customErr != nil {
+					return fmt.Errorf("custom provider %q send failed: %w", cp.Name, customErr)
+				}
+				if customResult == nil || !customResult.Success {
+					// Surface BOTH the categorized error type AND the wrapped
+					// error (which contains the upstream HTTP status + body).
+					// Without this, callers see only "provider_api" and have
+					// no way to diagnose payload-shape rejections from
+					// Discord/Slack/Teams.
+					errType := ""
+					var wrapped error
+					if customResult != nil {
+						errType = customResult.ErrorType
+						wrapped = customResult.Error
+					}
+					if wrapped != nil {
+						return fmt.Errorf("custom provider %q delivery failed [%s]: %w", cp.Name, errType, wrapped)
+					}
+					return fmt.Errorf("custom provider %q delivery failed: %s", cp.Name, errType)
+				}
+				if customResult.ProviderMessageID != "" {
+					notif.Metadata["provider_message_id"] = customResult.ProviderMessageID
+				}
+				return nil
+			}
+			p.logger.Warn("Resolved custom provider not found at dispatch time; falling through to generic webhook",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("provider", name))
+		}
+	}
+
 	if err == nil && app != nil && len(app.Settings.ProviderFallbacks) > 0 {
 		for _, fb := range app.Settings.ProviderFallbacks {
 			if fb.Channel == string(notif.Channel) && len(fb.Providers) > 0 {
@@ -832,37 +894,21 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		return nil
 	}
 
+	// Phase 3 silent-fallback fix:
+	//
+	// The named-target dispatch path is handled above (search for
+	// "Dispatching directly to resolved custom provider"). If we reach this
+	// point, no custom provider was resolved — either no `webhook_target`
+	// was set on the request, or the user provided only a raw `webhook_url`.
+	// In that case, do NOT iterate `app.Settings.CustomProviders` looking
+	// for any active webhook provider to deliver through. The historical
+	// loop here caused Slack-targeted notifications to land in Discord
+	// because Discord happened to be the first active webhook custom
+	// provider on the app. Without an explicit target, any choice is a
+	// guess — fail loudly so the caller knows the message did not land
+	// where they intended.
 	result, err := p.providerManager.Send(ctx, notif, usr)
 	if err != nil {
-		// Phase 3: If no built-in provider found, try custom providers on the app
-		if app != nil && len(app.Settings.CustomProviders) > 0 {
-			for _, cp := range app.Settings.CustomProviders {
-				if cp.Channel == string(notif.Channel) && cp.Active {
-					p.logger.Info("Routing to custom provider",
-						zap.String("notification_id", notif.NotificationID),
-						zap.String("provider", cp.Name),
-						zap.String("channel", cp.Channel))
-					customProvider := providers.NewCustomProvider(
-						cp.Name, cp.Channel, cp.Kind, cp.WebhookURL, cp.SigningKey, cp.SignatureVersion, cp.Headers, p.logger,
-					)
-					customResult, customErr := customProvider.Send(ctx, notif, usr)
-					if customErr == nil && customResult != nil && customResult.Success {
-						return nil
-					}
-					if customErr != nil {
-						p.logger.Warn("Custom provider failed",
-							zap.String("provider", cp.Name),
-							zap.Error(customErr))
-					} else if customResult != nil && !customResult.Success {
-						p.logger.Warn("Custom provider delivery unsuccessful",
-							zap.String("provider", cp.Name),
-							zap.String("error_type", customResult.ErrorType),
-							zap.Error(customResult.Error))
-					}
-				}
-			}
-		}
-
 		p.logger.Error("Provider manager send failed",
 			zap.String("notification_id", notif.NotificationID),
 			zap.Error(err))

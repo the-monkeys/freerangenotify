@@ -502,7 +502,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [quickPriority, setQuickPriority] = useState<string>('normal');
     const [quickScheduledAt, setQuickScheduledAt] = useState<string>('');
     const [quickDigestRuleId, setQuickDigestRuleId] = useState<string>('');
-    const [quickWebhookUrl, setQuickWebhookUrl] = useState<string>('');
+    // Stores the NAME of a registered webhook provider (e.g. "Slack Alerts"),
+    // not the URL. The backend resolves the name to the matching custom
+    // provider and dispatches via that provider's channel-specific renderer.
+    // Sending a raw URL would route through the generic webhook provider and
+    // post FRN's envelope shape — which Slack/Discord/Teams reject.
+    const [quickWebhookTarget, setQuickWebhookTarget] = useState<string>('');
     const [quickRichContent, setQuickRichContent] = useState<RichContentData>(emptyRichContent());
     const [quickMedia, setQuickMedia] = useState<{ url: string; previewUrl: string; type: string; name: string } | null>(null);
     const [slidePreview, setSlidePreview] = useState<{ templateId: string; templateName: string; channel: string } | null>(null);
@@ -591,13 +596,31 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         return next;
     }, [dataInput]);
 
-    // Helper: get sample_data from template metadata
+    // Helper: get sample_data from template metadata.
+    // Only primitive values (string/number/boolean) become template variables.
+    // Object/array values (e.g. rich-content fields like `actions`, `fields`,
+    // `style`) belong on dedicated request fields, not in the template-variable
+    // map — coercing them to strings produces useless "[object Object]" output.
+    //
+    // Routing keys (`webhook_target`, `webhook_url`) are NEVER template variables.
+    // They are dispatch directives the backend reads from `data` to resolve a
+    // custom provider — and `webhook_target` overrides any explicit `webhook_url`
+    // the user types into the dedicated URL field. Auto-populating them from the
+    // template's `sample_data` causes silent misrouting (e.g. the user pastes a
+    // Slack URL but the message lands in Discord because the seeded sample_data
+    // pinned `webhook_target: "Discord Alerts"`). Strip them here.
+    const ROUTING_KEYS = new Set(['webhook_target', 'webhook_url']);
     const getSampleData = (template: Template | undefined): Record<string, string> => {
         if (!template?.metadata?.sample_data) return {};
         const sd = template.metadata.sample_data;
         const result: Record<string, string> = {};
         for (const [k, v] of Object.entries(sd)) {
-            result[k] = String(v);
+            if (v == null) continue;
+            if (ROUTING_KEYS.has(k)) continue;
+            const t = typeof v;
+            if (t === 'string' || t === 'number' || t === 'boolean') {
+                result[k] = String(v);
+            }
         }
         return result;
     };
@@ -859,7 +882,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 }
                 : isFreeform
                     ? (quickMedia ? { media_url: quickMedia.url } : undefined)
-                    : (Object.keys(quickData).length > 0 ? quickData : undefined);
+                    : (() => {
+                        // Strip routing keys — they belong on dedicated top-level
+                        // request fields (`webhook_url`, `webhook_target`), never
+                        // in template `data`. Leaving `webhook_target` in `data`
+                        // causes the worker to resolve it as a custom provider
+                        // and override the explicit `webhook_url`, silently
+                        // misrouting (Slack URL → Discord, etc.).
+                        const cleaned: Record<string, unknown> = {};
+                        for (const [k, v] of Object.entries(quickData)) {
+                            if (k === 'webhook_target' || k === 'webhook_url') continue;
+                            cleaned[k] = v;
+                        }
+                        return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+                    })();
 
             await quickSendAPI.send(apiKey, {
                 to: isWebhookLike ? '' : quickTo,
@@ -867,14 +903,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 channel: (isTwilio || isFreeform) ? 'whatsapp' : undefined,
                 subject: isFreeform && quickFreeformTitle ? quickFreeformTitle : undefined,
                 body: isFreeform ? quickFreeformBody : undefined,
-                data: {
-                    ...sendData,
-                    ...(!isRichContentEmpty(quickRichContent) ? richContentToPayload(quickRichContent) : {}),
-                },
+                data: sendData,
                 priority: quickPriority as any,
                 scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
-                webhook_url: quickSelectedTemplate?.channel === 'webhook' && quickWebhookUrl ? quickWebhookUrl : undefined,
+                webhook_target: quickSelectedTemplate?.channel === 'webhook' && quickWebhookTarget ? quickWebhookTarget : undefined,
+                // Rich webhook content as top-level fields (backend DTO contract).
+                ...(!isRichContentEmpty(quickRichContent) ? richContentToPayload(quickRichContent) : {}),
             });
             prependOptimisticNotifications([
                 buildOptimisticNotification({
@@ -895,7 +930,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickScheduledAt('');
             setQuickScheduleEnabled(false);
             setQuickDigestRuleId('');
-            setQuickWebhookUrl('');
+            setQuickWebhookTarget('');
             setQuickFreeformBody('');
             setQuickFreeformTitle('');
             if (quickMedia?.previewUrl) {
@@ -1029,12 +1064,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 channel: formData.channel,
                 priority: formData.priority,
                 template_id: isTwilio ? undefined : (formData.template_id || undefined),
-                data: { ...finalData, ...richPayload },
+                data: finalData,
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
                 workflow_trigger_id: formData.workflow_trigger_id || undefined,
                 metadata: advDigestRule ? { digest_key: advDigestRule.digest_key } : undefined,
                 media_url: (formData as any).media_url || undefined,
+                // Rich webhook content as top-level fields (backend DTO contract).
+                ...richPayload,
             };
 
             if (formData.channel === 'webhook' && selectedTargets.length > 0) {
@@ -1064,8 +1101,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     channel: payload.channel,
                     priority: payload.priority,
                     template_id: payload.template_id,
-                    data: customData,
+                    data: payload.data,
                     metadata: payload.metadata,
+                    media_url: payload.media_url,
+                    // Rich webhook content propagates to bulk recipients identically.
+                    ...richPayload,
                 });
                 prependOptimisticNotifications(
                     userIds.map((uid) =>
@@ -1484,14 +1524,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                 {quickSelectedTemplate?.channel === 'webhook' && (
                                     webhooks && Object.keys(webhooks).length > 0 ? (
                                         <div className="space-y-2 border-t border-border/50 pt-4 mt-2">
-                                            <Label htmlFor="quickWebhookUrl">Webhook Endpoint</Label>
-                                            <Select value={quickWebhookUrl} onValueChange={setQuickWebhookUrl}>
+                                            <Label htmlFor="quickWebhookTarget">Webhook Endpoint</Label>
+                                            <Select value={quickWebhookTarget} onValueChange={setQuickWebhookTarget}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select webhook endpoint" />
                                                 </SelectTrigger>
                                                 <SelectContent>
-                                                    {Object.entries(webhooks).map(([name, url]) => (
-                                                        <SelectItem key={name} value={url}>{name}</SelectItem>
+                                                    {Object.keys(webhooks).map((name) => (
+                                                        <SelectItem key={name} value={name}>{name}</SelectItem>
                                                     ))}
                                                 </SelectContent>
                                             </Select>

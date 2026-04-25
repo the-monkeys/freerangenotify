@@ -1,42 +1,259 @@
 package render
 
-import "github.com/the-monkeys/freerangenotify/internal/domain/notification"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+)
 
 // BuildDiscordPayload constructs a Discord webhook payload with embeds.
+// It renders all rich content fields: Attachments, Actions, Fields, Poll, Style.
 func BuildDiscordPayload(notif *notification.Notification) map[string]interface{} {
+	c := notif.Content
+
+	// Resolve embed color: Style.Color hex → int, Style.Severity → preset, default blue.
+	color := resolveDiscordColor(c.Style)
+
 	embed := map[string]interface{}{
-		"title":       notif.Content.Title,
-		"description": notif.Content.Body,
-		"color":       3447003, // Discord blue (#3498DB)
+		"title":       c.Title,
+		"description": c.Body,
+		"color":       color,
 	}
 
-	// Keep legacy behavior: action_url becomes embed URL.
-	if notif.Content.Data != nil {
-		if actionURL, ok := notif.Content.Data["action_url"].(string); ok && actionURL != "" {
+	// Legacy: action_url becomes embed URL.
+	if c.Data != nil {
+		if actionURL, ok := c.Data["action_url"].(string); ok && actionURL != "" {
 			embed["url"] = actionURL
 		}
 	}
 
-	return map[string]interface{}{
-		"content": notif.Content.Title,
-		"embeds":  []map[string]interface{}{embed},
+	// --- Fields → Discord embed fields ---
+	if len(c.Fields) > 0 {
+		fields := make([]map[string]interface{}, 0, len(c.Fields))
+		for _, f := range c.Fields {
+			fields = append(fields, map[string]interface{}{
+				"name":   f.Key,
+				"value":  f.Value,
+				"inline": f.Inline,
+			})
+		}
+		embed["fields"] = fields
+	}
+
+	// --- First image attachment → embed image, additional → extra embeds ---
+	embeds := []map[string]interface{}{embed}
+
+	if len(c.Attachments) > 0 {
+		first := true
+		for _, a := range c.Attachments {
+			switch a.Type {
+			case "image":
+				img := map[string]interface{}{"url": a.URL}
+				if first {
+					embed["image"] = img
+					first = false
+				} else {
+					// Discord supports multiple embeds for image gallery
+					embeds = append(embeds, map[string]interface{}{
+						"image": img,
+						"color": color,
+					})
+				}
+			case "video":
+				embed["video"] = map[string]interface{}{"url": a.URL}
+			default:
+				// file/audio: append as linked field
+				label := a.Name
+				if label == "" {
+					label = a.Type
+				}
+				if existing, ok := embed["fields"].([]map[string]interface{}); ok {
+					embed["fields"] = append(existing, map[string]interface{}{
+						"name":   fmt.Sprintf("📎 %s", label),
+						"value":  fmt.Sprintf("[Download](%s)", a.URL),
+						"inline": false,
+					})
+				} else {
+					embed["fields"] = []map[string]interface{}{{
+						"name":   fmt.Sprintf("📎 %s", label),
+						"value":  fmt.Sprintf("[Download](%s)", a.URL),
+						"inline": false,
+					}}
+				}
+			}
+		}
+	}
+
+	// --- Actions → markdown link list rendered as a final embed field ---
+	//
+	// Discord interactive components (`type: 2` buttons in `components: [...]`)
+	// are NOT honored on incoming-webhook deliveries. The webhook accepts the
+	// payload (HTTP 204) but Discord silently strips `components` because
+	// only application-owned webhooks with the `IS_COMPONENTS_V2` flag may
+	// emit them. Emitting `components` therefore both wastes payload bytes
+	// and produces the user-visible bug "actions disappeared in Discord".
+	//
+	// We instead render link actions as a clickable markdown link list in a
+	// dedicated embed field. This is supported by every Discord webhook,
+	// renders identically in desktop/mobile clients, and preserves the
+	// click-through behavior customers expect.
+	if len(c.Actions) > 0 {
+		linkParts := make([]string, 0, len(c.Actions))
+		for _, a := range c.Actions {
+			if a.Type == "link" && a.URL != "" && a.Label != "" {
+				linkParts = append(linkParts, fmt.Sprintf("[%s](%s)", a.Label, a.URL))
+			}
+		}
+		if len(linkParts) > 0 {
+			actionField := map[string]interface{}{
+				"name":   "Actions",
+				"value":  strings.Join(linkParts, " • "),
+				"inline": false,
+			}
+			if existing, ok := embed["fields"].([]map[string]interface{}); ok {
+				embed["fields"] = append(existing, actionField)
+			} else {
+				embed["fields"] = []map[string]interface{}{actionField}
+			}
+		}
+	}
+
+	// --- Poll → native Discord webhook poll object ---
+	//
+	// Discord added native poll support to incoming webhooks in 2024. Encoding
+	// polls as a top-level `poll` object yields a real interactive poll that
+	// users can vote on. The previous implementation rendered polls as a
+	// static numbered list inside an embed field with a comment claiming
+	// "Discord polls API requires bot auth, not webhook" — that comment was
+	// stale and produced the user-visible bug "Test 5 isn't actually a poll".
+	//
+	// Reference:
+	//   https://discord.com/developers/docs/resources/poll
+	//   https://discord.com/developers/docs/resources/webhook#execute-webhook
+	var pollObj map[string]interface{}
+	if c.Poll != nil && len(c.Poll.Choices) > 0 {
+		answers := make([]map[string]interface{}, 0, len(c.Poll.Choices))
+		for _, ch := range c.Poll.Choices {
+			media := map[string]interface{}{"text": ch.Label}
+			if emoji := normalizeDiscordPollEmoji(ch.Emoji); emoji != "" {
+				media["emoji"] = map[string]interface{}{"name": emoji}
+			}
+			answers = append(answers, map[string]interface{}{"poll_media": media})
+		}
+
+		duration := c.Poll.DurationHours
+		if duration <= 0 {
+			duration = 24 // Discord default; max 768 (32 days)
+		} else if duration > 768 {
+			duration = 768
+		}
+
+		pollObj = map[string]interface{}{
+			"question":          map[string]interface{}{"text": c.Poll.Question},
+			"answers":           answers,
+			"duration":          duration,
+			"allow_multiselect": c.Poll.MultiSelect,
+			"layout_type":       1,
+		}
+	}
+
+	// --- Mentions → prepend to content text ---
+	contentText := c.Title
+	if len(c.Mentions) > 0 {
+		var mentionParts []string
+		for _, m := range c.Mentions {
+			if m.Platform == "discord" && m.PlatformID != "" {
+				mentionParts = append(mentionParts, fmt.Sprintf("<@%s>", m.PlatformID))
+			}
+		}
+		if len(mentionParts) > 0 {
+			contentText = strings.Join(mentionParts, " ") + " " + contentText
+		}
+	}
+
+	payload := map[string]interface{}{
+		"content": contentText,
+		"embeds":  embeds,
+	}
+	if pollObj != nil {
+		payload["poll"] = pollObj
+	}
+	return payload
+}
+
+// resolveDiscordColor returns the integer color for a Discord embed.
+func resolveDiscordColor(style *notification.Style) int {
+	if style == nil {
+		return 3447003 // Discord blue (#3498DB)
+	}
+	if style.Color != "" {
+		hex := strings.TrimPrefix(style.Color, "#")
+		if v, err := strconv.ParseInt(hex, 16, 64); err == nil {
+			return int(v)
+		}
+	}
+	switch style.Severity {
+	case "success":
+		return 3066993 // Green (#2ECC71)
+	case "warning":
+		return 15105570 // Orange (#E67E22)
+	case "danger":
+		return 15158332 // Red (#E74C3C)
+	case "info":
+		return 3447003 // Blue (#3498DB)
+	default:
+		return 3447003
 	}
 }
 
-// BuildCustomDiscordPayload builds the custom-provider Discord shape.
+// BuildCustomDiscordPayload builds the Discord payload used by the
+// custom-provider path (Settings.CustomProviders[].Kind == "discord").
+//
+// Historically this returned a minimal {embeds:[{title,description}]} shape
+// that silently dropped Attachments, Actions, Fields, Mentions, Poll and Style
+// from notification.Content. That made the custom-provider channel an
+// unintentional second-class citizen relative to the dedicated discord
+// provider. The two now share a single renderer so a notification routed
+// through either path produces the same rich payload.
 func BuildCustomDiscordPayload(notif *notification.Notification) map[string]interface{} {
-	text := FormatContentString(notif.Content)
-	payload := map[string]interface{}{
-		"content": text,
+	return BuildDiscordPayload(notif)
+}
+
+// normalizeDiscordPollEmoji returns a string safe to send as
+// `emoji.name` on a Discord poll answer, or "" when no emoji should be
+// attached.
+//
+// Discord's poll API accepts a Partial Emoji where `name` must be a real
+// unicode emoji codepoint sequence. Plain ASCII digits like "1" or "2" are
+// NOT emojis — Discord rejects the entire `poll.answers` array with
+// `{"poll": ["answers"]}` when any answer carries one. This caused the
+// user-visible bug "Discord poll fails to deliver" when authors reused
+// numbered list markers (1, 2, 3) as choice prefixes.
+//
+// Behavior:
+//   - Single ASCII digits 0-9 are promoted to their keycap emoji form
+//     ("1" → "1️⃣"), which Discord accepts.
+//   - Other ASCII-only inputs are dropped (returns ""), so the answer is
+//     submitted without an emoji rather than failing the whole poll.
+//   - Inputs containing any non-ASCII rune are passed through unchanged
+//     under the assumption they are real emoji.
+func normalizeDiscordPollEmoji(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
 	}
-	if notif.Content.Title != "" {
-		payload["embeds"] = []map[string]interface{}{
-			{
-				"title":       notif.Content.Title,
-				"description": notif.Content.Body,
-			},
+	// Pass through anything containing a non-ASCII rune (real emoji).
+	for _, r := range s {
+		if r > 127 {
+			return s
 		}
-		payload["content"] = nil
 	}
-	return payload
+	// Single ASCII digit → keycap emoji (digit + VS16 + COMBINING ENCLOSING KEYCAP).
+	if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
+		return s + "\ufe0f\u20e3"
+	}
+	// Anything else ASCII (letters, "1.", "a)", etc.) — drop, do not poison the poll.
+	return ""
 }

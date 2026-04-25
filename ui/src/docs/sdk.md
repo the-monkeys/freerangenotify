@@ -58,6 +58,50 @@ func main() {
 | `client.Topics.Subscribe()` | Subscribe user to topic |
 | `client.Workflows.Trigger()` | Trigger a workflow |
 
+### Webhook Rich Content (Discord / Slack / Teams)
+
+The Go SDK ships builder helpers for the rich-content webhook channel. Set
+`webhook_target` to the **Name** of a custom provider registered on the app
+and chain rich fields fluently:
+
+```go
+import frn "github.com/the-monkeys/freerangenotify/sdk/go/freerangenotify"
+
+p := frn.NewSlackAlert("Slack Alerts", "DB CPU > 90%", "Sustained on db-prod-1.", "danger").
+    WithFields(
+        frn.ContentField{Key: "Host", Value: "db-prod-1", Inline: true},
+        frn.ContentField{Key: "Region", Value: "us-east-1", Inline: true},
+    ).
+    WithActions(
+        frn.ContentAction{Type: "link", Label: "Acknowledge", URL: "https://oncall.example.com/ack/123", Style: "primary"},
+        frn.ContentAction{Type: "link", Label: "Runbook",     URL: "https://wiki.example.com/runbooks/db-cpu"},
+    ).
+    To("user-uuid")
+
+_, err := client.Notifications.Send(ctx, p)
+```
+
+Available factories: `NewWebhookNotification`, `NewDiscordAlert`,
+`NewSlackAlert`, `NewTeamsAlert`. Chainable methods on
+`NotificationSendParams`: `WithFields`, `WithActions`, `WithAttachments`,
+`WithMentions`, `WithPoll(question, choices...)`, `WithSeverity`,
+`WithColor(hex)`, `To(userID)`.
+
+Per-target capability matrix:
+
+| Field         | Discord  | Slack       | Teams      | Generic |
+| ------------- | -------- | ----------- | ---------- | ------- |
+| `Attachments` | yes      | yes         | yes        | raw     |
+| `Actions`     | mdlinks  | buttons     | buttons    | raw     |
+| `Fields`      | yes      | yes         | FactSet    | raw     |
+| `Poll`        | native   | numbered    | numbered   | raw     |
+| `Style.Color` | yes      | sidebar bar | themeColor | n/a     |
+| `Mentions`    | yes      | yes         | yes        | n/a     |
+
+Discord incoming webhooks drop interactive components, so `Actions` render as
+a markdown link list. Slack and Microsoft Teams have no native poll element
+on incoming webhooks — `Poll` falls back to a numbered list of choices.
+
 ---
 
 ## JavaScript SDK
@@ -116,6 +160,44 @@ unsubscribe();
 | `client.topics.create()` | Create a topic |
 | `client.topics.subscribe()` | Subscribe to topic |
 | `client.sse.subscribe()` | Listen for real-time events |
+
+### Webhook Rich Content (Discord / Slack / Teams)
+
+The JavaScript SDK exports a `webhook` namespace plus standalone factory
+functions for the rich-content webhook channel:
+
+```ts
+import { FreeRangeNotify, webhook } from '@freerangenotify/sdk';
+
+const client = new FreeRangeNotify('YOUR_API_KEY', { baseURL: '...' });
+
+await client.notifications.send({
+    ...webhook.slack('Slack Alerts', 'DB CPU > 90%', 'Sustained on db-prod-1.', 'danger'),
+    user_id: 'user-uuid',
+    fields: [
+        { key: 'Host',   value: 'db-prod-1', inline: true },
+        { key: 'Region', value: 'us-east-1', inline: true },
+    ],
+    actions: [
+        { type: 'link', label: 'Acknowledge', url: 'https://oncall.example.com/ack/123', style: 'primary' },
+        { type: 'link', label: 'Runbook',     url: 'https://wiki.example.com/runbooks/db-cpu' },
+    ],
+});
+```
+
+Available factories on the `webhook` namespace (or as named exports):
+
+| Function | Purpose |
+|----------|---------|
+| `webhook.notification(target, title, body)` | Generic webhook |
+| `webhook.discord(target, title, body, severity?)` | Discord alert with embed color |
+| `webhook.slack(target, title, body, severity?)` | Slack alert with sidebar bar |
+| `webhook.teams(target, title, body, severity?)` | Teams alert with themeColor |
+| `webhook.withPoll(params, question, choices)` | Attach a poll to existing params |
+
+Rich fields (`attachments`, `actions`, `fields`, `mentions`, `poll`,
+`style`) are top-level keys on the request payload. Capability matrix and
+fallback behaviour are identical to the Go SDK above.
 
 ---
 

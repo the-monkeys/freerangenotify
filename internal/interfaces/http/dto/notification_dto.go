@@ -23,6 +23,15 @@ type SendNotificationRequest struct {
 	WebhookTarget     string                 `json:"webhook_target,omitempty"`
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"} routes to digest batching
+
+	// Rich webhook content (Phase 7 — Webhook channel expansion).
+	// Domain types are reused so existing client SDKs serialize identically.
+	Attachments []notification.Attachment `json:"attachments,omitempty"`
+	Actions     []notification.Action     `json:"actions,omitempty"`
+	Fields      []notification.Field      `json:"fields,omitempty"`
+	Mentions    []notification.Mention    `json:"mentions,omitempty"`
+	Poll        *notification.Poll        `json:"poll,omitempty"`
+	Style       *notification.Style       `json:"style,omitempty"`
 }
 
 // ToSendRequest converts DTO to domain SendRequest
@@ -65,6 +74,13 @@ func (r *SendNotificationRequest) ToSendRequest(appID string) notification.SendR
 	req.WorkflowTriggerID = r.WorkflowTriggerID
 	req.Metadata = r.Metadata
 	req.MediaURL = r.MediaURL
+
+	req.Attachments = r.Attachments
+	req.Actions = r.Actions
+	req.Fields = r.Fields
+	req.Mentions = r.Mentions
+	req.Poll = r.Poll
+	req.Style = r.Style
 	return req
 }
 
@@ -81,6 +97,14 @@ type BulkSendNotificationRequest struct {
 	ScheduledAt *time.Time             `json:"scheduled_at,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"` // Digest: {"digest_key": "rule_key"}
 	MediaURL    string                 `json:"media_url,omitempty" validate:"omitempty,url"`
+
+	// Rich webhook content (Phase 7).
+	Attachments []notification.Attachment `json:"attachments,omitempty"`
+	Actions     []notification.Action     `json:"actions,omitempty"`
+	Fields      []notification.Field      `json:"fields,omitempty"`
+	Mentions    []notification.Mention    `json:"mentions,omitempty"`
+	Poll        *notification.Poll        `json:"poll,omitempty"`
+	Style       *notification.Style       `json:"style,omitempty"`
 }
 
 // ToBulkSendRequest converts DTO to domain BulkSendRequest
@@ -98,6 +122,12 @@ func (r *BulkSendNotificationRequest) ToBulkSendRequest(appID string) notificati
 		ScheduledAt: r.ScheduledAt,
 		Metadata:    r.Metadata,
 		MediaURL:    r.MediaURL,
+		Attachments: r.Attachments,
+		Actions:     r.Actions,
+		Fields:      r.Fields,
+		Mentions:    r.Mentions,
+		Poll:        r.Poll,
+		Style:       r.Style,
 	}
 }
 
@@ -113,6 +143,15 @@ type NotificationContentResponse struct {
 	Body         string                 `json:"body"`
 	Data         map[string]interface{} `json:"data,omitempty"`
 	Notification string                 `json:"notification,omitempty"`
+	MediaURL     string                 `json:"media_url,omitempty"`
+
+	// Rich webhook content (Phase 7).
+	Attachments []notification.Attachment `json:"attachments,omitempty"`
+	Actions     []notification.Action     `json:"actions,omitempty"`
+	Fields      []notification.Field      `json:"fields,omitempty"`
+	Mentions    []notification.Mention    `json:"mentions,omitempty"`
+	Poll        *notification.Poll        `json:"poll,omitempty"`
+	Style       *notification.Style       `json:"style,omitempty"`
 }
 
 // NotificationResponse represents the API response for a notification
@@ -146,9 +185,16 @@ func FromNotification(n *notification.Notification) *NotificationResponse {
 		Priority:       string(n.Priority),
 		Status:         string(n.Status),
 		Content: &NotificationContentResponse{
-			Title: n.Content.Title,
-			Body:  n.Content.Body,
-			Data:  n.Content.Data,
+			Title:       n.Content.Title,
+			Body:        n.Content.Body,
+			Data:        n.Content.Data,
+			MediaURL:    n.Content.MediaURL,
+			Attachments: n.Content.Attachments,
+			Actions:     n.Content.Actions,
+			Fields:      n.Content.Fields,
+			Mentions:    n.Content.Mentions,
+			Poll:        n.Content.Poll,
+			Style:       n.Content.Style,
 		},
 		TemplateID:   n.TemplateID,
 		ScheduledAt:  n.ScheduledAt,
@@ -200,6 +246,14 @@ type BroadcastNotificationRequest struct {
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient
 	TopicKey          string                 `json:"topic_key,omitempty"`           // Phase 2: limit to topic subscribers
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"}
+
+	// Rich webhook content (Phase 7).
+	Attachments []notification.Attachment `json:"attachments,omitempty"`
+	Actions     []notification.Action     `json:"actions,omitempty"`
+	Fields      []notification.Field      `json:"fields,omitempty"`
+	Mentions    []notification.Mention    `json:"mentions,omitempty"`
+	Poll        *notification.Poll        `json:"poll,omitempty"`
+	Style       *notification.Style       `json:"style,omitempty"`
 }
 
 // ToBroadcastRequest converts DTO to domain BroadcastRequest
@@ -217,6 +271,12 @@ func (r *BroadcastNotificationRequest) ToBroadcastRequest(appID string) notifica
 		WorkflowTriggerID: r.WorkflowTriggerID,
 		TopicKey:          r.TopicKey,
 		Metadata:          r.Metadata,
+		Attachments:       r.Attachments,
+		Actions:           r.Actions,
+		Fields:            r.Fields,
+		Mentions:          r.Mentions,
+		Poll:              r.Poll,
+		Style:             r.Style,
 	}
 }
 

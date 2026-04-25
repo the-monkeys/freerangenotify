@@ -227,6 +227,90 @@ var LibraryTemplates = []template.Template{
 			},
 		},
 	},
+
+	// ─── Rich webhook templates ─────────────────────────────────────────────
+	//
+	// The same template renders correctly on Discord, Slack, Teams and
+	// generic webhook receivers — `webhook_target` lives on the per-send
+	// request, not on the template, so a single rich-alert template covers
+	// every supported platform. Renderers degrade unsupported fields
+	// gracefully (e.g. polls become numbered lists on Slack/Teams).
+	//
+	// Two templates are seeded:
+	//   - webhook_rich_alert: showcases every rich-content field
+	//     (fields, actions, attachments, poll, style, mentions) so the
+	//     UI's template preview can demonstrate the full envelope shape.
+	//   - webhook_generic_event: minimal title/body/data envelope for
+	//     custom HTTP receivers that consume the FRN payload directly.
+
+	{
+		Name:        "webhook_rich_alert",
+		Description: "Universal rich alert template for Discord, Slack, Teams and custom webhooks. Demonstrates every rich-content field (fields, actions, attachments, poll, style, mentions). Set webhook_target on the per-send request to choose the destination — renderers degrade unsupported fields gracefully (Slack/Teams render polls as numbered lists; Discord drops interactive components and shows actions as markdown links).",
+		Channel:     "webhook",
+		Subject:     "{{.title}}",
+		Body:        "{{.body}}",
+		Variables:   []string{"title", "body"},
+		Locale:      "en",
+		Status:      "active",
+		Metadata: map[string]interface{}{
+			"category": "alert",
+			"sample_data": map[string]interface{}{
+				"title":          "Production Alert",
+				"body":           "Disk usage exceeded 90% on web-01.",
+				"webhook_target": "Slack Alerts",
+				"fields": []map[string]interface{}{
+					{"key": "Host", "value": "web-01", "inline": true},
+					{"key": "Region", "value": "us-east-1", "inline": true},
+					{"key": "Severity", "value": "critical"},
+				},
+				"actions": []map[string]interface{}{
+					{"type": "link", "label": "Acknowledge", "url": "https://dash.example.com/ack/42", "style": "primary"},
+					{"type": "link", "label": "Runbook", "url": "https://dash.example.com/runbook"},
+				},
+				"attachments": []map[string]interface{}{
+					{"type": "image", "url": "https://picsum.photos/seed/alert/600/300", "name": "chart.jpg"},
+				},
+				"poll": map[string]interface{}{
+					"question": "Roll back?",
+					"choices": []map[string]interface{}{
+						{"label": "Yes — rollback now"},
+						{"label": "No — investigating"},
+					},
+					"duration_hours": 1,
+				},
+				"mentions": []map[string]interface{}{
+					{"platform": "discord", "platform_id": "123456789012345678", "display": "@oncall"},
+				},
+				"style": map[string]interface{}{
+					"severity": "danger",
+					"color":    "#ff0000",
+				},
+			},
+		},
+	},
+	{
+		Name:        "webhook_generic_event",
+		Description: "Minimal generic webhook event for custom HTTP receivers. Posts the FreeRangeNotify envelope with title/body and arbitrary data; rich fields are passed through verbatim for downstream consumers.",
+		Channel:     "webhook",
+		Subject:     "{{.title}}",
+		Body:        "{{.body}}",
+		Variables:   []string{"title", "body"},
+		Locale:      "en",
+		Status:      "active",
+		Metadata: map[string]interface{}{
+			"category": "notification",
+			"sample_data": map[string]interface{}{
+				"title": "Order shipped",
+				"body":  "Order #1042 has shipped via UPS, tracking 1Z999AA10123456784.",
+				"data": map[string]interface{}{
+					"order_id":    "1042",
+					"carrier":     "UPS",
+					"tracking_id": "1Z999AA10123456784",
+				},
+			},
+		},
+	},
+
 	{
 		Name:        "sse_realtime",
 		Description: "Real-time browser notification via SSE",

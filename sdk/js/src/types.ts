@@ -11,6 +11,15 @@ export interface QuickSendParams {
     scheduledAt?: Date;
     /** Idempotency key to prevent duplicate sends on retry */
     idempotencyKey?: string;
+
+    // Rich webhook content. Optional; only honored when the resolved channel
+    // is webhook-like (webhook, discord, slack, teams).
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface SendResult {
@@ -34,6 +43,16 @@ export interface NotificationSendParams {
     webhook_target?: string;
     /** Idempotency key to prevent duplicate sends on retry */
     idempotency_key?: string;
+
+    // Rich webhook fields. Optional; only honored when channel === 'webhook'
+    // and the resolved provider supports the field. See README for the
+    // per-provider capability matrix (Discord, Slack, Teams, generic).
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface BulkSendParams {
@@ -47,6 +66,16 @@ export interface BulkSendParams {
     category?: string;
     /** Idempotency key to prevent duplicate sends on retry */
     idempotency_key?: string;
+
+    // Rich webhook fields. Same shape and capability matrix as
+    // NotificationSendParams. The same rich content is delivered to every
+    // user in user_ids.
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface BulkSendResult {
@@ -62,6 +91,15 @@ export interface BroadcastParams {
     priority?: string;
     /** Idempotency key to prevent duplicate sends on retry */
     idempotency_key?: string;
+
+    // Rich webhook fields. Same shape and capability matrix as
+    // NotificationSendParams.
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface BroadcastResult {
