@@ -6,6 +6,13 @@ on:
     branches: [ main, master ]
 jobs:
   test:
+    # Gated: e2e specs require a running backend stack + credentials
+    # (E2E_USER_PASSWORD, app/template/user fixtures) that aren't provisioned
+    # in this workflow. Set the repository variable `E2E_ENABLED=true` once
+    # the CI stack-up + secrets wiring is in place to enable this job.
+    # Until then it no-ops so PRs aren't blocked on environment that doesn't
+    # exist in CI.
+    if: ${{ vars.E2E_ENABLED == 'true' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
