@@ -165,6 +165,11 @@ export {
   ConditionStepBuilder, NoopStepBuilder,
 } from './workflow_builder';
 export type { StepBuilder, ConditionOperator } from './workflow_builder';
+export {
+  webhook,
+  newWebhookNotification, newDiscordAlert, newSlackAlert, newTeamsAlert, withPoll,
+} from './webhook';
+export type { Severity } from './webhook';
 export * from './types';
 
 export default FreeRangeNotify;
