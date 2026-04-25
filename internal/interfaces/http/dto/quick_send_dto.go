@@ -1,6 +1,10 @@
 package dto
 
-import "time"
+import (
+	"time"
+
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+)
 
 // QuickSendRequest is a simplified notification request that accepts
 // human-readable identifiers instead of internal UUIDs.
@@ -34,8 +38,26 @@ type QuickSendRequest struct {
 	// Optional: explicit webhook URL (for webhook channel without user)
 	WebhookURL string `json:"webhook_url,omitempty"`
 
+	// Optional: name of a registered custom webhook provider on the app
+	// (e.g. "Slack Alerts"). When set, the worker dispatches through that
+	// provider — which knows its kind (slack/discord/teams/generic) and
+	// renders the channel-specific payload shape. Prefer this over
+	// WebhookURL when the destination is a registered provider, so the
+	// message is posted in a shape the destination accepts.
+	WebhookTarget string `json:"webhook_target,omitempty"`
+
 	// Optional: digest rule key — notifications with this key are batched by the matching digest rule
 	DigestKey string `json:"digest_key,omitempty"`
+
+	// Rich webhook content. All optional. Only honored when the resolved
+	// channel is webhook-like (webhook, discord, slack, teams). Per-provider
+	// rendering capabilities are documented in API_DOCUMENTATION.md.
+	Attachments []notification.Attachment `json:"attachments,omitempty"`
+	Actions     []notification.Action     `json:"actions,omitempty"`
+	Fields      []notification.Field      `json:"fields,omitempty"`
+	Mentions    []notification.Mention    `json:"mentions,omitempty"`
+	Poll        *notification.Poll        `json:"poll,omitempty"`
+	Style       *notification.Style       `json:"style,omitempty"`
 
 	// EnvironmentID is set by the auth middleware (not from JSON body).
 	EnvironmentID string `json:"-"`

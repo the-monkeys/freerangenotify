@@ -787,6 +787,77 @@ func TestProcessNotification(t *testing.T) {
 		assert.Equal(t, notification.StatusSent, nrepo.statusUpdates["n-11"])
 		n := nrepo.notifications["n-11"]
 		assert.Equal(t, "https://discord.com/api/webhooks/resolved/url", n.Metadata["webhook_url"])
+		// Regression: must also record which custom provider resolved the target,
+		// so the send path can dispatch directly to it instead of iterating all
+		// active custom providers in registration order.
+		assert.Equal(t, "my-discord-hook", n.Metadata["custom_provider_name"],
+			"resolved custom provider name must be recorded in metadata")
+	})
+
+	t.Run("webhook target resolution picks the named provider, not the first active one", func(t *testing.T) {
+		// Regression for the bug where Slack-targeted notifications landed in
+		// Discord because the fallback loop iterated app.Settings.CustomProviders
+		// in registration order. The resolution step must record the *named*
+		// provider so the dispatch path cannot pick the wrong one.
+		nrepo := newStubNotifRepo()
+		tmplID := "00000000-0000-4000-a000-000000000099"
+		nrepo.notifications["n-route-bug"] = &notification.Notification{
+			NotificationID: "n-route-bug",
+			AppID:          "app-1",
+			Channel:        notification.ChannelWebhook,
+			Priority:       notification.PriorityNormal,
+			Status:         notification.StatusQueued,
+			TemplateID:     tmplID,
+			Content: notification.Content{
+				Title: "Slack-bound alert",
+				Body:  "This must not land in Discord",
+				Data:  map[string]interface{}{"webhook_target": "Slack Alerts"},
+			},
+		}
+
+		tmpl := &templateDomain.Template{
+			ID:      tmplID,
+			AppID:   "app-1",
+			Name:    "slack-route-test",
+			Channel: "webhook",
+			Subject: "{{.title}}",
+			Body:    "{{.body}}",
+		}
+
+		app := makeApp()
+		// Discord Alerts registered FIRST — this is the configuration that
+		// triggered the bug in production.
+		app.Settings.CustomProviders = []application.CustomProviderConfig{
+			{
+				Name:       "Discord Alerts",
+				Channel:    "webhook",
+				Kind:       "discord",
+				Active:     true,
+				WebhookURL: "https://discord.com/api/webhooks/should-not-be-used",
+			},
+			{
+				Name:       "Slack Alerts",
+				Channel:    "webhook",
+				Kind:       "slack",
+				Active:     true,
+				WebhookURL: "https://hooks.slack.com/services/correct/target",
+			},
+		}
+
+		proc := newProcessorForTest(nrepo, nil,
+			nil,
+			map[string]*application.Application{"app-1": app},
+			map[string]*templateDomain.Template{tmplID: tmpl},
+			nil,
+		)
+
+		proc.processNotification(context.Background(), makeQueueItem("n-route-bug"), zap.NewNop())
+
+		n := nrepo.notifications["n-route-bug"]
+		assert.Equal(t, "https://hooks.slack.com/services/correct/target", n.Metadata["webhook_url"],
+			"webhook_url must resolve to the named provider, not the first active one")
+		assert.Equal(t, "Slack Alerts", n.Metadata["custom_provider_name"],
+			"custom_provider_name must record the named provider so dispatch cannot pick the wrong one")
 	})
 
 	t.Run("webhook channel (classic) without user succeeds", func(t *testing.T) {

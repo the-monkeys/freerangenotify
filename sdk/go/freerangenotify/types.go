@@ -17,6 +17,16 @@ type NotificationSendParams struct {
 	ScheduledAt   *time.Time             `json:"scheduled_at,omitempty"`
 	WebhookURL    string                 `json:"webhook_url,omitempty"`
 	WebhookTarget string                 `json:"webhook_target,omitempty"`
+
+	// Rich webhook fields. Optional; only honored when Channel == "webhook"
+	// and the resolved provider supports the field. See the README for the
+	// per-provider capability matrix (Discord, Slack, Teams, generic).
+	Attachments []ContentAttachment `json:"attachments,omitempty"`
+	Actions     []ContentAction     `json:"actions,omitempty"`
+	Fields      []ContentField      `json:"fields,omitempty"`
+	Mentions    []ContentMention    `json:"mentions,omitempty"`
+	Poll        *ContentPoll        `json:"poll,omitempty"`
+	Style       *ContentStyle       `json:"style,omitempty"`
 }
 
 // SendParams holds parameters for Quick-Send.
@@ -49,6 +59,16 @@ type BulkSendParams struct {
 	Data       map[string]interface{} `json:"data,omitempty"`
 	TemplateID string                 `json:"template_id,omitempty"`
 	Category   string                 `json:"category,omitempty"`
+
+	// Rich webhook fields. Optional; same shape and capability matrix as
+	// NotificationSendParams. The same rich content is delivered to every
+	// user in UserIDs.
+	Attachments []ContentAttachment `json:"attachments,omitempty"`
+	Actions     []ContentAction     `json:"actions,omitempty"`
+	Fields      []ContentField      `json:"fields,omitempty"`
+	Mentions    []ContentMention    `json:"mentions,omitempty"`
+	Poll        *ContentPoll        `json:"poll,omitempty"`
+	Style       *ContentStyle       `json:"style,omitempty"`
 }
 
 // BulkSendResult is the response from a bulk or batch send operation.
@@ -64,6 +84,15 @@ type BroadcastParams struct {
 	Data     map[string]interface{} `json:"data,omitempty"`
 	Channel  string                 `json:"channel,omitempty"`
 	Priority string                 `json:"priority,omitempty"`
+
+	// Rich webhook fields. Optional; same shape and capability matrix as
+	// NotificationSendParams.
+	Attachments []ContentAttachment `json:"attachments,omitempty"`
+	Actions     []ContentAction     `json:"actions,omitempty"`
+	Fields      []ContentField      `json:"fields,omitempty"`
+	Mentions    []ContentMention    `json:"mentions,omitempty"`
+	Poll        *ContentPoll        `json:"poll,omitempty"`
+	Style       *ContentStyle       `json:"style,omitempty"`
 }
 
 // BroadcastResult is the response from a broadcast operation.

@@ -1,1 +1,1 @@
-{"text":"Title\nBody"}
+{"blocks":[{"text":{"text":"*Title*\nBody","type":"mrkdwn"},"type":"section"},{"elements":[{"text":{"text":"Open","type":"plain_text"},"type":"button","url":"https://example.com/open"}],"type":"actions"}],"text":"Title"}

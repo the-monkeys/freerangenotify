@@ -396,6 +396,14 @@ type BroadcastRequest struct {
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 2: trigger workflow for each recipient instead of sending notification
 	TopicKey          string                 `json:"topic_key,omitempty"`           // Phase 2: limit recipients to topic subscribers (by topic key)
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"}
+
+	// Rich webhook content (Phase 7).
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Actions     []Action     `json:"actions,omitempty"`
+	Fields      []Field      `json:"fields,omitempty"`
+	Mentions    []Mention    `json:"mentions,omitempty"`
+	Poll        *Poll        `json:"poll,omitempty"`
+	Style       *Style       `json:"style,omitempty"`
 }
 
 // BroadcastResult holds the result of a broadcast operation
@@ -495,6 +503,15 @@ type SendRequest struct {
 	WorkflowTriggerID string                 `json:"workflow_trigger_id,omitempty"` // Phase 3: trigger workflow after send
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`            // Digest: {"digest_key": "rule_key"} routes to digest batching
 	MediaURL          string                 `json:"media_url,omitempty"`
+
+	// Rich webhook content (Phase 7). All optional. Empty values render byte-
+	// identical legacy payloads.
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Actions     []Action     `json:"actions,omitempty"`
+	Fields      []Field      `json:"fields,omitempty"`
+	Mentions    []Mention    `json:"mentions,omitempty"`
+	Poll        *Poll        `json:"poll,omitempty"`
+	Style       *Style       `json:"style,omitempty"`
 }
 
 // Validate validates the send request
@@ -571,6 +588,14 @@ type BulkSendRequest struct {
 	Recurrence    *Recurrence            `json:"recurrence,omitempty"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"` // Digest: {"digest_key": "rule_key"}
 	MediaURL      string                 `json:"media_url,omitempty"`
+
+	// Rich webhook content (Phase 7).
+	Attachments []Attachment `json:"attachments,omitempty"`
+	Actions     []Action     `json:"actions,omitempty"`
+	Fields      []Field      `json:"fields,omitempty"`
+	Mentions    []Mention    `json:"mentions,omitempty"`
+	Poll        *Poll        `json:"poll,omitempty"`
+	Style       *Style       `json:"style,omitempty"`
 }
 
 // Validate validates the bulk send request

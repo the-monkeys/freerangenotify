@@ -52,15 +52,49 @@ export function isRichContentEmpty(data: RichContentData): boolean {
         && !data.style;
 }
 
-/** Merge rich content data into a notification payload's content object. */
+/**
+ * Merge rich content data into a notification payload's content object.
+ *
+ * Filters out incomplete entries the user may have left blank in the UI:
+ *   - actions without label or (for `link`) url
+ *   - fields without key or value
+ *   - attachments without url
+ *   - mentions without platform_id
+ *   - poll choices without label (and the whole poll if it ends up choice-less)
+ *
+ * The backend rejects any of these as `invalid notification: content.<field>: ...`
+ * so dropping them client-side keeps the request from 500-ing.
+ */
 export function richContentToPayload(data: RichContentData): Record<string, any> {
     const out: Record<string, any> = {};
-    if (data.attachments.length > 0) out.attachments = data.attachments;
-    if (data.actions.length > 0) out.actions = data.actions;
-    if (data.fields.length > 0) out.fields = data.fields;
-    if (data.mentions.length > 0) out.mentions = data.mentions;
-    if (data.poll) out.poll = data.poll;
-    if (data.style) out.style = data.style;
+
+    const attachments = data.attachments.filter((a) => a && a.url && a.url.trim() !== '');
+    if (attachments.length > 0) out.attachments = attachments;
+
+    const actions = data.actions.filter((a) => {
+        if (!a || !a.label || a.label.trim() === '') return false;
+        if (a.type === 'link' && (!a.url || a.url.trim() === '')) return false;
+        return true;
+    });
+    if (actions.length > 0) out.actions = actions;
+
+    const fields = data.fields.filter((f) => f && f.key && f.key.trim() !== '' && f.value !== undefined && String(f.value).trim() !== '');
+    if (fields.length > 0) out.fields = fields;
+
+    const mentions = data.mentions.filter((m) => m && m.platform_id && m.platform_id.trim() !== '');
+    if (mentions.length > 0) out.mentions = mentions;
+
+    if (data.poll) {
+        const choices = data.poll.choices.filter((c) => c && c.label && c.label.trim() !== '');
+        if (data.poll.question && data.poll.question.trim() !== '' && choices.length >= 2) {
+            out.poll = { ...data.poll, choices };
+        }
+    }
+
+    if (data.style && (data.style.severity || data.style.color)) {
+        out.style = data.style;
+    }
+
     return out;
 }
 

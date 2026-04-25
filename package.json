@@ -1,0 +1,33 @@
+{
+  "name": "freerangenotify",
+  "version": "1.0.0",
+  "description": "A generic, pluggable notification service built in Go that provides real-time, multi-channel notification capabilities for any application.",
+  "main": "inject_usecases.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/the-monkeys/freerangenotify.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/the-monkeys/freerangenotify/issues"
+  },
+  "homepage": "https://github.com/the-monkeys/freerangenotify#readme"
+}

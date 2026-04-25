@@ -341,6 +341,53 @@ export interface Notification {
     recurrence?: Recurrence;
 }
 
+// ── Rich webhook content (mirrors backend notification.Content) ──
+export interface ContentAttachment {
+    type: 'image' | 'video' | 'file' | 'audio';
+    url: string;
+    name?: string;
+    mime_type?: string;
+    size?: number;
+    alt_text?: string;
+}
+
+export interface ContentAction {
+    type: 'link' | 'submit' | 'dismiss';
+    label: string;
+    url?: string;
+    value?: string;
+    style?: 'primary' | 'danger' | 'default';
+}
+
+export interface ContentField {
+    key: string;
+    value: string;
+    inline?: boolean;
+}
+
+export interface ContentMention {
+    platform: 'discord' | 'slack' | 'teams';
+    platform_id: string;
+    display?: string;
+}
+
+export interface ContentPollChoice {
+    label: string;
+    emoji?: string;
+}
+
+export interface ContentPoll {
+    question: string;
+    choices: ContentPollChoice[];
+    multi_select?: boolean;
+    duration_hours?: number;
+}
+
+export interface ContentStyle {
+    severity?: 'info' | 'success' | 'warning' | 'danger';
+    color?: string;
+}
+
 export interface NotificationRequest {
     user_id: string;
     channel: 'push' | 'email' | 'sms' | 'webhook' | 'in_app' | 'sse' | 'whatsapp' | 'discord' | 'slack' | 'teams';
@@ -356,6 +403,16 @@ export interface NotificationRequest {
     workflow_trigger_id?: string;  // Phase 3: trigger workflow after send
     metadata?: Record<string, any>;  // Digest: { digest_key }
     media_url?: string;
+
+    // Rich webhook content. Optional; only honored when channel === 'webhook'
+    // and the resolved provider supports the field. See documents/API_DOCUMENTATION.md
+    // for the per-provider capability matrix.
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface BulkNotificationRequest {
@@ -367,6 +424,16 @@ export interface BulkNotificationRequest {
     data?: Record<string, any>;
     template_id?: string;
     metadata?: Record<string, any>;  // Digest: { digest_key }
+    media_url?: string;
+
+    // Rich webhook content. Optional; same shape as NotificationRequest.
+    // The same rich content is delivered to every user in user_ids.
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface BroadcastNotificationRequest {
@@ -380,6 +447,14 @@ export interface BroadcastNotificationRequest {
     workflow_trigger_id?: string;  // Phase 2: trigger workflow for each recipient
     topic_key?: string;           // Phase 2: limit to topic subscribers
     metadata?: Record<string, any>;  // Digest: { digest_key }
+
+    // Rich webhook content. Optional; same shape as NotificationRequest.
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface UpdateNotificationStatusRequest {
@@ -398,7 +473,17 @@ export interface QuickSendRequest {
     priority?: 'low' | 'normal' | 'high' | 'critical';
     scheduled_at?: string;
     webhook_url?: string;
+    webhook_target?: string;
     digest_key?: string;  // Batch via digest rule
+
+    // Rich webhook content. Optional; only honored when the resolved channel
+    // is webhook-like (webhook, discord, slack, teams).
+    attachments?: ContentAttachment[];
+    actions?: ContentAction[];
+    fields?: ContentField[];
+    mentions?: ContentMention[];
+    poll?: ContentPoll;
+    style?: ContentStyle;
 }
 
 export interface QuickSendResponse {

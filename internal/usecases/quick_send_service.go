@@ -113,6 +113,15 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 		TemplateID:    templateID,
 		Data:          req.Data,
 		ScheduledAt:   req.ScheduledAt,
+		// Rich webhook content propagates as top-level Notification.Content
+		// fields. Renderers degrade gracefully when a target does not support
+		// a given field (e.g. polls become numbered lists on Slack/Teams).
+		Attachments: req.Attachments,
+		Actions:     req.Actions,
+		Fields:      req.Fields,
+		Mentions:    req.Mentions,
+		Poll:        req.Poll,
+		Style:       req.Style,
 	}
 
 	// Pass digest_key as metadata for digest batching
@@ -126,6 +135,17 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 			sendReq.Data = make(map[string]interface{})
 		}
 		sendReq.Data["webhook_url"] = req.WebhookURL
+	}
+
+	// Pass webhook target (registered provider name) through Data so the
+	// worker's resolution step (cmd/worker/processor.go) maps it to the
+	// matching custom provider and dispatches through that provider's
+	// channel-specific renderer.
+	if req.WebhookTarget != "" {
+		if sendReq.Data == nil {
+			sendReq.Data = make(map[string]interface{})
+		}
+		sendReq.Data["webhook_target"] = req.WebhookTarget
 	}
 
 	notif, err := s.notificationService.Send(ctx, sendReq)

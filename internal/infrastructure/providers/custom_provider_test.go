@@ -43,7 +43,13 @@ func TestCustomProvider_UsesExplicitKind(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.True(t, result.Success)
-	assert.Equal(t, "Title\nBody", got["text"])
+	// Custom Slack now delegates to the rich Block Kit renderer, which sets
+	// "text" to the title for fallback notifications and emits a "blocks"
+	// array with the formatted body. See render.BuildSlackPayload.
+	assert.Equal(t, "Title", got["text"])
+	blocks, hasBlocks := got["blocks"].([]interface{})
+	assert.True(t, hasBlocks, "expected Slack Block Kit blocks in payload")
+	assert.NotEmpty(t, blocks)
 	_, hasStandardID := got["notification_id"]
 	assert.False(t, hasStandardID)
 }
