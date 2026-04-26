@@ -71,10 +71,19 @@ func (r *ApplicationRepository) GetByAPIKey(ctx context.Context, apiKey string) 
 	return &app, nil
 }
 
-// Update updates an existing application
+// Update updates an existing application.
+//
+// Uses Replace (full-document upsert) rather than the partial _update path.
+// Application Settings contains many slice / pointer / map fields tagged
+// `omitempty` (CustomProviders, ProviderFallbacks, Slack, Discord, WhatsApp,
+// SMS, EmailConfig, etc). With a partial update those fields are silently
+// dropped from the request body when they become empty, leaving the stale
+// previous value in Elasticsearch — e.g. deleting the last custom provider
+// would appear to succeed but the provider would resurrect on the next read.
+// Replace persists the full document, including cleared fields.
 func (r *ApplicationRepository) Update(ctx context.Context, app *application.Application) error {
 	app.UpdatedAt = time.Now()
-	return r.BaseRepository.Update(ctx, app.AppID, app)
+	return r.BaseRepository.Replace(ctx, app.AppID, app)
 }
 
 // Delete deletes an application
