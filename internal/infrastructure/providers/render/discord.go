@@ -120,42 +120,44 @@ func BuildDiscordPayload(notif *notification.Notification) map[string]interface{
 		}
 	}
 
-	// --- Poll → native Discord webhook poll object ---
+	// --- Poll → embed field (incoming webhooks cannot emit native polls) ---
 	//
-	// Discord added native poll support to incoming webhooks in 2024. Encoding
-	// polls as a top-level `poll` object yields a real interactive poll that
-	// users can vote on. The previous implementation rendered polls as a
-	// static numbered list inside an embed field with a comment claiming
-	// "Discord polls API requires bot auth, not webhook" — that comment was
-	// stale and produced the user-visible bug "Test 5 isn't actually a poll".
+	// Discord exposes native poll objects only on application-owned webhooks
+	// (those created and bound to a Discord application via the Bot API).
+	// Plain channel webhooks created through "Server Settings → Integrations
+	// → Webhooks" — which is what 99% of customers paste into FreeRangeNotify
+	// — reject any payload containing a top-level `poll` field with HTTP 400
+	// `{"proto_data": ["poll"]}`. There is no way to detect this at render
+	// time without an out-of-band probe, so emitting the native poll object
+	// is unsafe by default.
 	//
-	// Reference:
-	//   https://discord.com/developers/docs/resources/poll
-	//   https://discord.com/developers/docs/resources/webhook#execute-webhook
-	var pollObj map[string]interface{}
-	if c.Poll != nil && len(c.Poll.Choices) > 0 {
-		answers := make([]map[string]interface{}, 0, len(c.Poll.Choices))
-		for _, ch := range c.Poll.Choices {
-			media := map[string]interface{}{"text": ch.Label}
-			if emoji := normalizeDiscordPollEmoji(ch.Emoji); emoji != "" {
-				media["emoji"] = map[string]interface{}{"name": emoji}
+	// We render the Poll as a numbered list inside a dedicated embed field.
+	// This is supported on every Discord webhook, conveys all the poll
+	// information (question, choices, optional emoji), and lets users react
+	// with the listed emojis to vote. Customers who own an application-bound
+	// webhook can opt back into native polls in a follow-up.
+	if c.Poll != nil && c.Poll.Question != "" && len(c.Poll.Choices) > 0 {
+		var lines []string
+		for i, ch := range c.Poll.Choices {
+			label := ch.Label
+			if label == "" {
+				label = fmt.Sprintf("Option %d", i+1)
 			}
-			answers = append(answers, map[string]interface{}{"poll_media": media})
+			if emoji := normalizeDiscordPollEmoji(ch.Emoji); emoji != "" {
+				lines = append(lines, fmt.Sprintf("%s **%d.** %s", emoji, i+1, label))
+			} else {
+				lines = append(lines, fmt.Sprintf("**%d.** %s", i+1, label))
+			}
 		}
-
-		duration := c.Poll.DurationHours
-		if duration <= 0 {
-			duration = 24 // Discord default; max 768 (32 days)
-		} else if duration > 768 {
-			duration = 768
+		pollField := map[string]interface{}{
+			"name":   fmt.Sprintf("📊 %s", c.Poll.Question),
+			"value":  strings.Join(lines, "\n"),
+			"inline": false,
 		}
-
-		pollObj = map[string]interface{}{
-			"question":          map[string]interface{}{"text": c.Poll.Question},
-			"answers":           answers,
-			"duration":          duration,
-			"allow_multiselect": c.Poll.MultiSelect,
-			"layout_type":       1,
+		if existing, ok := embed["fields"].([]map[string]interface{}); ok {
+			embed["fields"] = append(existing, pollField)
+		} else {
+			embed["fields"] = []map[string]interface{}{pollField}
 		}
 	}
 
@@ -176,9 +178,6 @@ func BuildDiscordPayload(notif *notification.Notification) map[string]interface{
 	payload := map[string]interface{}{
 		"content": contentText,
 		"embeds":  embeds,
-	}
-	if pollObj != nil {
-		payload["poll"] = pollObj
 	}
 	return payload
 }

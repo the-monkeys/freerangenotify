@@ -61,6 +61,34 @@ const parseCustomData = (raw: string) => {
     }
 };
 
+/** Custom JSON must not override Twilio Content API fields; those always come from the variable inputs. */
+function mergeTwilioData(
+    customData: Record<string, unknown>,
+    twilioPayload: { content_sid: string; content_variables: string } | null
+): Record<string, unknown> {
+    if (!twilioPayload) {
+        return { ...customData };
+    }
+    const { content_sid: _cs, content_variables: _cv, ...rest } = customData;
+    return { ...rest, ...twilioPayload };
+}
+
+function twilioVariablesIncompleteMessage(
+    template: TwilioContentTemplate,
+    vars: Record<string, string>
+): string | null {
+    const keys =
+        template.variables && Object.keys(template.variables).length > 0
+            ? Object.keys(template.variables)
+            : [];
+    for (const k of keys) {
+        if (String(vars[k] ?? '').trim() === '') {
+            return `Fill every Twilio template variable. Missing value for {{${k}}}.`;
+        }
+    }
+    return null;
+}
+
 // Format YYYY-MM-DD → "10 Feb 2026" for template display
 function formatDateForTemplate(isoDate: string): string {
     if (!isoDate || isoDate.length < 10) return isoDate;
@@ -871,6 +899,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
             // Build send payload — Twilio Content Template sends content_sid via data
             const twilioTpl = isTwilio ? findTwilioTemplate(quickTemplateId) : undefined;
+            if (isTwilio && twilioTpl) {
+                const vErr = twilioVariablesIncompleteMessage(twilioTpl, quickData);
+                if (vErr) {
+                    toast.error(vErr);
+                    setQuickSending(false);
+                    return;
+                }
+            }
             // For Twilio: quickData contains user-typed variable values keyed by variable name
             // (e.g. "1", "2"). Bundle them into content_variables JSON string and attach
             // content_sid. Do NOT pass the raw variable keys at the top level — the provider
@@ -990,11 +1026,19 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 content_sid: twilioTpl.sid,
                 content_variables: JSON.stringify(formTwilioVars || {}),
             } : null;
+            if (isTwilio && twilioTpl) {
+                const vErr = twilioVariablesIncompleteMessage(twilioTpl, formTwilioVars);
+                if (vErr) {
+                    toast.error(vErr);
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
             const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
                 template_id: (useWorkflow || isTwilio) ? undefined : formData.template_id,
-                data: twilioPayload ? { ...twilioPayload, ...customData } : customData,
+                data: mergeTwilioData(customData as Record<string, unknown>, twilioPayload),
                 scheduled_at: formData.scheduled_at,
                 workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
                 topic_key: broadcastTopicKey || undefined,
@@ -1057,7 +1101,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 content_sid: twilioTpl.sid,
                 content_variables: JSON.stringify(formTwilioVars || {}),
             } : null;
-            const finalData = twilioPayload ? { ...twilioPayload, ...customData } : customData;
+            if (isTwilio && twilioTpl) {
+                const vErr = twilioVariablesIncompleteMessage(twilioTpl, formTwilioVars);
+                if (vErr) {
+                    toast.error(vErr);
+                    return;
+                }
+            }
+            const finalData = mergeTwilioData(customData as Record<string, unknown>, twilioPayload);
             const richPayload = !isRichContentEmpty(advRichContent) ? richContentToPayload(advRichContent) : {};
             const payload: NotificationRequest = {
                 user_id: '',
