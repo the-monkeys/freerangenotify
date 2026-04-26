@@ -150,6 +150,47 @@ func (r *BaseRepository) Update(ctx context.Context, id string, document interfa
 	return nil
 }
 
+// Replace performs a full-document upsert via the Elasticsearch _index API.
+//
+// Unlike Update (which uses the _update endpoint with a partial {"doc": ...}
+// merge), Replace overwrites the stored document with the provided one in a
+// single atomic operation. Use this when the caller has loaded the full
+// domain object, mutated it, and needs every field — including ones that
+// have become empty/nil/zero — to be persisted exactly as given.
+//
+// The partial-update path silently drops fields tagged `omitempty` once they
+// become empty, which means clearing the last element of a slice or unsetting
+// a pointer never reaches the index. Replace avoids that class of bug.
+func (r *BaseRepository) Replace(ctx context.Context, id string, document interface{}) error {
+	data, err := json.Marshal(document)
+	if err != nil {
+		return fmt.Errorf("failed to marshal document: %w", err)
+	}
+
+	req := esapi.IndexRequest{
+		Index:      r.indexName,
+		DocumentID: id,
+		Body:       strings.NewReader(string(data)),
+		Refresh:    string(r.defaultRefresh),
+	}
+
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return fmt.Errorf("failed to replace document: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		return fmt.Errorf("elasticsearch error: %s", res.String())
+	}
+
+	r.logger.Debug("Document replaced",
+		zap.String("index", r.indexName),
+		zap.String("id", id))
+
+	return nil
+}
+
 // Delete deletes a document by its ID
 func (r *BaseRepository) Delete(ctx context.Context, id string) error {
 	req := esapi.DeleteRequest{

@@ -50,38 +50,43 @@ func TestBuildDiscordPayload_ColorFromSeverity(t *testing.T) {
 }
 
 func TestBuildDiscordPayload_PollDurationCaps(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   int
-		wantDur int
-	}{
-		{"zero defaults to 24h", 0, 24},
-		{"negative defaults to 24h", -5, 24},
-		{"in-range passthrough", 48, 48},
-		{"caps at 768h", 1000, 768},
+	// Discord incoming webhooks reject top-level native poll objects. The
+	// renderer must fall back to an embed field with a numbered list.
+	notif := &notification.Notification{
+		Content: notification.Content{
+			Title: "T",
+			Body:  "B",
+			Poll: &notification.Poll{
+				Question:      "Q?",
+				Choices:       []notification.PollChoice{{Label: "Yes"}},
+				DurationHours: 48,
+			},
+		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			notif := &notification.Notification{
-				Content: notification.Content{
-					Title: "T",
-					Body:  "B",
-					Poll: &notification.Poll{
-						Question:      "Q?",
-						Choices:       []notification.PollChoice{{Label: "Yes"}},
-						DurationHours: tc.input,
-					},
-				},
+	p := BuildDiscordPayload(notif)
+
+	if _, ok := p["poll"]; ok {
+		t.Fatalf("discord payload must not include top-level poll object (rejected by channel webhooks)")
+	}
+
+	embeds := p["embeds"].([]map[string]interface{})
+	fields, ok := embeds[0]["fields"].([]map[string]interface{})
+	if !ok || len(fields) == 0 {
+		t.Fatalf("expected embed fields containing poll, got %T %v", embeds[0]["fields"], embeds[0]["fields"])
+	}
+	found := false
+	for _, f := range fields {
+		if f["name"] == "📊 Q?" {
+			v, _ := f["value"].(string)
+			if !strings.Contains(v, "Yes") {
+				t.Fatalf("poll choice missing from rendered poll field: %q", v)
 			}
-			p := BuildDiscordPayload(notif)
-			poll, ok := p["poll"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("expected poll object in payload, got %T", p["poll"])
-			}
-			if got := poll["duration"]; got != tc.wantDur {
-				t.Fatalf("duration: want %d, got %v", tc.wantDur, got)
-			}
-		})
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected a poll embed field named %q, fields=%v", "📊 Q?", fields)
 	}
 }
 
