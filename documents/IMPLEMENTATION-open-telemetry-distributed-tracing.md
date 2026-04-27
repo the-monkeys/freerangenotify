@@ -44,9 +44,10 @@ These conventions make traces searchable and consistent across features.
 - Instrument Go Fiber API with OpenTelemetry SDK.
 - Export traces via OTLP (gRPC) to a local **OpenTelemetry Collector** container.
 - Collector exports to a single trace backend:
-  - **Recommended for minimal compute:** **Jaeger all-in-one** (1 container + built-in UI).
+  - **Grafana Tempo** (trace storage)
+  - **Grafana** (trace UI)
 
-**Data flow:** Browser/Client → API (span) → Collector → Jaeger UI
+**Data flow:** Browser/Client → API (span) → Collector → Tempo → Grafana UI
 
 ### Phase 2 (complete server-side story): worker tracing + correlation
 
@@ -58,7 +59,7 @@ These conventions make traces searchable and consistent across features.
   - Store `traceparent` (W3C Trace Context) in queued payload / notification metadata.
   - Worker extracts and continues the trace (preferred), else starts a new trace and logs correlation keys.
 
-**Data flow:** Client → API span → enqueue with `traceparent` → worker continues span → Collector → Jaeger
+**Data flow:** Client → API span → enqueue with `traceparent` → worker continues span → Collector → Tempo → Grafana
 
 ### Phase 3 (optional): Vercel frontend correlation
 
@@ -79,10 +80,13 @@ These conventions make traces searchable and consistent across features.
 
 - **`otel-collector` (Docker container)**:
   - Receives OTLP from API/worker.
-  - Exports to Jaeger.
+  - Exports to Tempo.
 
-- **`jaeger` (Docker container)**:
-  - Trace storage + UI.
+- **`tempo` (Docker container)**:
+  - Trace storage (OTLP ingestion via collector).
+
+- **`grafana` (Docker container)**:
+  - UI for searching and viewing traces in Tempo.
 
 ### Minimal configuration knobs (via `.env` / env vars)
 
@@ -150,19 +154,20 @@ If the queue payload format is hard to change, fallback:
 
 - Worker starts a new trace but logs `notification_id` and `trace_id` so you can still join the dots.
 
-### Step E — add collector + jaeger to Docker Compose (minimal)
+### Step E — add collector + tempo + grafana to Docker Compose (minimal)
 
 Add a new optional compose file (recommended):
 
 - `docker-compose.otel.yml`:
   - `otel-collector` (exposes 4317 internally, optionally 4318)
-  - `jaeger` (UI on 16686)
+  - `tempo`
+  - `grafana` (UI on 3001; separate from your app UI on 3000)
 
 Add new config file:
 
 - `config/otel-collector.yaml`:
   - receiver: `otlp` (grpc)
-  - exporter: `jaeger` (or `otlp` to jaeger depending on image)
+  - exporter: `otlp` (to tempo)
   - pipeline: traces only
 
 Reason: keep base compose stable; ops can enable by:
@@ -178,12 +183,12 @@ docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
   - `FREERANGE_OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317`
   - `FREERANGE_OTEL_SAMPLE_RATIO=0.05` initially
 - Restart compose.
-- Access Jaeger UI internally at `http://<server>:16686`.
+- Access Grafana internally at `http://<server>:3001` and add Tempo data source.
 
 ## Acceptance criteria
 
 - With OTel enabled:
-  - A request like `GET /v1/health` appears in Jaeger with route and status.
+  - A request like `GET /v1/health` appears in Grafana (Tempo) with route and status.
   - Worker spans appear for notification processing.
   - Logs contain `trace_id` so a single trace can be found from a log line.
 
@@ -199,5 +204,5 @@ docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
 - Worker entry: `cmd/worker/main.go`
 - Config system: Viper env prefix `FREERANGE_` with dot→underscore mapping (`internal/config/config.go`)
 - Existing logs show the WhatsApp template error is Twilio 21656 (not phone verification).
-- Keep implementation minimal: traces only, Collector + Jaeger, sampling, no payload capture.
+- Keep implementation minimal: traces only, Collector + Tempo + Grafana, sampling, no payload capture.
 

@@ -887,6 +887,18 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         const channel = (isTwilio || isFreeform) ? 'whatsapp' : (selectedTemplate?.channel || 'email');
         if (checkVerificationAndBlock(channel)) return;
 
+        // Webhook routing: MUST resolve a destination endpoint. If the template
+        // already pins a webhook_target, use it as the default; otherwise the user
+        // must select one in the UI.
+        const resolvedQuickWebhookTarget =
+            channel === 'webhook'
+                ? (quickWebhookTarget || selectedTemplate?.webhook_target || '')
+                : '';
+        if (channel === 'webhook' && !resolvedQuickWebhookTarget) {
+            toast.error('Select a webhook endpoint before sending.');
+            return;
+        }
+
         if (quickScheduledAt && quickScheduledAt < nowInTimezone(scheduleTimezone)) {
             toast.error('Scheduled time must be in the future.');
             return;
@@ -943,7 +955,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 priority: quickPriority as any,
                 scheduled_at: scheduledAt,
                 digest_key: selectedDigestRule?.digest_key,
-                webhook_target: quickSelectedTemplate?.channel === 'webhook' && quickWebhookTarget ? quickWebhookTarget : undefined,
+                webhook_target: channel === 'webhook' ? resolvedQuickWebhookTarget : undefined,
                 // Rich webhook content as top-level fields (backend DTO contract).
                 ...(!isRichContentEmpty(quickRichContent) ? richContentToPayload(quickRichContent) : {}),
             });
@@ -1034,6 +1046,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     return;
                 }
             }
+            const richPayload = !isRichContentEmpty(advRichContent) ? richContentToPayload(advRichContent) : {};
             const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
@@ -1043,9 +1056,36 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
                 topic_key: broadcastTopicKey || undefined,
                 metadata: broadcastDigestRule ? { digest_key: broadcastDigestRule.digest_key } : undefined,
+                ...richPayload,
             };
 
-            await notificationsAPI.broadcast(apiKey, payload);
+            // Webhook broadcasts are not a "fan-out to users" operation; they are
+            // a single delivery to one (or more) webhook endpoints.
+            if (payload.channel === 'webhook') {
+                const pinned = formSelectedTemplate?.webhook_target || '';
+                const targets = selectedTargets.length > 0 ? selectedTargets : (pinned ? [pinned] : []);
+                if (targets.length === 0) {
+                    toast.error('Select at least one webhook endpoint.');
+                    setIsSubmitting(false);
+                    return;
+                }
+                const sendPromises = targets.map((t) =>
+                    notificationsAPI.send(apiKey, {
+                        user_id: '',
+                        channel: 'webhook',
+                        priority: payload.priority as any,
+                        template_id: payload.template_id,
+                        data: payload.data,
+                        scheduled_at: payload.scheduled_at,
+                        metadata: payload.metadata,
+                        webhook_target: t,
+                        ...richPayload,
+                    })
+                );
+                await Promise.all(sendPromises);
+            } else {
+                await notificationsAPI.broadcast(apiKey, payload);
+            }
 
             setFormData(createEmptyForm());
             setDataInput('');
@@ -1093,6 +1133,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 toast.error('Select at least one user.');
                 return;
             }
+            if (formData.channel === 'webhook' && selectedTargets.length === 0 && !formSelectedTemplate?.webhook_target) {
+                toast.error('Select at least one webhook endpoint.');
+                return;
+            }
 
             const advDigestRule = advDigestRuleId ? digestRules.find(r => r.id === advDigestRuleId) : null;
             const isTwilio = isTwilioSelection(formData.template_id || '');
@@ -1125,13 +1169,15 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 ...richPayload,
             };
 
-            if (formData.channel === 'webhook' && selectedTargets.length > 0) {
-                const sendPromises = selectedTargets.map(target =>
+            if (formData.channel === 'webhook') {
+                const pinned = formSelectedTemplate?.webhook_target || '';
+                const targets = selectedTargets.length > 0 ? selectedTargets : (pinned ? [pinned] : []);
+                const sendPromises = targets.map((target) =>
                     notificationsAPI.send(apiKey, { ...payload, webhook_target: target })
                 );
                 await Promise.all(sendPromises);
                 prependOptimisticNotifications(
-                    selectedTargets.map((target) =>
+                    targets.map((target) =>
                         buildOptimisticNotification({
                             userId: `webhook:${target}`,
                             channel: payload.channel,

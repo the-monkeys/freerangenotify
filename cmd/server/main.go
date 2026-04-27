@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
@@ -20,6 +21,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/routes"
 	"github.com/the-monkeys/freerangenotify/internal/platform/licenseheartbeat"
+	"github.com/the-monkeys/freerangenotify/internal/telemetry"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -67,6 +69,12 @@ func main() {
 		log.Fatalf("Configuration validation failed: %v", err)
 	}
 
+	otelShutdown, err := telemetry.InitTracing(context.Background(), "freerange-notification-service", cfg.App.Version)
+	if err != nil {
+		log.Fatalf("Failed to initialize tracing: %v", err)
+	}
+	defer otelShutdown(context.Background())
+
 	// Initialize dependency injection container
 	c, err := container.NewContainer(cfg, zapLogger)
 	if err != nil {
@@ -97,6 +105,7 @@ func main() {
 	// Add global middleware
 	app.Use(recover.New())   // Panic recovery
 	app.Use(requestid.New()) // Request ID
+	app.Use(otelfiber.Middleware()) // OTel HTTP spans (opt-in via env)
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
