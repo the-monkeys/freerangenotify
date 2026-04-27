@@ -90,6 +90,36 @@ func TestBuildDiscordPayload_PollDurationCaps(t *testing.T) {
 	}
 }
 
+func TestBuildDiscordPayload_NativePollOptIn_EmitsPollObject(t *testing.T) {
+	notif := &notification.Notification{
+		Content: notification.Content{
+			Title: "T",
+			Body:  "B",
+			Poll: &notification.Poll{
+				Question: "Q?",
+				Choices: []notification.PollChoice{
+					{Label: "Yes", Emoji: "✅"},
+					{Label: "No"},
+				},
+				MultiSelect:   true,
+				DurationHours: 1,
+			},
+		},
+	}
+
+	p := BuildDiscordPayloadWithOptions(notif, DiscordRenderOptions{NativePolls: true})
+	poll, ok := p["poll"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected poll object when native polls enabled, got %T %v", p["poll"], p["poll"])
+	}
+	if _, ok := poll["question"]; !ok {
+		t.Fatalf("poll missing question: %v", poll)
+	}
+	if _, ok := poll["answers"]; !ok {
+		t.Fatalf("poll missing answers: %v", poll)
+	}
+}
+
 func TestBuildDiscordPayload_ActionsRenderedAsMarkdownField(t *testing.T) {
 	// Discord webhooks silently drop `components`, so link actions must be
 	// emitted as a markdown field — this is the contract that keeps the

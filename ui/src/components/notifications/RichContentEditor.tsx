@@ -28,6 +28,8 @@ export interface RichContentData {
 interface RichContentEditorProps {
     value: RichContentData;
     onChange: (data: RichContentData) => void;
+    /** Optional: show a JSON preview of the payload fields sent to the API. Defaults to true. */
+    showJsonPreview?: boolean;
 }
 
 const EMPTY_RICH: RichContentData = {
@@ -98,8 +100,9 @@ export function richContentToPayload(data: RichContentData): Record<string, any>
     return out;
 }
 
-const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange }) => {
+const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, showJsonPreview = true }) => {
     const update = (patch: Partial<RichContentData>) => onChange({ ...value, ...patch });
+    const payloadPreview = richContentToPayload(value);
 
     return (
         <div className="rounded-lg border border-border/70 bg-muted/25 p-3">
@@ -122,6 +125,9 @@ const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange }
                         Poll {value.poll && <Badge variant="secondary" className="ml-1 text-[10px]">1</Badge>}
                     </TabsTrigger>
                     <TabsTrigger value="style" className="text-xs">Style</TabsTrigger>
+                    {showJsonPreview && (
+                        <TabsTrigger value="json" className="text-xs">Generic preview</TabsTrigger>
+                    )}
                 </TabsList>
 
                 {/* Attachments Tab */}
@@ -338,6 +344,20 @@ const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange }
                         />
                     </div>
                 </TabsContent>
+
+                {/* JSON Preview */}
+                {showJsonPreview && (
+                    <TabsContent value="json" className="mt-2 space-y-2">
+                        <div className="rounded-md border border-border bg-background/60 p-3">
+                            <div className="text-[11px] text-muted-foreground mb-2">
+                                This is the exact shape sent to the API as top-level rich fields (not inside template data).
+                            </div>
+                            <pre className="max-h-[260px] overflow-auto rounded bg-black/90 p-3 text-[11px] text-green-200">
+{JSON.stringify(payloadPreview, null, 2)}
+                            </pre>
+                        </div>
+                    </TabsContent>
+                )}
             </Tabs>
         </div>
     );
