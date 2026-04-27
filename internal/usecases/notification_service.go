@@ -114,10 +114,12 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	var title, body string
+	var tmpl *template.Template
 
 	// 2.3: Resolve template by name or UUID if provided
 	if req.TemplateID != "" {
-		tmpl, err := s.resolveTemplate(ctx, req.AppID, req.TemplateID)
+		var err error
+		tmpl, err = s.resolveTemplate(ctx, req.AppID, req.TemplateID)
 		if err != nil {
 			s.logger.Error("Template not found", zap.String("template_id", req.TemplateID), zap.Error(err))
 			return nil, notification.ErrTemplateNotFound
@@ -165,6 +167,34 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	if err != nil {
 		s.logger.Error("Failed to fetch application", zap.String("app_id", req.AppID), zap.Error(err))
 		return nil, fmt.Errorf("application not found: %w", err)
+	}
+
+	// Fast-fail for webhook-like sends with no resolvable destination.
+	// Otherwise, the worker will dequeue and fail later with "no webhook URL found",
+	// which is slow and confusing for users.
+	if req.UserID == "" && notification.IsWebhookLikeChannel(req.Channel) {
+		hasURL := false
+		hasTarget := false
+		if req.Data != nil {
+			if v, ok := req.Data["webhook_url"].(string); ok && strings.TrimSpace(v) != "" {
+				hasURL = true
+			}
+			if v, ok := req.Data["webhook_target"].(string); ok && strings.TrimSpace(v) != "" {
+				hasTarget = true
+			}
+		}
+
+		// Template pinning: a webhook template may specify a default target.
+		if !hasTarget && tmpl != nil && strings.TrimSpace(tmpl.WebhookTarget) != "" {
+			hasTarget = true
+		}
+
+		// Application-level default webhook URL(s) are also acceptable.
+		appHasDefaultWebhook := strings.TrimSpace(app.WebhookURL) != "" || (app.Webhooks != nil && len(app.Webhooks) > 0)
+
+		if !hasURL && !hasTarget && !appHasDefaultWebhook {
+			return nil, fmt.Errorf("webhook destination required: set webhook_target (recommended), webhook_url, template.webhook_target, or app webhook_url")
+		}
 	}
 
 	// Check application daily email limit

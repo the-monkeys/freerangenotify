@@ -2,15 +2,24 @@ package render
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 )
 
+type DiscordRenderOptions struct {
+	NativePolls bool
+}
+
 // BuildDiscordPayload constructs a Discord webhook payload with embeds.
 // It renders all rich content fields: Attachments, Actions, Fields, Poll, Style.
 func BuildDiscordPayload(notif *notification.Notification) map[string]interface{} {
+	return BuildDiscordPayloadWithOptions(notif, DiscordRenderOptions{})
+}
+
+func BuildDiscordPayloadWithOptions(notif *notification.Notification, opts DiscordRenderOptions) map[string]interface{} {
 	c := notif.Content
 
 	// Resolve embed color: Style.Color hex → int, Style.Severity → preset, default blue.
@@ -120,7 +129,8 @@ func BuildDiscordPayload(notif *notification.Notification) map[string]interface{
 		}
 	}
 
-	// --- Poll → embed field (incoming webhooks cannot emit native polls) ---
+	// --- Poll ---
+	// Default: embed field (incoming webhooks cannot emit native polls reliably).
 	//
 	// Discord exposes native poll objects only on application-owned webhooks
 	// (those created and bound to a Discord application via the Bot API).
@@ -136,7 +146,7 @@ func BuildDiscordPayload(notif *notification.Notification) map[string]interface{
 	// information (question, choices, optional emoji), and lets users react
 	// with the listed emojis to vote. Customers who own an application-bound
 	// webhook can opt back into native polls in a follow-up.
-	if c.Poll != nil && c.Poll.Question != "" && len(c.Poll.Choices) > 0 {
+	if c.Poll != nil && c.Poll.Question != "" && len(c.Poll.Choices) > 0 && !opts.NativePolls {
 		var lines []string
 		for i, ch := range c.Poll.Choices {
 			label := ch.Label
@@ -179,7 +189,53 @@ func BuildDiscordPayload(notif *notification.Notification) map[string]interface{
 		"content": contentText,
 		"embeds":  embeds,
 	}
+
+	// Native poll opt-in. This produces an interactive poll ONLY when the
+	// destination webhook supports Discord's poll request object.
+	if opts.NativePolls && c.Poll != nil && c.Poll.Question != "" && len(c.Poll.Choices) > 0 {
+		payload["poll"] = buildDiscordNativePoll(c.Poll)
+	}
 	return payload
+}
+
+func buildDiscordNativePoll(p *notification.Poll) map[string]interface{} {
+	// Discord accepts duration (hours) up to 32 days; default 24.
+	d := 24
+	if p.DurationHours > 0 {
+		d = p.DurationHours
+	}
+	if d > 32*24 {
+		d = 32 * 24
+	}
+	if d < 1 {
+		d = 1
+	}
+
+	answers := make([]map[string]interface{}, 0, int(math.Min(float64(len(p.Choices)), 10)))
+	for _, ch := range p.Choices {
+		if len(answers) >= 10 {
+			break
+		}
+		text := strings.TrimSpace(ch.Label)
+		if text == "" {
+			continue
+		}
+		media := map[string]interface{}{"text": text}
+		if emoji := normalizeDiscordPollEmoji(ch.Emoji); emoji != "" {
+			media["emoji"] = map[string]interface{}{"name": emoji}
+		}
+		answers = append(answers, map[string]interface{}{
+			"poll_media": media,
+		})
+	}
+
+	return map[string]interface{}{
+		"question": map[string]interface{}{"text": p.Question},
+		"answers":  answers,
+		"duration": d,
+		"allow_multiselect": p.MultiSelect,
+		"layout_type": 1,
+	}
 }
 
 // resolveDiscordColor returns the integer color for a Discord embed.
@@ -218,6 +274,10 @@ func resolveDiscordColor(style *notification.Style) int {
 // through either path produces the same rich payload.
 func BuildCustomDiscordPayload(notif *notification.Notification) map[string]interface{} {
 	return BuildDiscordPayload(notif)
+}
+
+func BuildCustomDiscordPayloadWithOptions(notif *notification.Notification, opts DiscordRenderOptions) map[string]interface{} {
+	return BuildDiscordPayloadWithOptions(notif, opts)
 }
 
 // normalizeDiscordPollEmoji returns a string safe to send as

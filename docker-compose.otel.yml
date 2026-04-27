@@ -1,0 +1,57 @@
+services:
+  # OpenTelemetry Collector: receives OTLP from API/worker and exports to Tempo.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.130.0
+    container_name: freerange-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # Optional: expose OTLP for debugging from host; internal use is enough.
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - freerange-network
+
+  # Grafana Tempo: trace storage backend (no built-in UI).
+  tempo:
+    image: grafana/tempo:2.8.2
+    container_name: freerange-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./config/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200" # Tempo HTTP API (Grafana data source)
+    networks:
+      - freerange-network
+
+  # Grafana UI for Tempo (separate from your app UI on 3000).
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: freerange-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${FREERANGE_GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${FREERANGE_GRAFANA_ADMIN_PASSWORD:-admin}
+      # disable anonymous by default; keep this behind your firewall anyway
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - tempo
+    networks:
+      - freerange-network
+
+volumes:
+  tempo_data:
+  grafana_data:
+
+networks:
+  freerange-network:
+    external: true
+    name: freerangenotify_freerange-network
+

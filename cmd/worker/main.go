@@ -15,6 +15,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
+	"github.com/the-monkeys/freerangenotify/internal/telemetry"
 	"go.uber.org/zap"
 )
 
@@ -40,6 +41,12 @@ func main() {
 	defer logger.Sync()
 
 	logger.Info("Starting notification worker")
+
+	otelShutdown, err := telemetry.InitTracing(context.Background(), "freerange-notification-worker", cfg.App.Version)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracing", zap.Error(err))
+	}
+	defer otelShutdown(context.Background())
 
 	// Create container with dependencies
 	c, err := container.NewContainer(cfg, logger)

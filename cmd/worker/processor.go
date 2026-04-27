@@ -14,6 +14,10 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
@@ -233,6 +237,15 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}()
 
+	tracer := otel.Tracer("freerange.worker")
+	ctx, span := tracer.Start(ctx, "worker.processNotification",
+		trace.WithAttributes(
+			attribute.String("notification.id", item.NotificationID),
+			attribute.String("priority", string(item.Priority)),
+		),
+	)
+	defer span.End()
+
 	startTime := time.Now()
 
 	logger.Info("Processing notification",
@@ -249,13 +262,20 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	notif, err := p.notifRepo.GetByID(ctx, item.NotificationID)
 	if err != nil {
 		logger.Error("Failed to get notification", zap.Error(err))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed_to_get_notification")
 		return
 	}
+	span.SetAttributes(
+		attribute.String("app.id", notif.AppID),
+		attribute.String("channel", string(notif.Channel)),
+	)
 
 	// Skip cancelled — do not send
 	if notif.Status == notification.StatusCancelled {
 		logger.Info("Skipping cancelled notification",
 			zap.String("notification_id", notif.NotificationID))
+		span.SetStatus(codes.Ok, "cancelled")
 		return
 	}
 
@@ -269,9 +289,12 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				logger.Error("Failed to re-enqueue snoozed notification",
 					zap.String("notification_id", notif.NotificationID),
 					zap.Error(err))
+				span.RecordError(err)
+				span.SetStatus(codes.Error, "failed_to_reenqueue_snoozed")
 				// Fall through? No — we'd send it. Better to re-enqueue to main queue
 				// so it gets another chance. Or leave in processing for requeue. For now just log.
 			}
+			span.SetStatus(codes.Ok, "snoozed")
 			return
 		}
 		// snoozed_until has passed — treat as ready, fall through to process
@@ -307,6 +330,8 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		usr, err = p.userRepo.GetByID(ctx, notif.UserID)
 		if err != nil {
 			logger.Error("Failed to get user", zap.Error(err))
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "user_not_found")
 			p.handleFailure(ctx, notif, item, "user not found")
 			return
 		}
@@ -605,6 +630,8 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
 		logger.Error("Failed to send notification", zap.Error(err))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		// Record failure metrics
 		if p.metrics != nil {
 			p.metrics.RecordDeliveryFailure(string(notif.Channel), "default", "send_error")
