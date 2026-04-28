@@ -396,7 +396,7 @@ sdk/go/freerangenotify/
 ├── README.md              # Updated documentation
 ```
 
-The client uses a **sub-client pattern** (like Stripe, Twilio, Novu SDKs):
+The client uses a **sub-client pattern** (like Stripe, Twilio, the reference platform SDKs):
 
 ```go
 client := freerangenotify.New("frn_xxx", freerangenotify.WithBaseURL("http://localhost:8080/v1"))

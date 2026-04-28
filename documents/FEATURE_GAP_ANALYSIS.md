@@ -1,9 +1,9 @@
-# FreeRangeNotify vs Novu - Feature Gap Analysis
+# FreeRangeNotify vs the reference platform - Feature Gap Analysis
 
 > Generated: March 6, 2026
-> Reference: https://novu.co/
+> Reference: 
 
-This document compares the feature set of [Novu](https://novu.co/) (the open-source notification infrastructure platform) against FreeRangeNotify and identifies every gap. Features FreeRangeNotify already has are marked for reference; the focus is on what we are **missing**.
+This document compares the feature set of [the reference platform]() (the open-source notification infrastructure platform) against FreeRangeNotify and identifies every gap. Features FreeRangeNotify already has are marked for reference; the focus is on what we are **missing**.
 
 ---
 
@@ -24,7 +24,7 @@ This document compares the feature set of [Novu](https://novu.co/) (the open-sou
 
 ## 1. Delivery Channels
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | Email (SMTP) | Yes | Yes | **EXISTS** |
 | Email (SendGrid) | Yes | Yes | **EXISTS** |
@@ -40,7 +40,7 @@ This document compares the feature set of [Novu](https://novu.co/) (the open-sou
 
 ### Gap Detail
 
-Novu treats chat platforms (Slack, MS Teams, WhatsApp, Discord) as first-class channels with dedicated provider integrations. FRN has no chat provider implementations — Slack/Discord/Telegram only appear as social link URLs in email templates.
+the reference platform treats chat platforms (Slack, MS Teams, WhatsApp, Discord) as first-class channels with dedicated provider integrations. FRN has no chat provider implementations — Slack/Discord/Telegram only appear as social link URLs in email templates.
 
 **Recommendation:** Implement a `ChatProvider` interface and add Slack (via Incoming Webhooks / Bot API) and Discord (via Webhooks) as the first two. WhatsApp can follow via Twilio's WhatsApp API (shared Twilio credentials).
 
@@ -48,7 +48,7 @@ Novu treats chat platforms (Slack, MS Teams, WhatsApp, Discord) as first-class c
 
 ## 2. In-App Inbox & Client SDKs
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | `<Inbox />` drop-in component | Yes | Partial | **EXISTS** — `<NotificationBell>` in `@freerangenotify/react` |
 | `<Preferences />` component | Yes | No | **MISSING** — preferences API exists but no embeddable UI component |
@@ -60,7 +60,7 @@ Novu treats chat platforms (Slack, MS Teams, WhatsApp, Discord) as first-class c
 
 ### Gap Detail
 
-Novu's `<Inbox />` supports notification tabs, bulk actions (mark all read, archive), snooze-to-later, and a built-in `<Preferences />` component. FRN has a functional `<NotificationBell>` with SSE-based real-time delivery but lacks tab filtering, bulk operations, snooze, and an embeddable preferences component.
+the reference platform's `<Inbox />` supports notification tabs, bulk actions (mark all read, archive), snooze-to-later, and a built-in `<Preferences />` component. FRN has a functional `<NotificationBell>` with SSE-based real-time delivery but lacks tab filtering, bulk operations, snooze, and an embeddable preferences component.
 
 **Recommendation:**
 - Add a `<Preferences />` React component that calls the existing preferences API.
@@ -72,7 +72,7 @@ Novu's `<Inbox />` supports notification tabs, bulk actions (mark all read, arch
 
 ## 3. Workflow & Orchestration Engine
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | Scheduling / Delay step | Yes | Yes | **EXISTS** — `ScheduledAt`, cron recurrence |
 | Digest / Batching engine | Yes | No | **MISSING** |
@@ -83,14 +83,14 @@ Novu's `<Inbox />` supports notification tabs, bulk actions (mark all read, arch
 
 ### Gap Detail
 
-This is the **largest feature gap**. Novu's core product is a workflow engine where a single trigger can execute a chain of steps: in-app → wait 1h → check if read → if not, send email → digest for 24h → send SMS summary. FRN has none of this — it processes each notification as an isolated unit.
+This is the **largest feature gap**. the reference platform's core product is a workflow engine where a single trigger can execute a chain of steps: in-app → wait 1h → check if read → if not, send email → digest for 24h → send SMS summary. FRN has none of this — it processes each notification as an isolated unit.
 
-**Novu Digest Engine:**
+**the reference platform Digest Engine:**
 - Time-based: collect events in a window (e.g., 1 hour), deliver one combined message.
 - Look-back: check if a digest is already pending, append to it.
 - Cron-scheduled: deliver digests on a schedule (e.g., every Monday 9am).
 
-**Novu Workflow Framework:**
+**the reference platform Workflow Framework:**
 - Developers define workflows in TypeScript with `workflow('name', async ({ step }) => { ... })`.
 - Steps: `step.inApp()`, `step.email()`, `step.sms()`, `step.digest()`, `step.delay()`, `step.push()`.
 - Each step can have `skip()` conditions and custom control schemas.
@@ -106,7 +106,7 @@ This is the **largest feature gap**. Novu's core product is a workflow engine wh
 
 ## 4. Content & Template Management
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | Template variables with Go templates | N/A | Yes | **EXISTS** |
 | Template library (seed/clone) | Partial | Yes | **EXISTS** |
@@ -117,7 +117,7 @@ This is the **largest feature gap**. Novu's core product is a workflow engine wh
 
 ### Gap Detail
 
-Novu provides a block-based email editor powered by React Email where non-technical users can create and edit emails visually. FRN templates are raw HTML with Go template variables — only developers can create/modify them.
+the reference platform provides a block-based email editor powered by React Email where non-technical users can create and edit emails visually. FRN templates are raw HTML with Go template variables — only developers can create/modify them.
 
 **Recommendation:**
 - **Short-term:** Integrate an open-source block email editor (e.g., [Email Editor](https://usewaypoint.github.io/email-builder-js/)) into the FRN dashboard.
@@ -127,7 +127,7 @@ Novu provides a block-based email editor powered by React Email where non-techni
 
 ## 5. User & Subscriber Management
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | User/Subscriber CRUD | Yes | Yes | **EXISTS** |
 | User preferences (per-channel) | Yes | Yes | **EXISTS** |
@@ -138,7 +138,7 @@ Novu provides a block-based email editor powered by React Email where non-techni
 
 ### Gap Detail
 
-Novu has **Topics** — named groups of subscribers that you can send to with a single trigger. For example, `topic: "project-123-watchers"` delivers to all subscribers added to that topic. FRN only has broadcast (all users of an app) or individual send — no middle ground.
+the reference platform has **Topics** — named groups of subscribers that you can send to with a single trigger. For example, `topic: "project-123-watchers"` delivers to all subscribers added to that topic. FRN only has broadcast (all users of an app) or individual send — no middle ground.
 
 **Recommendation:**
 - Add a `Topic` entity: `{ id, app_id, name, subscriber_ids[] }`.
@@ -149,7 +149,7 @@ Novu has **Topics** — named groups of subscribers that you can send to with a 
 
 ## 6. Platform & Operations
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | Activity feed / Notification logs | Yes | Yes | **EXISTS** — Dashboard + ES storage |
 | Multi-tenancy (app isolation) | Yes | Yes | **EXISTS** — per-app API keys |
@@ -163,11 +163,11 @@ Novu has **Topics** — named groups of subscribers that you can send to with a 
 
 ### Gap Detail
 
-**Environments:** Novu lets you manage dev/staging/prod environments within the product UI with separate API keys, subscribers, and templates per environment. FRN only switches via config files.
+**Environments:** the reference platform lets you manage dev/staging/prod environments within the product UI with separate API keys, subscribers, and templates per environment. FRN only switches via config files.
 
-**RBAC:** Novu supports roles (Admin, Editor, Viewer) with scoped permissions. FRN has JWT + API key auth but no role model.
+**RBAC:** the reference platform supports roles (Admin, Editor, Viewer) with scoped permissions. FRN has JWT + API key auth but no role model.
 
-**Audit Logs:** Novu records all admin actions (template edits, setting changes) with timestamps and actors. FRN has this documented as a TODO.
+**Audit Logs:** the reference platform records all admin actions (template edits, setting changes) with timestamps and actors. FRN has this documented as a TODO.
 
 **Recommendation:**
 - **RBAC:** Add a `Role` enum to the app/user relationship. Enforce in middleware.
@@ -178,7 +178,7 @@ Novu has **Topics** — named groups of subscribers that you can send to with a 
 
 ## 7. Security & Compliance
 
-| Feature | Novu | FRN | Status |
+| Feature | the reference platform | FRN | Status |
 |---------|------|-----|--------|
 | HMAC signing (webhooks) | Yes | Yes | **EXISTS** |
 | JWT authentication | Yes | Yes | **EXISTS** |
@@ -191,7 +191,7 @@ Novu has **Topics** — named groups of subscribers that you can send to with a 
 
 ### Gap Detail
 
-**HMAC for Inbox:** Novu signs the subscriber identifier so that the `<Inbox />` component can't be spoofed by changing the user ID in the client. FRN's SSE endpoint (`/v1/sse?user_id=...`) has no such protection.
+**HMAC for Inbox:** the reference platform signs the subscriber identifier so that the `<Inbox />` component can't be spoofed by changing the user ID in the client. FRN's SSE endpoint (`/v1/sse?user_id=...`) has no such protection.
 
 **Recommendation:** Add HMAC validation to the SSE endpoint. The server generates `HMAC(user_id, app_secret)` which the client must pass as a query param or header.
 
@@ -203,7 +203,7 @@ Ranked by impact on feature parity and user adoption:
 
 | Priority | Feature | Effort | Impact |
 |----------|---------|--------|--------|
-| **P0** | Digest / Batching engine | High | Critical — this is Novu's headline feature |
+| **P0** | Digest / Batching engine | High | Critical — this is the reference platform's headline feature |
 | **P0** | Workflow orchestration (multi-step) | Very High | Critical — enables delay → check → fallback patterns |
 | **P1** | Topics / Subscriber groups | Medium | High — enables targeted notifications |
 | **P1** | HMAC for SSE/Inbox | Low | High — security gap |
@@ -223,19 +223,19 @@ Ranked by impact on feature parity and user adoption:
 
 ## What FreeRangeNotify Does Better
 
-FRN is not just behind — it has strengths Novu lacks:
+FRN is not just behind — it has strengths the reference platform lacks:
 
-1. **Smart Delivery / Presence Routing** — Dynamic delivery to active receiver sessions via Redis presence. Novu has no equivalent.
-2. **Newsletter Broadcaster** — Automated blog-to-newsletter pipeline with blog API integration. Novu is not designed for content curation.
-3. **Truly self-hosted first** — No cloud dependency. Novu's self-hosted option is secondary to their SaaS offering.
-4. **Single binary deployment** — One Docker image runs both server and worker. Novu requires 5+ services (API, worker, web, MongoDB, Redis).
-5. **Elasticsearch-native** — Full-text search across all notifications, templates, and users. Novu uses MongoDB.
+1. **Smart Delivery / Presence Routing** — Dynamic delivery to active receiver sessions via Redis presence. the reference platform has no equivalent.
+2. **Newsletter Broadcaster** — Automated blog-to-newsletter pipeline with blog API integration. the reference platform is not designed for content curation.
+3. **Truly self-hosted first** — No cloud dependency. the reference platform's self-hosted option is secondary to their SaaS offering.
+4. **Single binary deployment** — One Docker image runs both server and worker. the reference platform requires 5+ services (API, worker, web, MongoDB, Redis).
+5. **Elasticsearch-native** — Full-text search across all notifications, templates, and users. the reference platform uses MongoDB.
 
 ---
 
 ## Conclusion
 
-The two biggest gaps that prevent FreeRangeNotify from being a credible Novu alternative are:
+The two biggest gaps that prevent FreeRangeNotify from being a credible the reference platform alternative are:
 
 1. **No Workflow/Digest Engine** — Without multi-step orchestration and event digesting, FRN is a notification delivery service, not a notification *platform*.
 2. **No Topics** — Without subscriber grouping, every notification is either "send to one user" or "broadcast to everyone" — no middle ground for targeted delivery.

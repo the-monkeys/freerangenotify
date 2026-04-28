@@ -1,10 +1,10 @@
 # FreeRangeNotify — Feature Implementation Plan
 
 > **Date:** March 7, 2026
-> **Scope:** All 20 missing features identified in [NOVU_FEATURE_GAP_ANALYSIS.md](./NOVU_FEATURE_GAP_ANALYSIS.md)
+> **Scope:** All 20 missing features identified in [FEATURE_GAP_ANALYSIS.md](./FEATURE_GAP_ANALYSIS.md)
 > **Module:** `github.com/the-monkeys/freerangenotify`
 
-This document is the engineering blueprint for closing every feature gap between FreeRangeNotify and Novu. Each feature includes exact file paths, struct definitions, Elasticsearch index mappings, API contracts, worker integration points, and dependency ordering — all grounded in the existing codebase architecture.
+This document is the engineering blueprint for closing every feature gap between FreeRangeNotify and the reference platform. Each feature includes exact file paths, struct definitions, Elasticsearch index mappings, API contracts, worker integration points, and dependency ordering — all grounded in the existing codebase architecture.
 
 ---
 
@@ -471,7 +471,7 @@ container.WorkflowHandler = handlers.NewWorkflowHandler(container.WorkflowServic
 
 ### 3.2 Digest / Batching Engine
 
-**Priority:** P0 — Novu's headline feature. Tightly coupled with the workflow engine but also usable standalone.
+**Priority:** P0 — the reference platform's headline feature. Tightly coupled with the workflow engine but also usable standalone.
 
 #### 3.2.1 Standalone Digest (Without Workflows)
 

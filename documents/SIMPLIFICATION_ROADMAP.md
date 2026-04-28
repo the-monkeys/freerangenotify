@@ -47,7 +47,7 @@ Step 6: Now FINALLY send a notification (POST /v1/notifications)
 
 Compare this to competitors:
 - **OneSignal**: Install SDK → call `sendNotification({ message: "Hello" })` → done.
-- **Novu**: Create trigger → send event → done.
+- **the reference platform**: Create trigger → send event → done.
 - **Firebase Cloud Messaging**: Get server key → POST to FCM → done.
 
 FreeRangeNotify is architecturally superior to many of these (priority queues, smart delivery, template rendering, multi-channel), but the onboarding friction is killing adoption before users ever see those features.

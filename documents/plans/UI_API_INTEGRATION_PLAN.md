@@ -655,7 +655,7 @@ Extend existing `AppNotifications.tsx` with missing inbox operations.
 **Bulk Actions Bar** (`components/notifications/BulkActionsBar.tsx`):
 - Appears at the top when ≥1 notification is selected (checkbox).
 - Shows: "N selected" | [Mark Read] | [Archive] | [Cancel]
-- Sticky bar, same pattern as Gmail/Novu.
+- Sticky bar, same pattern as Gmail/the reference platform.
 
 ### 7.5 AppDetail New Tabs
 

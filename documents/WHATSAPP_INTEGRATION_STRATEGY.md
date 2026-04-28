@@ -219,7 +219,7 @@ Meta provides an [Embedded Signup](https://developers.facebook.com/docs/whatsapp
 3. FreeRangeNotify uses these to send via Graph API
 4. **User pays Meta directly**
 
-**Option A is the better UX** and what competitors (Novu, Intercom, Bird) use.
+**Option A is the better UX** and what competitors (the reference platform, Intercom, Bird) use.
 
 #### Technical Requirements for Embedded Signup
 - FreeRangeNotify must be a registered Meta app (App Dashboard)
@@ -236,7 +236,7 @@ Meta provides an [Embedded Signup](https://developers.facebook.com/docs/whatsapp
 | Template management | Free (Meta API) | — |
 | Orchestration (workflows, digests, scheduling) | Included in platform fee | FreeRangeNotify |
 
-This is the model used by Novu, OneSignal, and similar platforms. **FreeRangeNotify earns from the platform, not from message markup.**
+This is the model used by the reference platform, OneSignal, and similar platforms. **FreeRangeNotify earns from the platform, not from message markup.**
 
 ---
 
@@ -816,7 +816,7 @@ This saves businesses significant money and FreeRangeNotify can surface this in 
 
 ### 13.1 Competitive Matrix — WhatsApp Features
 
-| Capability | Novu | OneSignal | Bird | Intercom | **FreeRangeNotify** |
+| Capability | the reference platform | OneSignal | Bird | Intercom | **FreeRangeNotify** |
 |-----------|------|-----------|------|----------|---------------------|
 | WhatsApp send (text) | Via Twilio | Via Twilio | Native Meta | Native Meta | **Native Meta + Twilio fallback** |
 | WhatsApp send (template) | Manual | Manual | Yes | Yes | **Yes + template manager UI** |
