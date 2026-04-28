@@ -58,6 +58,16 @@ func (u *UsersClient) Update(ctx context.Context, identifier string, params Upda
 	return &result, nil
 }
 
+// UpdateByExternalID modifies a user's profile directly by external_id without
+// resolving to an internal UUID first.
+func (u *UsersClient) UpdateByExternalID(ctx context.Context, externalID string, params UpdateUserParams) (*User, error) {
+	var result User
+	if err := u.client.do(ctx, "PUT", "/users/by-external-id/"+externalID, params, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // Delete removes a user. Accepts internal UUID or external_id.
 func (u *UsersClient) Delete(ctx context.Context, identifier string) error {
 	return u.client.do(ctx, "DELETE", "/users/"+identifier, nil, nil)

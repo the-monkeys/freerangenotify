@@ -15,6 +15,7 @@ type UserService interface {
 	GetByEmail(ctx context.Context, appID, email string) (*user.User, error)
 	GetByExternalID(ctx context.Context, appID, externalID string) (*user.User, error)
 	Update(ctx context.Context, user *user.User) error
+	UpdateByExternalID(ctx context.Context, appID, externalID string, apply func(*user.User)) (*user.User, error)
 	Delete(ctx context.Context, userID string) error
 	List(ctx context.Context, filter user.UserFilter) ([]*user.User, int64, error)
 

@@ -2,7 +2,7 @@
 
 Official Go client for the [FreeRangeNotify](https://github.com/the-monkeys/freerangenotify) notification service.
 
-Uses a **sub-client pattern** (like Stripe, Twilio, Novu) for resource-oriented API access with full backward compatibility.
+Uses a **sub-client pattern** (like Stripe, Twilio, leading platforms) for resource-oriented API access with full backward compatibility.
 
 ## Installation
 

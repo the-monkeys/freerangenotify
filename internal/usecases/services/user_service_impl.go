@@ -171,6 +171,38 @@ func (s *UserServiceImpl) Update(ctx context.Context, u *user.User) error {
 	return nil
 }
 
+// UpdateByExternalID looks up a user by external_id within the app and applies
+// mutations in a single pass — no redundant GetByID round-trip.
+func (s *UserServiceImpl) UpdateByExternalID(ctx context.Context, appID, externalID string, apply func(*user.User)) (*user.User, error) {
+	if appID == "" || externalID == "" {
+		return nil, errors.BadRequest("app_id and external_id are required")
+	}
+
+	u, err := s.repo.GetByExternalID(ctx, appID, externalID)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, errors.NotFound("User", externalID)
+		}
+		s.logger.Error("Failed to get user by external_id", zap.String("external_id", externalID), zap.Error(err))
+		return nil, errors.DatabaseError("get user by external_id", err)
+	}
+	if u == nil {
+		return nil, errors.NotFound("User", externalID)
+	}
+
+	apply(u)
+	u.UpdatedAt = time.Now()
+
+	if err := s.repo.Update(ctx, u); err != nil {
+		s.logger.Error("Failed to update user by external_id",
+			zap.String("external_id", externalID), zap.String("user_id", u.UserID), zap.Error(err))
+		return nil, errors.DatabaseError("update user", err)
+	}
+
+	s.logger.Info("User updated by external_id", zap.String("external_id", externalID), zap.String("user_id", u.UserID))
+	return u, nil
+}
+
 // Delete deletes a user
 func (s *UserServiceImpl) Delete(ctx context.Context, userID string) error {
 	if userID == "" {

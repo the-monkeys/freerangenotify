@@ -38,7 +38,7 @@ A **workflow** is a multi-step notification pipeline triggered by a single event
 
 Each step can branch on success/failure (`on_success`, `on_failure`), skip conditionally (`skip_if`), and the engine tracks execution state per-user with idempotency via `transaction_id`. The orchestrator runs as background goroutines in the worker process, with automatic recovery for stale executions (stuck > 5 minutes).
 
-**Why it matters:** Without a workflow engine, FreeRangeNotify is a delivery service — each notification is an isolated unit. With it, FRN becomes a notification *platform* that can orchestrate complex multi-channel sequences, the single largest feature gap vs. Novu.
+**Why it matters:** Without a workflow engine, FreeRangeNotify is a delivery service — each notification is an isolated unit. With it, FRN becomes a notification *platform* that can orchestrate complex multi-channel sequences, the single largest feature gap vs. the reference platform.
 
 **API surface:** `POST /v1/workflows` (CRUD), `POST /v1/workflows/trigger`, `GET /v1/workflows/executions`.
 
@@ -56,7 +56,7 @@ Key properties of a digest rule:
 
 The processor intercepts matching notifications *before* delivery, accumulates them in Redis, and a background flush poller sends the consolidated message when the window expires. If no digest rules are configured, the system behaves identically to before — zero impact.
 
-**Why it matters:** Digest is Novu's headline feature. High-frequency apps (CI/CD, project management, social feeds) need batching to avoid notification fatigue.
+**Why it matters:** Digest is the reference platform's headline feature. High-frequency apps (CI/CD, project management, social feeds) need batching to avoid notification fatigue.
 
 **API surface:** `POST /v1/digest-rules` (CRUD).
 
