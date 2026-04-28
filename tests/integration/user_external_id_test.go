@@ -274,3 +274,44 @@ func (s *UserExternalIDTestSuite) TestBulkCreate_SkipExisting_SkipsDuplicates() 
 	resp, body = s.makeRequest(http.MethodPost, "/v1/users/bulk", bulkPayload, s.authHeaders(apiKey))
 	s.Equal(http.StatusCreated, resp.StatusCode, "Bulk create with skip_existing should succeed: %s", string(body))
 }
+
+// ── Direct Update By External ID (Issue #76) ──
+
+func (s *UserExternalIDTestSuite) TestUpdateByExternalID_DirectEndpoint() {
+	apiKey := s.setupApp()
+
+	// Create user with external_id
+	createPayload := map[string]interface{}{
+		"email":       "direct-update@example.com",
+		"external_id": "direct-ext-42",
+		"full_name":   "Original Name",
+	}
+	resp, body := s.makeRequest(http.MethodPost, "/v1/users", createPayload, s.authHeaders(apiKey))
+	s.Require().Equal(http.StatusCreated, resp.StatusCode, "Failed to create user: %s", string(body))
+
+	// Update via the dedicated by-external-id endpoint
+	updatePayload := map[string]interface{}{
+		"full_name": "Updated Name",
+		"phone":     "+1234567890",
+	}
+	resp, body = s.makeRequest(http.MethodPut, "/v1/users/by-external-id/direct-ext-42", updatePayload, s.authHeaders(apiKey))
+	s.Equal(http.StatusOK, resp.StatusCode,
+		"PUT /users/by-external-id/:external_id should return 200, got %d: %s", resp.StatusCode, string(body))
+
+	result := s.assertSuccess(body)
+	data := result["data"].(map[string]interface{})
+	s.Equal("Updated Name", data["full_name"])
+	s.Equal("+1234567890", data["phone"])
+	s.Equal("direct-update@example.com", data["email"], "unchanged fields should be preserved")
+}
+
+func (s *UserExternalIDTestSuite) TestUpdateByExternalID_NotFound_Returns404OrError() {
+	apiKey := s.setupApp()
+
+	updatePayload := map[string]interface{}{
+		"full_name": "Doesn't matter",
+	}
+	resp, _ := s.makeRequest(http.MethodPut, "/v1/users/by-external-id/nonexistent-ext", updatePayload, s.authHeaders(apiKey))
+	s.True(resp.StatusCode == http.StatusNotFound || resp.StatusCode >= 400,
+		"PUT /users/by-external-id/:nonexistent should return error status, got %d", resp.StatusCode)
+}

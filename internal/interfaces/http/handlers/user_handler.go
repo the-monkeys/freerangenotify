@@ -276,6 +276,76 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	})
 }
 
+// UpdateByExternalID handles PUT /v1/users/by-external-id/:external_id
+// @Summary Update a user by external ID
+// @Description Update a user directly by their external_id without internal ID resolution
+// @Tags Users
+// @Accept json
+// @Produce json
+// @Param external_id path string true "External ID"
+// @Param body body dto.UpdateUserRequest true "User update request"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/users/by-external-id/{external_id} [put]
+func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
+	appID, err := h.getAppID(c)
+	if err != nil {
+		return err
+	}
+
+	externalID := c.Params("external_id")
+	if externalID == "" {
+		return errors.BadRequest("external_id is required")
+	}
+
+	var req dto.UpdateUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		return errors.BadRequest("Invalid request body")
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
+	}
+
+	u, err := h.service.UpdateByExternalID(c.Context(), appID, externalID, func(u *user.User) {
+		if req.ExternalID != "" {
+			u.ExternalID = req.ExternalID
+		}
+		if req.FullName != "" {
+			u.FullName = req.FullName
+		}
+		if req.Email != "" {
+			u.Email = req.Email
+		}
+		if req.Phone != "" {
+			u.Phone = req.Phone
+		}
+		if req.Timezone != "" {
+			u.Timezone = req.Timezone
+		}
+		if req.Language != "" {
+			u.Language = req.Language
+		}
+		if req.WebhookURL != "" {
+			u.WebhookURL = req.WebhookURL
+		}
+		if req.Preferences != nil {
+			u.Preferences = *req.Preferences
+		}
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    dto.ToUserResponse(u),
+	})
+}
+
 // Delete handles DELETE /v1/users/:id
 // @Summary Delete a user
 // @Description Permanently remove a user
