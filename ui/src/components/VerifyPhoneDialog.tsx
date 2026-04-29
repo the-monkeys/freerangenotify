@@ -10,7 +10,8 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Loader2, Phone } from 'lucide-react';
+import { PhoneInput } from './PhoneInput';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { authExtendedAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -111,17 +112,12 @@ export default function VerifyPhoneDialog({ open, onOpenChange }: Props) {
                         <div className="space-y-2">
                             <Label htmlFor="phone" className="text-sm">Phone Number</Label>
                             <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <Phone className="h-4 w-4 text-muted-foreground" />
-                                </div>
-                                <Input
+                                <PhoneInput
                                     id="phone"
-                                    type="tel"
-                                    placeholder="+14155552671"
-                                    className="pl-10"
+                                    placeholder="4155552671"
                                     value={phone}
-                                    onChange={(e) => {
-                                        setPhone(e.target.value);
+                                    onChange={(value) => {
+                                        setPhone(value);
                                         setError(null);
                                     }}
                                 />
