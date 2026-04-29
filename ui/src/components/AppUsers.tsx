@@ -12,6 +12,7 @@ import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Pagination } from './Pagination';
 import ConfirmDeleteDialog from './ConfirmDeleteDialog';
+import { PhoneInput } from './PhoneInput';
 import { toast } from 'sonner';
 import { Edit, Trash2, Upload, Download } from 'lucide-react';
 
@@ -393,12 +394,11 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="phone">Phone Number</Label>
-                                <Input
+                                <PhoneInput
                                     id="phone"
-                                    type="tel"
                                     value={formData.phone || ''}
-                                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                                    placeholder="+1 555 0100"
+                                    onChange={(value) => setFormData({ ...formData, phone: value })}
+                                    placeholder="555 0100"
                                 />
                             </div>
                             <div className="space-y-2">
