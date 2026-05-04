@@ -423,9 +423,17 @@ func (r *BroadcastRequest) Validate() error {
 	if !r.Priority.Valid() {
 		return ErrInvalidPriority
 	}
-	// TemplateID required only when NOT triggering a workflow
+	// TemplateID required only when NOT triggering a workflow AND NOT using a Twilio Content Template (content_sid)
 	if r.WorkflowTriggerID == "" && r.TemplateID == "" {
-		return ErrTemplateRequired
+		hasContentSID := false
+		if r.Data != nil {
+			if _, ok := r.Data["content_sid"]; ok {
+				hasContentSID = true
+			}
+		}
+		if !hasContentSID {
+			return ErrTemplateRequired
+		}
 	}
 	return nil
 }

@@ -396,7 +396,13 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 	// Send broadcast notifications (or trigger workflows)
 	result, err := h.service.Broadcast(c.Context(), broadcastReq)
 	if err != nil {
-		h.logger.Error("Failed to broadcast notifications", zap.Error(err))
+		if notification.IsValidationError(err) {
+			h.logger.Warn("Broadcast request validation failed", zap.String("app_id", appID), zap.Error(err))
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+		h.logger.Error("Failed to broadcast notifications", zap.String("app_id", appID), zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
