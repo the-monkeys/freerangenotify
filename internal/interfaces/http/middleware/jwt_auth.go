@@ -12,10 +12,16 @@ import (
 // JWTAuth creates a middleware for JWT authentication
 func JWTAuth(authService auth.Service, logger *zap.Logger) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Get Authorization header
+		// Get Authorization header or query token
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return errors.Unauthorized("Missing Authorization header")
+			// Check query parameter for SSE connections (EventSource cannot set headers)
+			tokenQuery := c.Query("token")
+			if tokenQuery != "" {
+				authHeader = "Bearer " + tokenQuery
+			} else {
+				return errors.Unauthorized("Missing Authorization header")
+			}
 		}
 
 		// Extract token (format: "Bearer <token>")
@@ -51,33 +57,6 @@ func JWTAuth(authService auth.Service, logger *zap.Logger) fiber.Handler {
 			zap.String("email", user.Email),
 			zap.String("path", c.Path()),
 		)
-
-		return c.Next()
-	}
-}
-
-// OptionalJWTAuth creates a middleware for optional JWT authentication
-// This allows requests to proceed without authentication but sets context if token is provided
-func OptionalJWTAuth(authService auth.Service, logger *zap.Logger) fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		authHeader := c.Get("Authorization")
-		if authHeader == "" {
-			return c.Next()
-		}
-
-		token := authHeader
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
-		}
-
-		if token != "" {
-			user, err := authService.ValidateToken(c.Context(), token)
-			if err == nil && user != nil {
-				c.Locals("user_id", user.UserID)
-				c.Locals("user_email", user.Email)
-				c.Locals("user", user)
-			}
-		}
 
 		return c.Next()
 	}

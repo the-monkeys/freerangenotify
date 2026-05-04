@@ -7,10 +7,12 @@ import { buildApiUrl } from '../services/api';
 
 interface ActivityEvent {
   notification_id: string;
+  app_id?: string;
   channel: string;
   status: string;
   timestamp: string;
-  type?: string; // "connected" for initial handshake
+  type?: string;    // "connected" for initial handshake
+  history?: string; // "true" for historical data
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -64,18 +66,20 @@ export function ActivityFeed() {
       setError('');
     };
 
-    es.onmessage = (e) => {
+    // Server sends named SSE events: "connected" and "activity"
+    // Named events require addEventListener (onmessage only catches unnamed events)
+    es.addEventListener('connected', () => {
+      setConnected(true);
+    });
+
+    es.addEventListener('activity', (e: MessageEvent) => {
       try {
         const event: ActivityEvent = JSON.parse(e.data);
-        if (event.type === 'connected') {
-          setConnected(true);
-          return;
-        }
-        setEvents(prev => [event, ...prev].slice(0, 100));
+        setEvents(prev => [event, ...prev].slice(0, 500));
       } catch {
         // ignore parse errors
       }
-    };
+    });
 
     es.onerror = () => {
       setConnected(false);
@@ -197,6 +201,11 @@ export function ActivityFeed() {
                 <Badge variant="outline" className={CHANNEL_COLORS[e.channel] || ''}>
                   {e.channel}
                 </Badge>
+                {e.history === 'true' && (
+                  <Badge variant="outline" className="bg-zinc-100 text-zinc-500 text-[10px] h-4 px-1 uppercase dark:bg-zinc-800 dark:text-zinc-400">
+                    History
+                  </Badge>
+                )}
                 <code className="font-mono text-xs text-muted-foreground">
                   {e.notification_id?.slice(0, 12)}...
                 </code>
