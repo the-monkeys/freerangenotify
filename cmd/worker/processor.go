@@ -118,12 +118,13 @@ func NewNotificationProcessor(
 
 // publishActivity publishes a notification status event to Redis pub/sub
 // for the admin activity feed. Fire-and-forget — errors are logged but not returned.
-func (p *NotificationProcessor) publishActivity(ctx context.Context, notificationID string, channel string, status string) {
+func (p *NotificationProcessor) publishActivity(ctx context.Context, notificationID string, appID string, channel string, status string) {
 	if p.redisClient == nil {
 		return
 	}
 	event := map[string]string{
 		"notification_id": notificationID,
+		"app_id":          appID,
 		"channel":         channel,
 		"status":          status,
 		"timestamp":       time.Now().Format(time.RFC3339),
@@ -322,7 +323,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusProcessing); err != nil {
 		logger.Error("Failed to update status to processing", zap.Error(err))
 	}
-	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "processing")
+	p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "processing")
 
 	// Get user details (only if UserID is present)
 	var usr *user.User
@@ -654,7 +655,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	if err := p.notifRepo.Update(ctx, notif); err != nil {
 		logger.Warn("Failed to persist rendered content after send", zap.Error(err))
 	}
-	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "sent")
+	p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "sent")
 
 	// Record metrics
 	if p.metrics != nil {
@@ -688,7 +689,7 @@ func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif 
 			zap.String("notification_id", notif.NotificationID),
 			zap.Error(err))
 	}
-	p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "failed")
+	p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "failed")
 
 	if p.metrics != nil {
 		p.metrics.RecordDeliveryFailure(string(notif.Channel), "licensing", reason)
@@ -997,7 +998,7 @@ func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notifi
 		// Update status to failed
 		notif.Status = notification.StatusFailed
 		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
-		p.publishActivity(ctx, notif.NotificationID, string(notif.Channel), "failed")
+		p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "failed")
 		// Update error message separately
 		notif.ErrorMessage = errorMsg
 		p.notifRepo.Update(ctx, notif)
@@ -1529,6 +1530,7 @@ func (p *NotificationProcessor) unsnoozeLoop(ctx context.Context) {
 				if p.redisClient != nil {
 					event := map[string]string{
 						"notification_id": notif.NotificationID,
+						"app_id":          notif.AppID,
 						"channel":         string(notif.Channel),
 						"status":          string(notification.StatusQueued),
 						"timestamp":       time.Now().Format(time.RFC3339),

@@ -1,117 +1,73 @@
-# FreeRange Notify - Universal Notification Service
+# FreeRange Notify
 
-A generic, pluggable notification service built in Go that provides real-time, multi-channel notification capabilities for any application.
+FreeRange Notify is a high performance service for sending notifications across many channels. It helps you manage users, templates and delivery workflows in one place. You can send messages via Email, SMS, Push, WhatsApp and Webhooks using a single API.
 
-## Quick Links
-- 📖 **[API Documentation](http://localhost:8080/swagger/index.html)** - Interactive Swagger UI
-- 📋 **[OpenAPI Spec](./docs/openapi/swagger.yaml)** - Full API specification
-- 🏗️ **[Architecture Design](./NOTIFICATION_SERVICE_DESIGN.md)** - System design document
-- 📚 **[Development Guide](./.copilot-instructions.md)** - Complete project guide
+The system is designed to be reliable and easy to scale. It uses a worker pool to handle background delivery so your API stays fast even during high traffic.
 
-## Getting Started
+## Core Features
 
-### Prerequisites
-- Go 1.26+
-- Docker and Docker Compose
-- Elasticsearch 8.11.0
-- Redis 7.x
+*   **Multi Channel Support** - Send notifications through SMTP, SendGrid, Twilio, Meta WhatsApp, FCM and more.
+*   **Template Management** - Create and manage message templates with dynamic variables.
+*   **Workflow Engine** - Build complex delivery flows like waiting for events or falling back to a different channel.
+*   **User Preferences** - Respect user choices for quiet hours, daily limits and preferred channels.
+*   **Analytics** - Track delivery success rates and user engagement across all your apps.
+*   **Self Hosted** - Complete control over your data with a simple Docker setup.
 
-### Development Setup
-```bash
-# 1. Clone the repository
-git clone https://github.com/the-monkeys/freerangenotify.git
-cd freerangenotify
+## System Architecture
 
-# 2. Install dependencies
-go mod tidy
+The following diagram shows how data flows through the system.
 
-# 3. Start services
-docker-compose up -d
-
-# 4. Wait for services to be healthy (check logs)
-docker-compose logs -f notification-service
-
-# 5. Access the API
-curl http://localhost:8080/health
-
-# 6. View API documentation
-open http://localhost:8080/swagger/index.html
+```mermaid
+graph TD
+    User((User/Client)) --> API[Notification API]
+    API --> DB[(Elasticsearch)]
+    API --> Queue[Redis Queue]
+    Queue --> Worker[Notification Worker]
+    Worker --> DB
+    Worker --> Providers[External Providers]
+    Providers --> Email[SMTP/SendGrid]
+    Providers --> SMS[Twilio/Vonage]
+    Providers --> WhatsApp[Meta/Twilio]
+    Providers --> Push[FCM/APNS]
+    
+    UI[Admin Dashboard] --> API
 ```
 
-## API Endpoints
+## Tech Stack
 
-### System
-- `GET /health` - Service health check
-- `GET /metrics` - Prometheus metrics
-- `GET /swagger/*` - API documentation
+We use modern and fast technologies to ensure the service runs efficiently.
 
-### Applications (Public)
-- `POST /v1/apps` - Create application (get API key)
-- `GET /v1/apps` - List applications
-- `PUT /v1/apps/{id}/settings` - Update settings
+*   **Language** - Go (Golang) for the backend logic.
+*   **Web Framework** - Fiber for the REST API.
+*   **Database** - Elasticsearch for storing notifications, users and logs.
+*   **Cache and Queue** - Redis for task management and rate limiting.
+*   **Frontend** - React with Tailwind CSS for the admin dashboard.
+*   **Telemetry** - OpenTelemetry for tracing and monitoring.
 
-### Users (Protected - requires API key)
-- `POST /v1/users` - Create user
-- `GET /v1/users` - List users
-- `POST /v1/users/{id}/devices` - Add device
-- `PUT /v1/users/{id}/preferences` - Update preferences
+## Local Setup
 
-See [Swagger UI](http://localhost:8080/swagger/index.html) for complete documentation.
+You can get the entire system running locally using Docker Compose.
 
-## Example Usage
+1.  Clone the repository and enter the directory.
+2.  Copy the example environment file.
+    ```bash
+    cp .env.example .env
+    ```
+3.  Start the services using Docker.
+    ```bash
+    docker-compose up -d
+    ```
+4.  The API will be available at `http://localhost:8080` and the UI at `http://localhost:3000`.
 
-```bash
-# 1. Create an application
-curl -X POST http://localhost:8080/v1/apps \
-  -H "Content-Type: application/json" \
-  -d '{"app_name":"MyApp","description":"My application"}'
+## Project Structure
 
-# Response includes api_key: frn_xxxxx
+*   `cmd/` - Main entry points for the server and background worker.
+*   `internal/domain/` - Core business logic and data models.
+*   `internal/usecases/` - Service layer for orchestrating logic.
+*   `internal/infrastructure/` - Implementations for databases, queues and providers.
+*   `internal/interfaces/http/` - API handlers and middleware.
+*   `ui/` - The React based admin dashboard.
 
-# 2. Create a user
-curl -X POST http://localhost:8080/v1/users \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer frn_xxxxx" \
-  -d '{"external_user_id":"user123","email":"user@example.com","name":"John Doe"}'
+## License
 
-# 3. Add device token
-curl -X POST http://localhost:8080/v1/users/{user_id}/devices \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer frn_xxxxx" \
-  -d '{"token":"device_token","platform":"ios","device_name":"iPhone 15"}'
-```
-
-## Features
-✅ **Implemented**
-- Multi-tenant application management
-- User management with preferences
-- Device registration (iOS/Android/Web)
-- API key authentication
-- Swagger/OpenAPI documentation
-- Docker development environment
-- Elasticsearch data storage
-- Prometheus metrics
-
-🚧 **In Progress**
-- Multi-channel notifications (Push, Email, SMS)
-- Template management system
-- Scheduled notifications
-- Webhook callbacks
-
-📋 **Planned**
-- Analytics and reporting
-- Rate limiting per application
-- Retry mechanisms
-- Production deployment guides
-
-## Architecture
-Built using Clean Architecture principles with:
-- **Framework**: Go 1.26 + Fiber v2.52.9
-- **Database**: Elasticsearch 8.11.0
-- **Cache/Queue**: Redis 7.x
-- **Monitoring**: Prometheus + Grafana
-- **Documentation**: Swagger/OpenAPI 3.0
-
-For detailed architecture, see **[NOTIFICATION_SERVICE_DESIGN.md](./NOTIFICATION_SERVICE_DESIGN.md)**
-
-For development guidelines, see **[.copilot-instructions.md](./.copilot-instructions.md)**
+This project is licensed under the MIT License. See the LICENSE file for details.

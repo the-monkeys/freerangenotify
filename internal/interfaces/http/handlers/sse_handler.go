@@ -12,10 +12,13 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -38,10 +41,11 @@ type SSEHandler struct {
 	broadcaster  *sse.Broadcaster
 	appService   usecases.ApplicationService
 	notifService notification.Service
-	userRepo     user.Repository
-	redisClient  *redis.Client
-	logger       *zap.Logger
-	hmacEnforced bool // Phase 1: when true, subscriberHash query param is required
+	userRepo       user.Repository
+	membershipRepo auth.MembershipRepository
+	redisClient    *redis.Client
+	logger         *zap.Logger
+	hmacEnforced   bool // Phase 1: when true, subscriberHash query param is required
 }
 
 // NewSSEHandler creates a new SSE handler.
@@ -50,16 +54,18 @@ func NewSSEHandler(
 	appService usecases.ApplicationService,
 	notifService notification.Service,
 	userRepo user.Repository,
+	membershipRepo auth.MembershipRepository,
 	redisClient *redis.Client,
 	logger *zap.Logger,
 ) *SSEHandler {
 	return &SSEHandler{
-		broadcaster:  broadcaster,
-		appService:   appService,
-		notifService: notifService,
-		userRepo:     userRepo,
-		redisClient:  redisClient,
-		logger:       logger,
+		broadcaster:    broadcaster,
+		appService:     appService,
+		notifService:   notifService,
+		userRepo:       userRepo,
+		membershipRepo: membershipRepo,
+		redisClient:    redisClient,
+		logger:         logger,
 	}
 }
 
@@ -323,6 +329,11 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 		})
 	}
 
+	userID, _ := c.Locals("user_id").(string)
+	if userID == "" {
+		return errors.Unauthorized("Authentication required")
+	}
+
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -333,22 +344,77 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 		_ = c.Context().Conn().SetWriteDeadline(time.Time{})
 	}
 
+	// ── 1. Resolve allowed apps for this user (RBAC) ──
+	allowedAppIDs := make(map[string]bool)
+
+	// Apps owned by user
+	ownedApps, _, err := h.appService.List(c.Context(), application.ApplicationFilter{
+		AdminUserID: userID,
+	})
+	if err == nil {
+		for _, app := range ownedApps {
+			allowedAppIDs[app.AppID] = true
+		}
+	}
+
+	// Apps where user is a member
+	if h.membershipRepo != nil {
+		memberships, err := h.membershipRepo.ListByUser(c.Context(), userID)
+		if err == nil {
+			for _, m := range memberships {
+				allowedAppIDs[m.AppID] = true
+			}
+		}
+	}
+
 	ctxDone := c.Context().Done()
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		subCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		pubsub := h.redisClient.Subscribe(subCtx, "notification:activity")
-		defer pubsub.Close()
-
-		ch := pubsub.Channel()
-
-		h.logger.Info("Admin activity feed SSE client connected")
+		h.logger.Info("Admin activity feed SSE client connected", zap.String("user_id", userID), zap.Int("allowed_apps", len(allowedAppIDs)))
 
 		// Named event so clients can use addEventListener("connected", ...)
 		fmt.Fprintf(w, "event: connected\ndata: {}\n\n")
 		w.Flush()
 
+		// ── 2. Stream historical activity (last 30 days) ──
+		if len(allowedAppIDs) > 0 {
+			appIDs := make([]string, 0, len(allowedAppIDs))
+			for id := range allowedAppIDs {
+				appIDs = append(appIDs, id)
+			}
+
+			fromDate := time.Now().AddDate(0, 0, -30)
+			historyFilter := notification.NotificationFilter{
+				AppIDs:    appIDs,
+				FromDate:  &fromDate,
+				SortBy:    "created_at",
+				SortOrder: "asc", // Stream from oldest to newest
+				PageSize:  100,    // Limit history to last 100 events for performance
+			}
+
+			history, _ := h.notifService.List(subCtx, historyFilter)
+			for _, notif := range history {
+				event := map[string]string{
+					"notification_id": notif.NotificationID,
+					"app_id":          notif.AppID,
+					"channel":         string(notif.Channel),
+					"status":          string(notif.Status),
+					"timestamp":       notif.CreatedAt.Format(time.RFC3339),
+					"history":         "true",
+				}
+				data, _ := json.Marshal(event)
+				fmt.Fprintf(w, "event: activity\ndata: %s\n\n", string(data))
+			}
+			w.Flush()
+		}
+
+		// ── 3. Real-time stream loop ──
+		pubsub := h.redisClient.Subscribe(subCtx, "notification:activity")
+		defer pubsub.Close()
+
+		ch := pubsub.Channel()
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
@@ -358,6 +424,19 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 				if !ok {
 					return
 				}
+
+				// Defensive unmarshaling for RBAC check
+				var rawEvent struct {
+					AppID string `json:"app_id"`
+				}
+				if err := json.Unmarshal([]byte(msg.Payload), &rawEvent); err == nil {
+					// RBAC Filter: Only send if user has access to this app
+					// If app_id is missing (old worker version), we allow it for back-compat
+					if rawEvent.AppID != "" && !allowedAppIDs[rawEvent.AppID] {
+						continue
+					}
+				}
+
 				fmt.Fprintf(w, "event: activity\ndata: %s\n\n", msg.Payload)
 				w.Flush()
 
@@ -366,7 +445,7 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 				w.Flush()
 
 			case <-ctxDone:
-				h.logger.Info("Admin activity feed SSE client disconnected")
+				h.logger.Info("Admin activity feed SSE client disconnected", zap.String("user_id", userID))
 				return
 			}
 		}
