@@ -488,6 +488,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.ApplicationService,
 		container.NotificationService,
 		repos.User,
+		container.MembershipRepo,
 		container.RedisClient,
 		logger,
 	)

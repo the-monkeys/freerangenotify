@@ -148,3 +148,4 @@ prod/*
 /playwright/.auth/
 e2e/.state/
 e2e/.env
+Q&A/*
