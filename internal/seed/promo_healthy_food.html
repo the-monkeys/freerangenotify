@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.title}}</title>
+<style>
+  /* Base styles for responsive behavior in email clients */
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #F4EFEB;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  .main-table {
+    background-color: #F4EFEB;
+    margin: 0 auto;
+    border-collapse: collapse;
+    width: 600px;
+    overflow: hidden;
+  }
+  .header-bg {
+    background-color: #ffffff;
+    border-bottom-left-radius: 50% 15%;
+    border-bottom-right-radius: 50% 15%;
+    padding-bottom: 40px;
+  }
+  
+  @media only screen and (max-width: 600px) {
+    .main-table { width: 100% !important; }
+    .col-half { display: inline-block !important; width: 48% !important; margin-bottom: 20px; vertical-align: top; }
+    .mobile-reset-padding { padding-top: 0 !important; }
+    .mobile-title { font-size: 50px !important; }
+    .mobile-subtitle { font-size: 30px !important; }
+  }
+</style>
+</head>
+<body>
+
+<table class="main-table" align="center" border="0" cellpadding="0" cellspacing="0">
+  
+  <!-- Header / Curved white area -->
+  <tr>
+    <td class="header-bg" align="center" style="padding-top: 20px;">
+      <table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <!-- Top Left Decoration -->
+          <td width="20%" align="left" valign="top" data-editable="true" data-editable-type="illustration">
+            {{if .top_left_decoration_url}}
+              <img src="{{.top_left_decoration_url}}" alt="Decoration" style="max-width: 80px; display: block; border-radius: 0 0 50% 0;">
+            {{else}}
+              <div style="font-size: 40px; line-height: 1; padding: 10px;">🌿</div>
+            {{end}}
+          </td>
+          <!-- Center Text Area -->
+          <td width="60%" align="center" valign="middle" style="padding-top: 30px; padding-bottom: 30px;">
+            <h1 class="mobile-title" data-editable="true" style="margin: 0; font-family: Impact, 'Arial Black', sans-serif; font-size: 70px; color: #2E7D32; text-transform: uppercase; line-height: 0.9; letter-spacing: 2px;">
+              {{.main_heading_1}}
+            </h1>
+            <h2 class="mobile-subtitle" data-editable="true" style="margin: 5px 0 0 0; font-family: Impact, 'Arial Black', sans-serif; font-size: 45px; color: #F2A30B; text-transform: uppercase; line-height: 1;">
+              {{.main_heading_2}}
+            </h2>
+          </td>
+          <!-- Top Right Decoration -->
+          <td width="20%" align="right" valign="top" data-editable="true" data-editable-type="illustration">
+            {{if .top_right_decoration_url}}
+              <img src="{{.top_right_decoration_url}}" alt="Decoration" style="max-width: 80px; display: block; border-radius: 0 0 0 50%;">
+            {{else}}
+              <div style="font-size: 40px; line-height: 1; padding: 10px; text-align: right;">🌿</div>
+            {{end}}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Subheading -->
+  <tr>
+    <td align="center" style="padding: 40px 20px 20px 20px;">
+      <h3 data-editable="true" style="margin: 0; font-size: 22px; color: #2E7D32; font-weight: bold;">
+        {{.subheading}}
+      </h3>
+    </td>
+  </tr>
+
+  <!-- Staggered Items Area -->
+  <tr>
+    <td align="center" style="padding: 20px 10px 40px 10px;">
+      <table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          
+          <!-- Item 1 -->
+          <td class="col-half" width="25%" align="center" valign="top" style="padding: 0 5px;">
+            <div data-editable="true" data-editable-type="illustration" style="background-color: #ffffff; border-radius: 50%; width: 110px; height: 110px; display: inline-block; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+              {{if .item1_image_url}}
+                <img src="{{.item1_image_url}}" alt="{{.item1_label}}" style="width: 100%; height: 100%; object-fit: cover;">
+              {{else}}
+                <div style="width: 100%; height: 100%; display: table;"><div style="display: table-cell; vertical-align: middle; font-size: 50px;">🍪</div></div>
+              {{end}}
+            </div>
+            <div data-editable="true" style="margin-top: 15px; color: #F2A30B; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+              {{.item1_label}}
+            </div>
+          </td>
+
+          <!-- Item 2 -->
+          <td class="col-half mobile-reset-padding" width="25%" align="center" valign="top" style="padding: 30px 5px 0 5px;">
+            <div data-editable="true" data-editable-type="illustration" style="background-color: #ffffff; border-radius: 50%; width: 110px; height: 110px; display: inline-block; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+              {{if .item2_image_url}}
+                <img src="{{.item2_image_url}}" alt="{{.item2_label}}" style="width: 100%; height: 100%; object-fit: cover;">
+              {{else}}
+                <div style="width: 100%; height: 100%; display: table;"><div style="display: table-cell; vertical-align: middle; font-size: 50px;">🥗</div></div>
+              {{end}}
+            </div>
+            <div data-editable="true" style="margin-top: 15px; color: #F2A30B; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+              {{.item2_label}}
+            </div>
+          </td>
+
+          <!-- Item 3 -->
+          <td class="col-half mobile-reset-padding" width="25%" align="center" valign="top" style="padding: 60px 5px 0 5px;">
+            <div data-editable="true" data-editable-type="illustration" style="background-color: #ffffff; border-radius: 50%; width: 110px; height: 110px; display: inline-block; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+              {{if .item3_image_url}}
+                <img src="{{.item3_image_url}}" alt="{{.item3_label}}" style="width: 100%; height: 100%; object-fit: cover;">
+              {{else}}
+                <div style="width: 100%; height: 100%; display: table;"><div style="display: table-cell; vertical-align: middle; font-size: 50px;">🍲</div></div>
+              {{end}}
+            </div>
+            <div data-editable="true" style="margin-top: 15px; color: #F2A30B; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+              {{.item3_label}}
+            </div>
+          </td>
+
+          <!-- Item 4 -->
+          <td class="col-half mobile-reset-padding" width="25%" align="center" valign="top" style="padding: 90px 5px 0 5px;">
+            <div data-editable="true" data-editable-type="illustration" style="background-color: #ffffff; border-radius: 50%; width: 110px; height: 110px; display: inline-block; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+              {{if .item4_image_url}}
+                <img src="{{.item4_image_url}}" alt="{{.item4_label}}" style="width: 100%; height: 100%; object-fit: cover;">
+              {{else}}
+                <div style="width: 100%; height: 100%; display: table;"><div style="display: table-cell; vertical-align: middle; font-size: 50px;">🥤</div></div>
+              {{end}}
+            </div>
+            <div data-editable="true" style="margin-top: 15px; color: #F2A30B; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">
+              {{.item4_label}}
+            </div>
+          </td>
+
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer / Contact Section -->
+  <tr>
+    <td align="center" style="padding: 20px 40px 50px 40px;">
+      <p data-editable="true" style="font-size: 16px; color: #111111; line-height: 1.5; margin: 0 0 20px 0;">
+        {{.footer_text_1}}<br>
+        {{.footer_text_2}}
+      </p>
+      <p style="font-size: 14px; font-weight: bold; color: #111111; margin: 0;">
+        <span data-editable="true">{{.contact_text}}</span><br><br>
+        <a href="mailto:{{.contact_email}}" data-editable="true" style="color: #F2A30B; text-decoration: none;">{{.contact_email}}</a>
+        {{if .contact_mobile}}
+        &nbsp;&nbsp;&nbsp; <span style="color: #6B7280; font-weight: normal;">|</span> &nbsp;&nbsp;&nbsp;
+        <a href="tel:{{.contact_mobile}}" data-editable="true" style="color: #F2A30B; text-decoration: none;">{{.contact_mobile}}</a>
+        {{end}}
+      </p>
+    </td>
+  </tr>
+
+</table>
+
+</body>
+</html>
