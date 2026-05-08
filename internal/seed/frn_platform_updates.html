@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{.title}}</title>
+<style>
+  /* Base styles for responsive behavior in email clients */
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #FCF9F8;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  .main-table {
+    background-color: #ffffff;
+    margin: 20px auto;
+    border-collapse: collapse;
+    width: 600px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  }
+  .col { width: 100%; }
+  
+  @media only screen and (max-width: 600px) {
+    .main-table { width: 100% !important; margin: 0 !important; border-radius: 0 !important; }
+    .col { display: block !important; width: 100% !important; margin-bottom: 15px; }
+    .img-placeholder { height: auto !important; padding: 40px 0 !important; }
+    .mobile-hidden { display: none !important; }
+    .stack-text { text-align: center !important; }
+    .pad-mobile { padding: 20px !important; }
+    .title-mobile { font-size: 26px !important; }
+  }
+</style>
+</head>
+<body>
+
+<table class="main-table" align="center" border="0" cellpadding="0" cellspacing="0" style="table-layout: fixed;">
+  
+  <!-- Header Row -->
+  <tr>
+    <td class="pad-mobile" style="padding: 30px 40px 20px 40px;">
+      <table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <!-- Logo Section -->
+          <td align="left" valign="middle">
+            <table border="0" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="font-size: 28px; padding-right: 8px; color: #F0513D;" data-editable="true" data-editable-type="logo">
+                  {{if .header_logo_url}}<img src="{{.header_logo_url}}" alt="{{.brand_name}}" style="max-height: 28px; display: block; border: 0;">{{else}}<img src="https://img.icons8.com/ios-filled/50/F0513D/bell.png" alt="Bell" width="28" height="28" style="display: block; border: 0;">{{end}}
+                </td>
+                <td style="font-size: 20px; color: #111827;" data-editable="true">
+                  <strong>{{.brand_name}}</strong> {{.product_name}}
+                </td>
+              </tr>
+            </table>
+          </td>
+          <!-- Date Section -->
+          <td align="right" valign="middle">
+            <span data-editable="true" style="display: inline-block; padding: 5px 12px; border: 1px solid #E5E7EB; border-radius: 20px; font-size: 11px; font-weight: bold; color: #6B7280; text-transform: uppercase; background-color: #FBFBFB;">
+              {{.header_badge}}
+            </span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Main Title -->
+  <tr>
+    <td class="pad-mobile" align="center" style="padding: 10px 40px 20px 40px;">
+      <h1 class="title-mobile" style="color: #111827; font-size: 34px; margin: 0; font-weight: 800; line-height: 1.1; letter-spacing: -0.5px;">
+        <span data-editable="true">{{.headline_1}}</span><br>
+        <span data-editable="true" style="color: #F0513D;">{{.headline_2}}</span>
+      </h1>
+    </td>
+  </tr>
+
+  <!-- Intro Text -->
+  <tr>
+    <td class="pad-mobile" style="padding: 0 40px 30px 40px; text-align: center;">
+      <p data-editable="true" style="color: #6B7280; font-size: 16px; line-height: 1.6; margin: 0;">
+        {{.intro_text}}
+      </p>
+    </td>
+  </tr>
+
+  <!-- Section 1: Features -->
+  <tr>
+    <td class="pad-mobile" style="padding: 10px 40px 10px 40px;">
+      <h2 data-editable="true" style="color: #111827; font-size: 18px; margin: 0 0 10px 0; font-weight: bold;">{{.features_heading}}</h2>
+      <p data-editable="true" style="color: #6B7280; font-size: 15px; margin: 0 0 25px 0; line-height: 1.5;">{{.features_subheading}}</p>
+      
+      <!-- Feature 1 -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 25px; table-layout: fixed;">
+        <tr>
+          <td class="col" width="47%" valign="top">
+            <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px 15px; text-align: center; margin-bottom: 12px; background-color: #FCF9F8;">
+              <h3 data-editable="true" style="color: #111827; font-size: 17px; margin: 0;">{{.feature1_title}}</h3>
+            </div>
+            <p data-editable="true" style="color: #6B7280; font-size: 14px; margin: 0; line-height: 1.5;">
+              {{.feature1_desc}}
+            </p>
+          </td>
+          <td class="col mobile-hidden" width="6%"></td>
+          <td class="col" width="47%" valign="top" data-editable="true" data-editable-type="illustration">
+            {{if .feature1_image_url}}
+              <img src="{{.feature1_image_url}}" alt="{{.feature1_title}}" style="max-width: 100%; width: 100%; height: auto; border-radius: 12px; display: block;">
+            {{else}}
+              <div class="img-placeholder" style="background-color: #FEE2E2; color: #F0513D; border-radius: 12px; height: 135px; width: 100%; display: table;">
+                <div style="display: table-cell; vertical-align: middle; text-align: center; font-size: 40px;">📱💬</div>
+              </div>
+            {{end}}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Feature 2 -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 30px; table-layout: fixed;">
+        <tr>
+          <td class="col" width="47%" valign="top" data-editable="true" data-editable-type="illustration">
+            {{if .feature2_image_url}}
+              <img src="{{.feature2_image_url}}" alt="{{.feature2_title}}" style="max-width: 100%; width: 100%; height: auto; border-radius: 12px; display: block;">
+            {{else}}
+              <div class="img-placeholder" style="background-color: #FEF3C7; color: #D97706; border-radius: 12px; height: 135px; width: 100%; display: table;">
+                <div style="display: table-cell; vertical-align: middle; text-align: center; font-size: 40px;">📊⚡</div>
+              </div>
+            {{end}}
+          </td>
+          <td class="col mobile-hidden" width="6%"></td>
+          <td class="col" width="47%" valign="top">
+            <div style="border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px 15px; text-align: center; margin-bottom: 12px; background-color: #FCF9F8;">
+              <h3 data-editable="true" style="color: #111827; font-size: 17px; margin: 0;">{{.feature2_title}}</h3>
+            </div>
+            <p data-editable="true" style="color: #6B7280; font-size: 14px; margin: 0; line-height: 1.5;">
+              {{.feature2_desc}}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Section 2: Quick Tips -->
+  <tr>
+    <td class="pad-mobile" style="padding: 10px 40px 30px 40px;">
+      <h2 data-editable="true" style="color: #111827; font-size: 18px; margin: 0 0 20px 0; font-weight: bold;">{{.tips_heading}}</h2>
+      
+      <!-- Images Row -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 20px; table-layout: fixed;">
+        <tr>
+          <td class="col" width="31%" style="background-color: #F3F4F6; border-radius: 8px; height: 80px; text-align: center; font-size: 30px;" data-editable="true" data-editable-type="illustration">
+            {{if .tip1_icon_url}}<img src="{{.tip1_icon_url}}" style="max-height: 40px; max-width: 100%; vertical-align: middle; margin-top: 20px;">{{else}}<div style="line-height: 80px;">🎯</div>{{end}}
+          </td>
+          <td class="mobile-hidden" width="3.5%"></td>
+          <td class="col" width="31%" style="background-color: #F3F4F6; border-radius: 8px; height: 80px; text-align: center; font-size: 30px;" data-editable="true" data-editable-type="illustration">
+            {{if .tip2_icon_url}}<img src="{{.tip2_icon_url}}" style="max-height: 40px; max-width: 100%; vertical-align: middle; margin-top: 20px;">{{else}}<div style="line-height: 80px;">📈</div>{{end}}
+          </td>
+          <td class="mobile-hidden" width="3.5%"></td>
+          <td class="col" width="31%" style="background-color: #F3F4F6; border-radius: 8px; height: 80px; text-align: center; font-size: 30px;" data-editable="true" data-editable-type="illustration">
+            {{if .tip3_icon_url}}<img src="{{.tip3_icon_url}}" style="max-height: 40px; max-width: 100%; vertical-align: middle; margin-top: 20px;">{{else}}<div style="line-height: 80px;">🚀</div>{{end}}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Tip 1 -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 15px;">
+        <tr>
+          <td width="35%" valign="middle">
+            <div style="border: 1px solid #E5E7EB; border-left: 4px solid #F0513D; border-radius: 8px; padding: 12px 5px; text-align: center;">
+              <h3 data-editable="true" style="color: #111827; font-size: 15px; margin: 0;">{{.tip1_title}}</h3>
+            </div>
+          </td>
+          <td width="5%"></td>
+          <td width="60%" valign="middle">
+            <p data-editable="true" style="color: #6B7280; font-size: 15px; margin: 0; line-height: 1.5;">{{.tip1_desc}}</p>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Tip 2 -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 15px;">
+        <tr>
+          <td width="35%" valign="middle">
+            <div style="border: 1px solid #E5E7EB; border-left: 4px solid #F0513D; border-radius: 8px; padding: 12px 5px; text-align: center;">
+              <h3 data-editable="true" style="color: #111827; font-size: 15px; margin: 0;">{{.tip2_title}}</h3>
+            </div>
+          </td>
+          <td width="5%"></td>
+          <td width="60%" valign="middle">
+            <p data-editable="true" style="color: #6B7280; font-size: 15px; margin: 0; line-height: 1.5;">{{.tip2_desc}}</p>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Tip 3 -->
+      <table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="35%" valign="middle">
+            <div style="border: 1px solid #E5E7EB; border-left: 4px solid #F0513D; border-radius: 8px; padding: 12px 5px; text-align: center;">
+              <h3 data-editable="true" style="color: #111827; font-size: 15px; margin: 0;">{{.tip3_title}}</h3>
+            </div>
+          </td>
+          <td width="5%"></td>
+          <td width="60%" valign="middle">
+            <p data-editable="true" style="color: #6B7280; font-size: 15px; margin: 0; line-height: 1.5;">{{.tip3_desc}}</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer Section -->
+  <tr>
+    <td class="pad-mobile" style="background-color: #111827; padding: 40px; text-align: center;">
+      <h2 data-editable="true" style="color: #ffffff; font-size: 20px; margin: 0 0 15px 0; font-weight: bold;">{{.footer_heading}}</h2>
+      <p data-editable="true" style="color: #9CA3AF; font-size: 15px; margin: 0 0 25px 0; line-height: 1.5;">
+        {{.footer_subheading}}
+      </p>
+      
+      <!-- Contact Box -->
+      <table border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto 25px auto;">
+        <tr>
+          <td align="center" style="border: 2px solid #555555; border-radius: 6px; padding: 12px 25px;">
+            <span style="color: #ffffff; font-size: 15px; font-weight: bold;">
+              <a href="mailto:{{.contact_email}}" data-editable="true" style="color: #ffffff; text-decoration: none;">{{.contact_email}}</a>
+              {{if .contact_mobile}}
+              <span style="margin: 0 10px; color: #6B7280;">|</span>
+              <a href="tel:{{.contact_mobile}}" data-editable="true" style="color: #ffffff; text-decoration: none;">{{.contact_mobile}}</a>
+              {{end}}
+            </span>
+          </td>
+        </tr>
+      </table>
+
+      <p data-editable="true" style="color: #6B7280; font-size: 13px; margin: 0; line-height: 1.5;">
+        {{.footer_credit_1}}<br>
+        {{.footer_credit_2}}
+      </p>
+    </td>
+  </tr>
+
+</table>
+
+</body>
+</html>
