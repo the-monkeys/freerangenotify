@@ -13,18 +13,14 @@ func resolvePlan(rateCard map[string]billing.PlanTier, planName string) billing.
 	if plan, ok := rateCard[planName]; ok {
 		return plan
 	}
-	if plan, ok := rateCard["free_trial"]; ok {
+	if plan, ok := rateCard["free"]; ok {
 		return plan
 	}
 	return billing.PlanTier{}
 }
 
 func planMessageLimit(plan billing.PlanTier) int {
-	var total int64
-	for _, included := range plan.IncludedQuotas {
-		total += included
-	}
-	return int(total)
+	return int(plan.CreditsIncluded)
 }
 
 func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.PlanTier) int {

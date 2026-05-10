@@ -948,7 +948,7 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 		sub := &license.Subscription{
 			ID:                 uuid.New().String(),
 			TenantID:           user.UserID,
-			Plan:               "free_trial",
+			Plan:               "free",
 			Status:             license.SubscriptionStatusTrial,
 			CurrentPeriodStart: now,
 			CurrentPeriodEnd:   now.AddDate(0, 1, 0),
@@ -1252,10 +1252,10 @@ func (s *authService) SendPhoneOTP(ctx context.Context, userID string, req *auth
 
 	// Store in Redis with key "otp:phone:<userID>" and 10-minute TTL
 	pending := &auth.PendingRegistration{
-		Email:    req.Phone, // re-use Email field to store phone
-		OTPCode:  otpCode,
+		Email:     req.Phone, // re-use Email field to store phone
+		OTPCode:   otpCode,
 		CreatedAt: time.Now(),
-		Attempts: 0,
+		Attempts:  0,
 	}
 	if err := s.otpRepo.StorePhoneOTP(ctx, userID, pending); err != nil {
 		return fmt.Errorf("failed to store phone OTP: %w", err)
@@ -1374,4 +1374,3 @@ func (s *authService) VerifyPhoneOTP(ctx context.Context, userID string, req *au
 
 	return nil
 }
-

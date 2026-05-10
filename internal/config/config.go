@@ -51,13 +51,7 @@ type SelfHostedLicenseConfig struct {
 	HeartbeatIntervalSeconds int    `mapstructure:"heartbeat_interval_seconds"`
 }
 
-// BillingConfig contains configurable quotas and limits for billing.
-type BillingConfig struct {
-	FreeTrialEmailQuota    int64 `mapstructure:"free_trial_email_quota" yaml:"free_trial_email_quota"`
-	FreeTrialWhatsAppQuota int64 `mapstructure:"free_trial_whatsapp_quota" yaml:"free_trial_whatsapp_quota"`
-	FreeTrialSMSQuota      int64 `mapstructure:"free_trial_sms_quota" yaml:"free_trial_sms_quota"`
-	FreeTrialPushQuota     int64 `mapstructure:"free_trial_push_quota" yaml:"free_trial_push_quota"`
-}
+type BillingConfig struct{}
 
 // PaymentConfig selects the payment gateway and holds provider-specific credentials.
 // All secrets MUST come from environment variables — never hardcode.
@@ -165,16 +159,16 @@ type ProvidersConfig struct {
 	SMTP     SMTPConfig     `mapstructure:"smtp"`
 	Webhook  WebhookConfig  `mapstructure:"webhook"`
 	// Phase 3
-	Slack    SlackProviderConfig    `mapstructure:"slack"`
-	Discord  DiscordProviderConfig  `mapstructure:"discord"`
+	Slack        SlackProviderConfig        `mapstructure:"slack"`
+	Discord      DiscordProviderConfig      `mapstructure:"discord"`
 	WhatsApp     WhatsAppProviderConfig     `mapstructure:"whatsapp"`
 	MetaWhatsApp MetaWhatsAppProviderConfig `mapstructure:"meta_whatsapp"`
 	Resend       ResendProviderConfig       `mapstructure:"resend"`
-	Postmark PostmarkProviderConfig `mapstructure:"postmark"`
-	Mailgun  MailgunProviderConfig  `mapstructure:"mailgun"`
-	SES      SESProviderConfig      `mapstructure:"ses"`
-	Vonage   VonageProviderConfig   `mapstructure:"vonage"`
-	Teams    TeamsProviderConfig    `mapstructure:"teams"`
+	Postmark     PostmarkProviderConfig     `mapstructure:"postmark"`
+	Mailgun      MailgunProviderConfig      `mapstructure:"mailgun"`
+	SES          SESProviderConfig          `mapstructure:"ses"`
+	Vonage       VonageProviderConfig       `mapstructure:"vonage"`
+	Teams        TeamsProviderConfig        `mapstructure:"teams"`
 }
 
 // SESProviderConfig contains AWS Simple Email Service provider configuration.
@@ -221,8 +215,8 @@ type MetaWhatsAppProviderConfig struct {
 	WABAID        string `mapstructure:"waba_id"`
 	AccessToken   string `mapstructure:"access_token"`
 	APIVersion    string `mapstructure:"api_version"`
-	AppSecret     string `mapstructure:"app_secret"`      // For webhook X-Hub-Signature-256 verification
-	WebhookVerify string `mapstructure:"webhook_verify"`   // hub.verify_token for webhook registration
+	AppSecret     string `mapstructure:"app_secret"`     // For webhook X-Hub-Signature-256 verification
+	WebhookVerify string `mapstructure:"webhook_verify"` // hub.verify_token for webhook registration
 	Timeout       int    `mapstructure:"timeout"`
 	MaxRetries    int    `mapstructure:"max_retries"`
 
@@ -442,11 +436,6 @@ func Load() (*Config, error) {
 	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")
 	viper.SetDefault("providers.meta_whatsapp.timeout", 15)
 	viper.SetDefault("providers.meta_whatsapp.max_retries", 3)
-
-	viper.SetDefault("billing.free_trial_email_quota", 500)
-	viper.SetDefault("billing.free_trial_whatsapp_quota", 50)
-	viper.SetDefault("billing.free_trial_sms_quota", 50)
-	viper.SetDefault("billing.free_trial_push_quota", 1000)
 
 	viper.SetDefault("payment.provider", "mock")
 	viper.SetDefault("payment.razorpay.key_id", "")

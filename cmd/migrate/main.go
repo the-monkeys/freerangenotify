@@ -36,6 +36,11 @@ var allIndices = []string{
 	"app_memberships",
 	// Phase 6
 	"environments",
+	// Billing credits (Phase 2 credit pricing rollout)
+	"frn_credit_balances",
+	"frn_credit_ledger",
+	"frn_billing_rate_cards",
+	"frn_billing_runtime",
 }
 
 var rootCmd = &cobra.Command{

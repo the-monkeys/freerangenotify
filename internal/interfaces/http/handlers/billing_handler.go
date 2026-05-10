@@ -75,7 +75,7 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		"status":               string(sub.Status),
 		"messages_sent":        messagesSent,
 		"message_limit":        messageLimit,
-		"base_message_limit":   metaInt(sub.Metadata, "base_message_limit", planMessageLimit(resolvePlan(h.rateCard, sub.Plan))),
+		"base_message_limit":   metaInt(sub.Metadata, "base_message_limit", int(resolvePlan(h.rateCard, sub.Plan).CreditsIncluded)),
 		"rollover_messages":    currentRolloverMessages(sub),
 		"usage_percent":        usagePct,
 		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),
@@ -239,7 +239,7 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 	}
 
 	// Get the user's plan tier
-	plan := resolvePlan(h.rateCard, "free_trial")
+	plan := resolvePlan(h.rateCard, "free")
 	if sub != nil && sub.Plan != "" {
 		plan = resolvePlan(h.rateCard, sub.Plan)
 	}
@@ -249,6 +249,7 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 		Channel          string  `json:"channel"`
 		CredentialSource string  `json:"credential_source"`
 		MessageCount     int64   `json:"message_count"`
+		CreditsConsumed  int64   `json:"credits_consumed"`
 		TotalBilledINR   float64 `json:"total_billed_inr"`
 		PeriodStart      string  `json:"period_start"`
 		PeriodEnd        string  `json:"period_end"`
@@ -259,10 +260,10 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 		var billedPaisa int64
 
 		if s.CredentialSource == billing.CredSourceSystem {
-			quota := plan.IncludedQuotas[s.Channel]
-			overage := s.MessageCount - quota
-			if overage > 0 {
-				billedPaisa = overage * plan.OverageRates[s.Channel]
+			if s.OverageAmount > 0 {
+				billedPaisa = s.OverageAmount
+			} else {
+				billedPaisa = s.TotalBilledPaisa
 			}
 		} else if s.CredentialSource == billing.CredSourceBYOC {
 			billedPaisa = s.MessageCount * plan.BYOCFees[s.Channel]
@@ -274,50 +275,63 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 			Channel:          s.Channel,
 			CredentialSource: s.CredentialSource,
 			MessageCount:     s.MessageCount,
+			CreditsConsumed:  s.CreditsConsumed,
 			TotalBilledINR:   float64(billedPaisa) / 100.0,
 			PeriodStart:      s.PeriodStart,
 			PeriodEnd:        s.PeriodEnd,
 		})
 	}
 
-	// Build per-channel quota usage tracking
-	// Track how many system-cred messages were used per channel
-	systemUsageByChannel := make(map[string]int64)
+	// Build per-channel credit burn summary.
+	channelCreditUsage := make(map[string]int64)
+	var totalCreditsConsumed int64
 	for _, s := range summaries {
 		if s.CredentialSource == billing.CredSourceSystem {
-			systemUsageByChannel[s.Channel] += s.MessageCount
+			credits := s.CreditsConsumed
+			if credits == 0 {
+				credits = s.MessageCount * plan.ChannelCreditCost[s.Channel]
+			}
+			channelCreditUsage[s.Channel] += credits
+			totalCreditsConsumed += credits
 		}
 	}
 
-	type quotaItem struct {
+	type creditItem struct {
 		Channel   string `json:"channel"`
-		Included  int64  `json:"included"`
-		Used      int64  `json:"used"`
+		Included  int64  `json:"included_credits"`
+		Used      int64  `json:"used_credits"`
 		Remaining int64  `json:"remaining"`
 	}
 
-	quotas := make([]quotaItem, 0)
-	for channel, included := range plan.IncludedQuotas {
-		used := systemUsageByChannel[channel]
-		remaining := included - used
+	credits := make([]creditItem, 0, len(plan.ChannelCreditCost))
+	for channel := range plan.ChannelCreditCost {
+		used := channelCreditUsage[channel]
+		remaining := plan.CreditsIncluded - used
 		if remaining < 0 {
 			remaining = 0
 		}
-		quotas = append(quotas, quotaItem{
+		credits = append(credits, creditItem{
 			Channel:   channel,
-			Included:  included,
+			Included:  plan.CreditsIncluded,
 			Used:      used,
 			Remaining: remaining,
 		})
 	}
+	remainingCredits := plan.CreditsIncluded - totalCreditsConsumed
+	if remainingCredits < 0 {
+		remainingCredits = 0
+	}
 
 	return c.JSON(fiber.Map{
-		"billing_enabled": true,
-		"plan":            plan.Name,
-		"period_start":    from.Format(time.RFC3339),
-		"period_end":      to.Format(time.RFC3339),
-		"breakdown":       items,
-		"quotas":          quotas,
+		"billing_enabled":   true,
+		"plan":              plan.Name,
+		"period_start":      from.Format(time.RFC3339),
+		"period_end":        to.Format(time.RFC3339),
+		"credits_included":  plan.CreditsIncluded,
+		"credits_consumed":  totalCreditsConsumed,
+		"credits_remaining": remainingCredits,
+		"breakdown":         items,
+		"credit_burn":       credits,
 	})
 }
 
@@ -325,17 +339,19 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 // Returns the current pricing rate card (system-cred overage, BYOC platform fees).
 func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 	type planInfo struct {
-		Name           string             `json:"name"`
-		MonthlyFeeINR  float64            `json:"monthly_fee_inr"`
-		IncludedQuotas map[string]int64   `json:"included_quotas"`
-		OverageINR     map[string]float64 `json:"overage_rates_inr"`
-		BYOCFeeINR     map[string]float64 `json:"byoc_platform_fee_inr"`
+		Name              string             `json:"name"`
+		MonthlyFeeINR     float64            `json:"monthly_fee_inr"`
+		CreditsIncluded   int64              `json:"credits_included"`
+		CreditValueINR    float64            `json:"credit_value_inr"`
+		ChannelCreditCost map[string]int64   `json:"channel_credit_cost"`
+		OverageINR        map[string]float64 `json:"overage_per_message_inr"`
+		BYOCFeeINR        map[string]float64 `json:"byoc_platform_fee_inr"`
 	}
 
 	plans := make([]planInfo, 0, len(h.rateCard))
 	for _, p := range h.rateCard {
-		overageINR := make(map[string]float64, len(p.OverageRates))
-		for ch, paisa := range p.OverageRates {
+		overageINR := make(map[string]float64, len(p.OveragePerMessage))
+		for ch, paisa := range p.OveragePerMessage {
 			overageINR[ch] = float64(paisa) / 100.0
 		}
 		byocINR := make(map[string]float64, len(p.BYOCFees))
@@ -344,11 +360,13 @@ func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 		}
 
 		plans = append(plans, planInfo{
-			Name:           p.Name,
-			MonthlyFeeINR:  float64(p.MonthlyFeePaisa) / 100.0,
-			IncludedQuotas: p.IncludedQuotas,
-			OverageINR:     overageINR,
-			BYOCFeeINR:     byocINR,
+			Name:              p.Name,
+			MonthlyFeeINR:     float64(p.MonthlyFeePaisa) / 100.0,
+			CreditsIncluded:   p.CreditsIncluded,
+			CreditValueINR:    p.CreditValueINR,
+			ChannelCreditCost: p.ChannelCreditCost,
+			OverageINR:        overageINR,
+			BYOCFeeINR:        byocINR,
 		})
 	}
 

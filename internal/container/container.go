@@ -449,12 +449,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		cfg.Providers.SMTP,
 		logger,
 	)
-	rateCard := billing.DefaultRatesWithQuotas(
-		cfg.Billing.FreeTrialEmailQuota,
-		cfg.Billing.FreeTrialWhatsAppQuota,
-		cfg.Billing.FreeTrialSMSQuota,
-		cfg.Billing.FreeTrialPushQuota,
-	)
+	rateCard := billing.DefaultRates()
 	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, repos.Application, rateCard, logger)
 
 	// Initialize Payment Provider

@@ -252,7 +252,7 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 	}
 
 	planName := metaString(sub.Metadata, "pending_checkout_tier", "")
-	if planName == "" && sub.Plan != "" && sub.Plan != "free_trial" {
+	if planName == "" && sub.Plan != "" && sub.Plan != "free" {
 		planName = sub.Plan
 	}
 	if planName == "" {
@@ -378,7 +378,7 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 			if planName == "" {
 				planName = metaString(sub.Metadata, "pending_checkout_tier", "")
 			}
-			if planName == "" && sub.Plan != "" && sub.Plan != "free_trial" {
+			if planName == "" && sub.Plan != "" && sub.Plan != "free" {
 				planName = sub.Plan
 			}
 			if planName == "" {
