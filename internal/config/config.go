@@ -51,7 +51,12 @@ type SelfHostedLicenseConfig struct {
 	HeartbeatIntervalSeconds int    `mapstructure:"heartbeat_interval_seconds"`
 }
 
-type BillingConfig struct{}
+type BillingConfig struct {
+	RateCardRefreshSeconds  int    `mapstructure:"rate_card_refresh_seconds" yaml:"rate_card_refresh_seconds"`
+	RateCardPubSubChannel   string `mapstructure:"rate_card_pubsub_channel" yaml:"rate_card_pubsub_channel"`
+	EnforceCreditChecks     bool   `mapstructure:"enforce_credit_checks" yaml:"enforce_credit_checks"`
+	EnforceFreeTierDailyCap bool   `mapstructure:"enforce_free_tier_daily_cap" yaml:"enforce_free_tier_daily_cap"`
+}
 
 // PaymentConfig selects the payment gateway and holds provider-specific credentials.
 // All secrets MUST come from environment variables — never hardcode.
@@ -431,6 +436,10 @@ func Load() (*Config, error) {
 	viper.SetDefault("features.trial_welcome_enabled", true)
 	viper.SetDefault("features.billing_enabled", false)
 	viper.SetDefault("features.whatsapp_meta_enabled", false)
+	viper.SetDefault("billing.rate_card_refresh_seconds", 45)
+	viper.SetDefault("billing.rate_card_pubsub_channel", "billing:ratecard:updated")
+	viper.SetDefault("billing.enforce_credit_checks", true)
+	viper.SetDefault("billing.enforce_free_tier_daily_cap", true)
 
 	viper.SetDefault("providers.meta_whatsapp.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")

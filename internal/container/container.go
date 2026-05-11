@@ -101,8 +101,11 @@ type Container struct {
 	RenewalHandler               *handlers.RenewalHandler
 
 	// Billing Metering and Payment
-	UsageRepo       billing.UsageRepository
-	PaymentProvider billing.Provider
+	UsageRepo         billing.UsageRepository
+	PaymentProvider   billing.Provider
+	RateCardService   *services.RateCardService
+	CreditService     *services.CreditService
+	rateCardSvcCancel context.CancelFunc
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
@@ -652,7 +655,35 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		if err := usageRepo.EnsureIndex(context.Background()); err != nil {
 			logger.Warn("billing: failed to ensure usage index — metering may not work", zap.Error(err))
 		}
+
+		rateCardRepo := billingrepo.NewESRateCardRepo(dbManager.Client.GetClient(), logger)
+		rateCardService := services.NewRateCardService(
+			rateCardRepo,
+			redisClient,
+			logger,
+			services.RateCardServiceConfig{
+				RefreshInterval: time.Duration(cfg.Billing.RateCardRefreshSeconds) * time.Second,
+				PubSubChannel:   cfg.Billing.RateCardPubSubChannel,
+			},
+		)
+		rcCtx, rcCancel := context.WithCancel(context.Background())
+		rateCardService.Start(rcCtx)
+		container.rateCardSvcCancel = rcCancel
+		container.RateCardService = rateCardService
+
+		creditBalanceRepo := billingrepo.NewESCreditBalanceRepo(dbManager.Client.GetClient(), logger)
+		creditLedgerRepo := billingrepo.NewESCreditLedgerRepo(dbManager.Client.GetClient(), logger)
+		container.CreditService = services.NewCreditService(
+			creditBalanceRepo,
+			creditLedgerRepo,
+			repos.Subscription,
+			rateCardService,
+			redisClient,
+			logger,
+		)
+
 		container.BillingHandler.SetUsageRepo(usageRepo, true)
+		container.BillingHandler.SetRateCardManager(rateCardService)
 		container.PaymentHandler.SetUsageRepo(usageRepo, true)
 		container.RenewalHandler.SetUsageRepo(usageRepo, true)
 		container.UsageRepo = usageRepo
@@ -784,6 +815,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 // Close cleans up all resources
 func (c *Container) Close() error {
+	if c.rateCardSvcCancel != nil {
+		c.rateCardSvcCancel()
+	}
+	if c.RateCardService != nil {
+		c.RateCardService.Stop()
+	}
 	if c.Queue != nil {
 		c.Queue.Close()
 	}

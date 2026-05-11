@@ -99,3 +99,12 @@ type RateCardRepository interface {
 	GetActive(ctx context.Context) (*RateCard, error)
 	SetActiveVersion(ctx context.Context, version string) error
 }
+
+type RateCardManager interface {
+	GetActiveRateCard() *RateCard
+	GetChannelCreditCost(channel string) int64
+	GetRateCardVersion() string
+	RefreshActiveRateCard(ctx context.Context) error
+	ActivateVersion(ctx context.Context, version string) error
+	UpdateChannelCredits(ctx context.Context, channel string, credits int64) (*RateCard, error)
+}

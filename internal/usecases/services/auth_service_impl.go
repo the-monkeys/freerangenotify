@@ -945,6 +945,7 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 	// The user's own ID serves as their personal workspace tenant ID.
 	if s.subscriptionRepo != nil {
 		now := time.Now().UTC()
+		creditExpiry := now.AddDate(1, 0, 0)
 		sub := &license.Subscription{
 			ID:                 uuid.New().String(),
 			TenantID:           user.UserID,
@@ -952,9 +953,10 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 			Status:             license.SubscriptionStatusTrial,
 			CurrentPeriodStart: now,
 			CurrentPeriodEnd:   now.AddDate(0, 1, 0),
+			CreditsTotal:       500,
+			CreditsRemaining:   500,
+			CreditsExpireAt:    &creditExpiry,
 			Metadata: map[string]interface{}{
-				"message_limit":      10000,
-				"messages_sent":      0,
 				"trial_activated_at": now.Format(time.RFC3339),
 			},
 		}

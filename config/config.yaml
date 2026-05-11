@@ -177,6 +177,12 @@ features:
   # WhatsApp Meta Cloud API (Tech Provider)
   whatsapp_meta_enabled: false
 
+billing:
+  rate_card_refresh_seconds: 45
+  rate_card_pubsub_channel: "billing:ratecard:updated"
+  enforce_credit_checks: true
+  enforce_free_tier_daily_cap: true
+
 licensing:
   enabled: false
   deployment_mode: "hosted"   # hosted | self_hosted

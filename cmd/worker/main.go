@@ -242,6 +242,7 @@ func main() {
 		c.AuthService,
 		c.LicensingChecker,
 		providerManager,
+		c.CreditService,
 		c.RedisClient,
 		logger,
 		ProcessorConfig{

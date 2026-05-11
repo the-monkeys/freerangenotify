@@ -27,17 +27,14 @@ func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.
 	if sub == nil {
 		return 0
 	}
-	if limit := metaInt(sub.Metadata, "message_limit", 0); limit > 0 {
-		return limit
+	if sub.CreditsTotal > 0 {
+		return int(sub.CreditsTotal)
 	}
 	return planMessageLimit(resolvePlan(rateCard, sub.Plan))
 }
 
 func currentRolloverMessages(sub *license.Subscription) int {
-	if sub == nil {
-		return 0
-	}
-	return metaInt(sub.Metadata, "rollover_messages", 0)
+	return 0
 }
 
 func latestSubscription(ctx context.Context, subRepo license.Repository, tenantID string) (*license.Subscription, error) {
@@ -99,36 +96,43 @@ func applySubscriptionRenewal(
 	billingEnabled bool,
 	extraMetadata map[string]interface{},
 ) {
+	_ = ctx
+	_ = userID
+	_ = rateCard
+	_ = appRepo
+	_ = usageRepo
+	_ = billingEnabled
+
 	if months <= 0 {
 		months = 1
 	}
 
 	now := time.Now().UTC()
-	currentLimit := currentMessageLimit(sub, rateCard)
-	if currentLimit == 0 {
-		currentLimit = planMessageLimit(plan)
+	if plan.Name == "free" && months > 1 {
+		months = 1 // free onboarding window is strictly one month
 	}
-	messagesSent := subscriptionMessagesSent(ctx, userID, sub, appRepo, usageRepo, billingEnabled)
-	rolloverMessages := currentLimit - messagesSent
-	if rolloverMessages < 0 {
-		rolloverMessages = 0
-	}
-	baseLimit := planMessageLimit(plan)
+	creditExpiry := now.AddDate(1, 0, 0) // credits are valid for 12 months
 
-	sub.Status = license.SubscriptionStatusActive
+	if plan.Name == "free" {
+		sub.Status = license.SubscriptionStatusTrial
+	} else {
+		sub.Status = license.SubscriptionStatusActive
+	}
 	sub.Plan = plan.Name
 	sub.CurrentPeriodStart = now
 	sub.CurrentPeriodEnd = now.AddDate(0, months, 0)
+	sub.CreditsTotal = plan.CreditsIncluded
+	sub.CreditsRemaining = plan.CreditsIncluded
+	sub.CreditsExpireAt = &creditExpiry
 	sub.UpdatedAt = now
 	if sub.Metadata == nil {
 		sub.Metadata = make(map[string]interface{})
 	}
-	sub.Metadata["messages_sent"] = 0
-	sub.Metadata["message_limit"] = baseLimit + rolloverMessages
-	sub.Metadata["base_message_limit"] = baseLimit
-	sub.Metadata["rollover_messages"] = rolloverMessages
 	sub.Metadata["renewed_at"] = now.Format(time.RFC3339)
 	sub.Metadata["renewal_method"] = renewalMethod
+	if plan.Name == "free" {
+		sub.Metadata["trial_activated_at"] = now.Format(time.RFC3339)
+	}
 
 	for key, value := range extraMetadata {
 		sub.Metadata[key] = value

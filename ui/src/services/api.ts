@@ -77,6 +77,11 @@ import type {
   BulkCreateUserResponse,
   SubscriberHashResponse,
   SystemStats,
+  BillingUsage,
+  BillingSubscription,
+  BillingUsageBreakdown,
+  BillingRates,
+  AcceptTrialResponse,
 } from '../types';
 
 // Resolve API base URL:
@@ -1101,27 +1106,27 @@ export const tenantsAPI = {
 // ============= Billing APIs (user-facing, JWT auth) =============
 export const billingAPI = {
   getUsage: async () => {
-    const { data } = await api.get('/billing/usage');
+    const { data } = await api.get<BillingUsage>('/billing/usage');
     return data;
   },
 
   getSubscription: async () => {
-    const { data } = await api.get('/billing/subscription');
+    const { data } = await api.get<BillingSubscription>('/billing/subscription');
     return data;
   },
 
   acceptTrial: async () => {
-    const { data } = await api.post('/billing/accept-trial');
+    const { data } = await api.post<AcceptTrialResponse>('/billing/accept-trial');
     return data;
   },
 
   getUsageBreakdown: async () => {
-    const { data } = await api.get('/billing/usage/breakdown');
+    const { data } = await api.get<BillingUsageBreakdown>('/billing/usage/breakdown');
     return data;
   },
 
   getRates: async () => {
-    const { data } = await api.get('/billing/rates');
+    const { data } = await api.get<BillingRates>('/billing/rates');
     return data;
   },
 

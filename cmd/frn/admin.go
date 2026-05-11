@@ -24,6 +24,7 @@ func newAdminCmd() *cobra.Command {
 
 	cmd.AddCommand(newAdminRenewLicenseCmd())
 	cmd.AddCommand(newAdminDeleteAccountCmd())
+	cmd.AddCommand(newAdminBillingCmd())
 
 	return cmd
 }
