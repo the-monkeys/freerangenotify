@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	rateCardIndex       = "frn_billing_rate_cards"
-	billingRuntimeIndex = "frn_billing_runtime"
+	rateCardIndex       = "billing_rate_cards"
+	billingRuntimeIndex = "billing_runtime"
 	activeRateCardDocID = "active_rate_card"
 )
 

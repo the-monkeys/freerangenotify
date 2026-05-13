@@ -1057,6 +1057,9 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 				"credits_remaining": map[string]interface{}{
 					"type": "long",
 				},
+				"credits_reserved": map[string]interface{}{
+					"type": "long",
+				},
 				"credits_expire_at": map[string]interface{}{
 					"type": "date",
 				},
@@ -1075,29 +1078,7 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 	}
 }
 
-// GetCreditBalancesTemplate returns the Elasticsearch mapping for frn_credit_balances index.
-func (it *IndexTemplates) GetCreditBalancesTemplate() map[string]interface{} {
-	return map[string]interface{}{
-		"settings": map[string]interface{}{
-			"number_of_shards":   1,
-			"number_of_replicas": 0,
-		},
-		"mappings": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"id":                map[string]interface{}{"type": "keyword"},
-				"tenant_id":         map[string]interface{}{"type": "keyword"},
-				"credits_total":     map[string]interface{}{"type": "long"},
-				"credits_remaining": map[string]interface{}{"type": "long"},
-				"credits_reserved":  map[string]interface{}{"type": "long"},
-				"credits_expire_at": map[string]interface{}{"type": "date"},
-				"created_at":        map[string]interface{}{"type": "date"},
-				"updated_at":        map[string]interface{}{"type": "date"},
-			},
-		},
-	}
-}
-
-// GetCreditLedgerTemplate returns the Elasticsearch mapping for frn_credit_ledger index.
+// GetCreditLedgerTemplate returns the Elasticsearch mapping for credit_ledger index.
 func (it *IndexTemplates) GetCreditLedgerTemplate() map[string]interface{} {
 	return map[string]interface{}{
 		"settings": map[string]interface{}{
@@ -1126,7 +1107,7 @@ func (it *IndexTemplates) GetCreditLedgerTemplate() map[string]interface{} {
 	}
 }
 
-// GetBillingRateCardsTemplate returns the Elasticsearch mapping for frn_billing_rate_cards index.
+// GetBillingRateCardsTemplate returns the Elasticsearch mapping for billing_rate_cards index.
 func (it *IndexTemplates) GetBillingRateCardsTemplate() map[string]interface{} {
 	return map[string]interface{}{
 		"settings": map[string]interface{}{
@@ -1153,7 +1134,7 @@ func (it *IndexTemplates) GetBillingRateCardsTemplate() map[string]interface{} {
 	}
 }
 
-// GetBillingRuntimeTemplate returns the Elasticsearch mapping for frn_billing_runtime index.
+// GetBillingRuntimeTemplate returns the Elasticsearch mapping for billing_runtime index.
 func (it *IndexTemplates) GetBillingRuntimeTemplate() map[string]interface{} {
 	return map[string]interface{}{
 		"settings": map[string]interface{}{

@@ -74,10 +74,9 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		// Platform dashboard notifications (in-app + SSE for org invites, etc.)
 		"dashboard_notifications": im.templates.GetDashboardNotificationsTemplate,
 		"subscriptions":           im.templates.GetSubscriptionsTemplate,
-		"frn_credit_balances":     im.templates.GetCreditBalancesTemplate,
-		"frn_credit_ledger":       im.templates.GetCreditLedgerTemplate,
-		"frn_billing_rate_cards":  im.templates.GetBillingRateCardsTemplate,
-		"frn_billing_runtime":     im.templates.GetBillingRuntimeTemplate,
+		"credit_ledger":           im.templates.GetCreditLedgerTemplate,
+		"billing_rate_cards":      im.templates.GetBillingRateCardsTemplate,
+		"billing_runtime":         im.templates.GetBillingRuntimeTemplate,
 
 		// WhatsApp Meta Tech Provider — inbound messages
 		"whatsapp_messages": im.templates.GetWhatsAppMessagesTemplate,

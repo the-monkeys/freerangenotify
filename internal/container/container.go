@@ -671,7 +671,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.rateCardSvcCancel = rcCancel
 		container.RateCardService = rateCardService
 
-		creditBalanceRepo := billingrepo.NewESCreditBalanceRepo(dbManager.Client.GetClient(), logger)
+		creditBalanceRepo := billingrepo.NewSubscriptionCreditBalanceRepo(repos.Subscription, logger)
 		creditLedgerRepo := billingrepo.NewESCreditLedgerRepo(dbManager.Client.GetClient(), logger)
 		container.CreditService = services.NewCreditService(
 			creditBalanceRepo,
@@ -687,7 +687,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.PaymentHandler.SetUsageRepo(usageRepo, true)
 		container.RenewalHandler.SetUsageRepo(usageRepo, true)
 		container.UsageRepo = usageRepo
-		logger.Info("Billing metering enabled", zap.String("index", "frn_usage_events"))
+		logger.Info("Billing metering enabled", zap.String("index", "usage_events"))
 	} else {
 		logger.Warn("Billing metering is DISABLED. Set FREERANGE_FEATURES_BILLING_ENABLED=true for production.")
 	}

@@ -249,14 +249,22 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 	if err != nil {
 		return nil, err
 	}
-	if balance != nil {
-		return balance, nil
+	if balance == nil {
+		return nil, nil
 	}
 
 	now := time.Now().UTC()
 	sub, err := s.subRepo.GetActiveSubscription(ctx, tenantID, "", now)
-	if err != nil || sub == nil {
+	if err != nil {
 		return nil, err
+	}
+	if sub == nil {
+		return balance, nil
+	}
+
+	// Subscription is the source of truth; materialize plan defaults when credits were never set.
+	if sub.CreditsTotal > 0 || sub.CreditsRemaining > 0 {
+		return balance, nil
 	}
 
 	plan := billing.DefaultRates()[sub.Plan]
@@ -265,27 +273,14 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 	}
 	creditsTotal := plan.CreditsIncluded
 	creditsRemaining := creditsTotal
-	if sub.CreditsTotal > 0 {
-		creditsTotal = sub.CreditsTotal
-	}
-	if sub.CreditsRemaining > 0 {
-		creditsRemaining = sub.CreditsRemaining
-	}
-
 	expiry := now.AddDate(1, 0, 0)
 	if sub.CreditsExpireAt != nil && !sub.CreditsExpireAt.IsZero() {
 		expiry = *sub.CreditsExpireAt
 	}
-	balance = &billing.CreditBalance{
-		ID:               tenantID,
-		TenantID:         tenantID,
-		CreditsTotal:     creditsTotal,
-		CreditsRemaining: creditsRemaining,
-		CreditsReserved:  0,
-		CreditsExpireAt:  expiry,
-		CreatedAt:        now,
-		UpdatedAt:        now,
-	}
+	balance.CreditsTotal = creditsTotal
+	balance.CreditsRemaining = creditsRemaining
+	balance.CreditsReserved = 0
+	balance.CreditsExpireAt = expiry
 	if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
 		return nil, err
 	}

@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const creditLedgerIndex = "frn_credit_ledger"
+const creditLedgerIndex = "credit_ledger"
 
 type ESCreditLedgerRepo struct {
 	es     *elasticsearch.Client

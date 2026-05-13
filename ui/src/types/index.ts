@@ -1006,6 +1006,10 @@ export interface BillingSubscription {
     status: 'trial' | 'active' | 'expired' | 'canceled';
     current_period_start: string;
     current_period_end: string;
+    credits_total?: number;
+    credits_remaining?: number;
+    credits_reserved?: number;
+    credits_expire_at?: string;
     metadata?: Record<string, unknown>;
     created_at: string;
     updated_at: string;

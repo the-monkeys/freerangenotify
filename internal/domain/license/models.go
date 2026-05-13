@@ -25,6 +25,7 @@ type Subscription struct {
 	CurrentPeriodEnd   time.Time              `json:"current_period_end" es:"current_period_end"`
 	CreditsTotal       int64                  `json:"credits_total,omitempty" es:"credits_total"`
 	CreditsRemaining   int64                  `json:"credits_remaining,omitempty" es:"credits_remaining"`
+	CreditsReserved    int64                  `json:"credits_reserved,omitempty" es:"credits_reserved"`
 	CreditsExpireAt    *time.Time             `json:"credits_expire_at,omitempty" es:"credits_expire_at"`
 	Metadata           map[string]interface{} `json:"metadata,omitempty" es:"metadata"`
 	CreatedAt          time.Time              `json:"created_at" es:"created_at"`

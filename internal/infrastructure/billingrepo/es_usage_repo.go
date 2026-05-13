@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const usageIndex = "frn_usage_events"
+const usageIndex = "usage_events"
 
 // ESUsageRepo implements billing.UsageRepository and billing.UsageEmitter
 // backed by Elasticsearch.
@@ -27,7 +27,7 @@ func NewESUsageRepo(es *elasticsearch.Client, logger *zap.Logger) *ESUsageRepo {
 	return &ESUsageRepo{es: es, logger: logger}
 }
 
-// EnsureIndex creates the frn_usage_events index with correct mappings if it
+// EnsureIndex creates the usage_events index with correct mappings if it
 // does not already exist. Call this during application startup / migration.
 func (r *ESUsageRepo) EnsureIndex(ctx context.Context) error {
 	mapping := `{

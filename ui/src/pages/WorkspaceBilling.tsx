@@ -184,7 +184,7 @@ export default function WorkspaceBilling() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Billing &amp; Licensing</h1>
                     <p className="text-muted-foreground">
-                        Manage your workspace subscription, licensing, and hybrid channel usage.
+                        Manage your workspace subscription, credits, and channel-level usage.
                     </p>
                 </div>
                 {subscription?.plan ? (
@@ -256,16 +256,16 @@ export default function WorkspaceBilling() {
                 <Card className="bg-card/60 shadow-sm border-border">
                     <CardHeader className="pb-2">
                         <CardDescription className="flex items-center font-medium">
-                            <Activity className="mr-2 h-4 w-4" /> Monthly Usage
+                            <Activity className="mr-2 h-4 w-4" /> Credit Usage
                         </CardDescription>
                         <CardTitle className="text-3xl font-bold mt-2">
-                            {(usage?.messages_sent ?? 0).toLocaleString()}
+                            {(usage?.credits_consumed ?? 0).toLocaleString()}
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="text-sm space-y-2 mt-4 text-muted-foreground">
                             <p className="flex justify-between items-center">
-                                <span>Limit:</span>
+                                <span>Total credits:</span>
                                 <span>{usage?.credits_total ? usage.credits_total.toLocaleString() : '-'}</span>
                             </p>
                             {usage?.usage_percent !== undefined && (
@@ -277,6 +277,16 @@ export default function WorkspaceBilling() {
                             <p className="flex justify-between items-center">
                                 <span>Credits remaining:</span>
                                 <span>{usage?.credits_remaining?.toLocaleString() ?? '-'}</span>
+                            </p>
+                            {(subscription?.credits_reserved ?? 0) > 0 && (
+                                <p className="flex justify-between items-center">
+                                    <span>Reserved (in flight):</span>
+                                    <span>{subscription!.credits_reserved!.toLocaleString()}</span>
+                                </p>
+                            )}
+                            <p className="flex justify-between items-center">
+                                <span>Messages sent:</span>
+                                <span>{(usage?.messages_sent ?? 0).toLocaleString()}</span>
                             </p>
                             {daysRemaining !== null && (
                                 <p className="flex justify-between items-center">
@@ -410,7 +420,7 @@ export default function WorkspaceBilling() {
                                 Channel Usage Breakdown
                             </CardTitle>
                             <CardDescription className="mt-1">
-                                Per-channel billing split between system credentials (we pay the carrier) and your own credentials (BYOC).
+                                Per-channel message volume, credit burn, and overage from billing APIs.
                             </CardDescription>
                         </div>
                         {billingEnabled && (
@@ -463,6 +473,9 @@ export default function WorkspaceBilling() {
                                 )}
                                 <span className="text-xs text-muted-foreground">
                                     Burn rates: {Object.entries(rates?.channel_credit_cost ?? {}).map(([ch, c]) => `${ch}=${c}`).join(', ')}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                    Free caps: WhatsApp {rates?.free_tier_daily_caps?.whatsapp ?? 2}/day, SMS {rates?.free_tier_daily_caps?.sms ?? 3}/day
                                 </span>
                             </div>
                         </>

@@ -14,7 +14,7 @@ const (
 )
 
 // UsageEvent represents a single billable delivery action.
-// Stored in the `frn_usage_events` Elasticsearch index.
+// Stored in the `usage_events` Elasticsearch index.
 // All monetary amounts are stored as int64 paisa (1 INR = 100 paisa)
 // to avoid float precision drift at scale.
 type UsageEvent struct {

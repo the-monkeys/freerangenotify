@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { billingAPI } from '../services/api';
 import { Button } from '../components/ui/button';
@@ -7,19 +7,30 @@ import { Badge } from '../components/ui/badge';
 import { Spinner } from '../components/ui/spinner';
 import { Check, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-
-const FEATURES = [
-    '10,000 notifications / month',
-    'All delivery channels (Email, SMS, Push, SSE, Webhook)',
-    'Workflows & Digest Rules',
-    'Real-time browser notifications (SSE)',
-    'Team collaboration',
-    'Analytics dashboard',
-];
+import {
+    CREDIT_VALIDITY_TEXT,
+    PLAN_CONTENT,
+    PRICING_PLANS,
+    formatINR,
+} from '../constants/pricing';
 
 const Welcome: React.FC = () => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+
+    const { trialFeatures, starterMonthlyINR } = useMemo(() => {
+        const freePlan = PRICING_PLANS.find((p) => p.tier === 'free');
+        const starter = PRICING_PLANS.find((p) => p.tier === 'starter');
+        const freeCredits = typeof freePlan?.credits === 'number' ? freePlan.credits : 500;
+        const features = PLAN_CONTENT.free.features;
+        return {
+            trialFeatures: [
+                `${freeCredits.toLocaleString('en-IN')} workspace credits to explore every channel`,
+                ...features,
+            ],
+            starterMonthlyINR: starter?.monthlyINR ?? 500,
+        };
+    }, []);
 
     const handleActivate = async () => {
         setLoading(true);
@@ -49,6 +60,7 @@ const Welcome: React.FC = () => {
                     <p className="text-muted-foreground text-sm">
                         Your account is ready. Activate your free trial to get started.
                     </p>
+                    <p className="text-xs text-muted-foreground italic">{PLAN_CONTENT.free.headline}</p>
                 </div>
 
                 <Card className="border-border shadow-sm">
@@ -62,7 +74,7 @@ const Welcome: React.FC = () => {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <ul className="space-y-2">
-                            {FEATURES.map((feature) => (
+                            {trialFeatures.map((feature) => (
                                 <li key={feature} className="flex items-start gap-2 text-sm text-foreground">
                                     <Check className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
                                     {feature}
@@ -70,9 +82,11 @@ const Welcome: React.FC = () => {
                             ))}
                         </ul>
 
+                        <p className="text-xs text-muted-foreground px-0.5">{CREDIT_VALIDITY_TEXT}</p>
+
                         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
                             <Lock className="h-3.5 w-3.5 shrink-0" />
-                            No credit card required
+                            {PLAN_CONTENT.free.subtext}
                         </div>
 
                         <Button
@@ -87,7 +101,7 @@ const Welcome: React.FC = () => {
                         </Button>
 
                         <p className="text-center text-xs text-muted-foreground">
-                            After 30 days: ₹199 / month / organization
+                            After your first month: paid plans from {formatINR(starterMonthlyINR)} / month (Starter).
                         </p>
                     </CardContent>
                 </Card>
