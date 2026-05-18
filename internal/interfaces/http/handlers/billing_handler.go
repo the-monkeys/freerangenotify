@@ -309,18 +309,26 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Channel < items[j].Channel })
 
-	creditsTotal := sub.CreditsTotal
-	if creditsTotal <= 0 {
-		creditsTotal = resolvePlan(h.rateCard, sub.Plan).CreditsIncluded
+	planName := "free"
+	if sub != nil && sub.Plan != "" {
+		planName = sub.Plan
 	}
-	creditsRemaining := sub.CreditsRemaining
+	creditsTotal := int64(0)
+	creditsRemaining := int64(0)
+	if sub != nil {
+		creditsTotal = sub.CreditsTotal
+		creditsRemaining = sub.CreditsRemaining
+	}
+	if creditsTotal <= 0 {
+		creditsTotal = resolvePlan(h.rateCard, planName).CreditsIncluded
+	}
 	if creditsRemaining <= 0 && creditsTotal > 0 && totalCreditsConsumed <= creditsTotal {
 		creditsRemaining = creditsTotal - totalCreditsConsumed
 	}
 
 	return c.JSON(fiber.Map{
 		"billing_enabled":   true,
-		"plan":              sub.Plan,
+		"plan":              planName,
 		"period_start":      from.Format(time.RFC3339),
 		"period_end":        to.Format(time.RFC3339),
 		"credits_total":     creditsTotal,

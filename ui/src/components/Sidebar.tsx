@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
@@ -20,6 +20,8 @@ import {
 } from './ui/sidebar';
 import { Logo } from './ui/logo';
 import { Button } from './ui/button';
+import { billingAPI } from '../services/api';
+import type { BillingUsage } from '../types';
 
 interface NavItem {
     label: string;
@@ -60,6 +62,34 @@ const SidebarNav: React.FC = () => {
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
     const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
+    const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadUsage = async () => {
+            try {
+                const usage = await billingAPI.getUsage();
+                if (isMounted) {
+                    setBillingUsage(usage);
+                }
+            } catch {
+                if (isMounted) {
+                    setBillingUsage(null);
+                }
+            }
+        };
+
+        void loadUsage();
+        const timer = window.setInterval(() => {
+            void loadUsage();
+        }, 60_000);
+
+        return () => {
+            isMounted = false;
+            window.clearInterval(timer);
+        };
+    }, []);
 
     const handleLogout = async () => {
         await logout();
@@ -169,6 +199,18 @@ const SidebarNav: React.FC = () => {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
+
+                <div className="mt-2 rounded-lg border border-border/70 bg-sidebar-accent/20 p-3 text-xs group-data-[collapsible=icon]:hidden">
+                    <p className="text-muted-foreground">Credits</p>
+                    <p className="mt-1 text-sm font-semibold text-sidebar-foreground">
+                        {billingUsage ? `${billingUsage.credits_remaining.toLocaleString()} / ${billingUsage.credits_total.toLocaleString()}` : 'Unavailable'}
+                    </p>
+                    {billingUsage && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                            {billingUsage.usage_percent.toFixed(1)}% used
+                        </p>
+                    )}
+                </div>
 
                 <div className="pt-1">
                     <UserMenu

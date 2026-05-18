@@ -5,10 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { cn } from "../lib/utils";
 import {
   CHANNEL_CREDIT_COST,
-  OVERAGE_PER_MESSAGE_INR,
+  // OVERAGE_PER_MESSAGE_INR,
   PRICING_PLANS,
   CHANNEL_LABELS,
-  OVERAGE_CHANNEL_LABELS,
+  // OVERAGE_CHANNEL_LABELS,
   PLAN_CONTENT,
   PricingPlan,
   formatGST,

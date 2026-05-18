@@ -153,7 +153,7 @@ const Header: React.FC = () => {
                                     <li key={item.path}>
                                         {item.label === 'Pricing' ? (
                                             <button
-                                                onClick={() => { closeMobile(); scrollToPricing(); }}
+                                                onClick={() => { closeMobile() }}
                                                 className={`block w-full text-left ${navClass(item.active)}`}
                                             >
                                                 {item.label}

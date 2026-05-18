@@ -10,6 +10,10 @@ services:
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
       - xpack.security.enabled=false
       - xpack.security.enrollment.enabled=false
+      # For elasticvue
+      - http.cors.enabled=true
+      - http.cors.allow-origin=http://localhost:8081
+      - http.cors.allow-headers=X-Requested-With,Content-Type,Content-Length,Authorization
     ulimits:
       memlock:
         soft: -1
@@ -25,6 +29,17 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
+
+  elasticvue:
+    image: cars10/elasticvue
+    container_name: freerange-elasticvue
+    ports:
+      - "8081:8080"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - freerange-network
 
   redis:
     image: redis:7-alpine
