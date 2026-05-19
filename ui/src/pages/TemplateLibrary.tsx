@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
 import { SlidePanel } from '../components/ui/slide-panel';
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { useAppNav } from '../contexts/AppNavContext';
 import { toast } from 'sonner';
 import { ArrowLeft, Camera, Download, Expand, Loader2, Mail, Mic, MoreVertical, Paperclip, Phone, Smile, Video, Bell, MessageSquare, Globe, Radio, Webhook } from 'lucide-react';
 
@@ -302,9 +304,20 @@ function TemplateLibraryCard({
     );
 }
 
+const CHANNELS = [
+    { id: 'email', label: 'Email', icon: <Mail className="h-4 w-4" /> },
+    { id: 'sms', label: 'SMS', icon: <MessageSquare className="h-4 w-4" /> },
+    { id: 'whatsapp', label: 'WhatsApp', icon: <Phone className="h-4 w-4" /> },
+    { id: 'push', label: 'Push', icon: <Bell className="h-4 w-4" /> },
+    { id: 'webhook', label: 'Webhook', icon: <Webhook className="h-4 w-4" /> },
+    { id: 'sse', label: 'SSE', icon: <Radio className="h-4 w-4" /> },
+    { id: 'in_app', label: 'In-App', icon: <Globe className="h-4 w-4" /> },
+];
+
 export default function TemplateLibrary() {
     const { id: appId } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const { setAppId: setNavAppId, setAppName: setNavAppName } = useAppNav();
     const [apiKey, setApiKey] = useState('');
     const [templates, setTemplates] = useState<Template[]>([]);
     const [loading, setLoading] = useState(true);
@@ -395,6 +408,10 @@ export default function TemplateLibrary() {
         (async () => {
             try {
                 const app = await applicationsAPI.get(appId);
+                setNavAppId(appId);
+                setNavAppName(app.app_name);
+                localStorage.setItem('last_app_name', app.app_name);
+                window.dispatchEvent(new CustomEvent('app-name-updated', { detail: app.app_name }));
                 const key = app.api_key || '';
                 setApiKey(key);
                 if (key) {
@@ -446,15 +463,21 @@ export default function TemplateLibrary() {
 
     const [activeChannel, setActiveChannel] = useState<string>('email');
 
-    const CHANNELS = [
-        { id: 'email', label: 'Email', icon: <Mail className="w-4 h-4 mr-2" /> },
-        { id: 'sms', label: 'SMS', icon: <MessageSquare className="w-4 h-4 mr-2" /> },
-        { id: 'whatsapp', label: 'WhatsApp', icon: <Phone className="w-4 h-4 mr-2" /> },
-        { id: 'push', label: 'Push', icon: <Bell className="w-4 h-4 mr-2" /> },
-        { id: 'webhook', label: 'Webhook', icon: <Webhook className="w-4 h-4 mr-2" /> },
-        { id: 'sse', label: 'SSE', icon: <Radio className="w-4 h-4 mr-2" /> },
-        { id: 'in_app', label: 'In-App', icon: <Globe className="w-4 h-4 mr-2" /> },
-    ];
+    const channelsWithCounts = useMemo(
+        () =>
+            CHANNELS.map((ch) => ({
+                ...ch,
+                count: templates.filter((t) => t.channel === ch.id).length,
+            })).filter((ch) => ch.count > 0),
+        [templates],
+    );
+
+    useEffect(() => {
+        if (channelsWithCounts.length === 0) return;
+        if (!channelsWithCounts.some((ch) => ch.id === activeChannel)) {
+            setActiveChannel(channelsWithCounts[0].id);
+        }
+    }, [channelsWithCounts, activeChannel]);
 
     const filteredTemplates = useMemo(() => {
         const orderWeight: Record<string, number> = {
@@ -508,38 +531,30 @@ export default function TemplateLibrary() {
                     </CardHeader>
                 </Card>
 
-                <div className="flex flex-col md:flex-row gap-6 items-start">
-                    {/* Channel Sidebar */}
-                    <aside className="w-full md:w-56 shrink-0 sticky top-4">
-                        <Card className="bg-card/60 shadow-sm border-border/80">
-                            <CardContent className="p-2 space-y-1">
-                                {CHANNELS.map(ch => {
-                                    const count = templates.filter(t => t.channel === ch.id).length;
-                                    if (count === 0) return null; // Only show active channels
-                                    return (
-                                        <button
-                                            key={ch.id}
-                                            onClick={() => setActiveChannel(ch.id)}
-                                            className={`w-full flex items-center justify-start text-sm px-3 py-2.5 rounded-md transition-colors ${
-                                                activeChannel === ch.id
-                                                    ? 'bg-foreground text-background font-medium shadow-sm'
-                                                    : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                                            }`}
-                                        >
-                                            {ch.icon}
-                                            {ch.label}
-                                            <Badge variant={activeChannel === ch.id ? "secondary" : "outline"} className={`ml-auto text-[10px] ${activeChannel === ch.id ? 'bg-background/20 text-background hover:bg-background/20' : ''}`}>
-                                                {count}
-                                            </Badge>
-                                        </button>
-                                    );
-                                })}
-                            </CardContent>
-                        </Card>
-                    </aside>
+                {channelsWithCounts.length > 0 && (
+                    <Card className="border-border/70 bg-card/60 shadow-sm">
+                        <CardContent className="p-2">
+                            <Tabs value={activeChannel} onValueChange={setActiveChannel}>
+                                <div className="overflow-x-auto scrollbar-hide">
+                                    <TabsList variant="line" className="h-auto min-w-max gap-1 px-1">
+                                        {channelsWithCounts.map((ch) => (
+                                            <TabsTrigger key={ch.id} value={ch.id} className="gap-2 px-3 py-1.5 text-sm">
+                                                {ch.icon}
+                                                {ch.label}
+                                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 min-w-4">
+                                                    {ch.count}
+                                                </Badge>
+                                            </TabsTrigger>
+                                        ))}
+                                    </TabsList>
+                                </div>
+                            </Tabs>
+                        </CardContent>
+                    </Card>
+                )}
 
-                    {/* Template Grid */}
-                    <div className="flex-1 min-w-0">
+                <div className="min-w-0">
+
                         {loading ? (
                             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                                 {Array.from({ length: 4 }).map((_, i) => (
@@ -575,7 +590,6 @@ export default function TemplateLibrary() {
                                 ))}
                             </div>
                         )}
-                    </div>
                 </div>
             </div>
 
