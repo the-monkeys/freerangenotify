@@ -36,7 +36,9 @@ A customer installs FreeRangeNotify on their own servers.
 | Trial provisioning | `internal/usecases/services/auth_service_impl.go:858` | Creates 30-day `free_trial` subscription on user registration |
 | Admin routes | `internal/interfaces/http/routes/routes.go:322` | All licensing endpoints sit under JWT-protected `/v1/admin/licensing/*` |
 | CLI license commands | `cmd/frn/license.go` | `status`, `request`, `attach`, `verify`, `patch` |
-| CLI config | `cmd/frn/config.go` | Reads `FREERANGE_ADMIN_TOKEN` for admin JWT |
+| CLI config | `cmd/frn/config.go` | Reads `FREERANGE_ADMIN_TOKEN`, `FREERANGE_OPS_SECRET` |
+| CLI admin commands | `cmd/frn/admin.go`, `cmd/frn/billing_rates.go` | Ops: `renew-license`, `grant-credits`, `delete-account`; Admin JWT: `billing rates` |
+| **Admin CLI reference** | [CLI_ADMIN_REFERENCE.md](./CLI_ADMIN_REFERENCE.md) | Operator guide: rate cards, grant credits, setup, examples |
 
 ---
 
@@ -327,14 +329,21 @@ Even if a customer disables licensing (`enabled=false`), their server should sti
 
 ### Phase 2: CLI Commands
 
+**Operator documentation:** [CLI_ADMIN_REFERENCE.md](./CLI_ADMIN_REFERENCE.md) — setup, rate-card commands (`show` / `set` / `activate` / `rollback`), `grant-credits`, examples, and API mapping.
+
 **Modified files:**
 - `cmd/frn/main.go` — register `admin` parent command
-- New: `cmd/frn/admin.go` — `frn admin renew-license`, `frn admin grant-credits`, and `frn admin delete-account`
+- `cmd/frn/admin.go` — `frn admin renew-license`, `frn admin grant-credits`, `frn admin delete-account`
+- `cmd/frn/billing_rates.go` — `frn admin billing rates show|set|activate|rollback`
 
-**CLI auth flow:**
+**CLI auth flow (ops commands):**
 1. CLI reads `FREERANGE_OPS_SECRET` from env or `~/.frn/config.json`
-2. CLI calls `http://localhost:8080/v1/ops/subscriptions/renew` with `Authorization: Bearer ops:<secret>`
+2. CLI calls `/v1/ops/*` with signed ops headers (`Authorization: Bearer ops:<secret>`, `X-Ops-Timestamp`, `X-Ops-Nonce`, `X-Ops-Signature`)
 3. Server validates ops secret, performs action, returns result
+
+**CLI auth flow (billing rate-card commands):**
+1. CLI reads `FREERANGE_ADMIN_TOKEN` from env or `~/.frn/config.json`
+2. CLI calls `/v1/admin/billing/rates*` with `Authorization: Bearer <admin-jwt>`
 
 ### Phase 3: Build Tags + Revamp `frn install` for Self-Hosted Distribution
 
@@ -435,6 +444,39 @@ make build-selfhosted → self-hosted server + worker (licensing compiled in)
 ```
 
 Requires an active subscription on the credits billing model. Use `frn admin renew-license` first if the user has no subscription.
+
+### Admin billing rate-card APIs (JWT)
+
+Used by `frn admin billing rates` commands. All require admin JWT auth.
+
+| Method | Path | CLI command |
+|--------|------|-------------|
+| `GET` | `/v1/admin/billing/rates` | `rates show` |
+| `POST` | `/v1/admin/billing/rates/set` | `rates set` |
+| `POST` | `/v1/admin/billing/rates/activate` | `rates activate` |
+| `POST` | `/v1/admin/billing/rates/rollback` | `rates rollback` |
+
+**`POST /v1/admin/billing/rates/set`**
+
+```json
+// Request
+{ "channel": "email", "credits": 3 }
+
+// Response 200
+{ "updated": { "version": "v...", "channel_credit_cost": { ... }, "active": true, ... } }
+```
+
+**`POST /v1/admin/billing/rates/activate`** / **`rollback`**
+
+```json
+// Request
+{ "version": "v1740000000000000000" }
+
+// Response 200
+{ "activated_version": "v...", "active": { ... } }
+```
+
+See [CLI_ADMIN_REFERENCE.md](./CLI_ADMIN_REFERENCE.md) for workflows and default channel costs.
 
 ### DELETE /v1/ops/users/:user_id
 

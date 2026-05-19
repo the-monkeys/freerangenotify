@@ -87,13 +87,14 @@ Free-tier hard caps:
    - Publish and subscribe on Redis channel (e.g., `billing:ratecard:updated`) for invalidation.
 2. Update `/Users/pranavtripathi/Documents/monkeys/freerangenotify/internal/container/container.go`:
    - Wire `RateCardService` + cache refresher + pub/sub listener into API and worker processes.
-3. Add CLI commands under `/Users/pranavtripathi/Documents/monkeys/freerangenotify/cmd/frn`:
+3. Add CLI commands under `cmd/frn` (documented in [CLI_ADMIN_REFERENCE.md](../CLI_ADMIN_REFERENCE.md)):
    - `frn admin billing rates show`
    - `frn admin billing rates set --channel email --credits 3`
    - `frn admin billing rates set --channel sms --credits 80`
    - `frn admin billing rates set --channel whatsapp --credits 108`
    - `frn admin billing rates activate --version <v>`
    - `frn admin billing rates rollback --version <v-1>`
+   - `frn admin grant-credits --user-id <uuid> --credits <n> --reason "<audit>"`
 4. Command behavior:
    - Write new version to DB.
    - Atomically mark active version.
