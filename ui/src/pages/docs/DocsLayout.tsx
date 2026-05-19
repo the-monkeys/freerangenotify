@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
-import { BookOpen, Rocket, FileText, Workflow, Tag, Radio, Layers, Code2, HelpCircle, ArrowLeft, Menu, Zap, Inbox, Globe } from 'lucide-react';
+import { BookOpen, Rocket, FileText, Workflow, Tag, Radio, Layers, Code2, HelpCircle, ArrowLeft, Menu, Zap, Inbox, Globe, IndianRupee } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
 import { Button } from '../../components/ui/button';
 
@@ -27,6 +27,12 @@ const NAV_SECTIONS: DocNavSection[] = [
             { label: 'SSE (Real-time)', to: '/docs/sse', icon: <Zap className="h-4 w-4" /> },
             { label: 'In-App (Inbox)', to: '/docs/in-app', icon: <Inbox className="h-4 w-4" /> },
             { label: 'Environments', to: '/docs/environments', icon: <Layers className="h-4 w-4" /> },
+        ],
+    },
+    {
+        title: 'BILLING',
+        items: [
+            { label: 'Pricing & Credits', to: '/docs/pricing', icon: <IndianRupee className="h-4 w-4" /> },
         ],
     },
     {

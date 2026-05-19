@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { billingAPI } from '../services/api';
@@ -184,7 +185,10 @@ export default function WorkspaceBilling() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Billing &amp; Licensing</h1>
                     <p className="text-muted-foreground">
-                        Manage your workspace subscription, credits, and channel-level usage.
+                        Manage your workspace subscription, credits, and channel-level usage.{' '}
+                        <Link to="/docs/pricing" className="text-accent hover:underline">
+                            Understand credit burn and overage
+                        </Link>
                     </p>
                 </div>
                 {subscription?.plan ? (

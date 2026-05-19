@@ -97,4 +97,5 @@ Status progression: `pending` → `processing` → `sent` (or `failed`).
 - **[Templates](/docs/templates)** — Learn about versioning, diff, and rollback
 - **[Workflows](/docs/workflows)** — Build multi-step notification pipelines
 - **[Channels](/docs/channels)** — Configure email, push, webhook, SMS, and SSE
+- **[Pricing & Credits](/docs/pricing)** — How credit packs, burn rates, and overage work
 - **[SDK Guide](/docs/sdk)** — Integrate with Go, JavaScript, or React

@@ -1,14 +1,15 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { cn } from "../lib/utils";
 import {
   CHANNEL_CREDIT_COST,
-  // OVERAGE_PER_MESSAGE_INR,
+  OVERAGE_PER_MESSAGE_INR,
   PRICING_PLANS,
   CHANNEL_LABELS,
-  // OVERAGE_CHANNEL_LABELS,
+  OVERAGE_CHANNEL_LABELS,
   PLAN_CONTENT,
   PricingPlan,
   formatGST,
@@ -196,14 +197,13 @@ const PricingSection: React.FC<PricingSectionProps> = ({
             </Card>
 
             {/* Overage rates */}
-            {/*<Card className="border-border/70 bg-card/95">
+            <Card className="border-border/70 bg-card/95">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">
                   Overage rate (if credits run out)
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Only charged when your credit balance hits zero. Set a cap to
-                  stay in control.
+                  Only charged when your credit balance hits zero.
                 </p>
               </CardHeader>
               <CardContent className="space-y-1.5">
@@ -224,11 +224,23 @@ const PricingSection: React.FC<PricingSectionProps> = ({
                   ),
                 )}
                 <p className="text-[11px] text-muted-foreground pt-1">
-                  Overage is billed at the end of the billing cycle.
+                  See{" "}
+                  <Link to="/docs/pricing" className="text-accent hover:underline">
+                    Pricing &amp; Credits
+                  </Link>{" "}
+                  for full details.
                 </p>
               </CardContent>
-            </Card>*/}
+            </Card>
           </div>
+        )}
+
+        {showRateCards && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            <Link to="/docs/pricing" className="text-accent hover:underline">
+              How credits work →
+            </Link>
+          </p>
         )}
 
         {footerNote && (
