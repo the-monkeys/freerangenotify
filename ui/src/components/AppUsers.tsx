@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useDebounce } from '../hooks/use-debounce';
+import SearchInputWithClear from './SearchInput';
 import { useApiQuery } from '../hooks/use-api-query';
 import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
@@ -53,6 +55,12 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [editingUser, setEditingUser] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize] = useState(20);
+    const [searchInput, setSearchInput] = useState('');
+    const debouncedSearch = useDebounce(searchInput, 300);
+
+    useEffect(() => {
+        setPage(1);
+    }, [debouncedSearch]);
     const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
     const [deleteLoading, setDeleteLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -63,10 +71,10 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         loading,
         refetch: fetchUsers
     } = useApiQuery(
-        () => usersAPI.list(apiKey, page, pageSize),
-        [apiKey, page, pageSize],
+        () => usersAPI.list(apiKey, page, pageSize, debouncedSearch),
+        [apiKey, page, pageSize, debouncedSearch],
         {
-            cacheKey: `users-${apiKey}-${page}`,
+            cacheKey: `users-${apiKey}-${page}-${debouncedSearch}`,
             staleTime: 60000 // 1 minute
         }
     );
@@ -274,7 +282,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
         URL.revokeObjectURL(url);
     };
 
-    if (loading) return <div className="text-center py-4">Loading users...</div>;
+    const isInitialLoad = loading && usersData === null;
 
     return (
         <Card>
@@ -338,6 +346,14 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 </div>
             </CardHeader>
             <CardContent>
+                <SearchInputWithClear
+                    className="mb-4 max-w-md"
+                    type="search"
+                    placeholder="Search by email, name, ID, phone..."
+                    value={searchInput}
+                    onChange={setSearchInput}
+                    showSearchIcon
+                />
                 {showAddForm && (
                     <form onSubmit={handleUpdateUser} className="mb-8 bg-muted p-6 rounded border border-border space-y-4">
                         <h4 className="text-lg font-semibold mb-4">{editingUser ? 'Edit User' : 'Add New User'}</h4>
@@ -556,8 +572,16 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                     </form>
                 )}
 
-                {users.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8 text-sm">No users found for this application.</p>
+                {isInitialLoad ? (
+                    <p className="text-muted-foreground text-center py-8 text-sm">Loading users...</p>
+                ) : loading && users.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8 text-sm">Searching...</p>
+                ) : users.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8 text-sm">
+                        {debouncedSearch.trim()
+                            ? 'No users match your search.'
+                            : 'No users found for this application.'}
+                    </p>
                 ) : (
                     <div className="overflow-x-auto">
                         <Table>

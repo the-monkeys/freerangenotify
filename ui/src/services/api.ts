@@ -295,11 +295,36 @@ interface UserListResponse {
 }
 
 export const usersAPI = {
-  list: async (apiKey: string, page = 1, pageSize = 20) => {
-    const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?page=${page}&page_size=${pageSize}`, {
+  list: async (apiKey: string, page = 1, pageSize = 20, search?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    const trimmed = search?.trim();
+    if (trimmed) params.set('search', trimmed);
+    const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?${params.toString()}`, {
       headers: getAuthHeaders(apiKey)
     });
     return data.data;
+  },
+
+  /** Fetches every page for the given optional search filter (page_size capped at 100). */
+  listAll: async (apiKey: string, search?: string) => {
+    const pageSize = 100;
+    let page = 1;
+    const users: User[] = [];
+    let total_count = 0;
+
+    while (true) {
+      const res = await usersAPI.list(apiKey, page, pageSize, search);
+      const batch = res.users ?? [];
+      users.push(...batch);
+      total_count = res.total_count ?? users.length;
+      if (users.length >= total_count || batch.length === 0) break;
+      page += 1;
+    }
+
+    return { users, total_count };
   },
 
   get: async (apiKey: string, id: string) => {

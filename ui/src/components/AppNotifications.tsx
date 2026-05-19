@@ -3,7 +3,7 @@ import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI } from '../services/api';
 import type { TwilioContentTemplate } from '../types';
 import { applyUserAutoFillVars } from '../lib/templateAutofill';
-import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
+import type { Notification, NotificationRequest, Template, BroadcastNotificationRequest } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import VerifyPhoneDialog from './VerifyPhoneDialog';
 import { Button } from './ui/button';
@@ -15,7 +15,6 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogTrigger
 } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -36,6 +35,8 @@ import EditablePreviewPanel from './templates/EditablePreviewPanel';
 import WhatsAppPreview from './whatsapp/WhatsAppPreview';
 import RichContentEditor, { emptyRichContent, isRichContentEmpty, richContentToPayload, type RichContentData } from './notifications/RichContentEditor';
 import ChannelPreview from './channels/ChannelPreview';
+import UserSearchSelect from './UserSearchSelect';
+import UserMultiSelect from './UserMultiSelect';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -146,7 +147,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const notifications = useMemo(() => notifsData?.notifications || [], [notifsData]);
     const totalNotifications = useMemo(() => notifsData?.total || 0, [notifsData]);
 
-    // 2. Users (limited to 100 for dropdowns)
+    // 2. Users (limited to 100 for notification list email lookup)
     const { data: usersData } = useApiQuery(
         () => usersAPI.list(apiKey, 1, 100),
         [apiKey],
@@ -671,13 +672,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         }
         return result;
     };
-
-    // Auto-select first user when users load and quickTo is empty
-    useEffect(() => {
-        if (!quickTo && !quickToManual && users.length > 0) {
-            setQuickTo(users[0].user_id);
-        }
-    }, [users, quickTo, quickToManual]);
 
     const updateFormDataVariable = useCallback((variable: string, value: string) => {
         setDataInput((prev) => {
@@ -1344,25 +1338,20 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 <button
                                                     type="button"
                                                     className="text-xs text-primary hover:underline"
-                                                    onClick={() => { setQuickToManual(false); if (users.length > 0) setQuickTo(users[0].user_id); }}
+                                                    onClick={() => setQuickToManual(false)}
                                                 >
                                                     ← Back to user list
                                                 </button>
                                             </>
                                         ) : (
                                             <>
-                                                <Select value={isQuickWebhookLike ? '__webhook__' : quickTo} onValueChange={setQuickTo} disabled={isQuickWebhookLike}>
-                                                    <SelectTrigger>
-                                                        <SelectValue placeholder={isQuickWebhookLike ? 'Not required for webhook channels' : 'Select a user'} />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        {users.map(u => (
-                                                            <SelectItem key={u.user_id} value={u.user_id}>
-                                                                {u.email}{u.external_id ? ` (${u.external_id})` : ''}
-                                                            </SelectItem>
-                                                        ))}
-                                                    </SelectContent>
-                                                </Select>
+                                                <UserSearchSelect
+                                                    apiKey={apiKey}
+                                                    value={isQuickWebhookLike ? '' : quickTo}
+                                                    onChange={setQuickTo}
+                                                    disabled={isQuickWebhookLike}
+                                                    placeholder={isQuickWebhookLike ? 'Not required for webhook channels' : 'Select a user'}
+                                                />
                                                 <button
                                                     type="button"
                                                     className="text-xs text-muted-foreground hover:text-primary hover:underline"
@@ -1801,7 +1790,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             {WEBHOOK_LIKE_CHANNELS.includes(formData.channel) && <span className="font-normal text-muted-foreground text-xs"> (N/A for webhook channels)</span>}
                                         </Label>
                                         <UserMultiSelect
-                                            users={users}
+                                            apiKey={apiKey}
                                             value={WEBHOOK_LIKE_CHANNELS.includes(formData.channel) ? [] : selectedUsers}
                                             onChange={setSelectedUsers}
                                             disabled={WEBHOOK_LIKE_CHANNELS.includes(formData.channel)}
@@ -3340,121 +3329,6 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
 export default AppNotifications;
 
-
-const UserMultiSelect: React.FC<{
-    users: User[] | undefined;
-    value: string[];
-    onChange: (value: string[]) => void;
-    disabled?: boolean;
-}> = ({ users, value, onChange, disabled }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [isOpen, setIsOpen] = useState(false);
-    const normalizedQuery = searchTerm.trim().toLowerCase();
-    const filteredUsers = (users || []).filter(u => {
-        if (!normalizedQuery) return true;
-        const email = u.email?.toLowerCase() || '';
-        const id = u.user_id.toLowerCase();
-        return email.includes(normalizedQuery) || id.includes(normalizedQuery);
-    });
-    const selectedUsers = value.map(id => users?.find(u => u.user_id === id)).filter(Boolean) as User[];
-    const toggleUser = (userId: string) => {
-        if (value.includes(userId)) {
-            onChange(value.filter(id => id !== userId));
-            return;
-        }
-        onChange([...value, userId]);
-    };
-    const totalUsers = users?.length || 0;
-    const selectedCount = value.length;
-    const selectorLabel = selectedCount === 0
-        ? 'Select users'
-        : `${selectedCount} user${selectedCount === 1 ? '' : 's'} selected`;
-
-    return (
-        <div className="space-y-2">
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogTrigger asChild>
-                    <Button variant="outline" type="button" className="w-full justify-between h-9 rounded-lg" disabled={disabled}>
-                        <span className="truncate text-left">{disabled ? 'Not required for webhook channels' : selectorLabel}</span>
-                        <span className="text-xs text-muted-foreground">{selectedCount}/{totalUsers}</span>
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>Select users</DialogTitle>
-                        <DialogDescription>
-                            Search by email or user ID. Select one or more recipients.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-3">
-                        <Input
-                            type="text"
-                            placeholder="Search by email or user ID"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span>Selected {selectedCount} of {totalUsers}</span>
-                            <div className="flex gap-2">
-                                <button
-                                    type="button"
-                                    className="hover:text-foreground"
-                                    onClick={() => onChange(filteredUsers.map(u => u.user_id))}
-                                >
-                                    Select all (filtered)
-                                </button>
-                                <button
-                                    type="button"
-                                    className="hover:text-foreground"
-                                    onClick={() => onChange([])}
-                                >
-                                    Clear
-                                </button>
-                            </div>
-                        </div>
-                        <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-card/30">
-                            {filteredUsers.length === 0 ? (
-                                <p className="text-muted-foreground text-sm p-3">No users found.</p>
-                            ) : (
-                                <div className="divide-y divide-border">
-                                    {filteredUsers.map(u => (
-                                        <div key={u.user_id} className="flex items-center justify-between px-3 py-2">
-                                            <div className="min-w-0">
-                                                <div className="font-medium text-foreground truncate">{u.email || 'No email'}</div>
-                                                <div className="text-xs text-muted-foreground truncate">{u.user_id}</div>
-                                            </div>
-                                            <Checkbox
-                                                checked={value.includes(u.user_id)}
-                                                onCheckedChange={() => toggleUser(u.user_id)}
-                                                className="border-muted-foreground data-[state=checked]:border-primary"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                        {selectedUsers.length > 0 && (
-                            <div className="flex flex-wrap gap-2 pt-1">
-                                {selectedUsers.map(user => (
-                                    <span key={user.user_id} className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-xs text-foreground">
-                                        {user.email || user.user_id}
-                                        <button
-                                            type="button"
-                                            className="text-muted-foreground hover:text-foreground"
-                                            onClick={() => toggleUser(user.user_id)}
-                                        >
-                                            Remove
-                                        </button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
-        </div>
-    );
-}
 
 const WebhookTargetSelect: React.FC<{
     targets: string[];
