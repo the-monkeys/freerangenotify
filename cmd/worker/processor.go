@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
@@ -30,6 +32,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -56,6 +59,7 @@ type NotificationProcessor struct {
 	authService      auth.Service
 	licensingChecker license.Checker
 	providerManager  *providers.Manager
+	creditService    *services.CreditService
 	redisClient      *redis.Client
 	logger           *zap.Logger
 	config           ProcessorConfig
@@ -88,6 +92,7 @@ func NewNotificationProcessor(
 	authService auth.Service,
 	licensingChecker license.Checker,
 	providerManager *providers.Manager,
+	creditService *services.CreditService,
 	redisClient *redis.Client,
 	logger *zap.Logger,
 	config ProcessorConfig,
@@ -108,6 +113,7 @@ func NewNotificationProcessor(
 		authService:      authService,
 		licensingChecker: licensingChecker,
 		providerManager:  providerManager,
+		creditService:    creditService,
 		redisClient:      redisClient,
 		logger:           logger,
 		config:           config,
@@ -628,8 +634,36 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	var reservation *billing.CreditReservation
+	if p.creditService != nil {
+		tenantID := notif.AppID
+		if app, appErr := p.appRepo.GetByID(ctx, notif.AppID); appErr == nil && app != nil && app.AdminUserID != "" {
+			tenantID = app.AdminUserID
+		}
+		reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		if err != nil {
+			if errors.Is(err, services.ErrInsufficientCredits) || errors.Is(err, services.ErrDailyCapExceeded) {
+				p.handleCreditBlocked(ctx, notif, err.Error())
+				return
+			}
+			p.handleFailure(ctx, notif, item, fmt.Sprintf("credit reservation failed: %s", err.Error()))
+			return
+		}
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["credits_used"] = reservation.CreditsReserved
+		notif.Metadata["rate_card_version"] = reservation.RateCardVersion
+		notif.Metadata["reservation_id"] = reservation.ID
+	}
+
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
+		if reservation != nil {
+			if releaseErr := p.creditService.ReleaseOnFailure(ctx, reservation.ID, err.Error()); releaseErr != nil {
+				logger.Error("Failed to release reserved credits", zap.Error(releaseErr))
+			}
+		}
 		logger.Error("Failed to send notification", zap.Error(err))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -639,6 +673,14 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 		p.handleFailure(ctx, notif, item, err.Error())
 		return
+	}
+
+	if reservation != nil {
+		if _, commitErr := p.creditService.CommitOnSuccess(ctx, reservation.ID); commitErr != nil {
+			logger.Error("Failed to commit reserved credits",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Error(commitErr))
+		}
 	}
 
 	// Update in-memory status BEFORE persisting the full object,
@@ -693,6 +735,28 @@ func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif 
 
 	if p.metrics != nil {
 		p.metrics.RecordDeliveryFailure(string(notif.Channel), "licensing", reason)
+	}
+}
+
+func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *notification.Notification, reason string) {
+	notif.Status = notification.StatusFailed
+	notif.ErrorMessage = reason
+	now := time.Now()
+	notif.FailedAt = &now
+
+	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed); err != nil {
+		p.logger.Error("Failed to update status to failed for credit block",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	if err := p.notifRepo.Update(ctx, notif); err != nil {
+		p.logger.Error("Failed to persist credit-blocked notification state",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "failed")
+	if p.metrics != nil {
+		p.metrics.RecordDeliveryFailure(string(notif.Channel), "billing", reason)
 	}
 }
 

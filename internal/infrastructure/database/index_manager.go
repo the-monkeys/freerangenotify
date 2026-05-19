@@ -74,6 +74,9 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		// Platform dashboard notifications (in-app + SSE for org invites, etc.)
 		"dashboard_notifications": im.templates.GetDashboardNotificationsTemplate,
 		"subscriptions":           im.templates.GetSubscriptionsTemplate,
+		"credit_ledger":           im.templates.GetCreditLedgerTemplate,
+		"billing_rate_cards":      im.templates.GetBillingRateCardsTemplate,
+		"billing_runtime":         im.templates.GetBillingRuntimeTemplate,
 
 		// WhatsApp Meta Tech Provider — inbound messages
 		"whatsapp_messages": im.templates.GetWhatsAppMessagesTemplate,

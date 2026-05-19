@@ -69,8 +69,7 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 		req.Tier = "pro"
 	}
 
-	// Look up plan pricing
-	plan, ok := h.rateCard[req.Tier]
+	plan, ok := billing.ResolveCheckoutPlan(req.Tier)
 	if !ok {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "unknown plan tier: " + req.Tier,
@@ -252,7 +251,7 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 	}
 
 	planName := metaString(sub.Metadata, "pending_checkout_tier", "")
-	if planName == "" && sub.Plan != "" && sub.Plan != "free_trial" {
+	if planName == "" && sub.Plan != "" && sub.Plan != "free" {
 		planName = sub.Plan
 	}
 	if planName == "" {
@@ -261,7 +260,7 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		})
 	}
 
-	plan, ok := h.rateCard[planName]
+	plan, ok := billing.ResolveRenewalPlan(planName)
 	if !ok {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "unknown plan tier: " + planName,
@@ -313,8 +312,11 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		"message":              "payment verified, subscription activated",
 		"plan":                 sub.Plan,
 		"status":               string(sub.Status),
+		"billing_model":        billing.BillingModelCredits,
 		"message_limit":        currentMessageLimit(sub, h.rateCard),
-		"rollover_messages":    currentRolloverMessages(sub),
+		"credits_total":        sub.CreditsTotal,
+		"credits_remaining":    sub.CreditsRemaining,
+		"credits_expire_at":    sub.CreditsExpireAt,
 		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),
 		"current_period_end":   sub.CurrentPeriodEnd.Format(time.RFC3339),
 	})
@@ -378,15 +380,15 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 			if planName == "" {
 				planName = metaString(sub.Metadata, "pending_checkout_tier", "")
 			}
-			if planName == "" && sub.Plan != "" && sub.Plan != "free_trial" {
+			if planName == "" && sub.Plan != "" && sub.Plan != "free" {
 				planName = sub.Plan
 			}
 			if planName == "" {
 				planName = "pro"
 			}
-			plan, ok := h.rateCard[planName]
+			plan, ok := billing.ResolveRenewalPlan(planName)
 			if !ok {
-				plan = h.rateCard["pro"]
+				plan, _ = billing.ResolveRenewalPlan("pro")
 			}
 
 			applySubscriptionRenewal(

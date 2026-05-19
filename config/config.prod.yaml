@@ -67,6 +67,12 @@ security:
 features:
   trial_welcome_enabled: true
 
+billing:
+  rate_card_refresh_seconds: 45
+  rate_card_pubsub_channel: "billing:ratecard:updated"
+  enforce_credit_checks: true
+  enforce_free_tier_daily_cap: true
+
 licensing:
   enabled: true
   deployment_mode: "hosted"   # hosted | self_hosted

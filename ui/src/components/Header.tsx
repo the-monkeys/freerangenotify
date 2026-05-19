@@ -20,18 +20,6 @@ const Header: React.FC = () => {
         setMobileOpen(false);
     }, [location.pathname]);
 
-    const scrollToPricing = () => {
-        const doScroll = () => {
-            const el = document.getElementById('pricing');
-            if (el) el.scrollIntoView({ behavior: 'smooth' });
-        };
-        if (location.pathname === '/') {
-            doScroll();
-        } else {
-            navigate('/', { replace: false });
-            setTimeout(doScroll, 80);
-        }
-    };
 
     const navItems = [
         {
@@ -46,8 +34,8 @@ const Header: React.FC = () => {
         },
         {
             label: 'Pricing',
-            path: '/',
-            active: location.pathname === '/',
+            path: '/pricing',
+            active: location.pathname === '/pricing',
         },
         ...(isAuthenticated
             ? [
@@ -104,18 +92,9 @@ const Header: React.FC = () => {
                         <ul className="flex items-center gap-1">
                             {navItems.map((item) => (
                                 <li key={item.path}>
-                                    {item.label === 'Pricing' ? (
-                                        <button
-                                            onClick={scrollToPricing}
-                                            className={navClass(item.active)}
-                                        >
-                                            {item.label}
-                                        </button>
-                                    ) : (
-                                        <Link to={item.path} className={navClass(item.active)}>
-                                            {item.label}
-                                        </Link>
-                                    )}
+                                  <Link to={item.path} className={navClass(item.active)}>
+                                      {item.label}
+                                  </Link>
                                 </li>
                             ))}
                         </ul>
@@ -174,7 +153,7 @@ const Header: React.FC = () => {
                                     <li key={item.path}>
                                         {item.label === 'Pricing' ? (
                                             <button
-                                                onClick={() => { closeMobile(); scrollToPricing(); }}
+                                                onClick={() => { closeMobile() }}
                                                 className={`block w-full text-left ${navClass(item.active)}`}
                                             >
                                                 {item.label}

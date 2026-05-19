@@ -8,14 +8,14 @@ import (
 
 // Invoice represents a computed billing statement for a tenant over a period.
 type Invoice struct {
-	TenantID    string        `json:"tenant_id"`
-	PlanName    string        `json:"plan_name"`
-	PeriodStart time.Time     `json:"period_start"`
-	PeriodEnd   time.Time     `json:"period_end"`
-	LineItems   []LineItem    `json:"line_items"`
-	TotalPaisa  int64         `json:"total_paisa"`   // total charged amount
-	Currency    string        `json:"currency"`      // "INR"
-	GeneratedAt time.Time     `json:"generated_at"`
+	TenantID    string     `json:"tenant_id"`
+	PlanName    string     `json:"plan_name"`
+	PeriodStart time.Time  `json:"period_start"`
+	PeriodEnd   time.Time  `json:"period_end"`
+	LineItems   []LineItem `json:"line_items"`
+	TotalPaisa  int64      `json:"total_paisa"` // total charged amount
+	Currency    string     `json:"currency"`    // "INR"
+	GeneratedAt time.Time  `json:"generated_at"`
 }
 
 // LineItem is one row on the invoice (per channel per credential mode).
@@ -65,10 +65,8 @@ func (c *Calculator) ComputeInvoice(
 		GeneratedAt: time.Now().UTC(),
 	}
 
-	// Track how many system-cred messages have been counted against each
-	// channel's included quota so far. Must be accumulated across all
-	// UsageSummary rows (grouped by channel+cred_source).
-	usedQuota := make(map[string]int64)
+	// Track how many credits have already been consumed from the shared wallet.
+	var usedCredits int64
 
 	for _, u := range usage {
 		var item LineItem
@@ -78,31 +76,34 @@ func (c *Calculator) ComputeInvoice(
 
 		switch u.CredentialSource {
 		case CredSourceSystem:
-			// Deduct from included quota first; overage is charged.
-			quota := plan.IncludedQuotas[u.Channel]
-			alreadyUsed := usedQuota[u.Channel]
-			remaining := quota - alreadyUsed
-			if remaining < 0 {
-				remaining = 0
+			// Deduct from shared credits first; overage is charged per message.
+			channelCost := plan.ChannelCreditCost[u.Channel]
+			if channelCost <= 0 {
+				channelCost = 1
 			}
+			totalRowCredits := u.MessageCount * channelCost
 
-			free := u.MessageCount
-			var billable int64
-			if free > remaining {
-				billable = free - remaining
-				free = remaining
+			remainingCredits := plan.CreditsIncluded - usedCredits
+			if remainingCredits < 0 {
+				remainingCredits = 0
 			}
-			usedQuota[u.Channel] += free + billable
+			coveredCredits := totalRowCredits
+			if coveredCredits > remainingCredits {
+				coveredCredits = remainingCredits
+			}
+			coveredMessages := coveredCredits / channelCost
+			billableMessages := u.MessageCount - coveredMessages
+			usedCredits += coveredCredits
 
-			unitPrice := plan.OverageRates[u.Channel]
-			subtotal := billable * unitPrice
+			unitPrice := plan.OveragePerMessage[u.Channel]
+			subtotal := billableMessages * unitPrice
 
-			item.IncludedCount = free
-			item.BillableCount = billable
+			item.IncludedCount = coveredMessages
+			item.BillableCount = billableMessages
 			item.UnitPricePaisa = unitPrice
 			item.SubtotalPaisa = subtotal
 			item.Description = fmt.Sprintf("%s system creds: %d incl + %d overage @ ₹%.2f/msg",
-				u.Channel, free, billable, float64(unitPrice)/100)
+				u.Channel, coveredMessages, billableMessages, float64(unitPrice)/100)
 
 		case CredSourceBYOC:
 			// Platform fee only — no carrier cost for us.

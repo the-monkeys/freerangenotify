@@ -200,34 +200,7 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 		zap.Duration("delivery_time", result.DeliveryTime))
 
 	// Emit billing usage event — only when billing is enabled and emitter is wired.
-	if m.billingEnabled && m.usageEmitter != nil {
-		credSource, _ := result.Metadata["credential_source"].(string)
-		billingChannel, _ := result.Metadata["billing_channel"].(string)
-		if credSource != "" && billingChannel != "" {
-			// AppID serves as the workspace/tenant scope.
-			// UserID on the notification is the end-recipient, not the billed account.
-			event := &billing.UsageEvent{
-				TenantID:         notif.AppID, // billed to the app's owning workspace
-				AppID:            notif.AppID,
-				NotificationID:   notif.NotificationID,
-				Channel:          billingChannel,
-				Provider:         provider.GetName(),
-				CredentialSource: credSource,
-				MessageType:      string(notif.Category), // "marketing" | "utility" | "transactional"
-				Currency:         "INR",
-				Status:           "charged",
-			}
-			// Emit in a goroutine so delivery latency is unaffected.
-			// The emitter itself retries and logs on failure.
-			go func() {
-				if err := m.usageEmitter.Emit(context.Background(), event); err != nil {
-					m.logger.Error("billing: failed to emit usage event",
-						zap.String("notification_id", notif.NotificationID),
-						zap.Error(err))
-				}
-			}()
-		}
-	}
+	m.emitUsageEvent(notif, result, provider.GetName())
 
 	return result, nil
 }
@@ -298,6 +271,7 @@ func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Noti
 		}
 
 		if err == nil && result != nil && result.Success {
+			m.emitUsageEvent(notif, result, providerName)
 			if i > 0 {
 				m.logger.Info("Delivery succeeded via fallback provider",
 					zap.String("notification_id", notif.NotificationID),
@@ -396,4 +370,81 @@ func (m *Manager) GetSupportedChannels() []notification.Channel {
 	}
 
 	return channels
+}
+
+func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Result, providerName string) {
+	if !m.billingEnabled || m.usageEmitter == nil || notif == nil || result == nil {
+		return
+	}
+
+	credSource := ""
+	billingChannel := ""
+	var creditsUsed int64
+	rateCardVersion := ""
+
+	if result.Metadata != nil {
+		if v, ok := result.Metadata["credential_source"].(string); ok {
+			credSource = v
+		}
+		if v, ok := result.Metadata["billing_channel"].(string); ok {
+			billingChannel = v
+		}
+		if v, ok := result.Metadata["rate_card_version"].(string); ok {
+			rateCardVersion = v
+		}
+		if v, ok := result.Metadata["credits_used"].(int64); ok {
+			creditsUsed = v
+		} else if v, ok := result.Metadata["credits_used"].(float64); ok {
+			creditsUsed = int64(v)
+		}
+	}
+	if notif.Metadata != nil {
+		if credSource == "" {
+			if v, ok := notif.Metadata["credential_source"].(string); ok {
+				credSource = v
+			}
+		}
+		if billingChannel == "" {
+			if v, ok := notif.Metadata["billing_channel"].(string); ok {
+				billingChannel = v
+			}
+		}
+		if rateCardVersion == "" {
+			if v, ok := notif.Metadata["rate_card_version"].(string); ok {
+				rateCardVersion = v
+			}
+		}
+		if creditsUsed == 0 {
+			if v, ok := notif.Metadata["credits_used"].(int64); ok {
+				creditsUsed = v
+			} else if v, ok := notif.Metadata["credits_used"].(float64); ok {
+				creditsUsed = int64(v)
+			}
+		}
+	}
+
+	if credSource == "" || billingChannel == "" {
+		return
+	}
+
+	event := &billing.UsageEvent{
+		TenantID:         notif.AppID,
+		AppID:            notif.AppID,
+		NotificationID:   notif.NotificationID,
+		Channel:          billingChannel,
+		Provider:         providerName,
+		CredentialSource: credSource,
+		MessageType:      string(notif.Category),
+		CreditsUsed:      creditsUsed,
+		RateCardVersion:  rateCardVersion,
+		Currency:         "INR",
+		Status:           "charged",
+	}
+	go func() {
+		if err := m.usageEmitter.Emit(context.Background(), event); err != nil {
+			m.logger.Error("billing: failed to emit usage event",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Error(err))
+		}
+	}()
 }
