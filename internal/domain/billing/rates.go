@@ -13,6 +13,9 @@ type PlanTier struct {
 	CreditValueINR    float64          // Value of 1 credit in INR
 	BYOCFees          map[string]int64 // channel -> paisa per message (BYOC platform fee)
 	PlatformFees      map[string]int64 // channel -> paisa per message (platform, push/inapp)
+	// Legacy quota model (pre-credit subscriptions); populated only in LegacyRates().
+	IncludedQuotas map[string]int64 `json:"included_quotas,omitempty"`
+	OverageRates   map[string]int64 `json:"overage_rates,omitempty"`
 }
 
 const defaultCreditValueINR = 0.01

@@ -13,6 +13,9 @@ func resolvePlan(rateCard map[string]billing.PlanTier, planName string) billing.
 	if plan, ok := rateCard[planName]; ok {
 		return plan
 	}
+	if plan, ok := billing.ResolvePlan(planName); ok {
+		return plan
+	}
 	if plan, ok := rateCard["free"]; ok {
 		return plan
 	}
@@ -20,7 +23,14 @@ func resolvePlan(rateCard map[string]billing.PlanTier, planName string) billing.
 }
 
 func planMessageLimit(plan billing.PlanTier) int {
-	return int(plan.CreditsIncluded)
+	if plan.CreditsIncluded > 0 {
+		return int(plan.CreditsIncluded)
+	}
+	var total int64
+	for _, q := range plan.IncludedQuotas {
+		total += q
+	}
+	return int(total)
 }
 
 func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.PlanTier) int {
@@ -30,11 +40,22 @@ func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.
 	if sub.CreditsTotal > 0 {
 		return int(sub.CreditsTotal)
 	}
+	if limit := metaInt(sub.Metadata, "message_limit", 0); limit > 0 {
+		return limit
+	}
+	if billing.BillingModel(sub) == billing.BillingModelLegacy {
+		if plan, ok := billing.ResolveLegacyPlan(sub.Plan); ok {
+			return int(billing.LegacyMessageLimit(sub, plan))
+		}
+	}
 	return planMessageLimit(resolvePlan(rateCard, sub.Plan))
 }
 
 func currentRolloverMessages(sub *license.Subscription) int {
-	return 0
+	if sub == nil {
+		return 0
+	}
+	return metaInt(sub.Metadata, "rollover_messages", 0)
 }
 
 func latestSubscription(ctx context.Context, subRepo license.Repository, tenantID string) (*license.Subscription, error) {
@@ -109,9 +130,9 @@ func applySubscriptionRenewal(
 
 	now := time.Now().UTC()
 	if plan.Name == "free" && months > 1 {
-		months = 1 // free onboarding window is strictly one month
+		months = 1
 	}
-	creditExpiry := now.AddDate(1, 0, 0) // credits are valid for 12 months
+	creditExpiry := now.AddDate(1, 0, 0)
 
 	if plan.Name == "free" {
 		sub.Status = license.SubscriptionStatusTrial
@@ -123,11 +144,17 @@ func applySubscriptionRenewal(
 	sub.CurrentPeriodEnd = now.AddDate(0, months, 0)
 	sub.CreditsTotal = plan.CreditsIncluded
 	sub.CreditsRemaining = plan.CreditsIncluded
+	sub.CreditsReserved = 0
 	sub.CreditsExpireAt = &creditExpiry
 	sub.UpdatedAt = now
 	if sub.Metadata == nil {
 		sub.Metadata = make(map[string]interface{})
 	}
+	sub.Metadata["billing_model"] = billing.BillingModelCredits
+	delete(sub.Metadata, "message_limit")
+	delete(sub.Metadata, "messages_sent")
+	delete(sub.Metadata, "base_message_limit")
+	delete(sub.Metadata, "rollover_messages")
 	sub.Metadata["renewed_at"] = now.Format(time.RFC3339)
 	sub.Metadata["renewal_method"] = renewalMethod
 	if plan.Name == "free" {

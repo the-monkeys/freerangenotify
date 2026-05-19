@@ -677,9 +677,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			creditBalanceRepo,
 			creditLedgerRepo,
 			repos.Subscription,
+			usageRepo,
+			repos.Application,
 			rateCardService,
 			redisClient,
 			logger,
+			cfg.Billing.EnforceCreditChecks,
 		)
 
 		container.BillingHandler.SetUsageRepo(usageRepo, true)

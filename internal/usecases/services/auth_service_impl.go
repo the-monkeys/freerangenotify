@@ -957,6 +957,7 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 			CreditsRemaining:   500,
 			CreditsExpireAt:    &creditExpiry,
 			Metadata: map[string]interface{}{
+				"billing_model":      "credits",
 				"trial_activated_at": now.Format(time.RFC3339),
 			},
 		}

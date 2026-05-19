@@ -149,3 +149,8 @@ prod/*
 e2e/.state/
 e2e/.env
 Q&A/*
+
+
+.venv/
+.cursor/
+graphify-out/

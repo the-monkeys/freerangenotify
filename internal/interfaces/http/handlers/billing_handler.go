@@ -62,8 +62,16 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		})
 	}
 
+	billingModel := billing.BillingModel(sub)
+	plan, _ := billing.ResolvePlan(sub.Plan)
+	messageLimit := currentMessageLimit(sub, h.rateCard)
+	baseMessageLimit := metaInt(sub.Metadata, "base_message_limit", planMessageLimit(plan))
+	if baseMessageLimit == 0 {
+		baseMessageLimit = messageLimit
+	}
+
 	creditsTotal := sub.CreditsTotal
-	if creditsTotal <= 0 {
+	if creditsTotal <= 0 && billingModel == billing.BillingModelCredits {
 		creditsTotal = resolvePlan(h.rateCard, sub.Plan).CreditsIncluded
 	}
 	creditsRemaining := sub.CreditsRemaining
@@ -97,8 +105,10 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 	}
 
 	usagePct := 0.0
-	if creditsTotal > 0 {
+	if billingModel == billing.BillingModelCredits && creditsTotal > 0 {
 		usagePct = float64(creditsConsumed) / float64(creditsTotal) * 100
+	} else if messageLimit > 0 {
+		usagePct = float64(messagesSent) / float64(messageLimit) * 100
 	}
 
 	// Use Ceiling to ensure consistent "29 days" display as per user request
@@ -110,7 +120,10 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"plan":                 sub.Plan,
 		"status":               string(sub.Status),
+		"billing_model":        billingModel,
 		"messages_sent":        messagesSent,
+		"message_limit":        messageLimit,
+		"base_message_limit":   baseMessageLimit,
 		"credits_consumed":     creditsConsumed,
 		"credits_remaining":    creditsRemaining,
 		"credits_total":        creditsTotal,

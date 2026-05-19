@@ -72,7 +72,7 @@ func (h *RenewalHandler) AdminRenew(c *fiber.Ctx) error {
 	if req.Plan != "" {
 		planName = req.Plan
 	}
-	plan, ok := h.rateCard[planName]
+	plan, ok := billing.ResolveRenewalPlan(planName)
 	if !ok {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "unknown plan tier"})
 	}
