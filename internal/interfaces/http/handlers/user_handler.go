@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -457,6 +458,7 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 // @Param email query string false "Filter by email"
 // @Param timezone query string false "Filter by timezone"
 // @Param language query string false "Filter by language"
+// @Param search query string false "Search email, name, user ID, external ID, or phone"
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
@@ -486,6 +488,7 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 		AppID:      appID,
 		ExternalID: c.Query("external_id"),
 		Email:      c.Query("email"),
+		Search:     strings.TrimSpace(c.Query("search")),
 		Timezone:   c.Query("timezone"),
 		Language:   c.Query("language"),
 		Limit:      pageSize,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,8 +17,13 @@ import (
 )
 
 var (
-	ErrInsufficientCredits = errors.New("insufficient credits")
-	ErrDailyCapExceeded    = errors.New("daily cap exceeded")
+	ErrInsufficientCredits       = errors.New("insufficient credits")
+	ErrDailyCapExceeded          = errors.New("daily cap exceeded")
+	ErrGrantTenantRequired       = errors.New("tenant id is required")
+	ErrGrantInvalidAmount        = errors.New("credits amount must be greater than zero")
+	ErrGrantReasonRequired       = errors.New("reason is required")
+	ErrGrantNoActiveSubscription = errors.New("no active subscription")
+	ErrGrantLegacyBilling        = errors.New("legacy billing model does not support credit grants")
 )
 
 type CreditUsageSnapshot struct {
@@ -382,6 +388,93 @@ func (s *CreditService) GetUsageSnapshot(ctx context.Context, tenantID string) (
 	if balance == nil {
 		return &CreditUsageSnapshot{TenantID: tenantID}, nil
 	}
+	return &CreditUsageSnapshot{
+		TenantID:         tenantID,
+		CreditsTotal:     balance.CreditsTotal,
+		CreditsRemaining: balance.CreditsRemaining,
+		CreditsReserved:  balance.CreditsReserved,
+	}, nil
+}
+
+// GrantCredits adds credits to a tenant wallet (ops / manual top-up).
+func (s *CreditService) GrantCredits(ctx context.Context, tenantID string, amount int64, reason string, metadata map[string]interface{}) (*CreditUsageSnapshot, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, ErrGrantTenantRequired
+	}
+	if amount <= 0 {
+		return nil, ErrGrantInvalidAmount
+	}
+	if strings.TrimSpace(reason) == "" {
+		return nil, ErrGrantReasonRequired
+	}
+
+	now := time.Now().UTC()
+	sub, err := s.subRepo.GetActiveSubscription(ctx, tenantID, "", now)
+	if err != nil {
+		return nil, err
+	}
+	if sub == nil {
+		return nil, ErrGrantNoActiveSubscription
+	}
+	if billing.BillingModel(sub) == billing.BillingModelLegacy {
+		return nil, ErrGrantLegacyBilling
+	}
+
+	balance, err := s.balanceRepo.GetByTenantID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if balance == nil {
+		balance, err = s.getOrBootstrapBalance(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if balance == nil {
+		balance = &billing.CreditBalance{
+			ID:               sub.ID,
+			TenantID:         tenantID,
+			CreditsTotal:     sub.CreditsTotal,
+			CreditsRemaining: sub.CreditsRemaining,
+			CreditsReserved:  sub.CreditsReserved,
+		}
+		if sub.CreditsExpireAt != nil {
+			balance.CreditsExpireAt = sub.CreditsExpireAt.UTC()
+		}
+	}
+
+	balance.CreditsTotal += amount
+	balance.CreditsRemaining += amount
+
+	if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
+		return nil, err
+	}
+
+	entryMeta := map[string]interface{}{
+		"reason": reason,
+		"source": "ops_cli",
+	}
+	for k, v := range metadata {
+		entryMeta[k] = v
+	}
+
+	entry := &billing.CreditLedgerEntry{
+		ID:           uuid.NewString(),
+		TenantID:     tenantID,
+		EntryType:    billing.CreditLedgerAdjust,
+		CreditsDelta: amount,
+		BalanceAfter: balance.CreditsRemaining,
+		Metadata:     entryMeta,
+		CreatedAt:    now,
+	}
+	if s.rateCardSvc != nil {
+		entry.RateCardVersion = s.rateCardSvc.GetRateCardVersion()
+	}
+	if err := s.ledgerRepo.Append(ctx, entry); err != nil {
+		return nil, err
+	}
+
 	return &CreditUsageSnapshot{
 		TenantID:         tenantID,
 		CreditsTotal:     balance.CreditsTotal,

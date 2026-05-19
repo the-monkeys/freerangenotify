@@ -1,5 +1,7 @@
 # FreeRange Notify Pricing System (Credits-Based)
 
+> User-facing copy lives in `ui/src/docs/pricing.md` (rendered at `/docs/pricing`).
+
 ## 1. Overview
 This document defines a margin-safe, usage-aligned pricing system for the FreeRange Notify platform using a credit-based model.
 

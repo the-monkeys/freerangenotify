@@ -444,14 +444,6 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		repos.Subscription,
 		logger,
 	)
-	container.OpsHandler = handlers.NewOpsHandler(
-		container.AuthService,
-		repos.Subscription,
-		repos.Application,
-		dashboardNotifier,
-		cfg.Providers.SMTP,
-		logger,
-	)
 	rateCard := billing.DefaultRates()
 	container.BillingHandler = handlers.NewBillingHandler(repos.Subscription, repos.Application, rateCard, logger)
 
@@ -694,6 +686,16 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	} else {
 		logger.Warn("Billing metering is DISABLED. Set FREERANGE_FEATURES_BILLING_ENABLED=true for production.")
 	}
+
+	container.OpsHandler = handlers.NewOpsHandler(
+		container.AuthService,
+		repos.Subscription,
+		repos.Application,
+		container.CreditService,
+		dashboardNotifier,
+		cfg.Providers.SMTP,
+		logger,
+	)
 
 	// ── WhatsApp Meta Tech Provider (feature-gated) ──
 	if cfg.Features.WhatsAppMetaEnabled {

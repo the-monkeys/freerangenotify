@@ -317,6 +317,7 @@ Even if a customer disables licensing (`enabled=false`), their server should sti
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/ops/subscriptions/renew` | Extend a user's subscription by N months |
+| `POST` | `/v1/ops/credits/grant` | Add credits to a user (credits billing model only) |
 | `POST` | `/v1/ops/subscriptions` | Create a subscription (moved from admin) |
 | `PUT` | `/v1/ops/subscriptions/:id` | Update a subscription (moved from admin) |
 | `DELETE` | `/v1/ops/users/:user_id` | Delete a user account (cascade) |
@@ -328,7 +329,7 @@ Even if a customer disables licensing (`enabled=false`), their server should sti
 
 **Modified files:**
 - `cmd/frn/main.go` — register `admin` parent command
-- New: `cmd/frn/admin.go` — `frn admin renew-license` and `frn admin delete-account`
+- New: `cmd/frn/admin.go` — `frn admin renew-license`, `frn admin grant-credits`, and `frn admin delete-account`
 
 **CLI auth flow:**
 1. CLI reads `FREERANGE_OPS_SECRET` from env or `~/.frn/config.json`
@@ -409,6 +410,31 @@ make build-selfhosted → self-hosted server + worker (licensing compiled in)
   }
 }
 ```
+
+### POST /v1/ops/credits/grant
+
+```json
+// Request
+{
+  "user_id": "68118bcc-...",      // required
+  "credits": 1000,                // required: amount to add
+  "reason": "Partner top-up"      // required: audit trail
+}
+
+// Response 200
+{
+  "success": true,
+  "data": {
+    "tenant_id": "68118bcc-...",
+    "credits_total": 1500,
+    "credits_remaining": 1200,
+    "credits_reserved": 0,
+    "credits_granted": 1000
+  }
+}
+```
+
+Requires an active subscription on the credits billing model. Use `frn admin renew-license` first if the user has no subscription.
 
 ### DELETE /v1/ops/users/:user_id
 

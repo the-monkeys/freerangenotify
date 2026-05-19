@@ -163,3 +163,49 @@ func TestBuildUserQuery_ExternalID_WithEmail(t *testing.T) {
 	// Should have 3 must clauses: app_id + email + external_id
 	assert.Len(t, must, 3)
 }
+
+func TestBuildUserQuery_Search(t *testing.T) {
+	repo := &UserRepository{}
+	filter := user.UserFilter{
+		AppID:  "app-1",
+		Search: "john",
+	}
+	q := repo.buildUserQuery(filter)
+
+	query := q["query"].(map[string]interface{})
+	boolQ := query["bool"].(map[string]interface{})
+	must := boolQ["must"].([]map[string]interface{})
+
+	assert.Len(t, must, 2)
+
+	appTerm := must[0]["term"].(map[string]interface{})
+	assert.Equal(t, "app-1", appTerm["app_id"])
+
+	searchBool := must[1]["bool"].(map[string]interface{})
+	should := searchBool["should"].([]map[string]interface{})
+	assert.Len(t, should, 5)
+	assert.Equal(t, 1, searchBool["minimum_should_match"])
+
+	emailWildcard := should[0]["wildcard"].(map[string]interface{})
+	emailClause := emailWildcard["email"].(map[string]interface{})
+	assert.Equal(t, "*john*", emailClause["value"])
+	assert.Equal(t, true, emailClause["case_insensitive"])
+}
+
+func TestBuildUserQuery_Search_EscapesWildcards(t *testing.T) {
+	repo := &UserRepository{}
+	filter := user.UserFilter{
+		AppID:  "app-1",
+		Search: "a*b?",
+	}
+	q := repo.buildUserQuery(filter)
+
+	query := q["query"].(map[string]interface{})
+	boolQ := query["bool"].(map[string]interface{})
+	must := boolQ["must"].([]map[string]interface{})
+	searchBool := must[1]["bool"].(map[string]interface{})
+	should := searchBool["should"].([]map[string]interface{})
+	emailWildcard := should[0]["wildcard"].(map[string]interface{})
+	emailClause := emailWildcard["email"].(map[string]interface{})
+	assert.Equal(t, `*a\*b\?*`, emailClause["value"])
+}

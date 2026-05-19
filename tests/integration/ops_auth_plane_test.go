@@ -76,6 +76,27 @@ func (s *OpsAuthPlaneSuite) TestOpsRouteAcceptsSignedOpsAuth() {
 	s.NotEqual(http.StatusTooManyRequests, resp.StatusCode, string(body))
 }
 
+func (s *OpsAuthPlaneSuite) TestOpsGrantCreditsRouteAcceptsSignedOpsAuth() {
+	if s.opsSecret == "" {
+		s.T().Skip("FREERANGE_OPS_SECRET not set; skipping signed ops auth integration test")
+	}
+
+	headers := s.buildSignedOpsHeaders(http.MethodPost, "/v1/ops/credits/grant", time.Now().UTC(), "ops-int-grant-nonce-1")
+	payload := map[string]interface{}{
+		"user_id": "ops-int-grant-user-1",
+		"credits": 100,
+		"reason":  "integration auth probe",
+	}
+
+	resp, body := s.makeRequest(http.MethodPost, "/v1/ops/credits/grant", payload, headers)
+	if resp.StatusCode == http.StatusNotFound {
+		s.T().Skip("ops routes unavailable (likely ops disabled or self-hosted build)")
+	}
+
+	s.NotEqual(http.StatusUnauthorized, resp.StatusCode, string(body))
+	s.NotEqual(http.StatusTooManyRequests, resp.StatusCode, string(body))
+}
+
 func (s *OpsAuthPlaneSuite) TestOpsRouteRejectsReplayNonce() {
 	if s.opsSecret == "" {
 		s.T().Skip("FREERANGE_OPS_SECRET not set; skipping replay integration test")

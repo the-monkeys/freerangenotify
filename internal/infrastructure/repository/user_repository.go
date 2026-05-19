@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -315,6 +316,10 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 		})
 	}
 
+	if filter.Search != "" {
+		filters = append(filters, buildUserSearchClause(filter.Search))
+	}
+
 	if len(filters) > 0 {
 		query["query"] = map[string]interface{}{
 			"bool": map[string]interface{}{
@@ -341,4 +346,34 @@ func (r *UserRepository) buildUserQuery(filter user.UserFilter) map[string]inter
 	}
 
 	return query
+}
+
+// buildUserSearchClause matches partial text across common user identifier fields.
+func buildUserSearchClause(search string) map[string]interface{} {
+	pattern := "*" + escapeElasticsearchWildcard(search) + "*"
+	searchFields := []string{"email", "full_name", "user_id", "external_id", "phone"}
+	should := make([]map[string]interface{}, 0, len(searchFields))
+	for _, field := range searchFields {
+		should = append(should, map[string]interface{}{
+			"wildcard": map[string]interface{}{
+				field: map[string]interface{}{
+					"value":            pattern,
+					"case_insensitive": true,
+				},
+			},
+		})
+	}
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"should":               should,
+			"minimum_should_match": 1,
+		},
+	}
+}
+
+func escapeElasticsearchWildcard(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `*`, `\*`)
+	s = strings.ReplaceAll(s, `?`, `\?`)
+	return s
 }
