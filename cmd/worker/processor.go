@@ -11,14 +11,9 @@ import (
 	"sync"
 	stdtemplate "text/template"
 	"time"
-	"unicode"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
@@ -33,6 +28,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
+	templateutil "github.com/the-monkeys/freerangenotify/internal/usecases/template"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
 )
@@ -420,30 +416,15 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					}
 				}
 
-				// Auto-inject name from user email when not specified
+				// Auto-inject user-derived name variables (name, user_name, full_name,
+				// first_name, last_name) declared by the template. The helper is
+				// channel-agnostic and gates each injection on tmpl.Variables, mirroring
+				// the product/cta_url pattern below. user.FullName is the authoritative
+				// source; email/external_id local-parts and "there" are fallbacks.
 				if notif.Content.Data == nil {
 					notif.Content.Data = make(map[string]interface{})
 				}
-				if needNameFromEmail(notif.Content.Data) {
-					emailForName := ""
-					if usr != nil {
-						emailForName = usr.Email
-						if emailForName == "" && strings.Contains(usr.ExternalID, "@") {
-							emailForName = usr.ExternalID
-						}
-					}
-					if emailForName != "" {
-						notif.Content.Data["name"] = nameFromEmail(emailForName)
-						logger.Debug("Auto-injected name from email for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("name", notif.Content.Data["name"].(string)))
-					} else {
-						notif.Content.Data["name"] = "there"
-						logger.Info("Auto-injected fallback name (no user email/external_id)",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("user_id", notif.UserID))
-					}
-				}
+				templateutil.ApplyUserAutoFill(tmpl.Variables, notif.Content.Data, usr)
 
 				// Auto-inject product and cta_url for welcome_email and similar templates when missing
 				hasProductVar := containsString(tmpl.Variables, "product")
@@ -1434,35 +1415,6 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 	return result, nil
 }
 
-// nameFromEmail derives a display name from an email address (e.g. "john.doe@example.com" -> "John Doe").
-// Used to auto-fill {{.name}} in templates like welcome_email when the caller does not provide it.
-func nameFromEmail(email string) string {
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return "there"
-	}
-	at := strings.Index(email, "@")
-	local := email
-	if at > 0 {
-		local = email[:at]
-	}
-	local = strings.ReplaceAll(local, ".", " ")
-	local = strings.ReplaceAll(local, "_", " ")
-	local = strings.TrimSpace(local)
-	if local == "" {
-		return "there"
-	}
-	words := strings.Fields(local)
-	for i, w := range words {
-		r := []rune(w)
-		if len(r) > 0 {
-			r[0] = unicode.ToUpper(r[0])
-			words[i] = string(r)
-		}
-	}
-	return strings.Join(words, " ")
-}
-
 // hasValidEmailConfig returns true if the app has explicitly configured and complete
 // credentials for its chosen email provider. "system" or incomplete config means use default .env SMTP.
 func hasValidEmailConfig(ec *application.EmailConfig) bool {
@@ -1479,11 +1431,6 @@ func hasValidEmailConfig(ec *application.EmailConfig) bool {
 	default:
 		return false
 	}
-}
-
-// needNameFromEmail returns true if data does not contain a non-empty "name" value.
-func needNameFromEmail(data map[string]interface{}) bool {
-	return needTemplateVar(data, "name")
 }
 
 // needTemplateVar returns true if data does not contain a non-empty value for the given key.

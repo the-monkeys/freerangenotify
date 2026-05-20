@@ -94,16 +94,27 @@ FreeRangeNotify/
 │   ├── newsletter-broadcaster/ # Broadcaster component
 │   └── migrate/                # Database initialization/migration scripts
 ├── internal/
+│   ├── agentdebug/             # Diagnostic helpers for the agent runtime
+│   ├── config/                 # Configuration loading (YAML + env)
 │   ├── container/              # Dependency injection container
 │   ├── domain/                 # Core business models (Analytics, Auth, Workflows, Topics, Templates, etc.)
-│   ├── usecases/               # Orchestration/Service layer logic
 │   ├── infrastructure/
 │   │   ├── database/           # Elasticsearch client
 │   │   ├── providers/          # Complete set of Delivery Providers
 │   │   └── repository/         # Elasticsearch DAOs
-│   └── interfaces/http/routes/ # Full Router Configuration (Fiber)
+│   ├── interfaces/http/routes/ # Full Router Configuration (Fiber)
+│   ├── platform/               # Cross-cutting platform concerns (auth, presence, queue clients)
+│   ├── seed/                   # Seed data for first-run bootstrap
+│   ├── telemetry/              # OpenTelemetry tracing & metrics wiring
+│   ├── usecases/               # Orchestration/Service layer logic
+│   └── version/                # Build version metadata
 ├── pkg/                        # Shared utilities (logging, validation, error types)
 ├── ui/                         # Management Dashboard (React/Vite)
+├── docs/                       # Generated Swagger / OpenAPI specs
+├── e2e/                        # Playwright end-to-end specs
+├── sdk/                        # Client SDKs
+├── examples/nextjs-receiver/   # Sample receiver app for smart-delivery testing
+├── deploy/ deployments/docker/ # Production deployment manifests
 ├── tests/                      # Integration tests
 └── docker-compose.yml          # Orchestration for the combined stack
 ```
@@ -135,6 +146,7 @@ docker-compose exec notification-service /app/migrate
 - **Coverage**: `make test-coverage` - generates coverage reports
 - **API Testing**: Use `test-full-api.ps1` script or manual curl commands from `TESTING_GUIDE.md`
 - **Smart Delivery Testing**: Follow `SMART_DELIVERY_GUIDE.md` for end-to-end presence and instant flush testing
+- **UI E2E**: `npx playwright test` — config in `playwright.config.ts`, specs under `e2e/`
 
 ### Debugging Steps
 Monitoring the interaction between services is critical:
@@ -176,3 +188,12 @@ docker-compose logs -f notification-worker
 -   **Dependency Injection**: Wire services through `container.Container` for testability and decoupling.
 -   **Validation**: Use struct tags with go-playground/validator for input validation.
 -   **Repository Pattern**: Access data through repository interfaces in `infrastructure/repository`.
+
+## Template Variable Auto-Fill
+Any render path that has a `*user.User` in scope (today: `cmd/worker/processor.go`) must apply these auto-fill rules via the shared helper in `internal/usecases/template/autofill.go`:
+-   **Authoritative name source**: `user.FullName` (trimmed) is the primary value for `name`, `user_name`, `full_name`. `first_name` / `last_name` are derived by splitting it.
+-   **Fallbacks (in order)**: `user.Email` local-part → `user.ExternalID` local-part (if it looks like an email) → `"there"`.
+-   **Gate on `tmpl.Variables`**: never inject keys the template does not declare — this prevents payload pollution and mirrors the existing `product` / `cta_url` pattern.
+-   **Never overwrite caller-provided values**: only inject when `needTemplateVar(data, key)` is true.
+-   **Channel-agnostic**: auto-fill applies to every channel (email, SMS, push, chat, webhook, SSE), not just email.
+-   **Shared implementation**: keep the logic in a single helper (`internal/usecases/template/autofill.go`). Do not duplicate inline. Synchronous preview renders without a user remain a no-op.

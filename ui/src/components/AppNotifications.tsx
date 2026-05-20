@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI } from '../services/api';
 import type { TwilioContentTemplate } from '../types';
+import { applyUserAutoFillVars } from '../lib/templateAutofill';
 import type { Notification, NotificationRequest, User, Template, BroadcastNotificationRequest } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import VerifyPhoneDialog from './VerifyPhoneDialog';
@@ -595,6 +596,24 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         const named = keys.filter(k => !/^\d+$/.test(k));
         return [...numeric, ...named];
     }, [formSelectedTwilioTemplate]);
+
+    // Auto-fill name-style Twilio variables ({{first_name}}, {{last_name}},
+    // {{full_name}}, {{user_name}}, {{name}}) from the selected user. Twilio
+    // Content templates are rendered by Twilio's servers, so the backend
+    // ApplyUserAutoFill helper never sees them — this is the matching client-
+    // side pass. Numeric placeholders ({{1}}, {{2}}) are intentionally left
+    // alone; their semantics are template-specific.
+    useEffect(() => {
+        if (quickTwilioVariableKeys.length === 0) return;
+        const selectedUser = users.find(u => u.user_id === quickTo);
+        setQuickData(prev => applyUserAutoFillVars(quickTwilioVariableKeys, prev, selectedUser));
+    }, [quickTwilioVariableKeys, quickTo, users]);
+
+    useEffect(() => {
+        if (formTwilioVariableKeys.length === 0) return;
+        const selectedUser = users.find(u => u.user_id === formData.user_id);
+        setFormTwilioVars(prev => applyUserAutoFillVars(formTwilioVariableKeys, prev, selectedUser));
+    }, [formTwilioVariableKeys, formData.user_id, users]);
 
     // Twilio variables now drive content_variables through quickData / formTwilioVars
     // directly at send time — no helper needed.
