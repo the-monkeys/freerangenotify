@@ -107,6 +107,8 @@ redis_data/
 prometheus_data/
 grafana_data/
 
+elasticsearch/
+
 # Backup files
 *.bak
 *.backup

@@ -34,6 +34,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
     -ldflags='-w -s' -o worker ./cmd/worker
 
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
+    -ldflags='-w -s' -o migrate ./cmd/migrate
+
 # Final stage
 FROM alpine:latest
 
@@ -48,6 +53,7 @@ WORKDIR /home/app
 # Copy the binary, config, and docs from builder stage
 COPY --from=builder --chown=app:app /app/server .
 COPY --from=builder --chown=app:app /app/worker .
+COPY --from=builder --chown=app:app /app/migrate .
 COPY --from=builder --chown=app:app /app/config ./config
 COPY --from=builder --chown=app:app /app/docs ./docs
 

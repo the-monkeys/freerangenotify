@@ -30,6 +30,10 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	templateutil "github.com/the-monkeys/freerangenotify/internal/usecases/template"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
