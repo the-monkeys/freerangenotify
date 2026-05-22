@@ -1051,6 +1051,18 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 				"current_period_end": map[string]interface{}{
 					"type": "date",
 				},
+				"credits_total": map[string]interface{}{
+					"type": "long",
+				},
+				"credits_remaining": map[string]interface{}{
+					"type": "long",
+				},
+				"credits_reserved": map[string]interface{}{
+					"type": "long",
+				},
+				"credits_expire_at": map[string]interface{}{
+					"type": "date",
+				},
 				"metadata": map[string]interface{}{
 					"type":    "object",
 					"enabled": false,
@@ -1061,6 +1073,79 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 				"updated_at": map[string]interface{}{
 					"type": "date",
 				},
+			},
+		},
+	}
+}
+
+// GetCreditLedgerTemplate returns the Elasticsearch mapping for credit_ledger index.
+func (it *IndexTemplates) GetCreditLedgerTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id":                map[string]interface{}{"type": "keyword"},
+				"tenant_id":         map[string]interface{}{"type": "keyword"},
+				"app_id":            map[string]interface{}{"type": "keyword"},
+				"reservation_id":    map[string]interface{}{"type": "keyword"},
+				"notification_id":   map[string]interface{}{"type": "keyword"},
+				"channel":           map[string]interface{}{"type": "keyword"},
+				"entry_type":        map[string]interface{}{"type": "keyword"},
+				"credits_delta":     map[string]interface{}{"type": "long"},
+				"balance_after":     map[string]interface{}{"type": "long"},
+				"rate_card_version": map[string]interface{}{"type": "keyword"},
+				"metadata": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"created_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
+// GetBillingRateCardsTemplate returns the Elasticsearch mapping for billing_rate_cards index.
+func (it *IndexTemplates) GetBillingRateCardsTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"version":          map[string]interface{}{"type": "keyword"},
+				"active":           map[string]interface{}{"type": "boolean"},
+				"credit_value_inr": map[string]interface{}{"type": "double"},
+				"channel_credit_cost": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"overage_per_message": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
+				"created_at": map[string]interface{}{"type": "date"},
+				"updated_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
+// GetBillingRuntimeTemplate returns the Elasticsearch mapping for billing_runtime index.
+func (it *IndexTemplates) GetBillingRuntimeTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id":             map[string]interface{}{"type": "keyword"},
+				"active_version": map[string]interface{}{"type": "keyword"},
+				"updated_at":     map[string]interface{}{"type": "date"},
 			},
 		},
 	}

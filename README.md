@@ -59,6 +59,10 @@ You can get the entire system running locally using Docker Compose.
     ```
 4.  The API will be available at `http://localhost:8080` and the UI at `http://localhost:3000`.
 
+## Operator CLI (hosted)
+
+The `frn` binary includes admin commands for billing rate cards and user credits. See [documents/CLI_ADMIN_REFERENCE.md](documents/CLI_ADMIN_REFERENCE.md) for setup, `frn admin billing rates` (show / set / activate / rollback), and `frn admin grant-credits`.
+
 ## Project Structure
 
 *   `cmd/` - Main entry points for the server and background worker.

@@ -23,7 +23,9 @@ func newAdminCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newAdminRenewLicenseCmd())
+	cmd.AddCommand(newAdminGrantCreditsCmd())
 	cmd.AddCommand(newAdminDeleteAccountCmd())
+	cmd.AddCommand(newAdminBillingCmd())
 
 	return cmd
 }
@@ -87,6 +89,68 @@ func newAdminRenewLicenseCmd() *cobra.Command {
 	cmd.Flags().IntVar(&months, "months", 1, "Number of months to extend (1-24)")
 	cmd.Flags().StringVar(&plan, "plan", "ops_granted", "Plan name to set")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason for renewal (recommended for audit)")
+
+	return cmd
+}
+
+func newAdminGrantCreditsCmd() *cobra.Command {
+	var apiURL, opsSecret string
+	var userID, reason string
+	var credits int64
+
+	cmd := &cobra.Command{
+		Use:   "grant-credits",
+		Short: "Grant credits to a user by user ID",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := LoadConfig()
+			if apiURL != "" {
+				cfg.APIURL = apiURL
+			}
+			if opsSecret != "" {
+				cfg.OpsSecret = opsSecret
+			}
+			if cfg.APIURL == "" {
+				cfg.APIURL = "http://localhost:8080"
+			}
+			if cfg.OpsSecret == "" {
+				return fmt.Errorf("ops secret required: set FREERANGE_OPS_SECRET or use --ops-secret")
+			}
+			if strings.TrimSpace(userID) == "" {
+				return fmt.Errorf("--user-id is required")
+			}
+			if credits <= 0 {
+				return fmt.Errorf("--credits must be greater than zero")
+			}
+			if strings.TrimSpace(reason) == "" {
+				return fmt.Errorf("--reason is required")
+			}
+
+			payload := map[string]interface{}{
+				"user_id": strings.TrimSpace(userID),
+				"credits": credits,
+				"reason":  strings.TrimSpace(reason),
+			}
+
+			target := cfg.APIURL + "/v1/ops/credits/grant"
+			headers, hErr := buildOpsAuthHeaders(http.MethodPost, target, cfg.OpsSecret)
+			if hErr != nil {
+				return hErr
+			}
+
+			respBody, err := doJSONRequest(http.MethodPost, target, payload, headers)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stdout, "Credits granted successfully")
+			return printJSON(respBody)
+		},
+	}
+
+	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
+	cmd.Flags().StringVar(&opsSecret, "ops-secret", "", "Ops secret (env: FREERANGE_OPS_SECRET)")
+	cmd.Flags().StringVar(&userID, "user-id", "", "User ID to grant credits to")
+	cmd.Flags().Int64Var(&credits, "credits", 0, "Number of credits to grant")
+	cmd.Flags().StringVar(&reason, "reason", "", "Reason for grant (required for audit)")
 
 	return cmd
 }

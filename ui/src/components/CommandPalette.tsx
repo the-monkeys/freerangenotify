@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useApps } from '../contexts/AppsContext';
 import {
     Search, LayoutGrid, Workflow, Timer, Tag, BarChart3, ScrollText,
-    BookOpen, Plus, KeyRound, ArrowRight,
+    BookOpen, Plus, KeyRound, ArrowRight, IndianRupee,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -73,6 +73,7 @@ const CommandPalette: React.FC = () => {
             { id: 'act-create-app', label: 'Create Application', icon: <Plus className="h-4 w-4" />, section: 'Actions', action: () => go('/apps'), keywords: 'new application' },
             { id: 'act-create-workflow', label: 'Create Workflow', icon: <Plus className="h-4 w-4" />, section: 'Actions', action: () => go('/workflows/new'), keywords: 'new workflow' },
             { id: 'act-api-ref', label: 'API Reference', icon: <KeyRound className="h-4 w-4" />, section: 'Actions', action: () => go('/docs/api'), keywords: 'swagger openapi endpoints' },
+            { id: 'act-pricing-guide', label: 'Pricing guide', icon: <IndianRupee className="h-4 w-4" />, section: 'Actions', action: () => go('/docs/pricing'), keywords: 'billing credits overage plans' },
         ];
 
         const appItems: CommandItem[] = apps.map(a => ({

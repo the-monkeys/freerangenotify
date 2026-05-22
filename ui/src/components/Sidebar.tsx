@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutGrid, BarChart3, Workflow, Timer, Tag, ScrollText, BookOpen, Sun, Moon, SidebarOpen, SidebarClose, CreditCard } from 'lucide-react';
+import { Sun, Moon, SidebarOpen, SidebarClose } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import UserMenu from './UserMenu';
 import ChangePasswordDialog from './ChangePasswordDialog';
@@ -15,51 +15,65 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
-    SidebarSeparator,
     useSidebar,
 } from './ui/sidebar';
 import { Logo } from './ui/logo';
 import { Button } from './ui/button';
-
-interface NavItem {
-    label: string;
-    icon: React.ReactNode;
-    to: string;
-    id?: string;
-}
-
-const mainItems: NavItem[] = [
-    { label: 'Applications', icon: <LayoutGrid className="h-4 w-4" />, to: '/apps' },
-    // Organizations tab hidden temporarily
-    // { label: 'Organizations', icon: <Building2 className="h-4 w-4" />, to: '/tenants' },
-    { label: 'Workflows', icon: <Workflow className="h-4 w-4" />, to: '/workflows' },
-    { label: 'Digest Rules', icon: <Timer className="h-4 w-4" />, to: '/digest-rules' },
-    { label: 'Topics', icon: <Tag className="h-4 w-4" />, to: '/topics' },
-];
-const adminItems: NavItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 className="h-4 w-4" />, to: '/dashboard' },
-    { id: 'audit', label: 'Audit Logs', icon: <ScrollText className="h-4 w-4" />, to: '/audit' },
-    { id: 'docs', label: 'Documentation', icon: <BookOpen className="h-4 w-4" />, to: '/docs' },
-    { id: 'billing', label: 'Billing & Licensing', icon: <CreditCard className="h-4 w-4" />, to: '/billing' },
-];
-
-const isNavItemActive = (pathname: string, to: string): boolean => {
-    if (pathname === to) {
-        return true;
-    }
-
-    return pathname.startsWith(`${to}/`);
-};
+import { billingAPI } from '../services/api';
+import type { BillingUsage } from '../types';
+import MainSidebarNav from './sidebar/MainSidebarNav';
+import AppDetailSidebarNav from './sidebar/AppDetailSidebarNav';
+import DocsSidebarNav from './sidebar/DocsSidebarNav';
 
 const SidebarNav: React.FC = () => {
     const location = useLocation();
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { theme, toggleTheme } = useTheme();
-    const { isMobile, setOpenMobile, state, setOpen, toggleSidebar } = useSidebar();
+    const { state, setOpen, toggleSidebar } = useSidebar();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
     const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
+    const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null);
+
+    const pathname = location.pathname;
+    const isDocs = pathname.startsWith('/docs');
+    const appMatch = pathname.match(/^\/apps\/([^/]+)/);
+    const appId = appMatch?.[1] ?? null;
+    const isAppDrilldown = !!appId && appId !== 'apps';
+
+    useEffect(() => {
+        if ((isDocs || isAppDrilldown) && state === 'collapsed') {
+            setOpen(true);
+        }
+    }, [isDocs, isAppDrilldown, state, setOpen]);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadUsage = async () => {
+            try {
+                const usage = await billingAPI.getUsage();
+                if (isMounted) {
+                    setBillingUsage(usage);
+                }
+            } catch {
+                if (isMounted) {
+                    setBillingUsage(null);
+                }
+            }
+        };
+
+        void loadUsage();
+        const timer = window.setInterval(() => {
+            void loadUsage();
+        }, 60_000);
+
+        return () => {
+            isMounted = false;
+            window.clearInterval(timer);
+        };
+    }, []);
 
     const handleLogout = async () => {
         await logout();
@@ -76,17 +90,6 @@ const SidebarNav: React.FC = () => {
             e.preventDefault();
             setOpen(true);
         }
-    };
-
-    const handleItemNavigate = () => {
-        if (isMobile) {
-            setOpenMobile(false);
-            return;
-        }
-
-        // if (state === 'collapsed') {
-        //     setOpen(true);
-        // }
     };
 
     return (
@@ -109,7 +112,7 @@ const SidebarNav: React.FC = () => {
                 </Link>
                 <Button
                     type="button"
-                    variant={"ghost"}
+                    variant="ghost"
                     onClick={toggleSidebar}
                     className={`rounded p-1 transition-colors hover:bg-sidebar-accent/50 ${state === 'collapsed' ? 'hidden' : 'block'}`}
                     aria-label="Collapse sidebar"
@@ -119,43 +122,13 @@ const SidebarNav: React.FC = () => {
             </SidebarHeader>
 
             <SidebarContent className="overflow-hidden">
-                <SidebarMenu>
-                    {mainItems.map((item) => (
-                        <SidebarMenuItem key={item.to} className="px-1">
-                            <NavLink
-                                to={item.to}
-                                className={({ isActive }) =>
-                                    `flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 ${isActive || isNavItemActive(location.pathname, item.to)
-                                        ? 'bg-sidebar-accent/50 text-foreground'
-                                        : ''
-                                    }`
-                                }
-                                onClick={handleItemNavigate}
-                            >
-                                {item.icon}
-                                <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
-                            </NavLink>
-                        </SidebarMenuItem>
-                    ))}
-                    <SidebarSeparator className="my-2 border-border/70" />
-                    {adminItems.map((item) => (
-                        <SidebarMenuItem key={item.to} className="px-1">
-                            <NavLink
-                                to={item.to}
-                                className={({ isActive }) =>
-                                    `flex h-9 w-full items-center gap-3 rounded-lg px-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/50 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 ${isActive || isNavItemActive(location.pathname, item.to)
-                                        ? 'bg-sidebar-accent/50 text-foreground'
-                                        : ''
-                                    }`
-                                }
-                                onClick={handleItemNavigate}
-                            >
-                                {item.icon}
-                                <span className="group-data-[collapsible=icon]:hidden flex-1 leading-none">{item.label}</span>
-                            </NavLink>
-                        </SidebarMenuItem>
-                    ))}
-                </SidebarMenu>
+                {isDocs ? (
+                    <DocsSidebarNav />
+                ) : isAppDrilldown && appId ? (
+                    <AppDetailSidebarNav appId={appId} />
+                ) : (
+                    <MainSidebarNav />
+                )}
             </SidebarContent>
 
             <SidebarFooter className="">
@@ -169,6 +142,18 @@ const SidebarNav: React.FC = () => {
                         </SidebarMenuButton>
                     </SidebarMenuItem>
                 </SidebarMenu>
+
+                <div className="mt-2 rounded-lg border border-border/70 bg-sidebar-accent/20 p-3 text-xs group-data-[collapsible=icon]:hidden">
+                    <p className="text-muted-foreground">Credits</p>
+                    <p className="mt-1 text-sm font-semibold text-sidebar-foreground">
+                        {billingUsage ? `${billingUsage.credits_remaining.toLocaleString()} / ${billingUsage.credits_total.toLocaleString()}` : 'Unavailable'}
+                    </p>
+                    {billingUsage && (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                            {billingUsage.usage_percent.toFixed(1)}% used
+                        </p>
+                    )}
+                </div>
 
                 <div className="pt-1">
                     <UserMenu

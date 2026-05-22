@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/smtp"
 	"strings"
@@ -13,21 +14,40 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
+	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // OpsHandler exposes privileged operational APIs behind OpsAuth.
 type OpsHandler struct {
-	authService auth.Service
-	subRepo     license.Repository
-	appRepo     application.Repository
-	notifier    dashboard_notification.Notifier
-	smtp        config.SMTPConfig
-	logger      *zap.Logger
+	authService   auth.Service
+	subRepo       license.Repository
+	appRepo       application.Repository
+	creditService *services.CreditService
+	notifier      dashboard_notification.Notifier
+	smtp          config.SMTPConfig
+	logger        *zap.Logger
 }
 
-func NewOpsHandler(authService auth.Service, subRepo license.Repository, appRepo application.Repository, notifier dashboard_notification.Notifier, smtp config.SMTPConfig, logger *zap.Logger) *OpsHandler {
-	return &OpsHandler{authService: authService, subRepo: subRepo, appRepo: appRepo, notifier: notifier, smtp: smtp, logger: logger}
+func NewOpsHandler(
+	authService auth.Service,
+	subRepo license.Repository,
+	appRepo application.Repository,
+	creditService *services.CreditService,
+	notifier dashboard_notification.Notifier,
+	smtp config.SMTPConfig,
+	logger *zap.Logger,
+) *OpsHandler {
+	return &OpsHandler{
+		authService:   authService,
+		subRepo:       subRepo,
+		appRepo:       appRepo,
+		creditService: creditService,
+		notifier:      notifier,
+		smtp:          smtp,
+		logger:        logger,
+	}
 }
 
 // RenewSubscription handles POST /v1/ops/subscriptions/renew.
@@ -226,6 +246,79 @@ func (h *OpsHandler) sendSubscriptionRenewedEmail(toEmail, fullName string, mont
 		return fmt.Errorf("send subscription renewed email: %w", err)
 	}
 	return nil
+}
+
+// GrantCredits handles POST /v1/ops/credits/grant.
+func (h *OpsHandler) GrantCredits(c *fiber.Ctx) error {
+	if h.creditService == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "credit service unavailable"})
+	}
+
+	var req struct {
+		UserID  string `json:"user_id"`
+		Credits int64  `json:"credits"`
+		Reason  string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	if h.authService != nil {
+		if _, err := h.authService.GetCurrentUser(c.Context(), userID); err != nil {
+			if pkgerrors.IsNotFound(err) {
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "user not found"})
+			}
+			h.logger.Error("failed to resolve user for credit grant", zap.String("user_id", userID), zap.Error(err))
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to resolve user"})
+		}
+	}
+
+	h.logger.Info("Ops grant credits request received",
+		zap.String("user_id", userID),
+		zap.Int64("credits", req.Credits),
+		zap.String("reason", req.Reason),
+	)
+
+	snap, err := h.creditService.GrantCredits(c.Context(), userID, req.Credits, req.Reason, map[string]interface{}{
+		"ops_user_id": userID,
+	})
+	if err != nil {
+		if isGrantCreditsClientError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		h.logger.Error("failed to grant credits", zap.String("user_id", userID), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to grant credits"})
+	}
+
+	h.logger.Info("Ops grant credits completed",
+		zap.String("user_id", userID),
+		zap.Int64("credits_granted", req.Credits),
+		zap.Int64("credits_remaining", snap.CreditsRemaining),
+	)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"tenant_id":          snap.TenantID,
+			"credits_total":      snap.CreditsTotal,
+			"credits_remaining":  snap.CreditsRemaining,
+			"credits_reserved":   snap.CreditsReserved,
+			"credits_granted":    req.Credits,
+		},
+	})
+}
+
+func isGrantCreditsClientError(err error) bool {
+	return errors.Is(err, services.ErrGrantTenantRequired) ||
+		errors.Is(err, services.ErrGrantInvalidAmount) ||
+		errors.Is(err, services.ErrGrantReasonRequired) ||
+		errors.Is(err, services.ErrGrantNoActiveSubscription) ||
+		errors.Is(err, services.ErrGrantLegacyBilling)
 }
 
 // DeleteAccount handles DELETE /v1/ops/users/:user_id.

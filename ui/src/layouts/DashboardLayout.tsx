@@ -3,9 +3,11 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Topbar from '../components/Topbar';
 import { SidebarInset, SidebarProvider } from '../components/ui/sidebar';
+import { AppNavProvider } from '../contexts/AppNavContext';
 
 const DashboardLayout: React.FC = () => {
     return (
+        <AppNavProvider>
         <SidebarProvider>
             <Sidebar />
             <SidebarInset>
@@ -17,6 +19,7 @@ const DashboardLayout: React.FC = () => {
                 </main>
             </SidebarInset>
         </SidebarProvider>
+        </AppNavProvider>
     );
 };
 

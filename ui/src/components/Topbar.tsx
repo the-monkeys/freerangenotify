@@ -6,6 +6,7 @@ import { NotificationBell } from './NotificationBell';
 import { SidebarTrigger } from './ui/sidebar';
 import { Button } from './ui/button';
 import { useNavigate } from 'react-router-dom';
+import { getDocLabelForPath } from '../config/docsNav';
 
 function useBreadcrumb(): { label: string; segments: { label: string; path?: string }[] } {
     const location = useLocation();
@@ -35,6 +36,16 @@ function useBreadcrumb(): { label: string; segments: { label: string; path?: str
             segments: [
                 { label: 'Organizations', path: '/tenants' },
                 { label: 'Organization' },
+            ],
+        };
+    }
+    if (path.startsWith('/docs')) {
+        const pageLabel = getDocLabelForPath(path);
+        return {
+            label: pageLabel,
+            segments: [
+                { label: 'Documentation', path: '/docs/getting-started' },
+                { label: pageLabel },
             ],
         };
     }
@@ -77,7 +88,7 @@ const Topbar: React.FC = () => {
         <header className="h-14 shrink-0 border-b border-border/70 bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/85">
             <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <SidebarTrigger className="p-1 md:hidden" />
+                    <SidebarTrigger className="md:hidden" />
 
                     <nav className="flex items-center gap-1 text-sm">
                         {segments.map((segment, i) => {

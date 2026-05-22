@@ -742,6 +742,52 @@ func TestProcessNotification(t *testing.T) {
 		assert.Equal(t, "Welcome Alice!", n.Content.Body)
 	})
 
+	t.Run("template auto-fills user_name from user.FullName when declared", func(t *testing.T) {
+		// Issue #108: when a template declares "user_name" (or "name", "full_name",
+		// "first_name", "last_name") in its Variables list and the caller does not
+		// supply it, the worker must inject the user's stored FullName.
+		nrepo := newStubNotifRepo()
+		tmplID := "00000000-0000-4000-a000-00000000010a"
+		nrepo.notifications["n-10a"] = &notification.Notification{
+			NotificationID: "n-10a",
+			AppID:          "app-1",
+			UserID:         "user-1",
+			Channel:        notification.ChannelEmail,
+			Priority:       notification.PriorityNormal,
+			Status:         notification.StatusQueued,
+			TemplateID:     tmplID,
+			Content:        notification.Content{},
+		}
+
+		tmpl := &templateDomain.Template{
+			ID:        tmplID,
+			AppID:     "app-1",
+			Name:      "personalized",
+			Channel:   "email",
+			Subject:   "Hi {{.first_name}}",
+			Body:      "Hello {{.user_name}} — your last name is {{.last_name}}.",
+			Variables: []string{"user_name", "first_name", "last_name"},
+		}
+
+		usr := makeUser()
+		usr.FullName = "Jane Mary Doe" // must beat the email local-part
+
+		proc := newProcessorForTest(nrepo, nil,
+			map[string]*user.User{"user-1": usr},
+			map[string]*application.Application{"app-1": makeApp()},
+			map[string]*templateDomain.Template{tmplID: tmpl},
+			nil,
+		)
+
+		proc.processNotification(context.Background(), makeQueueItem("n-10a"), zap.NewNop())
+
+		assert.Equal(t, notification.StatusSent, nrepo.statusUpdates["n-10a"])
+		n := nrepo.notifications["n-10a"]
+		assert.Equal(t, "Hi Jane", n.Content.Title,
+			"first_name must derive from user.FullName, not the email local-part")
+		assert.Equal(t, "Hello Jane Mary Doe — your last name is Mary Doe.", n.Content.Body)
+	})
+
 	t.Run("webhook target resolved from custom provider", func(t *testing.T) {
 		nrepo := newStubNotifRepo()
 		tmplID := "00000000-0000-4000-a000-000000000011"

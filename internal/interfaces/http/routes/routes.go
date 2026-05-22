@@ -318,6 +318,13 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		billing.Post("/verify-payment", c.PaymentHandler.VerifyPayment)
 	}
 
+	// Admin billing rate-card controls (JWT-protected)
+	adminBilling := adminAuth.Group("/billing")
+	adminBilling.Get("/rates", c.BillingHandler.AdminGetRates)
+	adminBilling.Post("/rates/set", c.BillingHandler.AdminSetRate)
+	adminBilling.Post("/rates/activate", c.BillingHandler.AdminActivateRate)
+	adminBilling.Post("/rates/rollback", c.BillingHandler.AdminRollbackRate)
+
 	// Auth-protected routes
 	adminAuth.Get("/me", c.AuthHandler.GetCurrentUser)
 	adminAuth.Delete("/me", c.AuthHandler.DeleteOwnAccount)
@@ -510,6 +517,7 @@ func setupOpsRoutes(v1 fiber.Router, c *container.Container) {
 
 	if c.OpsHandler != nil {
 		ops.Post("/subscriptions/renew", c.OpsHandler.RenewSubscription)
+		ops.Post("/credits/grant", c.OpsHandler.GrantCredits)
 		ops.Delete("/users/:user_id", c.OpsHandler.DeleteAccount)
 	}
 }

@@ -27,63 +27,19 @@ import { Textarea } from '../components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Spinner } from '../components/ui/spinner';
 import { Checkbox } from '../components/ui/checkbox';
-import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuItem } from '../components/ui/sidebar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion';
 import { toast } from 'sonner';
-import { Copy, Check, LayoutDashboard, Users, FileText, Bell, Layers, MessageSquare, UsersRound, Plug, GitBranch, Settings, Code, Workflow, Timer, Zap, Mail, Route, Link2, MessageCircle } from 'lucide-react';
-import { Badge } from '../components/ui/badge';
+import { Copy, Check, Zap, Mail, Route, Timer } from 'lucide-react';
 import { useApiQuery } from '../hooks/use-api-query';
 import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
-
-type TabId = 'overview' | 'users' | 'templates' | 'notifications' | 'digest-rules' | 'workflows' | 'schedules' | 'topics' | 'team' | 'providers' | 'environments' | 'settings' | 'integration' | 'import' | 'browse-library' | 'whatsapp';
-
-const VALID_TABS: TabId[] = ['overview', 'users', 'templates', 'notifications', 'digest-rules', 'workflows', 'schedules', 'topics', 'team', 'providers', 'environments', 'settings', 'integration', 'import', 'browse-library', 'whatsapp'];
-
-interface TabDef {
-    id: TabId;
-    label: string;
-    icon: React.ReactNode;
-}
-
-const TAB_GROUPS: { label: string; tabs: TabDef[] }[] = [
-    {
-        label: 'General',
-        tabs: [
-            { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-            { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
-            { id: 'templates', label: 'Templates', icon: <FileText className="h-4 w-4" /> },
-            { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
-        ],
-    },
-    {
-        label: 'Configuration',
-        tabs: [
-            { id: 'digest-rules', label: 'Digest Rules', icon: <Layers className="h-4 w-4" /> },
-            { id: 'workflows', label: 'Workflows', icon: <Workflow className="h-4 w-4" /> },
-            { id: 'schedules', label: 'Schedules', icon: <Timer className="h-4 w-4" /> },
-            { id: 'topics', label: 'Topics', icon: <MessageSquare className="h-4 w-4" /> },
-            { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle className="h-4 w-4" /> },
-            { id: 'team', label: 'Team', icon: <UsersRound className="h-4 w-4" /> },
-            { id: 'providers', label: 'Providers', icon: <Plug className="h-4 w-4" /> },
-            { id: 'import', label: 'Import', icon: <Link2 className="h-4 w-4" /> },
-        ],
-    },
-    {
-        label: 'Advanced',
-        tabs: [
-            { id: 'environments', label: 'Environments', icon: <GitBranch className="h-4 w-4" /> },
-            { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
-            { id: 'integration', label: 'Integration', icon: <Code className="h-4 w-4" /> },
-        ],
-    },
-];
-
-const ALL_TABS: TabDef[] = TAB_GROUPS.flatMap(g => g.tabs);
+import { VALID_TABS, type TabId } from '../config/appDetailNav';
+import { useAppNav } from '../contexts/AppNavContext';
 
 const AppDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    const { setAppId: setNavAppId, setAppName: setNavAppName, setUnreadCount: setNavUnreadCount } = useAppNav();
     const [app, setApp] = useState<Application | null>(null);
     const [loading, setLoading] = useState(true);
     const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -121,7 +77,7 @@ const AppDetail: React.FC = () => {
     const [eventMappingText, setEventMappingText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const [, setUnreadCountLocal] = useState(0);
     const [confirmAction, setConfirmAction] = useState<'regenerate-key' | 'delete-app' | null>(null);
     const [confirmLoading, setConfirmLoading] = useState(false);
 
@@ -137,6 +93,20 @@ const AppDetail: React.FC = () => {
 
 
     useEffect(() => {
+        setNavAppId(id ?? null);
+        return () => {
+            setNavAppId(null);
+            setNavAppName('');
+            setNavUnreadCount(0);
+        };
+    }, [id, setNavAppId, setNavAppName, setNavUnreadCount]);
+
+    const handleUnreadCount = useCallback((count: number) => {
+        setUnreadCountLocal(count);
+        setNavUnreadCount(count);
+    }, [setNavUnreadCount]);
+
+    useEffect(() => {
         if (!id) return;
         let ignore = false;
         const doFetch = async () => {
@@ -146,6 +116,7 @@ const AppDetail: React.FC = () => {
                 if (ignore) return;
                 setApp(appData);
                 setAppName(appData.app_name);
+                setNavAppName(appData.app_name);
                 setDescription(appData.description || '');
                 setWebhookUrl(appData.webhook_url || '');
                 setTenantId(appData.tenant_id || '');
@@ -182,6 +153,7 @@ const AppDetail: React.FC = () => {
             const appData = await applicationsAPI.get(id);
             setApp(appData);
             setAppName(appData.app_name);
+            setNavAppName(appData.app_name);
             setDescription(appData.description || '');
             setWebhookUrl(appData.webhook_url || '');
             setTenantId(appData.tenant_id || '');
@@ -220,6 +192,7 @@ const AppDetail: React.FC = () => {
             setApp(updated);
             setTenantId(updated.tenant_id || '');
             localStorage.setItem('last_app_name', updated.app_name);
+            setNavAppName(updated.app_name);
             window.dispatchEvent(new CustomEvent('app-name-updated', { detail: updated.app_name }));
             toast.success('Application updated successfully!');
         } catch (error) {
@@ -260,12 +233,11 @@ const AppDetail: React.FC = () => {
         }
     };
 
-    const handleTabChange = (tab: TabId) => {
-        setActiveTab(tab);
-        if (tab === 'notifications') {
+    useEffect(() => {
+        if (activeTab === 'notifications') {
             fetchWebhookEndpoints();
         }
-    };
+    }, [activeTab, id]);
 
     if (loading) return <div className="flex justify-center items-center min-h-screen"><Spinner /></div>;
     if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
@@ -276,92 +248,7 @@ const AppDetail: React.FC = () => {
 
     return (
         <div className="mx-auto max-w-7xl">
-            <>
-                {/* Tabs — mobile dropdown */}
-                <Card size="sm" className="mb-6 bg-card/60 shadow-sm md:hidden">
-                    <CardContent className="p-2">
-                        <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                            Section
-                        </p>
-                        <Select value={activeTab} onValueChange={(val) => handleTabChange(val as TabId)}>
-                            <SelectTrigger className="h-10 w-full border-0 bg-transparent px-2 text-left shadow-none">
-                                <SelectValue>
-                                    <span className="inline-flex items-center gap-2">
-                                        {ALL_TABS.find(t => t.id === activeTab)?.icon}
-                                        {ALL_TABS.find(t => t.id === activeTab)?.label}
-                                        {activeTab === 'notifications' && unreadCount > 0 && (
-                                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4">
-                                                {unreadCount > 99 ? '99+' : unreadCount}
-                                            </Badge>
-                                        )}
-                                    </span>
-                                </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                                {TAB_GROUPS.map((group) => (
-                                    <React.Fragment key={group.label}>
-                                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{group.label}</div>
-                                        {group.tabs.map((tab) => (
-                                            <SelectItem key={tab.id} value={tab.id}>
-                                                <span className="inline-flex items-center gap-2">
-                                                    {tab.icon}
-                                                    {tab.label}
-                                                    {tab.id === 'notifications' && unreadCount > 0 && (
-                                                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 min-w-4">
-                                                            {unreadCount > 99 ? '99+' : unreadCount}
-                                                        </Badge>
-                                                    )}
-                                                </span>
-                                            </SelectItem>
-                                        ))}
-                                    </React.Fragment>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </CardContent>
-                </Card>
-
-                <div className="grid gap-6 md:grid-cols-[260px_minmax(0,1fr)]">
-                    {/* Options sidebar — desktop */}
-                    <aside className="hidden md:block">
-                        <Card size="sm" className="bg-card/60 shadow-sm backdrop-blur-sm">
-                            <CardContent className="p-2">
-                                {TAB_GROUPS.map((group) => (
-                                    <SidebarGroup key={group.label} className="p-1">
-                                        <SidebarGroupLabel className="h-7 px-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                            {group.label}
-                                        </SidebarGroupLabel>
-                                        <SidebarGroupContent>
-                                            <SidebarMenu className="gap-1">
-                                                {group.tabs.map((tab) => (
-                                                    <SidebarMenuItem key={tab.id}>
-                                                        <button
-                                                            onClick={() => handleTabChange(tab.id)}
-                                                            className={`inline-flex h-9 w-full items-center gap-2.5 rounded-lg border-0 px-2.5 text-left text-sm transition-colors focus-visible:outline-none ${activeTab === tab.id || (tab.id === 'templates' && activeTab === 'browse-library')
-                                                                ? 'bg-foreground text-background shadow-sm'
-                                                                : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground'
-                                                                }`}
-                                                        >
-                                                            {tab.icon}
-                                                            <span className="truncate">{tab.label}</span>
-                                                            {tab.id === 'notifications' && unreadCount > 0 && (
-                                                                <Badge variant="default" className="ml-auto h-4 min-w-4 px-1.5 py-0 text-[10px] inline-flex items-center justify-center">
-                                                                    {unreadCount > 99 ? '99+' : unreadCount}
-                                                                </Badge>
-                                                            )}
-                                                        </button>
-                                                    </SidebarMenuItem>
-                                                ))}
-                                            </SidebarMenu>
-                                        </SidebarGroupContent>
-                                    </SidebarGroup>
-                                ))}
-                            </CardContent>
-                        </Card>
-                    </aside>
-
-                    {/* Tab content */}
-                    <div className="space-y-6">
+            <div className="space-y-6">
                         {activeTab === 'overview' && (
                             <Card>
                                 <CardHeader className='flex items-center justify-between'>
@@ -439,7 +326,7 @@ const AppDetail: React.FC = () => {
                             <TemplateLibrary />
                         )}
                         {app && activeTab === 'notifications' && (
-                            <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={setUnreadCount} />
+                            <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={handleUnreadCount} />
                         )}
 
                         {app && activeTab === 'whatsapp' && (
@@ -1381,9 +1268,7 @@ const AppDetail: React.FC = () => {
                                 />
                             </div>
                         )}
-                    </div>
-                </div>
-            </>
+            </div>
         </div>
     );
 };

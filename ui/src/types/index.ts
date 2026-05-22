@@ -1006,6 +1006,10 @@ export interface BillingSubscription {
     status: 'trial' | 'active' | 'expired' | 'canceled';
     current_period_start: string;
     current_period_end: string;
+    credits_total?: number;
+    credits_remaining?: number;
+    credits_reserved?: number;
+    credits_expire_at?: string;
     metadata?: Record<string, unknown>;
     created_at: string;
     updated_at: string;
@@ -1015,7 +1019,9 @@ export interface BillingUsage {
     plan: string;
     status: 'trial' | 'active' | 'expired' | 'canceled' | 'none';
     messages_sent: number;
-    message_limit: number;
+    credits_consumed: number;
+    credits_remaining: number;
+    credits_total: number;
     usage_percent: number;
     current_period_start: string;
     current_period_end: string;
@@ -1026,10 +1032,40 @@ export interface AcceptTrialResponse {
     accepted: boolean;
     plan: string;
     status: string;
-    message_limit: number;
+    credits_total: number;
+    credits_remaining: number;
+    credits_expire_at?: string;
     current_period_end: string;
     days_remaining: number;
     trial_accepted_at: string;
+}
+
+export interface BillingUsageBreakdownItem {
+    channel: string;
+    message_count: number;
+    credits_consumed: number;
+    overage_amount: number;
+}
+
+export interface BillingUsageBreakdown {
+    billing_enabled: boolean;
+    plan?: string;
+    period_start?: string;
+    period_end?: string;
+    credits_total?: number;
+    credits_consumed?: number;
+    credits_remaining?: number;
+    breakdown?: BillingUsageBreakdownItem[];
+}
+
+export interface BillingRates {
+    currency: string;
+    active_version: string;
+    effective_at: string;
+    credit_value_inr: number;
+    channel_credit_cost: Record<string, number>;
+    overage_per_message: Record<string, number>;
+    free_tier_daily_caps: Record<string, number>;
 }
 
 // ============= Custom Provider Types =============

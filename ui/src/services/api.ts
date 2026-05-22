@@ -77,6 +77,11 @@ import type {
   BulkCreateUserResponse,
   SubscriberHashResponse,
   SystemStats,
+  BillingUsage,
+  BillingSubscription,
+  BillingUsageBreakdown,
+  BillingRates,
+  AcceptTrialResponse,
 } from '../types';
 
 // Resolve API base URL:
@@ -290,11 +295,36 @@ interface UserListResponse {
 }
 
 export const usersAPI = {
-  list: async (apiKey: string, page = 1, pageSize = 20) => {
-    const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?page=${page}&page_size=${pageSize}`, {
+  list: async (apiKey: string, page = 1, pageSize = 20, search?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    const trimmed = search?.trim();
+    if (trimmed) params.set('search', trimmed);
+    const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?${params.toString()}`, {
       headers: getAuthHeaders(apiKey)
     });
     return data.data;
+  },
+
+  /** Fetches every page for the given optional search filter (page_size capped at 100). */
+  listAll: async (apiKey: string, search?: string) => {
+    const pageSize = 100;
+    let page = 1;
+    const users: User[] = [];
+    let total_count = 0;
+
+    while (true) {
+      const res = await usersAPI.list(apiKey, page, pageSize, search);
+      const batch = res.users ?? [];
+      users.push(...batch);
+      total_count = res.total_count ?? users.length;
+      if (users.length >= total_count || batch.length === 0) break;
+      page += 1;
+    }
+
+    return { users, total_count };
   },
 
   get: async (apiKey: string, id: string) => {
@@ -1101,27 +1131,27 @@ export const tenantsAPI = {
 // ============= Billing APIs (user-facing, JWT auth) =============
 export const billingAPI = {
   getUsage: async () => {
-    const { data } = await api.get('/billing/usage');
+    const { data } = await api.get<BillingUsage>('/billing/usage');
     return data;
   },
 
   getSubscription: async () => {
-    const { data } = await api.get('/billing/subscription');
+    const { data } = await api.get<BillingSubscription>('/billing/subscription');
     return data;
   },
 
   acceptTrial: async () => {
-    const { data } = await api.post('/billing/accept-trial');
+    const { data } = await api.post<AcceptTrialResponse>('/billing/accept-trial');
     return data;
   },
 
   getUsageBreakdown: async () => {
-    const { data } = await api.get('/billing/usage/breakdown');
+    const { data } = await api.get<BillingUsageBreakdown>('/billing/usage/breakdown');
     return data;
   },
 
   getRates: async () => {
-    const { data } = await api.get('/billing/rates');
+    const { data } = await api.get<BillingRates>('/billing/rates');
     return data;
   },
 

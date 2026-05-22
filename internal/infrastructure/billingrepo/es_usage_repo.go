@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const usageIndex = "frn_usage_events"
+const usageIndex = "usage_events"
 
 // ESUsageRepo implements billing.UsageRepository and billing.UsageEmitter
 // backed by Elasticsearch.
@@ -27,7 +27,7 @@ func NewESUsageRepo(es *elasticsearch.Client, logger *zap.Logger) *ESUsageRepo {
 	return &ESUsageRepo{es: es, logger: logger}
 }
 
-// EnsureIndex creates the frn_usage_events index with correct mappings if it
+// EnsureIndex creates the usage_events index with correct mappings if it
 // does not already exist. Call this during application startup / migration.
 func (r *ESUsageRepo) EnsureIndex(ctx context.Context) error {
 	mapping := `{
@@ -43,6 +43,8 @@ func (r *ESUsageRepo) EnsureIndex(ctx context.Context) error {
 				"message_type":      { "type": "keyword" },
 				"cost_unit_paisa":   { "type": "long" },
 				"billed_paisa":      { "type": "long" },
+				"credits_used":      { "type": "long" },
+				"rate_card_version": { "type": "keyword" },
 				"currency":          { "type": "keyword" },
 				"status":            { "type": "keyword" },
 				"timestamp":         { "type": "date" }
@@ -171,6 +173,8 @@ func (r *ESUsageRepo) GetSummary(ctx context.Context, tenantIDs []string, from, 
 						"terms": { "field": "credential_source", "size": 10 },
 						"aggs": {
 							"total_billed": { "sum": { "field": "billed_paisa" } },
+							"credits_used": { "sum": { "field": "credits_used" } },
+							"overage_amount": { "sum": { "field": "billed_paisa" } },
 							"msg_count":   { "value_count": { "field": "id" } }
 						}
 					}
@@ -197,12 +201,22 @@ func (r *ESUsageRepo) GetSummary(ctx context.Context, tenantIDs []string, from, 
 		Aggregations struct {
 			ByChannel struct {
 				Buckets []struct {
-					Key         string `json:"key"`
+					Key          string `json:"key"`
 					ByCredSource struct {
 						Buckets []struct {
 							Key         string `json:"key"`
-							TotalBilled struct{ Value float64 `json:"value"` } `json:"total_billed"`
-							MsgCount    struct{ Value float64 `json:"value"` } `json:"msg_count"`
+							TotalBilled struct {
+								Value float64 `json:"value"`
+							} `json:"total_billed"`
+							CreditsUsed struct {
+								Value float64 `json:"value"`
+							} `json:"credits_used"`
+							OverageAmount struct {
+								Value float64 `json:"value"`
+							} `json:"overage_amount"`
+							MsgCount struct {
+								Value float64 `json:"value"`
+							} `json:"msg_count"`
 						} `json:"buckets"`
 					} `json:"by_cred_source"`
 				} `json:"buckets"`
@@ -225,6 +239,8 @@ func (r *ESUsageRepo) GetSummary(ctx context.Context, tenantIDs []string, from, 
 				CredentialSource: credBucket.Key,
 				MessageCount:     int64(credBucket.MsgCount.Value),
 				TotalBilledPaisa: int64(credBucket.TotalBilled.Value),
+				CreditsConsumed:  int64(credBucket.CreditsUsed.Value),
+				OverageAmount:    int64(credBucket.OverageAmount.Value),
 				PeriodStart:      from.Format(time.RFC3339),
 				PeriodEnd:        to.Format(time.RFC3339),
 			})

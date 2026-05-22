@@ -80,6 +80,7 @@ type UserFilter struct {
 	ExternalID    string   `json:"external_id,omitempty"`
 	Email         string   `json:"email,omitempty"`
 	FullName      string   `json:"full_name,omitempty"`
+	Search        string   `json:"search,omitempty"`
 	Timezone      string   `json:"timezone,omitempty"`
 	Language      string   `json:"language,omitempty"`
 	Limit         int      `json:"limit,omitempty"`

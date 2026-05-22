@@ -4,22 +4,19 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	stdtemplate "text/template"
 	"time"
-	"unicode"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
@@ -30,7 +27,13 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
+	templateutil "github.com/the-monkeys/freerangenotify/internal/usecases/template"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -56,6 +59,7 @@ type NotificationProcessor struct {
 	authService      auth.Service
 	licensingChecker license.Checker
 	providerManager  *providers.Manager
+	creditService    *services.CreditService
 	redisClient      *redis.Client
 	logger           *zap.Logger
 	config           ProcessorConfig
@@ -88,6 +92,7 @@ func NewNotificationProcessor(
 	authService auth.Service,
 	licensingChecker license.Checker,
 	providerManager *providers.Manager,
+	creditService *services.CreditService,
 	redisClient *redis.Client,
 	logger *zap.Logger,
 	config ProcessorConfig,
@@ -108,6 +113,7 @@ func NewNotificationProcessor(
 		authService:      authService,
 		licensingChecker: licensingChecker,
 		providerManager:  providerManager,
+		creditService:    creditService,
 		redisClient:      redisClient,
 		logger:           logger,
 		config:           config,
@@ -414,30 +420,15 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					}
 				}
 
-				// Auto-inject name from user email when not specified
+				// Auto-inject user-derived name variables (name, user_name, full_name,
+				// first_name, last_name) declared by the template. The helper is
+				// channel-agnostic and gates each injection on tmpl.Variables, mirroring
+				// the product/cta_url pattern below. user.FullName is the authoritative
+				// source; email/external_id local-parts and "there" are fallbacks.
 				if notif.Content.Data == nil {
 					notif.Content.Data = make(map[string]interface{})
 				}
-				if needNameFromEmail(notif.Content.Data) {
-					emailForName := ""
-					if usr != nil {
-						emailForName = usr.Email
-						if emailForName == "" && strings.Contains(usr.ExternalID, "@") {
-							emailForName = usr.ExternalID
-						}
-					}
-					if emailForName != "" {
-						notif.Content.Data["name"] = nameFromEmail(emailForName)
-						logger.Debug("Auto-injected name from email for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("name", notif.Content.Data["name"].(string)))
-					} else {
-						notif.Content.Data["name"] = "there"
-						logger.Info("Auto-injected fallback name (no user email/external_id)",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("user_id", notif.UserID))
-					}
-				}
+				templateutil.ApplyUserAutoFill(tmpl.Variables, notif.Content.Data, usr)
 
 				// Auto-inject product and cta_url for welcome_email and similar templates when missing
 				hasProductVar := containsString(tmpl.Variables, "product")
@@ -628,8 +619,36 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	var reservation *billing.CreditReservation
+	if p.creditService != nil {
+		tenantID := notif.AppID
+		if app, appErr := p.appRepo.GetByID(ctx, notif.AppID); appErr == nil && app != nil && app.AdminUserID != "" {
+			tenantID = app.AdminUserID
+		}
+		reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		if err != nil {
+			if errors.Is(err, services.ErrInsufficientCredits) || errors.Is(err, services.ErrDailyCapExceeded) {
+				p.handleCreditBlocked(ctx, notif, err.Error())
+				return
+			}
+			p.handleFailure(ctx, notif, item, fmt.Sprintf("credit reservation failed: %s", err.Error()))
+			return
+		}
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["credits_used"] = reservation.CreditsReserved
+		notif.Metadata["rate_card_version"] = reservation.RateCardVersion
+		notif.Metadata["reservation_id"] = reservation.ID
+	}
+
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
+		if reservation != nil {
+			if releaseErr := p.creditService.ReleaseOnFailure(ctx, reservation.ID, err.Error()); releaseErr != nil {
+				logger.Error("Failed to release reserved credits", zap.Error(releaseErr))
+			}
+		}
 		logger.Error("Failed to send notification", zap.Error(err))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -639,6 +658,14 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 		p.handleFailure(ctx, notif, item, err.Error())
 		return
+	}
+
+	if reservation != nil {
+		if _, commitErr := p.creditService.CommitOnSuccess(ctx, reservation.ID); commitErr != nil {
+			logger.Error("Failed to commit reserved credits",
+				zap.String("notification_id", notif.NotificationID),
+				zap.Error(commitErr))
+		}
 	}
 
 	// Update in-memory status BEFORE persisting the full object,
@@ -693,6 +720,28 @@ func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif 
 
 	if p.metrics != nil {
 		p.metrics.RecordDeliveryFailure(string(notif.Channel), "licensing", reason)
+	}
+}
+
+func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *notification.Notification, reason string) {
+	notif.Status = notification.StatusFailed
+	notif.ErrorMessage = reason
+	now := time.Now()
+	notif.FailedAt = &now
+
+	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed); err != nil {
+		p.logger.Error("Failed to update status to failed for credit block",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	if err := p.notifRepo.Update(ctx, notif); err != nil {
+		p.logger.Error("Failed to persist credit-blocked notification state",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(err))
+	}
+	p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "failed")
+	if p.metrics != nil {
+		p.metrics.RecordDeliveryFailure(string(notif.Channel), "billing", reason)
 	}
 }
 
@@ -1370,35 +1419,6 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 	return result, nil
 }
 
-// nameFromEmail derives a display name from an email address (e.g. "john.doe@example.com" -> "John Doe").
-// Used to auto-fill {{.name}} in templates like welcome_email when the caller does not provide it.
-func nameFromEmail(email string) string {
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return "there"
-	}
-	at := strings.Index(email, "@")
-	local := email
-	if at > 0 {
-		local = email[:at]
-	}
-	local = strings.ReplaceAll(local, ".", " ")
-	local = strings.ReplaceAll(local, "_", " ")
-	local = strings.TrimSpace(local)
-	if local == "" {
-		return "there"
-	}
-	words := strings.Fields(local)
-	for i, w := range words {
-		r := []rune(w)
-		if len(r) > 0 {
-			r[0] = unicode.ToUpper(r[0])
-			words[i] = string(r)
-		}
-	}
-	return strings.Join(words, " ")
-}
-
 // hasValidEmailConfig returns true if the app has explicitly configured and complete
 // credentials for its chosen email provider. "system" or incomplete config means use default .env SMTP.
 func hasValidEmailConfig(ec *application.EmailConfig) bool {
@@ -1415,11 +1435,6 @@ func hasValidEmailConfig(ec *application.EmailConfig) bool {
 	default:
 		return false
 	}
-}
-
-// needNameFromEmail returns true if data does not contain a non-empty "name" value.
-func needNameFromEmail(data map[string]interface{}) bool {
-	return needTemplateVar(data, "name")
 }
 
 // needTemplateVar returns true if data does not contain a non-empty value for the given key.

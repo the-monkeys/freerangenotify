@@ -36,6 +36,11 @@ var allIndices = []string{
 	"app_memberships",
 	// Phase 6
 	"environments",
+	// Billing indices (credit ledger, rate cards, runtime). Credit wallet fields live on `subscriptions`.
+	// Renamed from frn_* — existing clusters: reindex or recreate then merge data before deleting old indices.
+	"credit_ledger",
+	"billing_rate_cards",
+	"billing_runtime",
 }
 
 var rootCmd = &cobra.Command{
