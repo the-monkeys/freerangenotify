@@ -1,0 +1,115 @@
+name: Release CLI Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.5.3). Leave blank to use the current ref."
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26.1"
+
+jobs:
+  build:
+    name: Build ${{ matrix.tool }} (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [frn, migrate]
+        # Covers: Linux x86_64 (Intel/Ryzen) & arm64, macOS Intel & Apple Silicon,
+        # Windows x86_64 & arm64.
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        run: |
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          # Strip refs/tags/ if present
+          REF="${REF#refs/tags/}"
+          echo "version=${REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="dist"
+          mkdir -p "$OUT_DIR"
+
+          EXT=""
+          if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+
+          BIN_NAME="${{ matrix.tool }}-${VERSION}-${GOOS}-${GOARCH}${EXT}"
+
+          LDFLAGS="-s -w -X github.com/the-monkeys/FreeRangeNotify/internal/version.Version=${VERSION}"
+
+          go build \
+            -trimpath \
+            -ldflags "$LDFLAGS" \
+            -o "$OUT_DIR/$BIN_NAME" \
+            ./cmd/${{ matrix.tool }}
+
+          ( cd "$OUT_DIR" && sha256sum "$BIN_NAME" > "$BIN_NAME.sha256" )
+
+          ls -la "$OUT_DIR"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.tool }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Attach to GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files to publish
+        run: ls -la dist
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/frn-*
+            dist/migrate-*
