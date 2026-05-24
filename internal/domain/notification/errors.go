@@ -27,12 +27,17 @@ var (
 
 	// Rich content validation (Phase 7 — Webhook channel expansion).
 	ErrTooManyAttachments = errors.New("content.attachments: at most 10 allowed")
-	ErrInvalidAttachment  = errors.New("content.attachments: each item requires type and url")
+	ErrInvalidAttachment  = errors.New("content.attachments: each item requires type and a valid source/disposition")
 	ErrTooManyActions     = errors.New("content.actions: at most 5 allowed")
 	ErrInvalidAction      = errors.New("content.actions: type and label required; url required for link actions")
 	ErrTooManyFields      = errors.New("content.fields: at most 25 allowed")
 	ErrInvalidField       = errors.New("content.fields: each item requires key and value")
 	ErrInvalidPoll        = errors.New("content.poll: question plus 2–10 non-empty choices required")
+
+	// File-attachment source validation (file-attachments feature).
+	ErrAttachmentMissingSource   = errors.New("content.attachments: each item requires exactly one of url, content_base64, or file_id")
+	ErrAmbiguousAttachmentSource = errors.New("content.attachments: provide exactly one of url, content_base64, or file_id per item")
+	ErrAttachmentTooLarge        = errors.New("content.attachments: inline payload exceeds the per-item size limit")
 )
 
 // IsValidationError checks if an error is a validation error

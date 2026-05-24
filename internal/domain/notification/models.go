@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+// attachmentInlineMaxEncoded caps the base64-encoded length of an inline
+// attachment. 14 MB encoded ≈ 10.5 MB decoded — the per-element hard limit
+// enforced at the domain boundary; per-channel limits are stricter and
+// enforced at the provider layer.
+const attachmentInlineMaxEncoded = 14 * 1024 * 1024
+
 // Channel represents notification delivery channels
 type Channel string
 
@@ -165,15 +171,31 @@ type Content struct {
 	Style       *Style       `json:"style,omitempty"       es:"style"`
 }
 
-// Attachment describes a media or file attachment referenced by URL.
+// Attachment describes a media or file attachment.
+//
+// One — and only one — of the following sources must be set per element:
+//   - URL:           a public URL FRN will fetch at delivery time (legacy).
+//   - ContentBase64: inline base64-encoded bytes (capped at ~10 MB encoded).
+//   - FileID:        an opaque id returned by POST /v1/files.
+//
+// ContentBase64 is intentionally tagged `es:"-"` so raw bytes are never
+// indexed; the worker resolves it into a stored file before persistence.
+//
 // Size is in bytes when known; zero means unknown/not validated.
 type Attachment struct {
 	Type     string `json:"type"                 es:"type"` // image | video | file | audio
-	URL      string `json:"url"                  es:"url"`
+	URL      string `json:"url,omitempty"        es:"url"`
 	Name     string `json:"name,omitempty"       es:"name"`
 	MimeType string `json:"mime_type,omitempty"  es:"mime_type"`
 	Size     int64  `json:"size,omitempty"       es:"size"`
 	AltText  string `json:"alt_text,omitempty"   es:"alt_text"`
+
+	// New optional fields (file-attachments feature). All omitempty —
+	// callers using only URL continue to work unchanged.
+	ContentBase64 string `json:"content_base64,omitempty" es:"-"`
+	FileID        string `json:"file_id,omitempty"        es:"file_id"`
+	ContentID     string `json:"content_id,omitempty"     es:"content_id"`  // RFC 2392 cid:* token for inline HTML email embed
+	Disposition   string `json:"disposition,omitempty"    es:"disposition"` // "attachment" (default) | "inline"
 }
 
 // Action describes a call-to-action button.
@@ -235,7 +257,34 @@ func (c *Content) Validate() error {
 	}
 	for i := range c.Attachments {
 		a := c.Attachments[i]
-		if a.Type == "" || a.URL == "" {
+		if a.Type == "" {
+			return ErrInvalidAttachment
+		}
+		// Exactly one of {URL, ContentBase64, FileID} must be set.
+		sources := 0
+		if a.URL != "" {
+			sources++
+		}
+		if a.ContentBase64 != "" {
+			sources++
+		}
+		if a.FileID != "" {
+			sources++
+		}
+		switch sources {
+		case 0:
+			return ErrAttachmentMissingSource
+		case 1:
+			// ok
+		default:
+			return ErrAmbiguousAttachmentSource
+		}
+		// Hard cap on inline bytes (base64-encoded length).
+		// 14 MB encoded ≈ 10.5 MB decoded — beyond per-channel safety net.
+		if a.ContentBase64 != "" && len(a.ContentBase64) > attachmentInlineMaxEncoded {
+			return ErrAttachmentTooLarge
+		}
+		if a.Disposition != "" && a.Disposition != "attachment" && a.Disposition != "inline" {
 			return ErrInvalidAttachment
 		}
 	}

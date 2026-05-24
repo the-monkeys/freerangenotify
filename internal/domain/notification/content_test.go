@@ -78,7 +78,62 @@ func TestContent_Validate_AttachmentLimits(t *testing.T) {
 		t.Fatalf("want ErrTooManyAttachments, got %v", err)
 	}
 
-	c = Content{Attachments: []Attachment{{Type: "image"}}} // missing URL
+	// Missing Type still fails with the generic invalid sentinel.
+	c = Content{Attachments: []Attachment{{URL: "https://x/y"}}}
+	if err := c.Validate(); err != ErrInvalidAttachment {
+		t.Fatalf("want ErrInvalidAttachment, got %v", err)
+	}
+
+	// No source at all → ErrAttachmentMissingSource.
+	c = Content{Attachments: []Attachment{{Type: "image"}}}
+	if err := c.Validate(); err != ErrAttachmentMissingSource {
+		t.Fatalf("want ErrAttachmentMissingSource, got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_FileIDOnly(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", FileID: "file_01ABCD"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("file_id-only attachment should validate; got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_InlineBase64Only(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", ContentBase64: "JVBERi0xLjQK"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("base64-only attachment should validate; got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_AmbiguousSource(t *testing.T) {
+	cases := []Attachment{
+		{Type: "file", URL: "https://x/y", FileID: "file_1"},
+		{Type: "file", URL: "https://x/y", ContentBase64: "AAA"},
+		{Type: "file", FileID: "file_1", ContentBase64: "AAA"},
+		{Type: "file", URL: "https://x/y", FileID: "file_1", ContentBase64: "AAA"},
+	}
+	for i, a := range cases {
+		c := Content{Attachments: []Attachment{a}}
+		if err := c.Validate(); err != ErrAmbiguousAttachmentSource {
+			t.Fatalf("case %d: want ErrAmbiguousAttachmentSource, got %v", i, err)
+		}
+	}
+}
+
+func TestContent_Validate_Attachment_InlineTooLarge(t *testing.T) {
+	// 14 MB + 1 of base64 characters
+	big := make([]byte, 14*1024*1024+1)
+	for i := range big {
+		big[i] = 'A'
+	}
+	c := Content{Attachments: []Attachment{{Type: "file", ContentBase64: string(big)}}}
+	if err := c.Validate(); err != ErrAttachmentTooLarge {
+		t.Fatalf("want ErrAttachmentTooLarge, got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_InvalidDisposition(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", URL: "https://x/y", Disposition: "weird"}}}
 	if err := c.Validate(); err != ErrInvalidAttachment {
 		t.Fatalf("want ErrInvalidAttachment, got %v", err)
 	}
