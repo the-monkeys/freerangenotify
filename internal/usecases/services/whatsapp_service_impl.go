@@ -201,6 +201,44 @@ func (s *whatsappService) publishSSE(eventType string, data map[string]interface
 	})
 }
 
+// classifyInboundEvent returns the high-level event name corresponding to
+// an InboundMessage. Used to populate `event_name` in the workflow trigger
+// payload so authors can branch on a single field rather than reverse-
+// engineering message_type / interactive_type combinations.
+//
+// Event names align with the WhatsApp dev doc taxonomy:
+//
+//	whatsapp.text                — free-form text reply
+//	whatsapp.media               — image / video / audio / document upload
+//	whatsapp.location            — location share
+//	whatsapp.button_clicked      — template URL/QR button tap
+//	whatsapp.list_reply          — list-picker selection
+//	whatsapp.quick_reply_clicked — interactive button reply
+//	whatsapp.reaction            — emoji reaction on a prior outbound message
+func classifyInboundEvent(msg *whatsapp.InboundMessage) string {
+	if msg.ReactionEmoji != "" {
+		return "whatsapp.reaction"
+	}
+	switch msg.InteractiveType {
+	case "button_reply":
+		return "whatsapp.quick_reply_clicked"
+	case "list_reply":
+		return "whatsapp.list_reply"
+	}
+	if msg.ButtonPayload != "" {
+		return "whatsapp.button_clicked"
+	}
+	switch msg.MessageType {
+	case "image", "video", "audio", "document", "sticker":
+		return "whatsapp.media"
+	case "location":
+		return "whatsapp.location"
+	case "text":
+		return "whatsapp.text"
+	}
+	return ""
+}
+
 func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID string, msg *whatsapp.InboundMessage) {
 	if s.workflowSvc == nil || triggerID == "" {
 		return
@@ -215,6 +253,35 @@ func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID 
 		"message_type":    msg.MessageType,
 		"text_body":       msg.TextBody,
 		"meta_message_id": msg.MetaMessageID,
+	}
+	// Phase 6 of WHATSAPP_RICH_INTERACTIVE_PLAN.md — surface parsed
+	// interactive / template-button click data so workflows can branch on
+	// `payload.button_payload == "REORDER"` / `payload.reply_id` / etc.
+	// without re-parsing raw_payload.
+	if msg.InteractiveType != "" {
+		payload["interactive_type"] = msg.InteractiveType
+	}
+	if msg.ReplyID != "" {
+		payload["reply_id"] = msg.ReplyID
+	}
+	if msg.ReplyTitle != "" {
+		payload["reply_title"] = msg.ReplyTitle
+	}
+	if msg.ReplyDescription != "" {
+		payload["reply_description"] = msg.ReplyDescription
+	}
+	if msg.ButtonPayload != "" {
+		payload["button_payload"] = msg.ButtonPayload
+	}
+	if msg.ReactionEmoji != "" {
+		payload["reaction_emoji"] = msg.ReactionEmoji
+	}
+	// Synthesise a higher-level event name workflows can match on. Letting
+	// workflow conditions filter by `event_name == "button_clicked"` is
+	// dramatically simpler than asking authors to "check if interactive_type
+	// is button_reply or button is set".
+	if eventName := classifyInboundEvent(msg); eventName != "" {
+		payload["event_name"] = eventName
 	}
 	_, err := s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
 		TriggerID: triggerID,

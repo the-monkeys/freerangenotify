@@ -1,0 +1,359 @@
+# WhatsApp Rich Templates — OpenAPI Fragment
+#
+# Drop-in OpenAPI 3.0 fragment documenting the WhatsApp rich-template
+# authoring + delivery surfaces introduced by
+# documents/plans/WHATSAPP_RICH_INTERACTIVE_PLAN.md. This is a stand-alone
+# file (not merged into docs/openapi/swagger.yaml) so it can be reviewed
+# independently and consumed by Swagger UI via $ref includes.
+#
+# Endpoints documented:
+#   POST   /v1/whatsapp/rich-templates           — create + submit to Meta/Twilio
+#   GET    /v1/whatsapp/rich-templates           — list (paginated)
+#   GET    /v1/whatsapp/rich-templates/{id}      — fetch one
+#   DELETE /v1/whatsapp/rich-templates/{id}      — soft-delete
+#   POST   /v1/whatsapp/rich-templates/{id}/sync — refresh approval state
+#   POST   /v1/whatsapp/rich-templates/{id}/preview — render with variables
+#   GET    /v1/r/{sig}                           — public click-attribution redirect
+#   POST   /v1/webhooks/twilio/content-status    — Twilio approval webhook
+#   POST   /v1/webhooks/twilio/whatsapp          — Twilio inbound webhook
+openapi: 3.0.3
+info:
+  title: FreeRangeNotify — WhatsApp Rich Templates
+  version: "1.0.0"
+  description: |
+    Typed authoring + delivery for WhatsApp interactive messages
+    (carousel, coupon-code, single-product, multi-product, catalog).
+
+servers:
+  - url: http://localhost:8080/v1
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /whatsapp/rich-templates:
+    post:
+      summary: Create a rich template
+      description: |
+        Validates the template, submits it to every configured provider
+        (Meta Cloud API and/or Twilio Content API), and persists the
+        resulting bindings. Meta failures are returned as 400 so the
+        author sees rejection reasons immediately; Twilio submission is
+        best-effort and can be reconciled later via the sync endpoint.
+      operationId: createRichTemplate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RichTemplate" }
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/RichTemplate" }
+        "400":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      summary: List rich templates
+      operationId: listRichTemplates
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+            enum: [carousel, coupon_code, product, multi_product, catalog, list_message, location_request, flow]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [draft, pending, approved, partially_submitted, rejected, disabled]
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RichTemplate" }
+                  total: { type: integer }
+
+  /whatsapp/rich-templates/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    get:
+      summary: Fetch a rich template by id
+      operationId: getRichTemplate
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/RichTemplate" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: Soft-delete a rich template
+      operationId: deleteRichTemplate
+      responses:
+        "204": { description: Deleted }
+
+  /whatsapp/rich-templates/{id}/sync:
+    post:
+      summary: Re-fetch provider approval state
+      description: |
+        Polls Meta (and Twilio if bound) for the latest approval status
+        and updates the stored bindings. Useful when the provider's
+        async approval webhook was missed or replayed.
+      operationId: syncRichTemplate
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/RichTemplate" }
+
+  /whatsapp/rich-templates/{id}/preview:
+    post:
+      summary: Render a template with variables (read-only preview)
+      operationId: previewRichTemplate
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variables:
+                  type: object
+                  additionalProperties: { type: string }
+      responses:
+        "200":
+          description: Rendered provider payload (Meta wire-format)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /r/{sig}:
+    get:
+      summary: Click-attribution redirect (public)
+      description: |
+        Verifies a signed click payload, records an analytics event, and
+        302-redirects to the original URL. This endpoint is intentionally
+        outside the API key auth group so WhatsApp recipients can follow
+        button links without credentials.
+      security: []
+      operationId: clickRedirect
+      parameters:
+        - { in: path, name: sig, required: true, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to original URL
+          headers:
+            Location: { schema: { type: string, format: uri } }
+        "400": { description: Invalid or expired signature }
+
+  /webhooks/twilio/content-status:
+    post:
+      summary: Twilio Content API approval webhook
+      description: |
+        Receives Twilio's approval status updates (approved / rejected /
+        disabled) for Content templates created via this app. Always
+        returns 200 to prevent retries. Signature is validated via
+        X-Twilio-Signature when an auth token is configured.
+      security: []
+      operationId: twilioContentStatusWebhook
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [ContentSid, Status]
+              properties:
+                ContentSid: { type: string }
+                Status:
+                  type: string
+                  enum: [approved, pending, rejected, disabled]
+                RejectionReason: { type: string }
+      responses:
+        "200": { description: Acknowledged }
+
+  /webhooks/twilio/whatsapp:
+    post:
+      summary: Twilio inbound WhatsApp webhook
+      description: |
+        Receives inbound replies, button taps, and list selections from
+        Twilio's Programmable Messaging webhook. Resolves the target FRN
+        app by matching the `To` number against
+        application.Settings.WhatsApp.FromNumber and forwards a
+        normalised InboundMessage to the WhatsApp service, which in turn
+        emits `whatsapp.button_clicked` / `whatsapp.list_selected` /
+        `whatsapp.text_received` workflow events.
+      security: []
+      operationId: twilioInboundWhatsAppWebhook
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                MessageSid: { type: string }
+                From: { type: string, example: "whatsapp:+14155550100" }
+                To: { type: string, example: "whatsapp:+14155551234" }
+                Body: { type: string }
+                ButtonText: { type: string }
+                ButtonPayload: { type: string }
+                ListId: { type: string }
+                OriginalRepliedMessageSid: { type: string }
+      responses:
+        "200": { description: Acknowledged }
+        "403": { description: Invalid X-Twilio-Signature }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              details:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string }
+                    msg: { type: string }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+
+  schemas:
+    RichTemplate:
+      type: object
+      required: [kind, name]
+      properties:
+        id: { type: string, readOnly: true }
+        tenant_id: { type: string, readOnly: true }
+        app_id: { type: string, readOnly: true }
+        kind:
+          type: string
+          enum: [carousel, coupon_code, product, multi_product, catalog, list_message, location_request, flow]
+        name:
+          type: string
+          description: Provider template name (snake_case, 1–512 chars).
+        language: { type: string, example: en_US }
+        category:
+          type: string
+          enum: [MARKETING, UTILITY, AUTHENTICATION]
+        body: { type: string }
+        footer: { type: string }
+        coupon_code: { type: string, description: Only used when kind=coupon_code }
+        cards:
+          type: array
+          description: Required when kind=carousel (2–10 cards).
+          items: { $ref: "#/components/schemas/CarouselCard" }
+        variables:
+          type: array
+          items: { type: string }
+          description: |
+            Declared variable keys (e.g. ["1","2"]). Used at send-time to
+            decide which fields are template-driven vs caller-controlled.
+        providers: { $ref: "#/components/schemas/ProviderBindings" }
+        created_at: { type: string, format: date-time, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
+
+    CarouselCard:
+      type: object
+      properties:
+        header_image_url: { type: string, format: uri }
+        header_video_url: { type: string, format: uri }
+        body: { type: string }
+        buttons:
+          type: array
+          items: { $ref: "#/components/schemas/Button" }
+
+    Button:
+      type: object
+      required: [type, text]
+      properties:
+        type:
+          type: string
+          enum: [URL, QUICK_REPLY, PHONE_NUMBER, COPY_CODE, CATALOG, MPM, FLOW]
+        text: { type: string }
+        url: { type: string }
+        phone_number: { type: string }
+        payload: { type: string }
+        track_clicks:
+          type: boolean
+          description: |
+            When true and a click signer is configured, URL buttons are
+            wrapped with a signed /v1/r/{sig} redirect so taps appear in
+            the analytics index.
+
+    ProviderBindings:
+      type: object
+      properties:
+        meta: { $ref: "#/components/schemas/MetaBinding" }
+        twilio: { $ref: "#/components/schemas/TwilioBinding" }
+
+    MetaBinding:
+      type: object
+      properties:
+        template_id: { type: string, description: Meta-side template ID }
+        status:
+          type: string
+          enum: [pending, approved, rejected, disabled]
+        rejection_reason: { type: string }
+        submitted_at: { type: string, format: date-time }
+        last_synced_at: { type: string, format: date-time }
+
+    TwilioBinding:
+      type: object
+      properties:
+        content_sid: { type: string, example: HX1234567890abcdef }
+        status:
+          type: string
+          enum: [pending, approved, rejected, disabled]
+        rejection_reason: { type: string }
+        submitted_at: { type: string, format: date-time }
+        last_synced_at: { type: string, format: date-time }

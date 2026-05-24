@@ -6,7 +6,9 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Spinner } from '../ui/spinner';
 import { toast } from 'sonner';
-import { CheckCircle, XCircle, Unplug, Webhook, Phone, Building2, Shield, ExternalLink } from 'lucide-react';
+import { CheckCircle, XCircle, Unplug, Webhook, Phone, Building2, Shield, ExternalLink, KeyRound, AlertTriangle } from 'lucide-react';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import type { WhatsAppConnectionStatus } from '../../types';
 
 declare global {
@@ -34,6 +36,13 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
     const [connecting, setConnecting] = useState(false);
     const [sdkReady, setSdkReady] = useState(false);
     const [metaAppId, setMetaAppId] = useState<string | null>(null);
+    const [showManualForm, setShowManualForm] = useState(false);
+    const [manualSubmitting, setManualSubmitting] = useState(false);
+    const [manualForm, setManualForm] = useState({
+        access_token: '',
+        waba_id: (import.meta.env.VITE_META_WABA_ID as string | undefined)?.trim() || '',
+        phone_number_id: (import.meta.env.VITE_META_PHONE_NUMBER_ID as string | undefined)?.trim() || '',
+    });
     const sdkLoadAttempted = useRef(false);
 
     const { data: status, loading, refetch } = useApiQuery<WhatsAppConnectionStatus>(
@@ -100,7 +109,36 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                         })
                         .finally(() => setConnecting(false));
                 } else {
-                    toast.error('Meta login was cancelled or failed.');
+                    // Differentiate the common Facebook SDK failure modes so the
+                    // user knows whether to retry, ask for access, or use the
+                    // manual fallback. The most common cause for "App not active"
+                    // shown by FB is that the Meta App is in Development mode and
+                    // the logged-in FB user is not a Developer/Tester on it.
+                    const status = response.status;
+                    let msg = 'Meta login was cancelled.';
+                    let actionable = false;
+                    if (status === 'not_authorized') {
+                        msg = 'Meta declined the login. Most likely cause: the Meta App is in Development mode and your Facebook account is not listed as a Developer/Tester. Add yourself in App Dashboard > App Roles, or submit the app for App Review to go Live.';
+                        actionable = true;
+                    } else if (status === 'unknown') {
+                        msg = 'Meta returned an unknown status (often "App not active"). Verify the App is enabled and the WhatsApp Tech Provider use case is fully configured in App Dashboard.';
+                        actionable = true;
+                    }
+                    toast.error(msg, {
+                        duration: actionable ? 10_000 : 4_000,
+                        action: actionable
+                            ? {
+                                  label: 'Open App Dashboard',
+                                  onClick: () =>
+                                      window.open(
+                                          `https://developers.facebook.com/apps/${metaAppId}/dashboard/`,
+                                          '_blank',
+                                          'noopener,noreferrer'
+                                      ),
+                              }
+                            : undefined,
+                    });
+                    if (actionable) setShowManualForm(true);
                     setConnecting(false);
                 }
             },
@@ -140,6 +178,36 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
             setDisconnecting(false);
         }
     }, [appId, refetch]);
+
+    const handleManualConnect = useCallback(
+        async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!manualForm.access_token.trim() || !manualForm.waba_id.trim()) {
+                toast.error('Access token and WABA ID are required');
+                return;
+            }
+            setManualSubmitting(true);
+            try {
+                const data = await whatsappAdminAPI.manualConnect({
+                    app_id: appId,
+                    access_token: manualForm.access_token.trim(),
+                    waba_id: manualForm.waba_id.trim(),
+                    phone_number_id: manualForm.phone_number_id.trim() || undefined,
+                });
+                toast.success(`WhatsApp connected via System User token. Phone: ${data?.display_phone || 'configured'}`);
+                setShowManualForm(false);
+                setManualForm((f) => ({ ...f, access_token: '' }));
+                refetch();
+            } catch (err: any) {
+                toast.error(
+                    'Manual connect failed: ' + (err.response?.data?.message || err.message)
+                );
+            } finally {
+                setManualSubmitting(false);
+            }
+        },
+        [appId, manualForm, refetch]
+    );
 
     const handleSubscribeWebhooks = useCallback(async () => {
         setSubscribing(true);
@@ -256,7 +324,80 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                                         )}
                                         {connecting ? 'Connecting...' : sdkReady ? 'Connect with Meta' : 'Loading SDK...'}
                                     </Button>
-                                ) : (
+                                ) : null}
+
+                                {hasSdkConfig && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowManualForm((s) => !s)}
+                                        className="mt-2 text-xs text-muted-foreground underline-offset-2 hover:underline inline-flex items-center gap-1"
+                                    >
+                                        <KeyRound className="h-3 w-3" />
+                                        {showManualForm ? 'Hide' : 'Use a System User access token instead'}
+                                    </button>
+                                )}
+
+                                {showManualForm && (
+                                    <form
+                                        onSubmit={handleManualConnect}
+                                        className="mt-3 p-3 rounded-md border bg-background space-y-3"
+                                    >
+                                        <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                                            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600" />
+                                            <span>
+                                                Use this while your Meta App is still in <strong>Development mode</strong> or pending
+                                                App Review. Generate a permanent System User token in{' '}
+                                                <a
+                                                    href="https://business.facebook.com/settings/system-users"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="underline"
+                                                >
+                                                    Business Settings &rarr; System Users
+                                                </a>
+                                                {' '}with <code>whatsapp_business_messaging</code> +{' '}
+                                                <code>whatsapp_business_management</code> scopes.
+                                            </span>
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="manual-token" className="text-xs">System User Access Token</Label>
+                                            <Input
+                                                id="manual-token"
+                                                type="password"
+                                                autoComplete="off"
+                                                placeholder="EAAxxxxxxxxxxxxxx..."
+                                                value={manualForm.access_token}
+                                                onChange={(e) => setManualForm((f) => ({ ...f, access_token: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <div>
+                                                <Label htmlFor="manual-waba" className="text-xs">WABA ID</Label>
+                                                <Input
+                                                    id="manual-waba"
+                                                    placeholder="1660830174935643"
+                                                    value={manualForm.waba_id}
+                                                    onChange={(e) => setManualForm((f) => ({ ...f, waba_id: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div>
+                                                <Label htmlFor="manual-phone" className="text-xs">Phone Number ID (optional)</Label>
+                                                <Input
+                                                    id="manual-phone"
+                                                    placeholder="auto-detected if omitted"
+                                                    value={manualForm.phone_number_id}
+                                                    onChange={(e) => setManualForm((f) => ({ ...f, phone_number_id: e.target.value }))}
+                                                />
+                                            </div>
+                                        </div>
+                                        <Button type="submit" size="sm" disabled={manualSubmitting}>
+                                            {manualSubmitting ? <Spinner className="h-4 w-4 mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
+                                            {manualSubmitting ? 'Connecting...' : 'Connect via Token'}
+                                        </Button>
+                                    </form>
+                                )}
+
+                                {!hasSdkConfig && (
                                     <div className="space-y-3">
                                         <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
                                             <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">Meta App ID not configured</p>

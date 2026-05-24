@@ -83,6 +83,24 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		metaWH.Get("/whatsapp", c.MetaWebhookHandler.VerifyWebhook)
 		metaWH.Post("/whatsapp", c.MetaWebhookHandler.HandleWebhook)
 	}
+
+	// Twilio Content API approval status webhook (public; should be guarded
+	// by X-Twilio-Signature middleware in production deployments).
+	if c.TwilioContentStatusHandler != nil {
+		v1.Post("/webhooks/twilio/content-status", c.TwilioContentStatusHandler.Handle)
+	}
+
+	// Twilio inbound WhatsApp webhook (replies, button taps, list selects).
+	// Signature is verified inside the handler using the Twilio auth token.
+	if c.TwilioInboundWebhookHandler != nil {
+		v1.Post("/webhooks/twilio/whatsapp", c.TwilioInboundWebhookHandler.Handle)
+	}
+
+	// Click attribution redirect (public, signed payload). Intentionally
+	// outside any auth group so WhatsApp recipients can tap the link.
+	if c.ClickRedirectHandler != nil {
+		v1.Get("/r/:sig", c.ClickRedirectHandler.Handle)
+	}
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -241,6 +259,20 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		waTpl.Get("/:name", c.WhatsAppTemplateHandler.GetTemplate)
 		waTpl.Delete("/:name", c.WhatsAppTemplateHandler.DeleteTemplate)
 		waTpl.Post("/:name/sync", c.WhatsAppTemplateHandler.SyncTemplate)
+	}
+
+	// ── WhatsApp Rich-Template Authoring ──
+	// Typed carousel / coupon / cta_url / quick_reply / list templates.
+	// Submitted to Meta automatically on Create; ApprovalState reflects Meta status.
+	if c.WhatsAppRichTemplateHandler != nil {
+		waRich := v1.Group("/whatsapp/rich-templates")
+		applyAuth(waRich)
+		waRich.Post("/", c.WhatsAppRichTemplateHandler.Create)
+		waRich.Get("/", c.WhatsAppRichTemplateHandler.List)
+		waRich.Get("/:id", c.WhatsAppRichTemplateHandler.Get)
+		waRich.Delete("/:id", c.WhatsAppRichTemplateHandler.Delete)
+		waRich.Post("/:id/sync", c.WhatsAppRichTemplateHandler.Sync)
+		waRich.Post("/:id/preview", c.WhatsAppRichTemplateHandler.Preview)
 	}
 
 	// ── Twilio Content Template Management ──

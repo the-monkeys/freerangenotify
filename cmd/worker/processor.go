@@ -21,6 +21,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/orchestrator"
@@ -64,8 +65,9 @@ type NotificationProcessor struct {
 	logger           *zap.Logger
 	config           ProcessorConfig
 	metrics          *metrics.NotificationMetrics
-	digestManager    *orchestrator.DigestManager // Phase 1: optional digest support
-	throttle         *limiter.SubscriberThrottle // Phase 2: optional per-subscriber throttle
+	digestManager    *orchestrator.DigestManager          // Phase 1: optional digest support
+	throttle         *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
+	richTplService   services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
 
 	wg       sync.WaitGroup
 	stopChan chan struct{}
@@ -80,6 +82,15 @@ func (p *NotificationProcessor) SetDigestManager(dm *orchestrator.DigestManager)
 // SetSubscriberThrottle injects the optional subscriber throttle (Phase 2).
 func (p *NotificationProcessor) SetSubscriberThrottle(t *limiter.SubscriberThrottle) {
 	p.throttle = t
+}
+
+// SetWhatsAppRichTemplateService injects the optional WhatsApp rich-template
+// runtime resolver. When set, the processor expands
+// notification.Content.Data["whatsapp_rich"]["template_id"] into the
+// provider-specific wire shape just before WhatsApp dispatch.
+// See WHATSAPP_RICH_INTERACTIVE_PLAN.md §4.2 / §5.2.
+func (p *NotificationProcessor) SetWhatsAppRichTemplateService(svc services.WhatsAppRichTemplateService) {
+	p.richTplService = svc
 }
 
 // NewNotificationProcessor creates a new notification processor
@@ -931,6 +942,13 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 	//   2. app.Settings.WhatsApp.Provider == "meta" => "meta_whatsapp"
 	//   3. otherwise => Twilio "whatsapp" (system credentials or Twilio BYOC)
 	if notif.Channel == notification.ChannelWhatsApp {
+		// Resolve FRN rich-template runtime payload BEFORE provider routing.
+		// When whatsapp_rich.template_id is present, expand it into the
+		// provider-specific wire shape so the chosen provider's renderer
+		// has everything it needs. See WHATSAPP_RICH_INTERACTIVE_PLAN §4.2.
+		if p.richTplService != nil {
+			p.resolveWhatsAppRich(ctx, notif, app)
+		}
 		waProviderChain := []string{"whatsapp", "meta_whatsapp"}
 		if notif.Content.Data != nil {
 			if sid, _ := notif.Content.Data["content_sid"].(string); sid != "" {
@@ -1417,6 +1435,87 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 		zap.String("result", result))
 
 	return result, nil
+}
+
+// resolveWhatsAppRich expands notification.Content.Data["whatsapp_rich"]
+// into the provider-specific wire shape:
+//
+//   - Meta path: replaces "whatsapp_rich" with a resolved interactive/template
+//     payload that meta_whatsapp_provider.buildRichMessage understands.
+//   - Twilio path: lifts content_sid + content_variables into Content.Data
+//     and removes "whatsapp_rich" so the existing Twilio code path renders.
+//
+// This runs once per notification, just before WhatsApp provider chain
+// selection. Errors are logged but non-fatal: the provider will surface a
+// proper validation error if the resulting payload is unusable.
+func (p *NotificationProcessor) resolveWhatsAppRich(ctx context.Context, notif *notification.Notification, app *application.Application) {
+	if notif == nil || notif.Content.Data == nil {
+		return
+	}
+	raw, ok := notif.Content.Data["whatsapp_rich"]
+	if !ok {
+		return
+	}
+	rawMap, ok := raw.(map[string]interface{})
+	if !ok {
+		return
+	}
+	tplID, _ := rawMap["template_id"].(string)
+	if tplID == "" {
+		return
+	}
+
+	// Re-encode through JSON to honour json-tag-driven decoding into the
+	// strongly-typed SendPayload. This is robust against arbitrary nested
+	// shapes coming off the queue.
+	buf, err := json.Marshal(rawMap)
+	if err != nil {
+		p.logger.Warn("whatsapp_rich: failed to marshal payload", zap.Error(err))
+		return
+	}
+	var payload whatsapp.SendPayload
+	if err := json.Unmarshal(buf, &payload); err != nil {
+		p.logger.Warn("whatsapp_rich: failed to decode SendPayload", zap.Error(err))
+		return
+	}
+	if payload.TemplateID == "" {
+		return
+	}
+
+	provider := ""
+	if app != nil && app.Settings.WhatsApp != nil {
+		provider = strings.ToLower(strings.TrimSpace(app.Settings.WhatsApp.Provider))
+	}
+
+	switch provider {
+	case "meta":
+		resolved, err := p.richTplService.ResolveSendPayload(ctx, notif.AppID, notif.NotificationID, payload)
+		if err != nil {
+			p.logger.Error("whatsapp_rich: meta resolution failed",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("template_id", payload.TemplateID),
+				zap.Error(err))
+			return
+		}
+		notif.Content.Data["whatsapp_rich"] = resolved
+	default:
+		// Twilio (or system) — flatten to content_sid + content_variables.
+		resolved, err := p.richTplService.ResolveTwilioSendPayload(ctx, notif.AppID, notif.NotificationID, payload)
+		if err != nil {
+			p.logger.Error("whatsapp_rich: twilio resolution failed",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("template_id", payload.TemplateID),
+				zap.Error(err))
+			return
+		}
+		if sid, ok := resolved["content_sid"].(string); ok && sid != "" {
+			notif.Content.Data["content_sid"] = sid
+		}
+		if vars, ok := resolved["content_variables"]; ok {
+			notif.Content.Data["content_variables"] = vars
+		}
+		delete(notif.Content.Data, "whatsapp_rich")
+	}
 }
 
 // hasValidEmailConfig returns true if the app has explicitly configured and complete

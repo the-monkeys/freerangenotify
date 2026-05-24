@@ -424,14 +424,21 @@ func (r *BroadcastRequest) Validate() error {
 		return ErrInvalidPriority
 	}
 	// TemplateID required only when NOT triggering a workflow AND NOT using a Twilio Content Template (content_sid)
+	// or an FRN WhatsApp rich template (whatsapp_rich.template_id).
 	if r.WorkflowTriggerID == "" && r.TemplateID == "" {
 		hasContentSID := false
+		hasWhatsAppRichID := false
 		if r.Data != nil {
 			if _, ok := r.Data["content_sid"]; ok {
 				hasContentSID = true
 			}
+			if rich, ok := r.Data["whatsapp_rich"].(map[string]interface{}); ok {
+				if id, _ := rich["template_id"].(string); id != "" {
+					hasWhatsAppRichID = true
+				}
+			}
 		}
-		if !hasContentSID {
+		if !hasContentSID && !hasWhatsAppRichID {
 			return ErrTemplateRequired
 		}
 	}
@@ -563,14 +570,23 @@ func (r *SendRequest) Validate() error {
 		return ErrInvalidPriority
 	}
 	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
-		// Allow Twilio Content Templates: content_sid in Data is sufficient
+		// Allow Twilio Content Templates: content_sid in Data is sufficient.
+		// Allow FRN WhatsApp rich templates: whatsapp_rich.template_id in Data
+		// (resolved server-side to a Meta template_name and/or Twilio
+		// ContentSid) is also sufficient — see WHATSAPP_RICH_INTERACTIVE_PLAN §5.2.
 		hasContentSID := false
+		hasWhatsAppRichID := false
 		if r.Data != nil {
 			if _, ok := r.Data["content_sid"]; ok {
 				hasContentSID = true
 			}
+			if rich, ok := r.Data["whatsapp_rich"].(map[string]interface{}); ok {
+				if id, _ := rich["template_id"].(string); id != "" {
+					hasWhatsAppRichID = true
+				}
+			}
 		}
-		if !hasContentSID {
+		if !hasContentSID && !hasWhatsAppRichID {
 			return ErrTemplateRequired
 		}
 	}

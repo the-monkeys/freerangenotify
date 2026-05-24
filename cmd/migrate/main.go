@@ -41,6 +41,8 @@ var allIndices = []string{
 	"credit_ledger",
 	"billing_rate_cards",
 	"billing_runtime",
+	// WhatsApp rich templates (Phase 0 of WHATSAPP_RICH_INTERACTIVE_PLAN.md)
+	"whatsapp_rich_templates",
 }
 
 var rootCmd = &cobra.Command{

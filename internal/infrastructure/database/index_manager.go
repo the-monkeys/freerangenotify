@@ -80,6 +80,8 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 
 		// WhatsApp Meta Tech Provider — inbound messages
 		"whatsapp_messages": im.templates.GetWhatsAppMessagesTemplate,
+		// Rich (carousel / coupon / cta / list) authoring store
+		"whatsapp_rich_templates": im.templates.GetWhatsAppRichTemplatesTemplate,
 	}
 
 	for indexName, templateFunc := range indices {

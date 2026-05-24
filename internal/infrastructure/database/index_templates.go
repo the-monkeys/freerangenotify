@@ -1178,11 +1178,138 @@ func (it *IndexTemplates) GetWhatsAppMessagesTemplate() map[string]interface{} {
 				"longitude":          map[string]interface{}{"type": "float"},
 				"context_message_id": map[string]interface{}{"type": "keyword"},
 				"is_forwarded":       map[string]interface{}{"type": "boolean"},
+				// Interactive replies / template button taps surfaced as typed
+				// fields by the inbound webhook handler (instead of buried in
+				// raw_payload). Enables faceting + workflow triggers on
+				// reply_id, button_payload, etc.
+				"interactive_type":   map[string]interface{}{"type": "keyword"},
+				"reply_id":           map[string]interface{}{"type": "keyword"},
+				"reply_title":        map[string]interface{}{"type": "text"},
+				"reply_description":  map[string]interface{}{"type": "text"},
+				"button_payload":     map[string]interface{}{"type": "keyword"},
+				"reaction_emoji":     map[string]interface{}{"type": "keyword"},
 				"raw_payload": map[string]interface{}{
 					"type":    "object",
 					"enabled": false,
 				},
 				"created_at": map[string]interface{}{"type": "date"},
+			},
+		},
+	}
+}
+
+// GetWhatsAppRichTemplatesTemplate returns the Elasticsearch mapping for the
+// whatsapp_rich_templates index. This is the authored, provider-agnostic
+// rich-template store; per-provider IDs and approval status live nested
+// under `providers.{meta,twilio}`.
+//
+// Carousel cards, list sections, and buttons are stored as nested objects so
+// they can be queried independently (e.g. "list templates whose first card
+// has body text containing X") and to avoid the array-as-flat-document
+// pitfalls Elasticsearch's default object mapping has.
+func (it *IndexTemplates) GetWhatsAppRichTemplatesTemplate() map[string]interface{} {
+	return map[string]interface{}{
+		"settings": map[string]interface{}{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		"mappings": map[string]interface{}{
+			"properties": map[string]interface{}{
+				"id":             map[string]interface{}{"type": "keyword"},
+				"tenant_id":      map[string]interface{}{"type": "keyword"},
+				"app_id":         map[string]interface{}{"type": "keyword"},
+				"name":           map[string]interface{}{"type": "keyword"},
+				"kind":           map[string]interface{}{"type": "keyword"},
+				"language":       map[string]interface{}{"type": "keyword"},
+				"category":       map[string]interface{}{"type": "keyword"},
+				"body":           map[string]interface{}{"type": "text"},
+				"footer":         map[string]interface{}{"type": "text"},
+				"coupon_code":    map[string]interface{}{"type": "keyword"},
+				"approval_state": map[string]interface{}{"type": "keyword"},
+				"created_at":     map[string]interface{}{"type": "date"},
+				"updated_at":     map[string]interface{}{"type": "date"},
+				"header": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"text":         map[string]interface{}{"type": "text"},
+						"image_url":    map[string]interface{}{"type": "keyword"},
+						"video_url":    map[string]interface{}{"type": "keyword"},
+						"document_url": map[string]interface{}{"type": "keyword"},
+					},
+				},
+				"cards": map[string]interface{}{
+					"type": "nested",
+					"properties": map[string]interface{}{
+						"header_image_url": map[string]interface{}{"type": "keyword"},
+						"header_video_url": map[string]interface{}{"type": "keyword"},
+						"body":             map[string]interface{}{"type": "text"},
+						"variables":        map[string]interface{}{"type": "keyword"},
+						"buttons": map[string]interface{}{
+							"type": "nested",
+							"properties": map[string]interface{}{
+								"type":         map[string]interface{}{"type": "keyword"},
+								"text":         map[string]interface{}{"type": "text"},
+								"url":          map[string]interface{}{"type": "keyword"},
+								"payload":      map[string]interface{}{"type": "keyword"},
+								"phone_number": map[string]interface{}{"type": "keyword"},
+								"coupon_code":  map[string]interface{}{"type": "keyword"},
+								"example":      map[string]interface{}{"type": "text"},
+								"track_clicks": map[string]interface{}{"type": "boolean"},
+							},
+						},
+					},
+				},
+				"buttons": map[string]interface{}{
+					"type": "nested",
+					"properties": map[string]interface{}{
+						"type":         map[string]interface{}{"type": "keyword"},
+						"text":         map[string]interface{}{"type": "text"},
+						"url":          map[string]interface{}{"type": "keyword"},
+						"payload":      map[string]interface{}{"type": "keyword"},
+						"phone_number": map[string]interface{}{"type": "keyword"},
+						"coupon_code":  map[string]interface{}{"type": "keyword"},
+						"example":      map[string]interface{}{"type": "text"},
+						"track_clicks": map[string]interface{}{"type": "boolean"},
+					},
+				},
+				"list_button_text": map[string]interface{}{"type": "keyword"},
+				"list_sections": map[string]interface{}{
+					"type": "nested",
+					"properties": map[string]interface{}{
+						"title": map[string]interface{}{"type": "text"},
+						"rows": map[string]interface{}{
+							"type": "nested",
+							"properties": map[string]interface{}{
+								"id":          map[string]interface{}{"type": "keyword"},
+								"title":       map[string]interface{}{"type": "text"},
+								"description": map[string]interface{}{"type": "text"},
+							},
+						},
+					},
+				},
+				"providers": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"meta": map[string]interface{}{
+							"properties": map[string]interface{}{
+								"template_name": map[string]interface{}{"type": "keyword"},
+								"template_id":   map[string]interface{}{"type": "keyword"},
+								"status":        map[string]interface{}{"type": "keyword"},
+								"reason":        map[string]interface{}{"type": "text"},
+								"submitted_at":  map[string]interface{}{"type": "date"},
+								"updated_at":    map[string]interface{}{"type": "date"},
+							},
+						},
+						"twilio": map[string]interface{}{
+							"properties": map[string]interface{}{
+								"content_sid":  map[string]interface{}{"type": "keyword"},
+								"approval_sid": map[string]interface{}{"type": "keyword"},
+								"status":       map[string]interface{}{"type": "keyword"},
+								"reason":       map[string]interface{}{"type": "text"},
+								"submitted_at": map[string]interface{}{"type": "date"},
+								"updated_at":   map[string]interface{}{"type": "date"},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
