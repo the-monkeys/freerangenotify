@@ -41,6 +41,7 @@ type Client struct {
 	Workflows     *WorkflowsClient
 	Topics        *TopicsClient
 	Presence      *PresenceClient
+	OTP           *OTPClient
 }
 
 // Option configures the Client.
@@ -79,6 +80,7 @@ func New(apiKey string, opts ...Option) *Client {
 	c.Workflows = &WorkflowsClient{client: c}
 	c.Topics = &TopicsClient{client: c}
 	c.Presence = &PresenceClient{client: c}
+	c.OTP = &OTPClient{client: c}
 	return c
 }
 

@@ -22,6 +22,7 @@ import { TemplatesClient } from './templates';
 import { WorkflowsClient } from './workflows';
 import { TopicsClient } from './topics';
 import { PresenceClient } from './presence';
+import { OTPClient } from './otp';
 import { connectSSE } from './sse';
 import type {
   QuickSendParams,
@@ -63,6 +64,8 @@ export class FreeRangeNotify {
   readonly topics: TopicsClient;
   /** Presence: smart delivery check-in. */
   readonly presence: PresenceClient;
+  /** OTP-as-a-service: send / verify / resend authentication codes. */
+  readonly otp: OTPClient;
 
   constructor(apiKey: string, options?: FreeRangeNotifyOptions) {
     if (!apiKey) throw new Error('API key is required');
@@ -76,6 +79,7 @@ export class FreeRangeNotify {
     this.workflows = new WorkflowsClient(this.http);
     this.topics = new TopicsClient(this.http);
     this.presence = new PresenceClient(this.http);
+    this.otp = new OTPClient(this.http);
   }
 
   // ── Backward-compatible convenience methods ──
@@ -155,6 +159,16 @@ export { TemplatesClient } from './templates';
 export { WorkflowsClient } from './workflows';
 export { TopicsClient } from './topics';
 export { PresenceClient } from './presence';
+export { OTPClient, OTPError } from './otp';
+export type {
+  OTPChannel,
+  OTPSendParams,
+  OTPSendResult,
+  OTPVerifyParams,
+  OTPVerifyResult,
+  OTPVerifyErrorCode,
+  OTPErrorCode,
+} from './otp';
 export { connectSSE } from './sse';
 export {
   workflow,

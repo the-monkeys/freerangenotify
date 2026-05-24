@@ -70,7 +70,7 @@ export const TAB_GROUPS: TabGroup[] = [
         label: 'General',
         tabs: [
             { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
-            { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
+            { id: 'users', label: 'Subscribers', icon: <Users className="h-4 w-4" /> },
             { id: 'templates', label: 'Templates', icon: <FileText className="h-4 w-4" /> },
             { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
         ],

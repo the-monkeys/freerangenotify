@@ -727,3 +727,173 @@ Buttons with `track_clicks: true` are wrapped at render-time with a signed `/v1/
 
 - `POST /v1/webhooks/twilio/content-status` — Twilio Content API approval updates. The handler maps `ContentSid` → FRN-side `TwilioBinding` via the rich-template service. Always returns 200 to prevent retries.
 - `POST /v1/webhooks/twilio/whatsapp` — Twilio Programmable Messaging inbound webhook for replies, button taps, and list selections. Resolves the target FRN app by matching `To` against `application.Settings.WhatsApp.FromNumber`, then forwards a normalised `InboundMessage` to the WhatsApp service which emits `whatsapp.button_clicked` / `whatsapp.list_selected` / `whatsapp.text_received` workflow events. Signature is verified against `providers.whatsapp.auth_token` when configured; requests with a bad signature are rejected with `403`.
+
+---
+
+## OTP as a Service
+
+OpenAPI fragment: [docs/openapi/otp.yaml](../docs/openapi/otp.yaml).
+
+A programmatic one-time-passcode API for sign-in, sign-up, step-up auth, and transaction confirmation flows over **SMS**, **WhatsApp**, and **Email**. The send path reuses the standard notification pipeline (templates, providers, credit billing); the verify path adds constant-time comparison, atomic attempt counting, and per-recipient rate limiting that is not safe for customers to reimplement on top of `/v1/notifications` directly.
+
+### Endpoints
+
+| Method | Path             | Purpose                                          |
+| ------ | ---------------- | ------------------------------------------------ |
+| POST   | `/v1/otp/send`   | Generate a code, hash it, dispatch via channel   |
+| POST   | `/v1/otp/verify` | Verify a code against a `request_id`             |
+| POST   | `/v1/otp/resend` | Re-issue a fresh code (60 s cooldown per record) |
+
+All three require the `X-API-Key` header. `app_id` is derived from the key server-side — never accepted from the request body.
+
+### Quick start
+
+**1. Send a code (SMS, defaults — 6 digits, 5 minutes, 5 attempts):**
+
+```bash
+curl -X POST http://localhost:8080/v1/otp/send \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"sms","recipient":"+14155551212"}'
+```
+
+```json
+{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "notification_id": "abc123",
+  "channel": "sms",
+  "expires_at": "2026-05-24T12:35:00Z",
+  "ttl_seconds": 300,
+  "max_attempts": 5
+}
+```
+
+**2. Verify the code:**
+
+```bash
+curl -X POST http://localhost:8080/v1/otp/verify \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"550e8400-e29b-41d4-a716-446655440000","code":"482913"}'
+```
+
+Success: `200 OK` with `{"verified": true, "verified_at": "..."}`.
+Wrong code: `400` with `{"verified": false, "error": "invalid_code", "attempts_remaining": 4}`.
+
+**3. Resend (after the 60 s cooldown):**
+
+```bash
+curl -X POST http://localhost:8080/v1/otp/resend \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"request_id":"550e8400-e29b-41d4-a716-446655440000"}'
+```
+
+### Channels & recipient formats
+
+The recipient is identified by **exactly one** of three body fields. The `channel` field selects which contact address is used.
+
+| Identifier   | What you pass                            | Resolution                                                                                         |
+| ------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `recipient`  | Raw email / E.164 phone                  | Auto-creates a user record (with `EmailEnabled`/`SMSEnabled`/`WhatsAppEnabled` all `true`) on first send. |
+| `user_id`    | Internal FRN `user_id` (UUID)            | Loads the user record; uses `email` for `email`-channel sends and `phone` for `sms`/`whatsapp`. Cross-tenant probes return `404`. |
+| `external_id`| Caller-owned external identifier         | Looked up via the users index; same channel-address rules as `user_id`.                            |
+
+Raw-recipient address formats:
+
+| Channel    | Format                            |
+| ---------- | --------------------------------- |
+| `sms`      | E.164, e.g. `+14155551212`        |
+| `whatsapp` | E.164, e.g. `+14155551212`        |
+| `email`    | RFC 5322 address                  |
+
+When `user_id` / `external_id` is supplied but the resolved user has no value for the field the channel needs, the API returns `400` with `error: "otp: resolved user has no address for the requested channel"`.
+
+Example — send by `external_id`:
+
+```bash
+curl -X POST http://localhost:8080/v1/otp/send \
+  -H "X-API-Key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"email","external_id":"customer_ext_42"}'
+```
+
+### Customising the message body
+
+Bring-your-own body via `template_body`. It **must** contain a `{{code}}` placeholder. Supported placeholders:
+
+| Placeholder                          | Value                                |
+| ------------------------------------ | ------------------------------------ |
+| `{{code}}`, `{{ code }}`, `{{.code}}`| The generated OTP                    |
+| `{{ttl}}`, `{{ ttl }}`, `{{.ttl}}`   | TTL **in minutes** (e.g. `5`)        |
+| `{{<key>}}` from `template_data`     | Any extra string variable you pass   |
+
+Example:
+
+```json
+{
+  "channel": "whatsapp",
+  "recipient": "+14155551212",
+  "template_body": "Your {{app_name}} code is {{code}}. Expires in {{ttl}} minutes.",
+  "template_data": { "app_name": "Acme" }
+}
+```
+
+If `template_body` is omitted, a channel-appropriate default is used (e.g. `Your verification code is 482913. It expires in 5 minutes.`).
+
+### Code generation knobs
+
+| Field          | Default | Range  | Behaviour                                                                                                       |
+| -------------- | ------- | ------ | --------------------------------------------------------------------------------------------------------------- |
+| `length`       | 6       | 4–10   | Number of characters in the code.                                                                               |
+| `alphanumeric` | false   |        | When `true`, codes draw from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` — lookalikes `0/O`, `1/I/l` are excluded.       |
+| `ttl_seconds`  | 300     | 30–900 | Code lifetime (max 15 minutes).                                                                                 |
+| `max_attempts` | 5       | 1–10   | Verify attempts allowed before the record is locked out (`attempts_exhausted`).                                  |
+
+### Security model
+
+- **Storage**: Only `SHA-256(code + 16-byte random salt)` is persisted in Redis under `frn:otp:api:<request_id>`. The plaintext code is discarded immediately after dispatch and is never logged.
+- **Verification**: `crypto/subtle.ConstantTimeCompare` guards against timing oracles. Attempt counting uses an atomic Redis `WATCH/MULTI` loop so concurrent guesses cannot exceed `max_attempts`.
+- **Per-recipient rate limit**: A fixed window of 5 sends per `(app_id, recipient)` per 10 minutes (`frn:otp:rl:...`). Exceeding it returns `429`.
+- **Resend cooldown**: 60 seconds per `request_id`, enforced server-side. Resend re-mints a new code and resets the attempt counter; the previous code is invalidated.
+- **Tenant isolation**: `app_id` is sourced from `c.Locals("app_id")` set by the API-key middleware. Cross-tenant `request_id` access is impossible because each record is keyed by a v4 UUID issued by FRN.
+
+### Error reference
+
+| HTTP | `error`              | Cause                                                            | Endpoint(s)         |
+| ---- | -------------------- | ---------------------------------------------------------------- | ------------------- |
+| 400  | _validation message_ | Bad JSON, missing required field, or DTO tag violation           | send / verify / resend |
+| 400  | _validation message_ | Invalid channel, recipient, length, TTL, attempts, or template   | send / resend       |
+| 400  | `invalid_code`       | Code mismatch (response also carries `attempts_remaining`)       | verify              |
+| 400  | `attempts_exhausted` | `max_attempts` reached on this `request_id`                      | verify              |
+| 401  | _auth message_       | Missing / invalid `X-API-Key`                                    | all                 |
+| 404  | `not_found`          | `request_id` does not exist (or already expired and purged)      | verify / resend     |
+| 409  | `already_verified`   | The OTP was already consumed                                     | resend              |
+| 409  | `resend_cooldown`    | Within the 60 s cooldown                                         | resend              |
+| 410  | `expired`            | OTP TTL elapsed                                                  | verify / resend     |
+| 429  | `rate_limited`       | Per-recipient send budget exceeded                               | send / resend       |
+| 500  | `internal_error`     | Unhandled server failure                                         | all                 |
+
+### Billing
+
+Each `send` (and each `resend`) dispatches one notification through the standard pipeline, which charges the per-channel credit rate just like `/v1/notifications`. **There is no separate OTP rate card.** The OTP endpoints are a thin policy layer (generate → hash → verify) on top of channels you are already paying for.
+
+### UI integration
+
+The FRN dashboard intentionally does **not** expose OTP authoring/inspection screens in v1. Rationale:
+
+- The OTP API is a programmatic, server-to-server feature consumed by customer applications via curl / SDKs — not by dashboard operators.
+- The dashboard already exposes template editors and an ad-hoc "Send SMS" composer for operator-driven messaging; reusing those surfaces for OTP would conflate ephemeral auth state with persisted broadcast templates.
+- OTP records are short-lived (≤ 15 minutes) and security-sensitive (plaintext discarded, salt rotated per record), so a "browse recent OTPs" panel would either be useless (only hashes) or actively harmful (if it leaked plaintext into the UI).
+- Standard delivery analytics (provider status, latency, cost) for each OTP are already visible via the linked `notification_id` in the existing notifications dashboard.
+
+A future "Auth diagnostics" panel surfacing `request_id`, channel, status, and attempts (without ever exposing the code) can be added if customer demand materialises; it is explicitly out of scope here.
+
+### SDKs
+
+Both first-party SDKs ship typed OTP sub-clients:
+
+- **Go** — `client.OTP.Send / Verify / Resend` with `errors.Is`-matchable sentinels (`ErrOTPInvalidCode`, `ErrOTPAttemptsExhausted`, `ErrOTPExpired`, `ErrOTPNotFound`, `ErrOTPAlreadyVerified`, `ErrOTPResendCooldown`, `ErrOTPRateLimited`). The underlying `*APIError` is reachable via `errors.As`.
+- **TypeScript / JavaScript** — `client.otp.send / verify / resend` throwing `OTPError` with a typed `code` discriminator (`invalid_code` · `attempts_exhausted` · `expired` · `not_found` · `already_verified` · `resend_cooldown` · `rate_limited`). On `invalid_code`, `err.attemptsRemaining` is populated.
+
+See the in-product docs (`/docs/otp` in the dashboard) for runnable Go and TypeScript snippets covering the full send → verify → resend flow.
