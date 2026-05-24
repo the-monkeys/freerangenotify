@@ -169,6 +169,17 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Quick-send (simplified notification endpoint)
 	v1.Post("/quick-send", apiAuth, licenseCheck, c.QuickSendHandler.Send)
 
+	// OTP-as-a-service: send, verify, and resend one-time codes via SMS,
+	// WhatsApp, or email. Send/resend pass through licenseCheck because they
+	// consume credits via the underlying notification pipeline; verify is a
+	// pure Redis read and is exempt.
+	if c.OTPHandler != nil {
+		otpGrp := v1.Group("/otp", apiAuth)
+		otpGrp.Post("/send", licenseCheck, c.OTPHandler.Send)
+		otpGrp.Post("/verify", c.OTPHandler.Verify)
+		otpGrp.Post("/resend", licenseCheck, c.OTPHandler.Resend)
+	}
+
 	// Media upload (for WhatsApp file attachments)
 	v1.Post("/media/upload", apiAuth, c.MediaHandler.Upload)
 

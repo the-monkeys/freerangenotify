@@ -92,6 +92,7 @@ type Container struct {
 	SSEHandler                   *handlers.SSEHandler
 	AuthHandler                  *handlers.AuthHandler
 	QuickSendHandler             *handlers.QuickSendHandler
+	OTPHandler                   *handlers.OTPHandler
 	PlaygroundHandler            *handlers.PlaygroundHandler
 	AnalyticsHandler             *handlers.AnalyticsHandler
 	LicensingHandler             *handlers.LicensingHandler
@@ -109,6 +110,9 @@ type Container struct {
 
 	// Quick-Send
 	QuickSendService *usecases.QuickSendService
+
+	// OTP-as-a-service (public API for customers to send/verify OTPs)
+	OTPService *services.OTPService
 
 	// Workflow Engine (Phase 1 — feature-gated)
 	WorkflowService workflow.Service
@@ -507,6 +511,23 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 	container.QuickSendHandler.SetIdempotencyStore(container.IdempotencyStore)
+
+	// OTP-as-a-service: customer-facing API to send and verify codes via
+	// SMS, WhatsApp, or email. Code dispatch flows through the standard
+	// NotificationService so credit metering, audit, and retries all apply.
+	otpAPIRepo := repository.NewOTPAPIRepository(container.RedisClient)
+	container.OTPService = services.NewOTPService(
+		otpAPIRepo,
+		container.NotificationService,
+		repos.User,
+		container.TemplateService,
+		logger,
+	)
+	container.OTPHandler = handlers.NewOTPHandler(
+		container.OTPService,
+		container.Validator,
+		logger,
+	)
 
 	// Playground handler
 	var playgroundBaseURL string

@@ -1,0 +1,321 @@
+# OTP-as-a-Service — OpenAPI Fragment
+#
+# Documents the public OTP API exposed under /v1/otp/*. The endpoints are
+# protected by the standard X-API-Key middleware (tenant is derived server-side
+# from the key, never from the request body).
+#
+# Endpoints:
+#   POST /v1/otp/send    — generate + dispatch a code via SMS, WhatsApp, or email
+#   POST /v1/otp/verify  — verify a code against a request_id (constant-time)
+#   POST /v1/otp/resend  — re-issue a fresh code for an existing request_id
+#
+# Implementation notes (for reviewers, not for API consumers):
+#   - Codes are persisted as SHA-256(code + per-record salt); plaintext is
+#     discarded immediately after dispatch and never logged.
+#   - Verify uses crypto/subtle constant-time compare and atomic Redis
+#     WATCH/MULTI attempt-increments to prevent brute-force races.
+#   - Send reuses the standard notification pipeline (templates, providers,
+#     credit billing) — there is no separate OTP rate card.
+openapi: 3.0.3
+info:
+  title: FreeRangeNotify — OTP as a Service
+  version: "1.0.0"
+  description: |
+    Programmatic one-time-passcode delivery and verification over SMS,
+    WhatsApp, and email. Designed for sign-in, sign-up, step-up auth,
+    and transaction confirmation flows.
+
+servers:
+  - url: http://localhost:8080/v1
+    description: Local development
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /otp/send:
+    post:
+      summary: Send an OTP
+      description: |
+        Generates a one-time passcode, hashes it for storage, and dispatches
+        it to the recipient through the requested channel. The response
+        returns a `request_id` that the client must echo back to
+        `POST /otp/verify`. The plaintext code is never returned by the API.
+
+        Subject to the configured per-recipient rate limit (default: 5 sends
+        per app/recipient per 10 minutes).
+      operationId: sendOTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OTPSendRequest" }
+            examples:
+              sms:
+                summary: SMS, defaults
+                value:
+                  channel: sms
+                  recipient: "+14155551212"
+              whatsapp:
+                summary: WhatsApp with custom body
+                value:
+                  channel: whatsapp
+                  recipient: "+14155551212"
+                  template_body: "Your verification code is {{code}}. Expires in {{ttl}} minutes."
+              email_alpha:
+                summary: Email, 8-char alphanumeric, 10-min TTL
+                value:
+                  channel: email
+                  recipient: "user@example.com"
+                  length: 8
+                  alphanumeric: true
+                  ttl_seconds: 600
+                  template_data: { app_name: "Acme" }
+              by_external_id:
+                summary: Email to a known user, identified by external_id
+                value:
+                  channel: email
+                  external_id: "customer_ext_42"
+              by_user_id:
+                summary: SMS to a known user, identified by internal user_id
+                value:
+                  channel: sms
+                  user_id: "11111111-2222-3333-4444-555555555555"
+      responses:
+        "202":
+          description: OTP queued for delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPSendResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /otp/verify:
+    post:
+      summary: Verify an OTP
+      description: |
+        Verifies a code against the `request_id` returned by `/otp/send`.
+        Comparison is constant-time and the attempt counter is incremented
+        atomically. Returns `200` on success and on a recoverable invalid
+        attempt (with `verified=false` and `attempts_remaining` in the body)
+        so clients can render UX without an extra round-trip. Hard failures
+        (expired, not_found) return `4xx`.
+      operationId: verifyOTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OTPVerifyRequest" }
+      responses:
+        "200":
+          description: Verification succeeded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
+        "400":
+          description: Invalid code or attempts exhausted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: request_id not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
+        "410":
+          description: OTP expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
+
+  /otp/resend:
+    post:
+      summary: Resend an OTP
+      description: |
+        Mints a **new** code for the same `request_id`, invalidates the
+        previous code, and resets the attempt counter. Subject to a 60-second
+        cooldown per request_id.
+      operationId: resendOTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OTPResendRequest" }
+      responses:
+        "202":
+          description: New OTP queued for delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OTPSendResponse" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Already verified or still in cooldown
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410": { $ref: "#/components/responses/Gone" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Channel:
+      type: string
+      enum: [sms, whatsapp, email]
+      description: Delivery channel for the OTP.
+
+    OTPSendRequest:
+      type: object
+      required: [channel]
+      description: |
+        The recipient is identified by EXACTLY ONE of `recipient`, `user_id`,
+        or `external_id`. When `user_id` / `external_id` is supplied, the
+        channel-appropriate contact field on the resolved user record (email
+        for `email`; phone for `sms`/`whatsapp`) is used as the destination.
+      properties:
+        channel: { $ref: "#/components/schemas/Channel" }
+        recipient:
+          type: string
+          description: |
+            Raw E.164 phone number for `sms`/`whatsapp` (e.g. `+14155551212`)
+            or a valid email address for `email`. Mutually exclusive with
+            `user_id` and `external_id`.
+          example: "+14155551212"
+        user_id:
+          type: string
+          description: |
+            Internal FreeRangeNotify `user_id` (UUID). When set, the channel
+            address is read from the user record. Mutually exclusive with
+            `recipient` and `external_id`.
+          example: "11111111-2222-3333-4444-555555555555"
+        external_id:
+          type: string
+          description: |
+            Caller-owned user identifier resolved via the users index.
+            Mutually exclusive with `recipient` and `user_id`.
+          example: "customer_ext_42"
+        length:
+          type: integer
+          minimum: 4
+          maximum: 10
+          default: 6
+          description: Number of characters in the code.
+        alphanumeric:
+          type: boolean
+          default: false
+          description: |
+            If `true`, codes are drawn from a lookalike-free alphabet
+            (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) instead of digits 0–9.
+        ttl_seconds:
+          type: integer
+          minimum: 30
+          maximum: 900
+          default: 300
+          description: Code lifetime in seconds (max 15 minutes).
+        max_attempts:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 5
+          description: Maximum number of verify attempts before lockout.
+        template_body:
+          type: string
+          description: |
+            Optional message body. Must contain a `{{code}}` placeholder.
+            May also reference `{{ttl}}` (TTL in minutes) and any keys from
+            `template_data`. If omitted, a channel-appropriate default is used.
+        template_data:
+          type: object
+          additionalProperties: true
+          description: Extra variables for `template_body` (e.g. `{ "app_name": "Acme" }`).
+
+    OTPSendResponse:
+      type: object
+      properties:
+        request_id:        { type: string, example: "550e8400-e29b-41d4-a716-446655440000" }
+        notification_id:   { type: string, example: "abc123" }
+        channel:           { $ref: "#/components/schemas/Channel" }
+        expires_at:        { type: string, format: date-time }
+        ttl_seconds:       { type: integer, example: 300 }
+        max_attempts:      { type: integer, example: 5 }
+
+    OTPVerifyRequest:
+      type: object
+      required: [request_id, code]
+      properties:
+        request_id: { type: string }
+        code:
+          type: string
+          minLength: 4
+          maxLength: 10
+          example: "482913"
+
+    OTPVerifyResponse:
+      type: object
+      properties:
+        verified:           { type: boolean }
+        request_id:         { type: string }
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        attempts_remaining:
+          type: integer
+          description: Present on `invalid_code`. Omitted on success.
+        error:
+          type: string
+          enum: [invalid_code, attempts_exhausted, expired, not_found, internal_error]
+          description: Present only when `verified=false`.
+
+    OTPResendRequest:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: { type: string }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+  responses:
+    ValidationError:
+      description: Request payload failed validation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: request_id not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Gone:
+      description: OTP expired
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: Per-recipient rate limit exceeded
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    InternalError:
+      description: Server-side failure
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
