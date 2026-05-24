@@ -1302,6 +1302,19 @@ export const whatsappAdminAPI = {
     return data.data;
   },
 
+  // manualConnect skips Embedded Signup and stores a pre-existing System User
+  // access token directly. Use this while the Meta App is still in Development
+  // mode / pending App Review, or for self-hosted single-tenant deployments.
+  manualConnect: async (payload: {
+    app_id: string;
+    access_token: string;
+    waba_id: string;
+    phone_number_id?: string;
+  }) => {
+    const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/manual-connect', payload);
+    return data.data;
+  },
+
   disconnect: async (appId: string) => {
     const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`);
     return data;
@@ -1347,6 +1360,63 @@ export const whatsappTemplatesAPI = {
 
   sync: async (apiKey: string, name: string) => {
     const { data } = await api.post<ApiResponse<any>>(`/whatsapp/templates/${name}/sync`, {}, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+};
+
+// ============= WhatsApp Rich-Template APIs (Phase 1-3 of rich plan) =============
+//
+// Authored carousels / coupons / cta_url / quick_reply / list templates that
+// FRN persists and submits to Meta (and Twilio in parallel when configured).
+// All endpoints are API-key protected and scoped by app via the auth header.
+export const whatsappRichTemplatesAPI = {
+  create: async (apiKey: string, payload: Record<string, any>) => {
+    const { data } = await api.post<ApiResponse<any>>('/whatsapp/rich-templates/', payload, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  list: async (
+    apiKey: string,
+    filters?: { kind?: string; status?: string; name_prefix?: string; limit?: number; offset?: number },
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.kind) params.set('kind', filters.kind);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.name_prefix) params.set('name_prefix', filters.name_prefix);
+    if (filters?.limit != null) params.set('limit', String(filters.limit));
+    if (filters?.offset != null) params.set('offset', String(filters.offset));
+    const { data } = await api.get<ApiResponse<any[]> & { total: number }>(`/whatsapp/rich-templates/?${params}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return { templates: data.data || [], total: data.total };
+  },
+
+  get: async (apiKey: string, id: string) => {
+    const { data } = await api.get<ApiResponse<any>>(`/whatsapp/rich-templates/${id}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  delete: async (apiKey: string, id: string) => {
+    await api.delete(`/whatsapp/rich-templates/${id}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+  },
+
+  sync: async (apiKey: string, id: string) => {
+    const { data } = await api.post<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/sync`, {}, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data.data;
+  },
+
+  preview: async (apiKey: string, id: string, variables?: Record<string, string>) => {
+    const { data } = await api.post<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/preview`, { variables }, {
       headers: getAuthHeaders(apiKey),
     });
     return data.data;

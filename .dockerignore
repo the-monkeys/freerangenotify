@@ -32,10 +32,23 @@ worker.exe
 *.swo
 *~
 
-# Environment
+# Environment - never bake secrets into the image. Multi-stage build already
+# discards the builder layer, but defense in depth: don't even let .env reach
+# the build context.
 .env
-.env.local
-.env.*.local
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Production deployment artifacts (compose + prod env live on the host, not
+# in the image).
+prod/
+deploy/
 
 # Logs
 *.log

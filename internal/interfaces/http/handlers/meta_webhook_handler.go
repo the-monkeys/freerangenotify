@@ -8,28 +8,51 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"go.uber.org/zap"
 )
+
+// wabaCacheTTL is how long the WABA/phone-number-id → app_id lookup table is
+// cached. 5 min keeps the worst-case staleness equal to the Meta template
+// status sync window in the implementation plan.
+const wabaCacheTTL = 5 * time.Minute
 
 // MetaWebhookHandler handles Meta WhatsApp Cloud API webhooks.
 type MetaWebhookHandler struct {
 	whatsappSvc     whatsapp.Service
 	appRepo         application.Repository
-	templateHandler *WhatsAppTemplateHandler // optional, for template status webhooks
-	appSecret       string                  // Meta App Secret for X-Hub-Signature-256 verification
-	verifyToken     string                  // hub.verify_token for webhook subscription registration
-	logger          *zap.Logger
+	templateHandler    *WhatsAppTemplateHandler             // optional, legacy template status webhooks
+	richTemplateSvc    services.WhatsAppRichTemplateService // optional, rich-template status webhooks
+	appSecret          string                               // Meta App Secret for X-Hub-Signature-256 verification
+	verifyToken        string                               // hub.verify_token for webhook subscription registration
+	logger             *zap.Logger
+
+	// WABA / phone-number-id → app_id cache. Avoids an O(N) app scan on every
+	// inbound webhook. Refilled lazily via repopulateLocked() on miss or expiry.
+	cacheMu        sync.RWMutex
+	wabaIndex      map[string]string // waba_id -> app_id
+	phoneIndex     map[string]string // phone_number_id -> app_id
+	cacheExpiresAt time.Time
 }
 
 // SetTemplateHandler wires the template handler for processing template status webhooks.
 func (h *MetaWebhookHandler) SetTemplateHandler(th *WhatsAppTemplateHandler) {
 	h.templateHandler = th
+}
+
+// SetRichTemplateService wires the rich-template service so async
+// message_template_status_update events from Meta update the FRN-side
+// MetaBinding without polling. Optional — if unset, only the legacy
+// templateHandler receives the event.
+func (h *MetaWebhookHandler) SetRichTemplateService(svc services.WhatsAppRichTemplateService) {
+	h.richTemplateSvc = svc
 }
 
 // NewMetaWebhookHandler creates a new Meta webhook handler.
@@ -112,11 +135,26 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 				}
 
 			case "message_template_status_update":
+				rawBytes, _ := json.Marshal(change.Value)
+				var event map[string]interface{}
+				_ = json.Unmarshal(rawBytes, &event)
 				if h.templateHandler != nil {
-					rawBytes, _ := json.Marshal(change.Value)
-					var event map[string]interface{}
-					_ = json.Unmarshal(rawBytes, &event)
 					h.templateHandler.HandleTemplateStatusWebhook(event)
+				}
+				// Forward to the rich-template service so the FRN-side binding
+				// reflects approval transitions without polling.
+				if h.richTemplateSvc != nil {
+					tplName, _ := event["message_template_name"].(string)
+					status, _ := event["event"].(string)
+					reason, _ := event["reason"].(string)
+					if tplName != "" && status != "" {
+						if err := h.richTemplateSvc.ApplyMetaStatus(c.Context(), wabaID, tplName, status, reason); err != nil {
+							h.logger.Warn("Rich template status update failed",
+								zap.String("waba_id", wabaID),
+								zap.String("template", tplName),
+								zap.Error(err))
+						}
+					}
 				}
 
 			default:
@@ -190,6 +228,44 @@ func (h *MetaWebhookHandler) handleInboundMessage(
 				inbound.TextBody = msg.Location.Name
 			}
 		}
+	case "interactive":
+		// Quick-reply or list-row tap on an interactive message we sent.
+		// The button payload / row ID is what callers gave us in
+		// metaButtonReply.ID / metaSectionRow.ID — surfacing it as a typed
+		// field so workflows and the inbox can react without re-parsing.
+		if msg.Interactive != nil {
+			inbound.InteractiveType = msg.Interactive.Type
+			switch msg.Interactive.Type {
+			case "button_reply":
+				if msg.Interactive.ButtonReply != nil {
+					inbound.ReplyID = msg.Interactive.ButtonReply.ID
+					inbound.ReplyTitle = msg.Interactive.ButtonReply.Title
+					inbound.TextBody = msg.Interactive.ButtonReply.Title
+				}
+			case "list_reply":
+				if msg.Interactive.ListReply != nil {
+					inbound.ReplyID = msg.Interactive.ListReply.ID
+					inbound.ReplyTitle = msg.Interactive.ListReply.Title
+					inbound.ReplyDescription = msg.Interactive.ListReply.Description
+					inbound.TextBody = msg.Interactive.ListReply.Title
+				}
+			}
+		}
+	case "button":
+		// Template button tap (URL or QUICK_REPLY). Meta delivers this as a
+		// separate msg.Type "button" with text + payload fields, NOT as
+		// "interactive" — easy to miss.
+		if msg.Button != nil {
+			inbound.InteractiveType = "template_button"
+			inbound.ReplyTitle = msg.Button.Text
+			inbound.ButtonPayload = msg.Button.Payload
+			inbound.TextBody = msg.Button.Text
+		}
+	case "reaction":
+		if msg.Reaction != nil {
+			inbound.ContextMessageID = msg.Reaction.MessageID
+			inbound.ReactionEmoji = msg.Reaction.Emoji
+		}
 	default:
 		// Store raw payload for unsupported types
 		rawBytes, _ := json.Marshal(msg)
@@ -243,31 +319,88 @@ func (h *MetaWebhookHandler) handleStatusUpdate(c *fiber.Ctx, status *dto.MetaSt
 }
 
 // resolveAppID maps a WABA ID + phone number ID to a FreeRangeNotify app.
-// It checks per-app WhatsApp config for matching Meta credentials.
+// Hot path on every inbound webhook; backed by an in-memory cache that is
+// refilled at most every wabaCacheTTL.
 func (h *MetaWebhookHandler) resolveAppID(ctx context.Context, wabaID, phoneNumberID string) string {
-	// TODO: In production, maintain a Redis cache of waba_id→app_id mappings
-	// populated during Embedded Signup (Phase 2). For now, do a brute-force
-	// scan of apps — acceptable at low volume.
-	apps, err := h.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
-	if err != nil {
+	if appID := h.lookupCached(wabaID, phoneNumberID); appID != "" {
+		return appID
+	}
+
+	// Cache miss or expired — refill and retry under the write lock so that a
+	// burst of webhooks for a freshly-configured WABA doesn't issue N parallel
+	// ES list calls.
+	h.cacheMu.Lock()
+	if appID := h.lookupLocked(wabaID, phoneNumberID); appID != "" && time.Now().Before(h.cacheExpiresAt) {
+		h.cacheMu.Unlock()
+		return appID
+	}
+	if err := h.repopulateLocked(ctx); err != nil {
+		h.cacheMu.Unlock()
 		h.logger.Warn("Failed to list apps for WABA resolution", zap.Error(err))
 		return ""
 	}
+	appID := h.lookupLocked(wabaID, phoneNumberID)
+	h.cacheMu.Unlock()
 
+	if appID == "" {
+		h.logger.Debug("No app found for WABA/phone combo",
+			zap.String("waba_id", wabaID),
+			zap.String("phone_number_id", phoneNumberID))
+	}
+	return appID
+}
+
+// lookupCached returns the cached app_id under a read lock, or "" if the
+// cache is empty / expired / has no match.
+func (h *MetaWebhookHandler) lookupCached(wabaID, phoneNumberID string) string {
+	h.cacheMu.RLock()
+	defer h.cacheMu.RUnlock()
+	if time.Now().After(h.cacheExpiresAt) {
+		return ""
+	}
+	return h.lookupLocked(wabaID, phoneNumberID)
+}
+
+// lookupLocked must be called with cacheMu held (read or write).
+func (h *MetaWebhookHandler) lookupLocked(wabaID, phoneNumberID string) string {
+	if wabaID != "" {
+		if id, ok := h.wabaIndex[wabaID]; ok {
+			return id
+		}
+	}
+	if phoneNumberID != "" {
+		if id, ok := h.phoneIndex[phoneNumberID]; ok {
+			return id
+		}
+	}
+	return ""
+}
+
+// repopulateLocked refreshes the WABA / phone-number-id indexes. Must be
+// called with cacheMu write-locked.
+func (h *MetaWebhookHandler) repopulateLocked(ctx context.Context) error {
+	apps, err := h.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	if err != nil {
+		return err
+	}
+	waba := make(map[string]string, len(apps))
+	phone := make(map[string]string, len(apps))
 	for _, app := range apps {
 		wa := app.Settings.WhatsApp
 		if wa == nil || wa.Provider != "meta" {
 			continue
 		}
-		if wa.MetaWABAID == wabaID || wa.MetaPhoneNumberID == phoneNumberID {
-			return app.AppID
+		if wa.MetaWABAID != "" {
+			waba[wa.MetaWABAID] = app.AppID
+		}
+		if wa.MetaPhoneNumberID != "" {
+			phone[wa.MetaPhoneNumberID] = app.AppID
 		}
 	}
-
-	h.logger.Debug("No app found for WABA/phone combo",
-		zap.String("waba_id", wabaID),
-		zap.String("phone_number_id", phoneNumberID))
-	return ""
+	h.wabaIndex = waba
+	h.phoneIndex = phone
+	h.cacheExpiresAt = time.Now().Add(wabaCacheTTL)
+	return nil
 }
 
 func (h *MetaWebhookHandler) verifySignature(body []byte, sigHeader string) bool {

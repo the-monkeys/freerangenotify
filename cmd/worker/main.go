@@ -16,6 +16,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/telemetry"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"go.uber.org/zap"
 )
 
@@ -330,6 +331,23 @@ func main() {
 		processor.SetSubscriberThrottle(subscriberThrottle)
 		logger.Info("Subscriber throttle enabled")
 	}
+
+	// ── WhatsApp Rich Templates: runtime resolver ──
+	// The worker needs read-only access to rich templates to expand
+	// notification.Content.Data["whatsapp_rich"]["template_id"] into the
+	// provider-specific wire shape. apiVersion/metaApp credentials are
+	// unused for resolution and left empty intentionally — authoring
+	// (Create/Sync) runs in the API server. See
+	// WHATSAPP_RICH_INTERACTIVE_PLAN.md §4.2.
+	richTplRepo := repository.NewWhatsAppRichTemplateRepository(c.DatabaseManager.Client.GetClient(), logger)
+	richTplSvc := services.NewWhatsAppRichTemplateService(
+		richTplRepo,
+		c.DatabaseManager.Repositories.Application,
+		nil, "", "", "",
+		logger,
+	)
+	processor.SetWhatsAppRichTemplateService(richTplSvc)
+	logger.Info("WhatsApp rich-template resolver wired into worker")
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)

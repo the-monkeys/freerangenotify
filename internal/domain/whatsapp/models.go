@@ -31,6 +31,19 @@ type InboundMessage struct {
 	Longitude     float64                `json:"longitude,omitempty" es:"longitude"`
 	RawPayload    map[string]interface{} `json:"raw_payload,omitempty" es:"raw_payload"`
 
+	// Interactive replies and template button taps.
+	// InteractiveType is "button_reply" | "list_reply" | "template_button".
+	// For button_reply / template_button: ReplyID + ReplyTitle (+ Payload for template URL buttons).
+	// For list_reply: ReplyID + ReplyTitle + ReplyDescription.
+	InteractiveType  string `json:"interactive_type,omitempty" es:"interactive_type"`
+	ReplyID          string `json:"reply_id,omitempty" es:"reply_id"`
+	ReplyTitle       string `json:"reply_title,omitempty" es:"reply_title"`
+	ReplyDescription string `json:"reply_description,omitempty" es:"reply_description"`
+	ButtonPayload    string `json:"button_payload,omitempty" es:"button_payload"`
+
+	// Reaction (when MessageType == "reaction").
+	ReactionEmoji string `json:"reaction_emoji,omitempty" es:"reaction_emoji"`
+
 	ContextMessageID string `json:"context_message_id,omitempty" es:"context_message_id"`
 	IsForwarded      bool   `json:"is_forwarded,omitempty" es:"is_forwarded"`
 
@@ -75,13 +88,13 @@ type InboundConfig struct {
 
 // Conversation is an aggregated view grouping messages by contact.
 type Conversation struct {
-	ContactWAID    string    `json:"contact_wa_id"`
-	ContactName    string    `json:"contact_name"`
-	LastMessage    string    `json:"last_message"`
-	LastMessageAt  time.Time `json:"last_message_at"`
-	LastDirection  string    `json:"last_direction"`
-	UnreadCount    int64     `json:"unread_count"`
-	CSWOpen        bool      `json:"csw_open"`
+	ContactWAID   string    `json:"contact_wa_id"`
+	ContactName   string    `json:"contact_name"`
+	LastMessage   string    `json:"last_message"`
+	LastMessageAt time.Time `json:"last_message_at"`
+	LastDirection string    `json:"last_direction"`
+	UnreadCount   int64     `json:"unread_count"`
+	CSWOpen       bool      `json:"csw_open"`
 }
 
 // MessageFilter is used to query stored WhatsApp messages.

@@ -650,3 +650,80 @@ const params = {
 await client.notifications.send(params);
 ```
 
+---
+
+## WhatsApp Rich Templates
+
+See [docs/openapi/whatsapp-rich.yaml](../docs/openapi/whatsapp-rich.yaml) for the full OpenAPI fragment covering authoring, sync, preview, click attribution, and Twilio webhooks.
+
+### Authoring
+
+`POST /v1/whatsapp/rich-templates` validates a typed template, submits it to every configured provider (Meta Cloud API and/or Twilio Content API), and persists the resulting bindings. Meta failures return 400 with the rejection reason; Twilio submission is best-effort and reconciled via the sync endpoint.
+
+Example carousel payload:
+
+```json
+{
+  "kind": "carousel",
+  "name": "diwali_carousel",
+  "language": "en_US",
+  "body": "Hi {{1}}, check these out:",
+  "cards": [
+    {
+      "header_image_url": "https://cdn.example.com/p1.jpg",
+      "body": "Trendy Polo {{1}}",
+      "buttons": [
+        { "type": "URL", "text": "Shop", "url": "https://shop.example/p/{{1}}", "track_clicks": true }
+      ]
+    },
+    {
+      "header_image_url": "https://cdn.example.com/p2.jpg",
+      "body": "Classic Shirt {{1}}",
+      "buttons": [
+        { "type": "URL", "text": "Shop", "url": "https://shop.example/p/{{1}}", "track_clicks": true }
+      ]
+    }
+  ]
+}
+```
+
+### Listing, sync, preview
+
+- `GET /v1/whatsapp/rich-templates?kind=carousel&status=approved&limit=50` — paginated list.
+- `POST /v1/whatsapp/rich-templates/{id}/sync` — re-fetch provider approval state.
+- `POST /v1/whatsapp/rich-templates/{id}/preview` — render with a `variables` map, returns Meta wire-format JSON for inspection.
+
+### Sending
+
+Reference an approved rich template from any send path by attaching the typed payload to `data.whatsapp_rich`. When this object carries a `template_id`, `content_sid` is not required on the request:
+
+```json
+{
+  "channel": "whatsapp",
+  "user_id": "user-internal-uuid",
+  "data": {
+    "whatsapp_rich": {
+      "template_id": "rich-tpl-abc123",
+      "variables": { "1": "Asha" },
+      "cards": [
+        { "variables": { "1": "Polo" },  "button_values": ["polo-sku"] },
+        { "variables": { "1": "Shirt" }, "button_values": ["shirt-sku"] }
+      ]
+    }
+  }
+}
+```
+
+The worker resolves `template_id` against the configured provider before dispatch:
+
+- **Meta path**: `whatsapp_rich` is expanded into the provider's interactive/template JSON.
+- **Twilio path**: `whatsapp_rich` is flattened into `content_sid` + `content_variables`, with carousel per-card overrides emitted as `<card_index>.<position>` keys (1-indexed).
+
+### Click attribution
+
+Buttons with `track_clicks: true` are wrapped at render-time with a signed `/v1/r/{sig}` redirect so taps land in the analytics index. `server.public_url` must be set for wrapping to take effect — when it is empty, URLs degrade to pass-through and a warning is logged at boot.
+
+### Twilio webhooks
+
+- `POST /v1/webhooks/twilio/content-status` — Twilio Content API approval updates. The handler maps `ContentSid` → FRN-side `TwilioBinding` via the rich-template service. Always returns 200 to prevent retries.
+- `POST /v1/webhooks/twilio/whatsapp` — Twilio Programmable Messaging inbound webhook for replies, button taps, and list selections. Resolves the target FRN app by matching `To` against `application.Settings.WhatsApp.FromNumber`, then forwards a normalised `InboundMessage` to the WhatsApp service which emits `whatsapp.button_clicked` / `whatsapp.list_selected` / `whatsapp.text_received` workflow events. Signature is verified against `providers.whatsapp.auth_token` when configured; requests with a bad signature are rejected with `403`.

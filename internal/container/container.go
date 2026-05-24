@@ -160,6 +160,16 @@ type Container struct {
 	WhatsAppAdminHandler        *handlers.WhatsAppAdminHandler
 	WhatsAppTemplateHandler     *handlers.WhatsAppTemplateHandler
 	WhatsAppConversationHandler *handlers.WhatsAppConversationHandler
+	// Phase 1 of WHATSAPP_RICH_INTERACTIVE_PLAN.md — typed rich templates.
+	WhatsAppRichTemplateService services.WhatsAppRichTemplateService
+	WhatsAppRichTemplateHandler *handlers.WhatsAppRichTemplateHandler
+	// Phase 2 — Twilio Content API approval webhook.
+	TwilioContentStatusHandler *handlers.TwilioContentStatusHandler
+	// Phase 6 — Twilio inbound WhatsApp (replies / button taps) webhook.
+	TwilioInboundWebhookHandler *handlers.TwilioInboundWebhookHandler
+	// Phase 3 — click attribution.
+	ClickSigner          *whatsapp.ClickSigner
+	ClickRedirectHandler *handlers.ClickRedirectHandler
 
 	// Twilio Content Templates
 	TwilioTemplateHandler *handlers.TwilioTemplateHandler
@@ -742,6 +752,58 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			container.WhatsAppService,
 			logger,
 		)
+		// Rich-template authoring (carousel, coupon, cta_url, quick_reply, list)
+		richTplRepo := repository.NewWhatsAppRichTemplateRepository(dbManager.Client.GetClient(), logger)
+		container.WhatsAppRichTemplateService = services.NewWhatsAppRichTemplateService(
+			richTplRepo,
+			repos.Application,
+			nil, // default *http.Client
+			cfg.Providers.MetaWhatsApp.APIVersion,
+			cfg.Providers.MetaWhatsApp.MetaAppID,
+			cfg.Providers.MetaWhatsApp.MetaAppSecret,
+			logger,
+		)
+		container.WhatsAppRichTemplateHandler = handlers.NewWhatsAppRichTemplateHandler(
+			container.WhatsAppRichTemplateService,
+			logger,
+		)
+		container.MetaWebhookHandler.SetRichTemplateService(container.WhatsAppRichTemplateService)
+		container.TwilioContentStatusHandler = handlers.NewTwilioContentStatusHandler(
+			container.WhatsAppRichTemplateService,
+			logger,
+		)
+		// Inbound Twilio WhatsApp webhook (replies, button taps).
+		// Signature validation uses the system-level Twilio auth token; per-app
+		// auth tokens are not currently surfaced to the inbound webhook because
+		// Twilio signs with the account that owns the configured webhook URL,
+		// which in self-hosted FRN is always the system account.
+		if container.WhatsAppService != nil {
+			container.TwilioInboundWebhookHandler = handlers.NewTwilioInboundWebhookHandler(
+				container.WhatsAppService,
+				repos.Application,
+				cfg.Providers.WhatsApp.AuthToken,
+				logger,
+			)
+		}
+		// Click attribution signer + redirect handler (Phase 3). Falls back
+		// to JWTSecret if no dedicated click-signing key is configured.
+		clickKey := cfg.Security.JWTSecret
+		signer, err := whatsapp.NewClickSigner(clickKey)
+		if err != nil {
+			logger.Warn("Click attribution disabled: signer key is empty", zap.Error(err))
+		} else {
+			container.ClickSigner = signer
+			analyticsRepo := repository.NewAnalyticsEventRepository(dbManager.Client.GetClient(), logger)
+			container.ClickRedirectHandler = handlers.NewClickRedirectHandler(signer, analyticsRepo, logger)
+			// Enable click-attribution wrapping in the rich template
+			// service. publicURL is required: log a warning if missing so
+			// operators know why tracked URLs degrade to passthrough.
+			if cfg.Server.PublicURL == "" {
+				logger.Warn("Click attribution: server.public_url is empty; URL buttons with track_clicks will degrade to passthrough")
+			} else if container.WhatsAppRichTemplateService != nil {
+				container.WhatsAppRichTemplateService.EnableClickTracking(signer, cfg.Server.PublicURL)
+			}
+		}
 		logger.Info("WhatsApp Meta integration enabled (webhook receiver, inbound messaging, embedded signup, template management, inbox)")
 	}
 

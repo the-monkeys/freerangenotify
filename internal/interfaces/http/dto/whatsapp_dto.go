@@ -47,18 +47,55 @@ type MetaContactProfile struct {
 
 // MetaInboundMsg represents a single inbound WhatsApp message.
 type MetaInboundMsg struct {
-	From      string               `json:"from"`
-	ID        string               `json:"id"`
-	Timestamp string               `json:"timestamp"`
-	Type      string               `json:"type"` // text, image, video, audio, document, location, contacts, interactive, reaction, order
-	Text      *MetaMsgText         `json:"text,omitempty"`
-	Image     *MetaMsgMedia        `json:"image,omitempty"`
-	Video     *MetaMsgMedia        `json:"video,omitempty"`
-	Audio     *MetaMsgMedia        `json:"audio,omitempty"`
-	Document  *MetaMsgMedia        `json:"document,omitempty"`
-	Location  *MetaMsgLocation     `json:"location,omitempty"`
-	Context   *MetaMsgContext      `json:"context,omitempty"`
-	Referral  *MetaMsgReferral     `json:"referral,omitempty"`
+	From        string               `json:"from"`
+	ID          string               `json:"id"`
+	Timestamp   string               `json:"timestamp"`
+	Type        string               `json:"type"` // text, image, video, audio, document, location, contacts, interactive, button, reaction, order
+	Text        *MetaMsgText         `json:"text,omitempty"`
+	Image       *MetaMsgMedia        `json:"image,omitempty"`
+	Video       *MetaMsgMedia        `json:"video,omitempty"`
+	Audio       *MetaMsgMedia        `json:"audio,omitempty"`
+	Document    *MetaMsgMedia        `json:"document,omitempty"`
+	Location    *MetaMsgLocation     `json:"location,omitempty"`
+	Context     *MetaMsgContext      `json:"context,omitempty"`
+	Referral    *MetaMsgReferral     `json:"referral,omitempty"`
+	Interactive *MetaMsgInteractive  `json:"interactive,omitempty"` // quick-reply / list-reply taps
+	Button      *MetaMsgButton       `json:"button,omitempty"`      // template button taps (URL/QUICK_REPLY)
+	Reaction    *MetaMsgReaction     `json:"reaction,omitempty"`
+}
+
+// MetaMsgInteractive holds quick-reply or list-reply payloads sent by the user.
+// Exactly one of ButtonReply / ListReply is set, determined by Type.
+type MetaMsgInteractive struct {
+	Type        string                       `json:"type"` // "button_reply" | "list_reply"
+	ButtonReply *MetaMsgInteractiveReply     `json:"button_reply,omitempty"`
+	ListReply   *MetaMsgInteractiveListReply `json:"list_reply,omitempty"`
+}
+
+// MetaMsgInteractiveReply is the payload of a quick-reply button tap.
+type MetaMsgInteractiveReply struct {
+	ID    string `json:"id"`    // matches metaButtonReply.ID we sent
+	Title string `json:"title"` // matches metaButtonReply.Title we sent
+}
+
+// MetaMsgInteractiveListReply is the payload of a list-row tap.
+type MetaMsgInteractiveListReply struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+}
+
+// MetaMsgButton is the payload Meta delivers when a recipient taps a template
+// button (URL or QUICK_REPLY); see Meta Cloud API "Received Templates" docs.
+type MetaMsgButton struct {
+	Text    string `json:"text"`    // visible button label
+	Payload string `json:"payload"` // configured payload (QUICK_REPLY) or button URL
+}
+
+// MetaMsgReaction is an inbound reaction (emoji) to a previously-sent message.
+type MetaMsgReaction struct {
+	MessageID string `json:"message_id"`
+	Emoji     string `json:"emoji,omitempty"`
 }
 
 // MetaMsgText is the text content of a message.

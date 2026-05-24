@@ -16,6 +16,7 @@ import WorkflowsList from './workflows/WorkflowsList';
 import TemplateLibrary from './TemplateLibrary';
 import WhatsAppConnect from '../components/whatsapp/WhatsAppConnect';
 import WhatsAppTemplates from './whatsapp/WhatsAppTemplates';
+import WhatsAppRichTemplates from './whatsapp/WhatsAppRichTemplates';
 import WhatsAppConversations from './whatsapp/WhatsAppConversations';
 import TwilioWhatsAppTemplates from './whatsapp/TwilioWhatsAppTemplates';
 
@@ -334,6 +335,7 @@ const AppDetail: React.FC = () => {
                                 <WhatsAppConnect appId={app.app_id} />
                                 <TwilioWhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
                                 <WhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
+                                <WhatsAppRichTemplates apiKey={app.api_key} appId={app.app_id} />
                                 <WhatsAppConversations apiKey={app.api_key} appId={app.app_id} />
                             </div>
                         )}
