@@ -28,7 +28,7 @@
 | APNs / FCM — image URL for rich push | NOT STARTED | Push payloads are <4 KB; "embed" means client downloads from FRN URL. |
 | SMS / In-App / SSE | NOT APPLICABLE | Cannot carry binaries; resolver fails fast with typed error. |
 | OpenAPI + Swagger | DONE | P1d (`b6e5f70`): all `/v1/files` routes + extended `Attachment` schema in `docs/{swagger.json,yaml,docs.go}`. |
-| API_DOCUMENTATION.md + ui/src/docs/* | PARTIAL | `documents/API_DOCUMENTATION.md` Files section + new `documents/FILE_ATTACHMENTS_GUIDE.md` (P1c, `b6e5f70`). `ui/src/docs/*` not yet authored. |
+| API_DOCUMENTATION.md + ui/src/docs/* | DONE | `documents/API_DOCUMENTATION.md` Files section + `documents/FILE_ATTACHMENTS_GUIDE.md` (P1c, `b6e5f70`). In-product `ui/src/docs/file-attachments.md` + sidebar nav entry (P1c-ui, `d632054`). |
 | Go SDK — `Files.Upload(...)`, `NotificationSendParams.Attachments` | DONE | P1a/P1b (`51be5d7`): `sdk/go/freerangenotify/files.go` + extended `ContentAttachment`. |
 | JS SDK — `files.upload(...)`, typed `attachments` field | DONE | P1a/P1b (`51be5d7`): `sdk/js/src/files.ts` + extended `ContentAttachment`. |
 | Unit tests (domain, resolver, each provider) | PARTIAL | Domain + storage + service + resolver covered (P0b/c/e). Per-provider tests pending wiring slice. |
@@ -45,7 +45,7 @@
 |---|---:|---:|---:|
 | Domain + storage | 3 | 1 | 0 |
 | Provider adapters | 0 | 0 | 8 |
-| Docs + SDKs | 3 | 1 | 0 |
+| Docs + SDKs | 4 | 0 | 0 |
 | Tests | 1 | 0 | 1 |
 | UI (per §15) | 0 | 0 | 8 |
 
