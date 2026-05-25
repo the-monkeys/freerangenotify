@@ -42,6 +42,7 @@ type Client struct {
 	Topics        *TopicsClient
 	Presence      *PresenceClient
 	OTP           *OTPClient
+	Files         *FilesClient
 }
 
 // Option configures the Client.
@@ -81,6 +82,7 @@ func New(apiKey string, opts ...Option) *Client {
 	c.Topics = &TopicsClient{client: c}
 	c.Presence = &PresenceClient{client: c}
 	c.OTP = &OTPClient{client: c}
+	c.Files = &FilesClient{client: c}
 	return c
 }
 

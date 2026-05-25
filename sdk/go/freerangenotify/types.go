@@ -141,14 +141,32 @@ type NotificationContent struct {
 	Style       *ContentStyle       `json:"style,omitempty"`
 }
 
-// ContentAttachment describes a media or file attachment.
+// ContentAttachment describes a media or file attachment delivered alongside a
+// notification. Exactly one of URL, ContentBase64, or FileID must be set per
+// attachment — the server validates this and rejects ambiguous payloads.
+//
+//	URL            : Fetch the bytes from a publicly reachable HTTPS URL.
+//	ContentBase64  : Embed the bytes directly (RFC 4648, std or url-safe).
+//	                 Capped at ~14 MB encoded (~10 MB decoded).
+//	FileID         : Reference a FreeRangeNotify-managed file uploaded via
+//	                 client.Files.Upload(). Best for files >10 MB or that you
+//	                 reuse across many notifications (e.g. invoices).
+//
+// Disposition controls inline vs. attachment rendering for channels that
+// distinguish (notably email): "attachment" (default) or "inline". ContentID
+// is the cid: token for inline email images, e.g. an HTML body of
+// <img src="cid:logo"> pairs with ContentID="logo".
 type ContentAttachment struct {
-	Type     string `json:"type"` // image | video | file | audio
-	URL      string `json:"url"`
-	Name     string `json:"name,omitempty"`
-	MimeType string `json:"mime_type,omitempty"`
-	Size     int64  `json:"size,omitempty"`
-	AltText  string `json:"alt_text,omitempty"`
+	Type          string `json:"type"` // image | video | file | audio
+	URL           string `json:"url,omitempty"`
+	ContentBase64 string `json:"content_base64,omitempty"`
+	FileID        string `json:"file_id,omitempty"`
+	Name          string `json:"name,omitempty"`
+	MimeType      string `json:"mime_type,omitempty"`
+	Size          int64  `json:"size,omitempty"`
+	AltText       string `json:"alt_text,omitempty"`
+	Disposition   string `json:"disposition,omitempty"` // attachment | inline
+	ContentID     string `json:"content_id,omitempty"`  // for inline email images (cid:)
 }
 
 // ContentAction describes a call-to-action button.

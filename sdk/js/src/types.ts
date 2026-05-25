@@ -107,13 +107,35 @@ export interface BroadcastResult {
     notifications: SendResult[];
 }
 
+/**
+ * Media or file attachment delivered alongside a notification.
+ *
+ * Exactly one of `url`, `content_base64`, or `file_id` must be set per
+ * attachment — the server rejects ambiguous payloads.
+ *
+ * - `url`            — Fetch bytes from a publicly reachable HTTPS URL.
+ * - `content_base64` — Embed bytes directly (base64, std or url-safe).
+ *                      Capped at ~14 MB encoded (~10 MB decoded).
+ * - `file_id`        — Reference a FreeRangeNotify-managed file uploaded via
+ *                      `client.files.upload()`. Best for files >10 MB or that
+ *                      you reuse across many notifications (e.g. invoices).
+ *
+ * `disposition` controls inline vs. attachment rendering for channels that
+ * distinguish (notably email): `"attachment"` (default) or `"inline"`.
+ * `content_id` is the `cid:` token for inline email images: an HTML body of
+ * `<img src="cid:logo">` pairs with `content_id: "logo"`.
+ */
 export interface ContentAttachment {
     type: 'image' | 'video' | 'file' | 'audio';
-    url: string;
+    url?: string;
+    content_base64?: string;
+    file_id?: string;
     name?: string;
     mime_type?: string;
     size?: number;
     alt_text?: string;
+    disposition?: 'attachment' | 'inline';
+    content_id?: string;
 }
 
 export interface ContentAction {
