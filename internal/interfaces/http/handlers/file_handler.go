@@ -46,9 +46,19 @@ func NewFileHandler(svc *services.FileService, signer *filestore.Signer, publicU
 // Upload accepts a multipart form with a single "file" field and persists it
 // to the tenant's namespace. Returns 201 + FileResponse.
 //
-//	POST /v1/files
-//	Content-Type: multipart/form-data
-//	field: file=<binary>
+// @Summary Upload a file
+// @Description Uploads a file to the tenant's namespace. Returned file_id can be referenced from notification attachments.
+// @Tags Files
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "File contents (max 50 MiB by default)"
+// @Success 201 {object} dto.FileResponse
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 413 {object} map[string]interface{}
+// @Failure 415 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/files [post]
 func (h *FileHandler) Upload(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -88,7 +98,15 @@ func (h *FileHandler) Upload(c *fiber.Ctx) error {
 
 // Get returns the file metadata.
 //
-//	GET /v1/files/:id
+// @Summary Get file metadata
+// @Tags Files
+// @Produce json
+// @Param id path string true "File ID"
+// @Success 200 {object} dto.FileResponse
+// @Failure 404 {object} map[string]interface{}
+// @Failure 410 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/files/{id} [get]
 func (h *FileHandler) Get(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -105,7 +123,14 @@ func (h *FileHandler) Get(c *fiber.Ctx) error {
 // List returns the tenant's files newest first. limit defaults to 50, capped
 // at 200 by the repository; offset defaults to 0.
 //
-//	GET /v1/files?limit=&offset=
+// @Summary List files
+// @Tags Files
+// @Produce json
+// @Param limit  query int false "Page size (max 200, default 50)"
+// @Param offset query int false "Page offset (default 0)"
+// @Success 200 {object} dto.FileListResponse
+// @Security ApiKeyAuth
+// @Router /v1/files [get]
 func (h *FileHandler) List(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -126,7 +151,13 @@ func (h *FileHandler) List(c *fiber.Ctx) error {
 
 // Delete removes the file's bytes and metadata.
 //
-//	DELETE /v1/files/:id
+// @Summary Delete a file
+// @Tags Files
+// @Param id path string true "File ID"
+// @Success 204
+// @Failure 404 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/files/{id} [delete]
 func (h *FileHandler) Delete(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -143,7 +174,16 @@ func (h *FileHandler) Delete(c *fiber.Ctx) error {
 // sets Content-Type, Content-Length, Content-Disposition (attachment) and
 // X-Content-Type-Options: nosniff.
 //
-//	GET /v1/files/:id/content
+// @Summary Stream file content
+// @Description Streams the file bytes back to the authenticated caller.
+// @Tags Files
+// @Produce octet-stream
+// @Param id path string true "File ID"
+// @Success 200 {string} binary
+// @Failure 404 {object} map[string]interface{}
+// @Failure 410 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/files/{id}/content [get]
 func (h *FileHandler) Content(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -156,7 +196,16 @@ func (h *FileHandler) Content(c *fiber.Ctx) error {
 // URL targets the public /v1/files/download/:id endpoint and embeds (exp, sig)
 // as query parameters. Requires API-key auth to mint.
 //
-//	GET /v1/files/:id/download-url
+// @Summary Mint a signed download URL
+// @Description Returns a short-lived URL for unauthenticated download. TTL is configured server-side (default 15 minutes).
+// @Tags Files
+// @Produce json
+// @Param id path string true "File ID"
+// @Success 200 {object} dto.SignedURLResponse
+// @Failure 404 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Router /v1/files/{id}/download-url [get]
 func (h *FileHandler) DownloadURL(c *fiber.Ctx) error {
 	if h.signer == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "signed downloads are disabled (no signing key configured)")
@@ -185,7 +234,19 @@ func (h *FileHandler) DownloadURL(c *fiber.Ctx) error {
 // PublicDownload serves a file to an unauthenticated caller carrying a valid
 // signed URL. This route MUST be registered without API-key middleware.
 //
-//	GET /v1/files/download/:id?app_id=&exp=&sig=
+// @Summary Public signed download
+// @Description Downloads a file using a signed URL. Authentication is performed by verifying the signature in the query string; no API key is required.
+// @Tags Files
+// @Produce octet-stream
+// @Param id     path  string true "File ID"
+// @Param app_id query string true "Application ID embedded in the signed URL"
+// @Param exp    query int    true "Unix expiry timestamp embedded in the signed URL"
+// @Param sig    query string true "HMAC-SHA256 signature"
+// @Success 200 {string} binary
+// @Failure 400 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 410 {object} map[string]interface{}
+// @Router /v1/files/download/{id} [get]
 func (h *FileHandler) PublicDownload(c *fiber.Ctx) error {
 	if h.signer == nil {
 		return fiber.NewError(fiber.StatusServiceUnavailable, "signed downloads are disabled")
