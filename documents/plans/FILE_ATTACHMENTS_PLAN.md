@@ -12,13 +12,13 @@
 
 | Area | Status | Notes |
 |---|---|---|
-| Domain extension — `Attachment.{ContentBase64, FileID, ContentID, Disposition}` | NOT STARTED | URL-only `Attachment` exists today in `internal/domain/notification/models.go`. |
-| `domain/file` package + `FileObject` model | NOT STARTED | New, used by `POST /v1/files`. |
-| `FileStore` infrastructure (local FS + S3) | NOT STARTED | Behind interface so prod can swap to S3/MinIO. |
-| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id` | NOT STARTED | Multipart upload, tenant-scoped, signed download URL on read. |
-| `AttachmentResolver` (worker, idempotent) | NOT STARTED | Turns `{url \| content_base64 \| file_id}` → `ResolvedAttachment{Bytes, MIME, Filename, ContentID}` once per notification, cached for retries. |
-| `Provider` interface — `Capabilities()` | NOT STARTED | Backwards-compatible: default capability set via embedded struct. |
-| Email providers — true inline + multipart/mixed (SMTP, SES, SendGrid, Mailgun, Postmark, Resend) | NOT STARTED | All six have native attachment APIs. |
+| Domain extension — `Attachment.{ContentBase64, FileID, ContentID, Disposition}` | DONE | Shipped in P0a (`2e3ff0c`). `internal/domain/notification/models.go` + `errors.go`. |
+| `domain/file` package + `FileObject` model | DONE | P0a (`2e3ff0c`) + P0b store interface (`924718b`). |
+| `FileStore` infrastructure (local FS + S3) | PARTIAL | Local FS done (P0b `924718b`) with signed-URL signer. S3 backend deferred. |
+| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id` | DONE | P0d (`c0ec6ce`): upload, get, list, delete, content stream, download-url, public signed download. |
+| `AttachmentResolver` (worker, idempotent) | DONE | P0e (`40ddfa2`) — channel-agnostic resolver wired and tested (11 cases). |
+| `Provider` interface — `Capabilities()` | PARTIAL | `Capabilities` struct + `AttachmentMode` enum added (P0a). Provider interface NOT yet extended — kept backward-compatible until wiring slice. |
+| Email providers — true inline + multipart/mixed (SMTP, SES, SendGrid, Mailgun, Postmark, Resend) | NOT STARTED | Worker wiring pending. |
 | Meta WhatsApp — `/media` upload → `media_id` reference | NOT STARTED | Required; Meta does not accept inline base64. |
 | Twilio WhatsApp + MMS — FRN-signed URL fallback | NOT STARTED | Twilio only accepts public `MediaUrl`. |
 | Slack — `files.uploadV2` (multipart) | NOT STARTED | Replaces URL-only path for binary attachments. |
@@ -27,13 +27,13 @@
 | Webhook (generic + custom) — `attachments[].content_base64` passthrough OR multipart mode | NOT STARTED | Per-provider config flag. |
 | APNs / FCM — image URL for rich push | NOT STARTED | Push payloads are <4 KB; "embed" means client downloads from FRN URL. |
 | SMS / In-App / SSE | NOT APPLICABLE | Cannot carry binaries; resolver fails fast with typed error. |
-| OpenAPI + Swagger | NOT STARTED | `POST /v1/files`, extended `Attachment` schema, new error codes. |
-| API_DOCUMENTATION.md + ui/src/docs/* | NOT STARTED | Caller guide, three input modes, channel matrix, size limits. |
-| Go SDK — `Files.Upload(...)`, `NotificationSendParams.Attachments` | NOT STARTED | Optional; legacy URL still works. |
-| JS SDK — `files.upload(...)`, typed `attachments` field | NOT STARTED | Same. |
-| Unit tests (domain, resolver, each provider) | NOT STARTED | Min coverage target: 85 % of new code. |
+| OpenAPI + Swagger | DONE | P1d (`b6e5f70`): all `/v1/files` routes + extended `Attachment` schema in `docs/{swagger.json,yaml,docs.go}`. |
+| API_DOCUMENTATION.md + ui/src/docs/* | PARTIAL | `documents/API_DOCUMENTATION.md` Files section + new `documents/FILE_ATTACHMENTS_GUIDE.md` (P1c, `b6e5f70`). `ui/src/docs/*` not yet authored. |
+| Go SDK — `Files.Upload(...)`, `NotificationSendParams.Attachments` | DONE | P1a/P1b (`51be5d7`): `sdk/go/freerangenotify/files.go` + extended `ContentAttachment`. |
+| JS SDK — `files.upload(...)`, typed `attachments` field | DONE | P1a/P1b (`51be5d7`): `sdk/js/src/files.ts` + extended `ContentAttachment`. |
+| Unit tests (domain, resolver, each provider) | PARTIAL | Domain + storage + service + resolver covered (P0b/c/e). Per-provider tests pending wiring slice. |
 | Integration tests (`tests/integration/files/`) | NOT STARTED | Per-channel end-to-end smoke + size/MIME guard. |
-| UI — Files manager page, `AttachmentEditor` component, History attachments column, per-provider mode toggle, app file-policy settings | NOT STARTED | See §15. Sequenced across P0/P1/P3/P5. Backward-compatible: `media_url` legacy input retained for one release. |
+| UI — Files manager page, `AttachmentEditor` component, History attachments column, per-provider mode toggle, app file-policy settings | NOT STARTED | See §15. Deferred — benefits from validated backend + provider wiring first. |
 
 **Definition of end-to-end DONE:** Email + Meta WhatsApp + Webhook + Slack + Discord all deliver real bytes in CI; capability-gated channels fail fast with `ErrChannelUnsupportedAttachment`; OpenAPI + both SDKs document the three input modes; integration suite green; no existing test broken; no public type signature changed.
 
@@ -43,10 +43,10 @@
 
 | Scope | DONE | IN PROGRESS | PENDING |
 |---|---:|---:|---:|
-| Domain + storage | 0 | 0 | 4 |
+| Domain + storage | 3 | 1 | 0 |
 | Provider adapters | 0 | 0 | 8 |
-| Docs + SDKs | 0 | 0 | 4 |
-| Tests | 0 | 0 | 2 |
+| Docs + SDKs | 3 | 1 | 0 |
+| Tests | 1 | 0 | 1 |
 | UI (per §15) | 0 | 0 | 8 |
 
 ---
