@@ -153,6 +153,12 @@ type Container struct {
 	FileSigner  *filestore.Signer
 	FileHandler *handlers.FileHandler
 
+	// AttachmentResolver materialises notification.Attachment specs
+	// (URL / inline base64 / file_id) into byte-ready attachment.Resolved
+	// values for provider adapters. Always constructed — even when no
+	// filestore backend is configured — so url/base64 sources keep working.
+	AttachmentResolver *services.AttachmentResolver
+
 	// Custom Providers (Phase 3)
 	CustomProviderHandler *handlers.CustomProviderHandler
 
@@ -613,6 +619,16 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			zap.String("root", root),
 		)
 	}
+
+	// AttachmentResolver is constructed unconditionally so URL and inline
+	// base64 attachments work even when the file-store backend is disabled.
+	// The resolver tolerates a nil FileService and will fail file_id sources
+	// with a clear error at resolve time instead of panicking at send time.
+	container.AttachmentResolver = services.NewAttachmentResolver(
+		container.FileService,
+		services.AttachmentResolverConfig{},
+		logger,
+	)
 
 	// Analytics handler (workflow repo wired below after feature-gate check)
 	container.AnalyticsHandler = handlers.NewAnalyticsHandler(

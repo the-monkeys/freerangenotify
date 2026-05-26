@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 )
@@ -105,4 +106,21 @@ const (
 	EmailConfigKey    contextKey = "email_config"
 	WhatsAppConfigKey contextKey = "whatsapp_config"
 	SMSConfigKey      contextKey = "sms_config"
+
+	// AttachmentResolverKey carries an AttachmentResolveFunc into provider
+	// Send paths so providers can materialise notification.Attachment specs
+	// (URL / inline base64 / file_id) without taking a hard dependency on
+	// the usecases or file-storage packages.
+	AttachmentResolverKey contextKey = "attachment_resolver"
 )
+
+// AttachmentResolveFunc resolves a slice of notification.Attachment specs
+// into byte-ready attachment.Resolved values. The closure is pre-bound to a
+// specific tenant (app_id) by whoever populates the ctx — providers stay
+// tenant-agnostic by design.
+//
+// On error the implementation MUST close any partially-resolved entries
+// before returning so callers never see a leaked reader.
+// On success the caller MUST invoke (*attachment.Resolved).Close on every
+// returned entry (attachment.CloseAll is a convenient helper).
+type AttachmentResolveFunc func(ctx context.Context, atts []notification.Attachment) ([]*attachment.Resolved, error)

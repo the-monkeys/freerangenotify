@@ -12,17 +12,28 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 )
 
 // AttachmentSource identifies how a ResolvedAttachment's bytes were obtained.
-type AttachmentSource string
+//
+// Deprecated: prefer attachment.Source. Retained as a thin alias so existing
+// callers in this package and its tests keep compiling.
+type AttachmentSource = attachment.Source
 
 const (
-	AttachmentSourceURL    AttachmentSource = "url"
-	AttachmentSourceInline AttachmentSource = "inline"
-	AttachmentSourceFileID AttachmentSource = "file_id"
+	AttachmentSourceURL    = attachment.SourceURL
+	AttachmentSourceInline = attachment.SourceInline
+	AttachmentSourceFileID = attachment.SourceFileID
 )
+
+// ResolvedAttachment is re-exported here as a thin alias over
+// attachment.Resolved so usecases-layer callers and tests keep working
+// while providers consume the canonical domain type directly.
+//
+// Deprecated: prefer attachment.Resolved.
+type ResolvedAttachment = attachment.Resolved
 
 // DefaultURLFetchMaxBytes caps the size of an attachment pulled from a remote
 // URL. Larger payloads MUST go through POST /v1/files so the platform tracks
@@ -31,35 +42,6 @@ const DefaultURLFetchMaxBytes int64 = 25 * 1024 * 1024 // 25 MiB
 
 // DefaultURLFetchTimeout bounds a single attachment download.
 const DefaultURLFetchTimeout = 20 * time.Second
-
-// ResolvedAttachment is the channel-agnostic, byte-ready view of an inbound
-// notification.Attachment. Providers consume this instead of the raw spec so
-// URL / base64 / file_id are unified at one boundary.
-//
-// Exactly one of Bytes or Reader is populated. The caller MUST invoke Close
-// to release any underlying file or HTTP body, even when consuming Bytes —
-// Close is a safe no-op when there is nothing to release.
-type ResolvedAttachment struct {
-	Filename    string
-	MIMEType    string
-	Disposition string // "attachment" (default) | "inline"
-	ContentID   string // RFC 2392 token for inline HTML email embed
-	Bytes       []byte
-	Reader      io.ReadCloser
-	Size        int64
-	Source      AttachmentSource
-	SHA256      string // populated for file_id source; empty otherwise
-}
-
-// Close releases any retained resources. It is safe to call multiple times.
-func (r *ResolvedAttachment) Close() error {
-	if r == nil || r.Reader == nil {
-		return nil
-	}
-	err := r.Reader.Close()
-	r.Reader = nil
-	return err
-}
 
 // AttachmentResolverConfig holds resolver tunables. Zero values fall back to
 // package defaults.

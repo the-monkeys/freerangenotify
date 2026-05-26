@@ -2,12 +2,14 @@ package providers
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -103,6 +105,32 @@ func (p *SendGridProvider) Send(ctx context.Context, notif *notification.Notific
 			customArgs[key] = fmt.Sprintf("%v", value)
 		}
 		message.Personalizations[0].CustomArgs = customArgs
+	}
+
+	// Resolve and attach binary attachments via the shared helper.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "sendgrid")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+	}
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+		for _, ra := range resolved {
+			bytes, bErr := readResolvedBytes(ra)
+			if bErr != nil {
+				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+			}
+			att := mail.NewAttachment()
+			att.SetContent(base64.StdEncoding.EncodeToString(bytes))
+			att.SetType(coalesceMIME(ra.MIMEType))
+			att.SetFilename(coalesceFilename(ra.Filename))
+			if ra.Disposition == "inline" && ra.ContentID != "" {
+				att.SetDisposition("inline")
+				att.SetContentID(ra.ContentID)
+			} else {
+				att.SetDisposition("attachment")
+			}
+			message.AddAttachment(att)
+		}
 	}
 
 	// Send email

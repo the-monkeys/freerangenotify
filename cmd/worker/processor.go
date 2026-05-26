@@ -15,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
@@ -69,6 +70,11 @@ type NotificationProcessor struct {
 	throttle         *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
 	richTplService   services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
 
+	// attachmentResolver materialises notification.Attachment specs
+	// (URL / inline base64 / file_id) for provider adapters. Optional —
+	// when nil, providers fall back to their pre-attachment behaviour.
+	attachmentResolver *services.AttachmentResolver
+
 	wg       sync.WaitGroup
 	stopChan chan struct{}
 }
@@ -91,6 +97,30 @@ func (p *NotificationProcessor) SetSubscriberThrottle(t *limiter.SubscriberThrot
 // See WHATSAPP_RICH_INTERACTIVE_PLAN.md §4.2 / §5.2.
 func (p *NotificationProcessor) SetWhatsAppRichTemplateService(svc services.WhatsAppRichTemplateService) {
 	p.richTplService = svc
+}
+
+// SetAttachmentResolver injects the optional attachment resolver. When set,
+// the processor populates providers.AttachmentResolverKey on the ctx of
+// every send so provider adapters (currently SMTP) can materialise binary
+// attachments without depending on the usecases layer.
+func (p *NotificationProcessor) SetAttachmentResolver(r *services.AttachmentResolver) {
+	p.attachmentResolver = r
+}
+
+// withAttachmentResolver returns a ctx pre-bound with a per-notification
+// AttachmentResolveFunc closure. The closure carries the notification's
+// app_id so providers stay tenant-agnostic. When the processor has no
+// resolver wired, or the notification has no attachments, the ctx is
+// returned unchanged.
+func (p *NotificationProcessor) withAttachmentResolver(ctx context.Context, notif *notification.Notification) context.Context {
+	if p.attachmentResolver == nil || notif == nil || len(notif.Content.Attachments) == 0 {
+		return ctx
+	}
+	appID := notif.AppID
+	fn := providers.AttachmentResolveFunc(func(c context.Context, atts []notification.Attachment) ([]*attachment.Resolved, error) {
+		return p.attachmentResolver.ResolveAll(c, appID, atts)
+	})
+	return context.WithValue(ctx, providers.AttachmentResolverKey, fn)
 }
 
 // NewNotificationProcessor creates a new notification processor
@@ -764,6 +794,13 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	}
+
+	// Inject the attachment-resolver closure (pre-bound to this notif's
+	// app_id) onto the ctx so provider adapters can materialise
+	// notification.Attachment specs without touching the usecases layer.
+	// No-op when the processor has no resolver wired or the notification
+	// carries no attachments — preserves the legacy fast path.
+	ctx = p.withAttachmentResolver(ctx, notif)
 
 	// Send via provider manager
 	// Send via provider manager

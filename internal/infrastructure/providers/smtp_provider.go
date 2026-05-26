@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -113,9 +114,33 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 		auth = smtp.PlainAuth("", username, password, host)
 	}
 
+	// Resolve attachments (URL / inline base64 / file_id) via the
+	// per-notification closure on ctx. The shared helper keeps this path
+	// byte-identical across all six email providers.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "smtp")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+	}
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+	}
+
 	// Construct message
 	to := []string{usr.Email}
-	msg := p.buildMessageCustom(usr.Email, notif.Content.Title, notif.Content.Body, fromEmail, fromName)
+	msg, mErr := buildSMTPMessage(smtpMessageOptions{
+		From:        fromEmail,
+		FromName:    fromName,
+		To:          usr.Email,
+		Subject:     notif.Content.Title,
+		HTMLBody:    notif.Content.Body,
+		Attachments: resolved,
+	})
+	if mErr != nil {
+		p.logger.Error("Failed to build SMTP message",
+			zap.String("notification_id", notif.NotificationID),
+			zap.Error(mErr))
+		return NewErrorResult(mErr, ErrorTypeInvalid), nil
+	}
 
 	// Send email with retries
 	var err error
@@ -149,30 +174,6 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 	result.Metadata["from_email"] = p.fromEmail
 
 	return result, nil
-}
-
-// buildMessage constructs a MIME message
-func (p *SMTPProvider) buildMessage(to, subject, body string) []byte {
-	return p.buildMessageCustom(to, subject, body, p.fromEmail, p.fromName)
-}
-
-// buildMessageCustom constructs a MIME message with custom from details
-func (p *SMTPProvider) buildMessageCustom(to, subject, body, fromEmail, fromName string) []byte {
-	// Basic MIME headers
-	headers := make(map[string]string)
-	headers["From"] = fmt.Sprintf("%s <%s>", fromName, fromEmail)
-	headers["To"] = to
-	headers["Subject"] = subject
-	headers["MIME-Version"] = "1.0"
-	headers["Content-Type"] = "text/html; charset=\"UTF-8\""
-
-	message := ""
-	for k, v := range headers {
-		message += fmt.Sprintf("%s: %s\r\n", k, v)
-	}
-	message += "\r\n" + body
-
-	return []byte(message)
 }
 
 // GetName returns the provider name
