@@ -10,30 +10,41 @@ documents) to a notification:
 | FRN-managed file | `file_id`        | Large files (>10 MB) or files reused across many notifications.   |
 
 Exactly **one** of the three must be set per attachment. Sending more than one,
-or none, is rejected with `400 Bad Request`.
+or none, is rejected with `400 attachment_ambiguous_source` /
+`400 attachment_missing_source`.
 
-> The capability matrix per channel (which channels accept which sources) is
-> driven by provider capabilities exposed by the worker. Today's wiring is in
-> progress — the API accepts all three sources; the worker is being updated
-> per provider to consume them. Until then, the safest source for every
-> channel is `url`.
+## Per-channel support
+
+| Channel             | `url` | `content_base64` | `file_id` | Notes |
+|---------------------|:-----:|:----------------:|:---------:|-------|
+| email (SMTP)        | ✅    | ✅               | ✅        | Verified end-to-end against Gmail on 2026-05-26 for all three modes. Inline (`disposition: "inline"` + `content_id`) supported via multipart/related. |
+| email (SES / SendGrid / Mailgun / Postmark / Resend) | ✅ | ✅ | ✅ | Code merged in `c7ac895` (P1a); unit-tested per vendor; not yet exercised against a vendor sandbox. |
+| webhook             | ✅    | ✅               | ✅        | Bytes are POSTed in the configured shape (passthrough or rich); see webhook docs. |
+| WhatsApp / Slack / Discord / Teams / MMS / Push | ⚠️ | ⚠️ | ⚠️ | Wiring tracked in `documents/plans/FILE_ATTACHMENTS_PLAN.md` §0; today these channels accept the input but the worker has not yet been updated per provider to consume bytes. Use `url` until the row for your channel reads DONE. |
+| SMS / in-app / SSE  | ❌    | ❌               | ❌        | Fail fast with `ErrChannelUnsupportedAttachment` — these transports cannot carry binaries. |
 
 ## Limits
 
 | Limit                                  | Default value      | How to change                              |
 |----------------------------------------|--------------------|--------------------------------------------|
-| Max upload size                        | 50 MiB             | `filestore.max_bytes`                      |
+| Max upload size                        | 50 MiB             | `filestore.max_bytes` (bytes)              |
 | Max inline base64 (encoded)            | ~14 MB             | hardcoded; encoded → ~10 MB decoded         |
-| Retention before auto-delete           | 30 days            | `filestore.retention_days` (`-1` = never)  |
+| Retention before auto-delete           | 30 days            | `filestore.retention_days` (`-1` = pin forever) |
 | Signed-URL TTL                         | 15 minutes         | `filestore.signed_url_ttl_seconds`         |
-| Allowed MIME types                     | common image/doc   | `filestore.allowed_mime_types` (wildcards) |
+| Allowed MIME types                     | PDF; JPEG/PNG/GIF/WebP; MP3/OGG/WAV; MP4; CSV/TXT; ZIP; DOCX/XLSX/PPTX | `filestore.allowed_mime_types` (wildcards supported, e.g. `image/*`) |
 
 ## Authentication
 
-All `/v1/files` endpoints require a tenant API key
-(`Authorization: Bearer frn_...`) **except** the public download path
-`GET /v1/files/download/:id`, which is authenticated by the signature in its
-query string.
+All `/v1/files` and `/v1/notifications` endpoints require a tenant API key in
+the `X-API-Key` header. For backward compatibility, the same key is also
+accepted via `Authorization: Bearer <key>` (this is what most SDKs send). The
+only endpoint that does **not** require a key is the public signed download
+`GET /v1/files/download/:id?sig=...` — the signature in the query string is
+the authentication.
+
+```http
+X-API-Key: frn_live_xxx
+```
 
 ---
 
@@ -42,7 +53,7 @@ query string.
 ```http
 POST /v1/notifications
 Content-Type: application/json
-Authorization: Bearer frn_live_xxx
+X-API-Key: frn_live_xxx
 
 {
   "user_id":  "u_123",
@@ -95,7 +106,7 @@ will reference more than once.
 ```http
 POST /v1/files
 Content-Type: multipart/form-data; boundary=...
-Authorization: Bearer frn_live_xxx
+X-API-Key: frn_live_xxx
 
 (multipart field "file" — binary)
 ```
@@ -104,7 +115,7 @@ Response (`201 Created`):
 
 ```json
 {
-  "file_id":    "f_01HXYZ...",
+  "file_id":    "file_5a6d19a25b6240c0bc0a17445ef5f5be",
   "name":       "invoice-2026-05.pdf",
   "size":       182437,
   "mime_type":  "application/pdf",
@@ -113,6 +124,10 @@ Response (`201 Created`):
   "created_at": "2026-05-25T20:14:00Z"
 }
 ```
+
+`file_id` is the format `file_<32 lowercase hex>` and is opaque to the caller.
+The response also includes the server-computed `sha256` so clients can verify
+the upload was not corrupted in transit.
 
 ### Step 2 — Reference in a notification
 
@@ -126,7 +141,7 @@ Response (`201 Created`):
     "body":  "Your invoice is attached.",
     "attachments": [{
       "type":    "file",
-      "file_id": "f_01HXYZ...",
+      "file_id": "file_5a6d19a25b6240c0bc0a17445ef5f5be",
       "name":    "invoice-2026-05.pdf"
     }]
   }
@@ -162,7 +177,7 @@ HTML body via `cid:` references.
 {
   "attachments": [{
     "type":        "image",
-    "file_id":     "f_logo123",
+    "file_id":     "file_5a6d19a25b6240c0bc0a17445ef5f5be",
     "content_id":  "logo",
     "disposition": "inline",
     "mime_type":   "image/png"
@@ -254,3 +269,83 @@ await client.notifications.send({
 | 410  | `file_expired`                | `file_id` was past its retention window.                 |
 | 413  | `file_too_large`              | Multipart upload exceeded `filestore.max_bytes`.         |
 | 415  | `unsupported_mime_type`       | MIME type not in `filestore.allowed_mime_types`.         |
+
+---
+
+## Verified end-to-end example
+
+The transcript below is the live smoke test that produced row 3 of the
+Recipient Evidence Registry in `documents/plans/FILE_ATTACHMENTS_PLAN.md §0.2`.
+It exercises the `file_id` mode against the deployed stack (SMTP → Gmail).
+
+```bash
+# 1. Upload the binary
+curl -sS -X POST \
+  -H "X-API-Key: $FRN_API_KEY" \
+  -F "file=@invoice-2026-05.pdf;type=application/pdf" \
+  https://api.example.com/v1/files/
+# => 201
+# {"file_id":"file_5a6d19a25b6240c0bc0a17445ef5f5be","sha256":"e781f578...",...}
+
+# 2. Reference it in a notification
+curl -sS -X POST \
+  -H "X-API-Key: $FRN_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- https://api.example.com/v1/notifications/ <<'JSON'
+{
+  "user_id":    "c0fa6e2f-691a-4e06-a9f9-07ab4f595a83",
+  "channel":    "email",
+  "priority":   "normal",
+  "template_id":"c3cd9209-5088-44a6-bc68-610c9ce31069",
+  "title":      "FRN evidence: file_id mode",
+  "body":       "Attachment via file_id.",
+  "attachments":[{
+    "type":     "file",
+    "file_id":  "file_5a6d19a25b6240c0bc0a17445ef5f5be",
+    "name":     "invoice-2026-05.pdf",
+    "mime_type":"application/pdf"
+  }]
+}
+JSON
+# => 202 { "notification_id": "<uuid>", "status": "queued" }
+```
+
+The same workflow with `content_base64` (Test 2) or a public `url` (Test 1)
+returns `202 queued` and the worker delivers in ~3–5 seconds against Gmail
+SMTP. Inline (`content_base64`) is the fastest path because it skips both the
+worker's metadata lookup and the disk read.
+
+## Operational notes
+
+### Local `FileStore` backend requires a shared volume
+
+When `filestore.backend: local` (the default), the API and worker processes
+**must** see the same directory at `filestore.local_root`. The bundled
+`docker-compose.yml` does this by declaring a named docker volume
+(`frn_files`) and mounting it on both `notification-service` and
+`notification-worker` at `/home/app/data/files`. If you deploy the two
+services on separate hosts with `backend: local`, every `file_id` attachment
+will fail in the worker with `attachment resolver: file <id>: file not found`
+even though the upload returned `201 Created` (the file was written to the
+API host's disk and the worker host can't see it).
+
+For multi-host deployments use `filestore.backend: s3` (and configure the S3
+credentials) so the bytes live in object storage and both services read from
+the same source.
+
+### Quotas, retention, and pinned files
+
+- `filestore.retention_days: 30` is the default. Files past that age are
+  swept by the background cleaner.
+- `filestore.retention_days: -1` pins every newly uploaded file forever and
+  omits `expires_at` from the metadata response. Use this for invoices,
+  contracts, and other artefacts you must retain for compliance.
+- Disk usage per tenant is tracked in Elasticsearch (`files` index, scoped
+  by `app_id`); per-tenant quotas are on the roadmap and not yet enforced.
+
+### Multi-tenancy
+
+All file queries are scoped by `app_id`. A `file_id` belonging to another
+tenant returns `404 file_not_found` (never `403`) so tenant existence cannot
+be probed.
+

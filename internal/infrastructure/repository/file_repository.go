@@ -92,7 +92,13 @@ func (r *FileRepository) List(ctx context.Context, appID string, limit, offset i
 		"query": map[string]interface{}{
 			"bool": map[string]interface{}{
 				"must": []map[string]interface{}{
-					{"term": map[string]interface{}{"app_id": appID}},
+					// Use the keyword sub-field: the `files` index has no
+					// explicit mapping, so ES dynamic-maps `app_id` as
+					// `text` with a `.keyword` sub-field. A `term` against
+					// the analyzed `text` field tokenises UUIDs on dashes
+					// and never matches — list returned empty for every
+					// tenant. Querying the keyword sub-field is exact.
+					{"term": map[string]interface{}{"app_id.keyword": appID}},
 				},
 			},
 		},

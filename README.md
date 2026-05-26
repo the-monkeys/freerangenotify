@@ -11,6 +11,7 @@ The system is designed to be reliable and easy to scale. It uses a worker pool t
 *   **Workflow Engine** - Build complex delivery flows like waiting for events or falling back to a different channel.
 *   **User Preferences** - Respect user choices for quiet hours, daily limits and preferred channels.
 *   **Analytics** - Track delivery success rates and user engagement across all your apps.
+*   **File Attachments** - Attach files to notifications via URL, inline base64, or `file_id` from the managed file store. See [documents/FILE_ATTACHMENTS_GUIDE.md](documents/FILE_ATTACHMENTS_GUIDE.md).
 *   **Self Hosted** - Complete control over your data with a simple Docker setup.
 
 ## System Architecture

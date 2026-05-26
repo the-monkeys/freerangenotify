@@ -15,6 +15,7 @@ import {
     Timer,
     Link2,
     MessageCircle,
+    Paperclip,
 } from 'lucide-react';
 
 export type TabId =
@@ -22,6 +23,7 @@ export type TabId =
     | 'users'
     | 'templates'
     | 'notifications'
+    | 'files'
     | 'digest-rules'
     | 'workflows'
     | 'schedules'
@@ -40,6 +42,7 @@ export const VALID_TABS: TabId[] = [
     'users',
     'templates',
     'notifications',
+    'files',
     'digest-rules',
     'workflows',
     'schedules',
@@ -73,6 +76,7 @@ export const TAB_GROUPS: TabGroup[] = [
             { id: 'users', label: 'Subscribers', icon: <Users className="h-4 w-4" /> },
             { id: 'templates', label: 'Templates', icon: <FileText className="h-4 w-4" /> },
             { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
+            { id: 'files', label: 'Files', icon: <Paperclip className="h-4 w-4" /> },
         ],
     },
     {

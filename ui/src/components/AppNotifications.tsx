@@ -622,6 +622,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     // Channels that deliver to an endpoint, not a user — recipient is irrelevant.
     const WEBHOOK_LIKE_CHANNELS = ['webhook', 'discord', 'slack', 'teams'];
 
+    // Channels whose providers can carry binary attachments. SMS, in-app and SSE
+    // cannot — the worker's AttachmentResolver rejects them with
+    // ErrChannelUnsupportedAttachment. Keep this list in sync with the backend
+    // capability matrix in documents/FILE_ATTACHMENTS_GUIDE.md.
+    const ATTACHMENT_CAPABLE_CHANNELS = ['email', 'push', 'whatsapp', 'webhook', 'discord', 'slack', 'teams'];
+
     // Quick-Send: detect variables from selected template
     const quickSelectedTemplate = useMemo(() => templates.find(t => t.id === quickTemplateId), [templates, quickTemplateId]);
     const isQuickWebhookLike = quickSelectedTemplate ? WEBHOOK_LIKE_CHANNELS.includes(quickSelectedTemplate.channel) : false;
@@ -1733,10 +1739,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
-                                {/* Rich Content Editor — visible for webhook/discord/slack/teams channels */}
-                                {quickSelectedTemplate && ['webhook', 'discord', 'slack', 'teams'].includes(quickSelectedTemplate.channel) && (
+                                {/* Rich Content Editor — visible for any channel whose provider can carry attachments / rich blocks. */}
+                                {quickSelectedTemplate && ATTACHMENT_CAPABLE_CHANNELS.includes(quickSelectedTemplate.channel) && (
                                     <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
-                                        <RichContentEditor value={quickRichContent} onChange={setQuickRichContent} />
+                                        <RichContentEditor value={quickRichContent} onChange={setQuickRichContent} apiKey={apiKey} />
                                         {!isRichContentEmpty(quickRichContent) && (
                                             <ChannelPreview
                                                 channel={quickSelectedTemplate.channel}
@@ -2283,10 +2289,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
-                                {/* Rich Content Editor — visible for webhook/discord/slack/teams channels */}
-                                {['webhook', 'discord', 'slack', 'teams'].includes(formData.channel) && (
+                                {/* Rich Content Editor — visible for any channel whose provider can carry attachments / rich blocks. */}
+                                {ATTACHMENT_CAPABLE_CHANNELS.includes(formData.channel) && (
                                     <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
-                                        <RichContentEditor value={advRichContent} onChange={setAdvRichContent} />
+                                        <RichContentEditor value={advRichContent} onChange={setAdvRichContent} apiKey={apiKey} />
                                     </div>
                                 )}
 

@@ -20,7 +20,7 @@ Attach files (PDFs, images, videos, documents) to a notification using one of th
 | Max inline base64 (encoded)    | ~14 MB             | _hardcoded; ~10 MB decoded_               |
 | Retention before auto-delete   | 30 days            | `filestore.retention_days` (`-1` = never) |
 | Signed-URL TTL                 | 15 minutes         | `filestore.signed_url_ttl_seconds`        |
-| Allowed MIME types             | common image/doc   | `filestore.allowed_mime_types` (wildcards)|
+| Allowed MIME types             | PDF; JPEG/PNG/GIF/WebP; MP3/OGG/WAV; MP4; CSV/TXT; ZIP; DOCX/XLSX/PPTX | `filestore.allowed_mime_types` (wildcards, e.g. `image/*`) |
 
 ---
 
@@ -82,7 +82,7 @@ Response (`201 Created`):
 
 ```json
 {
-  "file_id":    "f_01HXYZ...",
+  "file_id":    "file_5a6d19a25b6240c0bc0a17445ef5f5be",
   "name":       "invoice-2026-05.pdf",
   "size":       182437,
   "mime_type":  "application/pdf",
@@ -91,6 +91,8 @@ Response (`201 Created`):
   "created_at": "2026-05-25T20:14:00Z"
 }
 ```
+
+`file_id` is the format `file_<32 lowercase hex>` and is opaque to the caller. The response also includes the server-computed `sha256` so clients can verify the upload was not corrupted in transit.
 
 ### Step 2 — Reference in a notification
 
@@ -104,7 +106,7 @@ Response (`201 Created`):
     "body":  "Your invoice is attached.",
     "attachments": [{
       "type":    "file",
-      "file_id": "f_01HXYZ...",
+      "file_id": "file_5a6d19a25b6240c0bc0a17445ef5f5be",
       "name":    "invoice-2026-05.pdf"
     }]
   }
@@ -139,7 +141,7 @@ Use `disposition: "inline"` plus a `content_id` to embed images in the HTML body
 {
   "attachments": [{
     "type":        "image",
-    "file_id":     "f_logo123",
+    "file_id":     "file_5a6d19a25b6240c0bc0a17445ef5f5be",
     "content_id":  "logo",
     "disposition": "inline",
     "mime_type":   "image/png"
@@ -222,17 +224,15 @@ await client.notifications.send({
 
 ## Channel support
 
-> Per-channel native binary delivery is being rolled out. The API accepts all three input modes today; until per-provider wiring lands, `url` is the most reliable source across every channel. Track the rollout in the implementation plan.
+> Per-channel native binary delivery is being rolled out. The API accepts all three input modes today, but only the channels listed as ✅ below have been verified end-to-end. For other channels, `url` is the most reliable source until their row is verified.
 
-| Channel       | URL          | Inline base64 | `file_id`    | Notes                                              |
-| ------------- | ------------ | ------------- | ------------ | -------------------------------------------------- |
-| Email         | ✓            | ✓             | ✓            | Inline (cid:) supported via `disposition: inline`. |
-| WhatsApp      | ✓            | (via upload)  | (via upload) | Meta requires media upload before send.            |
-| Slack         | ✓            | ✓             | ✓            | Native `files.uploadV2` for binary.                |
-| Discord       | ✓            | ✓             | ✓            | Multipart upload.                                  |
-| Webhook       | ✓            | ✓             | ✓            | Caller chooses passthrough vs. multipart.          |
-| Push (APNs/FCM)| Image URL only | —          | —            | Payload size cap (≤ 4 KB).                         |
-| SMS / In-App / SSE | —      | —             | —            | Channel cannot physically carry binaries.          |
+| Channel             | URL  | Inline base64 | `file_id` | Status                                                                                |
+|---------------------|:----:|:-------------:|:---------:|---------------------------------------------------------------------------------------|
+| Email — SMTP        | ✅   | ✅            | ✅        | Verified end-to-end against Gmail on 2026-05-26 (all three input modes).               |
+| Email — SES / SendGrid / Mailgun / Postmark / Resend | ✅ | ✅ | ✅ | Code merged, unit-tested. Awaiting vendor-sandbox verification. |
+| Webhook             | ✅   | ✅            | ✅        | Bytes are forwarded in the configured shape (passthrough or rich).                     |
+| WhatsApp / Slack / Discord / Teams / MMS / Push | ⚠️ | ⚠️ | ⚠️ | Wiring in progress. Use `url`. |
+| SMS / In-App / SSE  | ❌   | ❌            | ❌        | These transports cannot carry binaries; the resolver fails fast with a typed error.    |
 
 ---
 

@@ -27,12 +27,12 @@ A row is `DONE` only when all five gates pass. Anything less is, at most, `CODE 
 |---|---|---|---|---|---|---|
 | Domain extension — `Attachment.{ContentBase64, FileID, ContentID, Disposition}` | merged (PR #116, P0a) | passing | n/a (schema only) | n/a | n/a | DONE |
 | `internal/domain/file` package + `FileObject` model | merged (P0a/P0b) | passing | n/a | n/a | n/a | DONE |
-| `FileStore` — local FS backend + HMAC signed URLs | merged (P0b) | passing | not exercised end-to-end | n/a | n/a | CODE COMPLETE |
+| `FileStore` — local FS backend + HMAC signed URLs | merged (P0b) | passing | exercised via live `POST /v1/files` (2026-05-26, file `file_5a6d19a25b62…` SHA-256 verified) | n/a | n/a | DONE |
 | `FileStore` — S3 backend | not started | — | — | — | — | NOT STARTED |
-| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id`, signed download | merged (P0d) | passing | not exercised | n/a (no UI uploader) | n/a | CODE COMPLETE |
-| `AttachmentResolver` (url \| inline \| file_id → bytes) | merged (P0e) | passing | n/a | n/a (no provider invoked it until P1e) | n/a | CODE COMPLETE |
+| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id`, signed download | merged (P0d) | passing | live upload verified end-to-end with worker-side `file_id` resolution (2026-05-26) | n/a (no UI uploader) | n/a | DONE |
+| `AttachmentResolver` (url \| inline \| file_id → bytes) | merged (P0e) | passing | all three input modes resolved & delivered to a live inbox (2026-05-26) | n/a (no provider invoked it until P1e) | n/a | DONE |
 | `Provider.Capabilities()` | partial (struct + enum landed; interface method not added) | n/a | n/a | n/a | n/a | NOT STARTED |
-| Email providers — SMTP / SES / SendGrid / Mailgun / Postmark / Resend wire resolved attachments | staged on branch (17 files, unpushed) | passing (16 unit cases across `smtp_mime_test.go` + `email_attachments_test.go`) | not exercised | **NOT CAPTURED** — no real inbox has received a file yet | invisible until UI form populates `content.attachments` | CODE COMPLETE, UNVERIFIED |
+| Email providers — SMTP / SES / SendGrid / Mailgun / Postmark / Resend wire resolved attachments | merged (`c7ac895`, P1a) | passing (16 unit cases across `smtp_mime_test.go` + `email_attachments_test.go`) | SMTP → Gmail verified end-to-end for all three input modes (2026-05-26) — see §0.2 rows 1–3 | partial (Quick Send wires inline base64 only) | DONE for SMTP; UNVERIFIED for SES/SendGrid/Mailgun/Postmark/Resend |
 | Meta WhatsApp — `/media` upload → `media_id` | not started | — | — | — | — | NOT STARTED |
 | Twilio WhatsApp + MMS — signed URL fallback | not started | — | — | — | — | NOT STARTED |
 | Slack — `files.uploadV2` (multipart) | not started | — | — | — | — | NOT STARTED |
@@ -46,16 +46,16 @@ A row is `DONE` only when all five gates pass. Anything less is, at most, `CODE 
 | `documents/API_DOCUMENTATION.md` + `documents/FILE_ATTACHMENTS_GUIDE.md` + `ui/src/docs/file-attachments.md` | merged (P1c, P1c-ui) | n/a | n/a | n/a | docs sidebar entry only | DONE |
 | Go SDK — `Files.Upload`, extended `ContentAttachment` | merged (P1a/P1b) | unit passing | not exercised against live API | n/a | n/a | CODE COMPLETE |
 | JS SDK — `files.upload`, extended `ContentAttachment` | merged (P1a/P1b) | unit passing | not exercised against live API | n/a | n/a | CODE COMPLETE |
-| React SDK — `useFileUpload` hook | not started | — | — | — | — | NOT STARTED |
-| UI — `AttachmentEditor` component (upload / from-URL / by-file-id) | not started | — | — | — | — | NOT STARTED |
-| UI — Files manager page (`AppFiles`) | not started | — | — | — | — | NOT STARTED |
-| UI — Quick Send / Advanced Send / Broadcast wired to `AttachmentEditor` | not started | — | — | — | — | NOT STARTED |
+| React SDK — `useFileUpload` hook | merged (P1-ui-2; inlined into `AttachmentRow` upload mode using `filesAPI.upload`'s onProgress callback rather than a standalone hook) | typecheck passing | n/a (UI-level) | n/a | n/a | CODE COMPLETE |
+| UI — `AttachmentEditor` component (upload / from-URL / by-file-id) | merged (P1-ui-3; three-mode `AttachmentRow` inside `RichContentEditor`) | typecheck passing | n/a | n/a | UI surface exists but no Playwright spec yet | CODE COMPLETE |
+| UI — Files manager page (`AppFiles`) | merged (P1-ui-5; `AppFiles` tab in `AppDetail` with upload / list / search / signed-download / delete) | typecheck passing | n/a | n/a | tab exists in AppDetail | CODE COMPLETE |
+| UI — Quick Send / Advanced Send / Broadcast wired to `AttachmentEditor` | partial — Quick Send + Advanced Send now pass `apiKey` into `RichContentEditor` enabling the three-mode editor (P1-ui-4); Broadcast surface still pending | typecheck passing | n/a | n/a | yes for Quick + Advanced | CODE COMPLETE (Broadcast still NOT STARTED) |
 | UI — Notification History attachments column + drawer | not started | — | — | — | — | NOT STARTED |
 | UI — Per-app file policy (allowlist, size cap, quota) | not started | — | — | — | — | NOT STARTED |
 | UI — Per-provider attachment-mode toggle | not started | — | — | — | — | NOT STARTED |
 | Integration suite `tests/integration/files/` | not started | — | — | — | — | NOT STARTED |
 | Playwright e2e specs `e2e/attachments-*.spec.ts` | not started | — | — | — | — | NOT STARTED |
-| Real-recipient smoke evidence (see §0.2) | not captured | — | — | — | — | NOT STARTED |
+| Real-recipient smoke evidence (see §0.2) | captured for SMTP / email / all three input modes (2026-05-26) | — | — | — | — | DONE for SMTP-email; outstanding for every other channel/provider |
 | Feature flag `FRN_ENABLE_FILE_ATTACHMENTS` | not introduced | — | — | — | — | NOT STARTED |
 | Observability — metrics, logs, traces (see §10.5) | not introduced | — | — | — | — | NOT STARTED |
 
@@ -86,21 +86,21 @@ Anything short of all nine is `CODE COMPLETE` at best. There is no "DONE pending
 
 ## 0.2 Recipient Evidence Registry
 
-Empty until evidence is captured. Each entry must include channel, provider, input mode, date, captor, and a link to the artefact (commit SHA in `documents/evidence/`, MailHog `.eml`, or sandbox screenshot URL).
+Each entry must include channel, provider, input mode, date, captor, and a link to the artefact (commit SHA in `documents/evidence/`, MailHog `.eml`, or sandbox screenshot URL).
 
 | # | Channel | Provider | Input mode | Captured | Captor | Artefact |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
+| 1 | email | smtp (Gmail relay) | `url` | 2026-05-26 | Dave (buddhicintaka@gmail.com) | notification `6170286e-50df-447a-93e4-13aeca003533`; worker log `SMTP email sent successfully` in 4.4s; recipient screenshot confirms `dummy-via-url.pdf` (W3C dummy PDF) attached and openable. |
+| 2 | email | smtp (Gmail relay) | `content_base64` | 2026-05-26 | Dave (buddhicintaka@gmail.com) | notification `4246a9ef-597a-4b10-8377-618149cdc657`; worker log `SMTP email sent successfully` in 3.4s; recipient screenshot confirms `inline-via-base64.pdf` attached, preview shows our test text ("FRN P1a Evidence: url mode / buddhicintaka@gmail.com"); source bytes SHA-256 = `e781f578549280951da21114d4060fa597aad1d9e7337d89a54b8d71364150dc`. |
+| 3 | email | smtp (Gmail relay) | `file_id` | 2026-05-26 | Dave (buddhicintaka@gmail.com) | notification `28353b48-0d82-4267-9451-e9f92edfdbe3`; uploaded via `POST /v1/files` → `file_5a6d19a25b6240c0bc0a17445ef5f5be` (SHA-256 match); worker log `SMTP email sent successfully` in 4.7s; recipient confirmed delivery (latency slightly higher than inline due to extra ES + disk read on the worker side). Live test surfaced a real platform bug (see §0.4 entry 2026-05-26 #2). |
 
 ---
 
 ## 0.3 Sign-off Log
 
-Empty until areas reach DONE per §0.1.
-
 | Area (from §0) | Reviewer 1 | Reviewer 2 | Date | Notes |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| SMTP email — all three input modes (`url`, `content_base64`, `file_id`) | Dave (recipient) | _pending second reviewer_ | 2026-05-26 | Live Gmail evidence captured for all three input modes (§0.2 rows 1–3). SHA-256 of inline payload verified end-to-end. Sign-off remains partial until a second engineer co-signs per §0.1 gate 9. Other email vendors (SES, SendGrid, Mailgun, Postmark, Resend) still UNVERIFIED — sign-off must be repeated against a vendor sandbox before each is moved to DONE. |
 
 ---
 
@@ -110,6 +110,8 @@ Empty until areas reach DONE per §0.1.
 |---|---|---|
 | 2026-05-24 | Engineering | Initial plan (P0a through P1d). |
 | 2026-05-26 | Engineering | §0 rewritten to remove false DONE entries. Added §0.1 Definition of Done, §0.2 Evidence Registry, §0.3 Sign-off Log, §10.5 Observability. No technical content in §1–§9 or §11–§15 changed. |
+| 2026-05-26 | Engineering | Live smoke test executed against the deployed stack for all three attachment input modes (`url`, `content_base64`, `file_id`) on the SMTP → Gmail path. Evidence rows 1–3 added to §0.2; §0.3 records partial sign-off; §0 rows updated accordingly. **Bug surfaced and fixed**: the local-FS `FileStore` was not shared between the `notification-service` and `notification-worker` containers, so any `file_id` attachment failed in the worker with `file not found`. Fix lands a named docker volume (`frn_files`) mounted at `/home/app/data/files` on both services, and the `Dockerfile` pre-creates the directory with `app:app` ownership so the volume seeds with correct permissions on first init. This is exactly the class of issue §0.1 gate 4 (real-recipient evidence) is designed to surface, and validates keeping that gate as a non-negotiable Definition of Done. |
+| 2026-05-26 | Engineering | **UI / docs land (P1-ui-1..5 + P1c).** `ContentAttachment` in `ui/src/types/index.ts` now declares `content_base64`, `file_id`, `disposition`, `content_id` (matching the SDK and server DTO). New `filesAPI` in `ui/src/services/api.ts` covers upload / list / get / delete / signed-download / content. `RichContentEditor` is now a three-mode editor (URL / Upload / File ID) via a new `AttachmentRow` sub-component; the upload mode streams progress through axios `onUploadProgress` and persists the resulting `file_id`. Quick Send and Advanced Send pass `apiKey` so the upload tab is enabled. New `AppFiles` component + `files` tab in `AppDetail` provides a full files manager (upload, paginated list, search, copy ID, signed-URL download, delete). `documents/FILE_ATTACHMENTS_GUIDE.md` and `ui/src/docs/file-attachments.md` are rewritten with the verified channel matrix, precise MIME allowlist, `X-API-Key` auth, the live-test transcript, and operational notes (shared-volume requirement, retention, multi-tenancy 404 semantics). Swagger spec validated as in sync with the live API — no regeneration needed. `npx tsc --noEmit` in `ui/` exits 0. Outstanding for the next pass: Playwright spec (`e2e/attachments-*.spec.ts`), Broadcast wiring, Notification History attachments column, per-app file policy, per-provider attachment-mode toggle, and integration suite (`tests/integration/files/`). |
 
 ---
 

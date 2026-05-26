@@ -342,13 +342,52 @@ export interface Notification {
 }
 
 // ── Rich webhook content (mirrors backend notification.Content) ──
+//
+// Exactly one source must be set per attachment: `url`, `content_base64`,
+// or `file_id`. The API rejects ambiguous payloads with
+// `400 attachment_ambiguous_source` and missing-source with
+// `400 attachment_missing_source`.
 export interface ContentAttachment {
     type: 'image' | 'video' | 'file' | 'audio';
-    url: string;
+    // ── Sources (exactly one) ──
+    url?: string;
+    content_base64?: string;
+    file_id?: string;
+    // ── Metadata ──
     name?: string;
     mime_type?: string;
     size?: number;
     alt_text?: string;
+    // ── Email-specific (cid: inline images) ──
+    disposition?: 'attachment' | 'inline';
+    content_id?: string;
+}
+
+// ── Files API (managed file store) ──
+export interface FileObject {
+    file_id: string;
+    name: string;
+    size: number;
+    mime_type: string;
+    sha256: string;
+    /** ISO-8601 timestamp. Omitted for pinned (never-expire) files. */
+    expires_at?: string;
+    created_at: string;
+}
+
+export interface FileListResponse {
+    files: FileObject[];
+    total: number;
+}
+
+export interface FileSignedURL {
+    url: string;
+    expires_at: string;
+}
+
+export interface ListFilesOptions {
+    limit?: number;
+    offset?: number;
 }
 
 export interface ContentAction {

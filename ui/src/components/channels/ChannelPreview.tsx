@@ -5,9 +5,15 @@ import { Badge } from '../ui/badge';
 
 export interface ContentAttachment {
     type: string; // image | video | file | audio
-    url: string;
+    // Exactly one source set: url | content_base64 | file_id.
+    // The preview can only render `url`-sourced attachments inline; the
+    // other two are shown as filename pills below.
+    url?: string;
+    content_base64?: string;
+    file_id?: string;
     name?: string;
     mime_type?: string;
+    size?: number;
     alt_text?: string;
 }
 

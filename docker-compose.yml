@@ -76,6 +76,11 @@ services:
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
       - FREERANGE_SECURITY_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,https://*.ngrok-free.app
+    volumes:
+      # Shared with notification-worker so file_id attachments uploaded via the
+      # API are readable by the worker's AttachmentResolver. Required for the
+      # local FileStore backend; not needed when filestore.backend=s3.
+      - frn_files:/home/app/data/files
     networks:
       - freerange-network
     healthcheck:
@@ -102,6 +107,9 @@ services:
       - FREERANGE_DATABASE_URLS=http://elasticsearch:9200
       - FREERANGE_REDIS_HOST=redis
       - FREERANGE_REDIS_PORT=6379
+    volumes:
+      # Shared with notification-service; see note above.
+      - frn_files:/home/app/data/files
     networks:
       - freerange-network
     restart: unless-stopped
@@ -130,6 +138,7 @@ services:
 volumes:
   elasticsearch_data:
   redis_data:
+  frn_files:
 
 networks:
   freerange-network:
