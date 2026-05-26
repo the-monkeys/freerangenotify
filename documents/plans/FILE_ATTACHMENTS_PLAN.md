@@ -1,53 +1,115 @@
 # File Attachments — HLD / LLD & Implementation Plan
 
-**Status:** Not started
-**Author:** Engineering
-**Last Updated:** 2026-05-24
+**Status:** In progress — see §0 for the verified state of each area.
+**Document Owner:** Engineering — Notification Platform
+**Last Updated:** 2026-05-26
 **Tracking Issue:** [#110 — Support Sending Invoices via Multiple Channels](https://github.com/the-monkeys/freerangenotify/issues/110)
-**Scope:** Allow callers to ship binary files (invoices, PDFs, images, audio, video) **inside the message** across every channel that can physically carry a file — without breaking the existing URL-based `Attachment` schema, the rich-webhook renderers, or any current SDK.
+**Pull Request:** [#116 — File attachments](https://github.com/the-monkeys/freerangenotify/pull/116) (branch `feat/file-attachments-p0a`)
+**Scope:** Allow callers to ship binary files (invoices, PDFs, images, audio, video) **inside the message** across every channel that can physically carry a file, without breaking the existing URL-based `Attachment` schema, the rich-webhook renderers, or any current SDK.
+
+This document follows the Engineering Design Document conventions used across the platform: Status (§0) → Definition of Done (§0.1) → Evidence Registry (§0.2) → Sign-off (§0.3) → Goals (§1) → Contract (§2) → Capability Matrix (§3) → Architecture (§4) → Error Model (§5) → Security (§6) → Test Strategy (§7) → Documentation (§8) → SDKs (§9) → Rollout, Backward Compatibility & Feature Flags (§10) → Observability (§10.5) → Phased Delivery (§11) → Open Questions (§12) → Acceptance Criteria (§13) → References (§14) → UI Design (§15).
 
 ---
 
-## 0. Implementation Status Snapshot (2026-05-24)
+## 0. Verified Implementation Status (2026-05-26)
 
-| Area | Status | Notes |
+The previous revision of this section mixed "code merged" with "feature delivered" and contained false DONE marks for areas where no recipient has ever received a file. The table below replaces that with verifiable state across five gates:
+
+- **Code:** merged on `main` or staged on the feature branch.
+- **Tests:** unit-test coverage of the area's logic.
+- **Integration:** exercised against the dockerised stack (`make test-integration`) or an equivalent recorded fixture.
+- **Recipient evidence:** a real (or sandbox) recipient confirmed receipt of the bytes; link in §0.2.
+- **Customer-visible:** a non-engineer can trigger this from the UI today.
+
+A row is `DONE` only when all five gates pass. Anything less is, at most, `CODE COMPLETE`.
+
+| Area | Code | Tests | Integration | Recipient evidence | Customer-visible | Verified Status |
+|---|---|---|---|---|---|---|
+| Domain extension — `Attachment.{ContentBase64, FileID, ContentID, Disposition}` | merged (PR #116, P0a) | passing | n/a (schema only) | n/a | n/a | DONE |
+| `internal/domain/file` package + `FileObject` model | merged (P0a/P0b) | passing | n/a | n/a | n/a | DONE |
+| `FileStore` — local FS backend + HMAC signed URLs | merged (P0b) | passing | not exercised end-to-end | n/a | n/a | CODE COMPLETE |
+| `FileStore` — S3 backend | not started | — | — | — | — | NOT STARTED |
+| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id`, signed download | merged (P0d) | passing | not exercised | n/a (no UI uploader) | n/a | CODE COMPLETE |
+| `AttachmentResolver` (url \| inline \| file_id → bytes) | merged (P0e) | passing | n/a | n/a (no provider invoked it until P1e) | n/a | CODE COMPLETE |
+| `Provider.Capabilities()` | partial (struct + enum landed; interface method not added) | n/a | n/a | n/a | n/a | NOT STARTED |
+| Email providers — SMTP / SES / SendGrid / Mailgun / Postmark / Resend wire resolved attachments | staged on branch (17 files, unpushed) | passing (16 unit cases across `smtp_mime_test.go` + `email_attachments_test.go`) | not exercised | **NOT CAPTURED** — no real inbox has received a file yet | invisible until UI form populates `content.attachments` | CODE COMPLETE, UNVERIFIED |
+| Meta WhatsApp — `/media` upload → `media_id` | not started | — | — | — | — | NOT STARTED |
+| Twilio WhatsApp + MMS — signed URL fallback | not started | — | — | — | — | NOT STARTED |
+| Slack — `files.uploadV2` (multipart) | not started | — | — | — | — | NOT STARTED |
+| Discord — multipart `files[N]` | not started | — | — | — | — | NOT STARTED |
+| Teams — Adaptive Card `Action.OpenUrl` to signed URL | not started | — | — | — | — | NOT STARTED |
+| Webhook (generic + custom) — passthrough modes | not started | — | — | — | — | NOT STARTED |
+| Twilio / Vonage MMS — signed URL | not started | — | — | — | — | NOT STARTED |
+| APNs / FCM — rich push image URL | not started | — | — | — | — | NOT STARTED |
+| SMS / In-App / SSE — fail fast with `ErrChannelUnsupportedAttachment` | partial (resolver typed error defined; no provider call site enforces it) | not exercised | — | — | — | NOT STARTED |
+| OpenAPI + Swagger | merged (P1d) | static | n/a | n/a | n/a | DONE |
+| `documents/API_DOCUMENTATION.md` + `documents/FILE_ATTACHMENTS_GUIDE.md` + `ui/src/docs/file-attachments.md` | merged (P1c, P1c-ui) | n/a | n/a | n/a | docs sidebar entry only | DONE |
+| Go SDK — `Files.Upload`, extended `ContentAttachment` | merged (P1a/P1b) | unit passing | not exercised against live API | n/a | n/a | CODE COMPLETE |
+| JS SDK — `files.upload`, extended `ContentAttachment` | merged (P1a/P1b) | unit passing | not exercised against live API | n/a | n/a | CODE COMPLETE |
+| React SDK — `useFileUpload` hook | not started | — | — | — | — | NOT STARTED |
+| UI — `AttachmentEditor` component (upload / from-URL / by-file-id) | not started | — | — | — | — | NOT STARTED |
+| UI — Files manager page (`AppFiles`) | not started | — | — | — | — | NOT STARTED |
+| UI — Quick Send / Advanced Send / Broadcast wired to `AttachmentEditor` | not started | — | — | — | — | NOT STARTED |
+| UI — Notification History attachments column + drawer | not started | — | — | — | — | NOT STARTED |
+| UI — Per-app file policy (allowlist, size cap, quota) | not started | — | — | — | — | NOT STARTED |
+| UI — Per-provider attachment-mode toggle | not started | — | — | — | — | NOT STARTED |
+| Integration suite `tests/integration/files/` | not started | — | — | — | — | NOT STARTED |
+| Playwright e2e specs `e2e/attachments-*.spec.ts` | not started | — | — | — | — | NOT STARTED |
+| Real-recipient smoke evidence (see §0.2) | not captured | — | — | — | — | NOT STARTED |
+| Feature flag `FRN_ENABLE_FILE_ATTACHMENTS` | not introduced | — | — | — | — | NOT STARTED |
+| Observability — metrics, logs, traces (see §10.5) | not introduced | — | — | — | — | NOT STARTED |
+
+**Headline:** the feature is approximately one-quarter complete by surface area. The API ingests attachments, files can be uploaded, the resolver materialises bytes, the OpenAPI + SDKs declare the shape, and email providers (staged on branch) embed the bytes in outgoing messages. Nothing else delivers files. No customer can attach a file from the UI today, and no recipient has been observed to receive one.
+
+---
+
+## 0.1 Definition of Done
+
+A row in §0 moves to `DONE` only when **all** of the following are true and recorded:
+
+1. **Code merged** to `main` via a reviewed PR. Branch deleted.
+2. **Unit tests** cover (a) happy path, (b) every edge case from the capability matrix in §3, (c) backward compatibility — the no-attachment path is byte-stable against a golden fixture committed at the same time.
+3. **Integration test** under `tests/integration/files/` exercises the full path through the dockerised stack and is part of `make test-integration` CI.
+4. **Recipient evidence** captured and linked in §0.2:
+   - Email — MIME message captured from MailHog (or equivalent) with file part decoded and SHA-256 verified against the source bytes.
+   - WhatsApp / Slack / Discord / Teams — vendor sandbox screenshot **or** recorded HTTP fixture showing the file delivered.
+   - Push — APNs / FCM simulator screenshot showing the rich-push image rendered.
+5. **Customer-visible** if the row produces user-facing behaviour: a UI surface exists that lets a non-engineer trigger it, and a Playwright spec under `e2e/` covers the happy path.
+6. **SDK** parity: at minimum one example per SDK (Go, JS) reproducing the behaviour, captured in `documents/TEST_RESULTS_HISTORY.md`.
+7. **Observability** present: the new code path emits the metrics, logs, and span attributes listed in §10.5, and at least one alert rule references them.
+8. **Backward compatibility** verified: existing notifications without attachments produce byte-identical wire output to the pre-change baseline (golden tests in §7.1).
+9. **Sign-off** by ≥ 2 engineers recorded in §0.3, one of whom is on platform on-call rotation.
+
+Anything short of all nine is `CODE COMPLETE` at best. There is no "DONE pending tests" state in this document.
+
+---
+
+## 0.2 Recipient Evidence Registry
+
+Empty until evidence is captured. Each entry must include channel, provider, input mode, date, captor, and a link to the artefact (commit SHA in `documents/evidence/`, MailHog `.eml`, or sandbox screenshot URL).
+
+| # | Channel | Provider | Input mode | Captured | Captor | Artefact |
+|---|---|---|---|---|---|---|
+| — | — | — | — | — | — | — |
+
+---
+
+## 0.3 Sign-off Log
+
+Empty until areas reach DONE per §0.1.
+
+| Area (from §0) | Reviewer 1 | Reviewer 2 | Date | Notes |
+|---|---|---|---|---|
+| — | — | — | — | — |
+
+---
+
+## 0.4 Change Log of This Document
+
+| Date | Author | Change |
 |---|---|---|
-| Domain extension — `Attachment.{ContentBase64, FileID, ContentID, Disposition}` | DONE | Shipped in P0a (`2e3ff0c`). `internal/domain/notification/models.go` + `errors.go`. |
-| `domain/file` package + `FileObject` model | DONE | P0a (`2e3ff0c`) + P0b store interface (`924718b`). |
-| `FileStore` infrastructure (local FS + S3) | PARTIAL | Local FS done (P0b `924718b`) with signed-URL signer. S3 backend deferred. |
-| `POST /v1/files`, `GET /v1/files/:id`, `DELETE /v1/files/:id` | DONE | P0d (`c0ec6ce`): upload, get, list, delete, content stream, download-url, public signed download. |
-| `AttachmentResolver` (worker, idempotent) | DONE | P0e (`40ddfa2`) — channel-agnostic resolver wired and tested (11 cases). |
-| `Provider` interface — `Capabilities()` | PARTIAL | `Capabilities` struct + `AttachmentMode` enum added (P0a). Provider interface NOT yet extended — kept backward-compatible until wiring slice. |
-| Email providers — true inline + multipart/mixed (SMTP, SES, SendGrid, Mailgun, Postmark, Resend) | NOT STARTED | Worker wiring pending. |
-| Meta WhatsApp — `/media` upload → `media_id` reference | NOT STARTED | Required; Meta does not accept inline base64. |
-| Twilio WhatsApp + MMS — FRN-signed URL fallback | NOT STARTED | Twilio only accepts public `MediaUrl`. |
-| Slack — `files.uploadV2` (multipart) | NOT STARTED | Replaces URL-only path for binary attachments. |
-| Discord — multipart `files[N]` form | NOT STARTED | Native binary upload. |
-| Teams — Adaptive Card with `Action.OpenUrl` to signed FRN URL | NOT STARTED | Native binary upload only available via Graph API; deferred. |
-| Webhook (generic + custom) — `attachments[].content_base64` passthrough OR multipart mode | NOT STARTED | Per-provider config flag. |
-| APNs / FCM — image URL for rich push | NOT STARTED | Push payloads are <4 KB; "embed" means client downloads from FRN URL. |
-| SMS / In-App / SSE | NOT APPLICABLE | Cannot carry binaries; resolver fails fast with typed error. |
-| OpenAPI + Swagger | DONE | P1d (`b6e5f70`): all `/v1/files` routes + extended `Attachment` schema in `docs/{swagger.json,yaml,docs.go}`. |
-| API_DOCUMENTATION.md + ui/src/docs/* | DONE | `documents/API_DOCUMENTATION.md` Files section + `documents/FILE_ATTACHMENTS_GUIDE.md` (P1c, `b6e5f70`). In-product `ui/src/docs/file-attachments.md` + sidebar nav entry (P1c-ui, `d632054`). |
-| Go SDK — `Files.Upload(...)`, `NotificationSendParams.Attachments` | DONE | P1a/P1b (`51be5d7`): `sdk/go/freerangenotify/files.go` + extended `ContentAttachment`. |
-| JS SDK — `files.upload(...)`, typed `attachments` field | DONE | P1a/P1b (`51be5d7`): `sdk/js/src/files.ts` + extended `ContentAttachment`. |
-| Unit tests (domain, resolver, each provider) | PARTIAL | Domain + storage + service + resolver covered (P0b/c/e). Per-provider tests pending wiring slice. |
-| Integration tests (`tests/integration/files/`) | NOT STARTED | Per-channel end-to-end smoke + size/MIME guard. |
-| UI — Files manager page, `AttachmentEditor` component, History attachments column, per-provider mode toggle, app file-policy settings | NOT STARTED | See §15. Deferred — benefits from validated backend + provider wiring first. |
-
-**Definition of end-to-end DONE:** Email + Meta WhatsApp + Webhook + Slack + Discord all deliver real bytes in CI; capability-gated channels fail fast with `ErrChannelUnsupportedAttachment`; OpenAPI + both SDKs document the three input modes; integration suite green; no existing test broken; no public type signature changed.
-
----
-
-## 0.1 Progress Meter
-
-| Scope | DONE | IN PROGRESS | PENDING |
-|---|---:|---:|---:|
-| Domain + storage | 3 | 1 | 0 |
-| Provider adapters | 0 | 0 | 8 |
-| Docs + SDKs | 4 | 0 | 0 |
-| Tests | 1 | 0 | 1 |
-| UI (per §15) | 0 | 0 | 8 |
+| 2026-05-24 | Engineering | Initial plan (P0a through P1d). |
+| 2026-05-26 | Engineering | §0 rewritten to remove false DONE entries. Added §0.1 Definition of Done, §0.2 Evidence Registry, §0.3 Sign-off Log, §10.5 Observability. No technical content in §1–§9 or §11–§15 changed. |
 
 ---
 
@@ -482,20 +544,107 @@ After implementation, run the exact curl examples from `documents/FILE_ATTACHMEN
 | Storage migration (S3 vs local) | `FileStore` is an interface; switching backend is a config-only change (`FRN_FILESTORE_BACKEND=s3 \| local`). |
 | Feature flag | Behind `FRN_ENABLE_FILE_ATTACHMENTS=true` (default `true` in dev, `false` in prod for the first release) so it can be dark-launched. |
 
+### 10.1 Feature-flag matrix
+
+| Flag | Default (dev) | Default (prod) | Effect |
+|---|---|---|---|
+| `FRN_ENABLE_FILE_ATTACHMENTS` | `true` | `false` (canary on per-app allowlist) | Master kill-switch. When `false`, the resolver short-circuits and providers never receive resolved bytes. API still accepts `content.attachments` to preserve forward-compat shape, but ignores them with a `warning` audit entry. |
+| `FRN_FILESTORE_BACKEND` | `local` | `s3` | Chooses the FileStore implementation. |
+| `FRN_FILESTORE_SIGNING_KEY` | dev fixture | secret-managed | HMAC key for signed download URLs. Rotatable without downtime via dual-key support (planned for P5). |
+| Per-app `app.settings.attachments.enabled` | `true` | `false` | Per-tenant kill-switch above the global flag. |
+
+### 10.2 Canary stages (production)
+
+1. **Internal-only** — flag enabled for FRN's own staging app and one internal test app. Soak ≥ 72 h. Watch §10.5 metrics for resolver error rate, provider error rate, p99 send latency delta vs baseline.
+2. **First design-partner tenant** — enabled by request. Capture one inbox screenshot per channel they use. Add to §0.2 Evidence Registry.
+3. **Allowlisted GA** — flag enabled by tenant CSM action. Per-app dashboard surfaces opt-in toggle.
+4. **Default-on GA** — only after ≥ 30 days of allowlisted GA with zero P1 incidents tagged `file-attachments`, signed off in §0.3.
+
+Rollback: setting `FRN_ENABLE_FILE_ATTACHMENTS=false` and rolling worker pods is sufficient; there is no schema migration to reverse. ES index additions are forward-compatible.
+
+---
+
+## 10.5 Observability
+
+Every code path in this feature MUST emit the signals below before being marked DONE per §0.1 gate 7. These names are normative.
+
+### 10.5.1 Metrics (Prometheus, exposed via existing `/metrics` endpoint)
+
+| Metric | Type | Labels | Purpose |
+|---|---|---|---|
+| `frn_attachment_resolve_total` | counter | `app_id`, `source` (`url`\|`inline`\|`file_id`), `result` (`ok`\|`error`) | Volume of resolves and their outcome. |
+| `frn_attachment_resolve_duration_seconds` | histogram | `source` | Resolve latency. Buckets: 0.01, 0.05, 0.1, 0.5, 1, 5. |
+| `frn_attachment_bytes_resolved_total` | counter | `app_id`, `source` | Total bytes materialised. Capacity-planning signal. |
+| `frn_attachment_size_bytes` | histogram | `source` | Size distribution per attachment. Buckets: 1 KB, 10 KB, 100 KB, 1 MB, 10 MB, 50 MB. |
+| `frn_attachment_provider_send_total` | counter | `provider`, `channel`, `result` | Per-provider success/failure for sends that carried an attachment. |
+| `frn_attachment_provider_send_duration_seconds` | histogram | `provider`, `channel` | Tail latency of attachment-bearing sends, distinct from no-attachment sends. |
+| `frn_attachment_capability_rejected_total` | counter | `channel`, `provider` | Times a send was rejected by the capability pre-check (SMS, in-app, SSE, etc.). |
+| `frn_filestore_object_total` | gauge | `app_id`, `backend` | Number of stored file objects per tenant. Sampled. |
+| `frn_filestore_bytes_total` | gauge | `app_id`, `backend` | Bytes under management per tenant. Drives quota dashboard. |
+| `frn_filestore_signed_url_issued_total` | counter | `app_id` | Signed URL issuance volume. |
+| `frn_filestore_signed_url_verify_failure_total` | counter | `reason` (`expired`\|`bad_sig`\|`missing`) | Security signal. Alerts on spikes. |
+
+### 10.5.2 Structured logs (zap)
+
+Every resolve and every provider attachment send MUST log at INFO with at least the following typed fields:
+
+```
+notification_id, app_id, channel, provider,
+attachment_count, attachment_bytes_total,
+attachment_sources[],     // ["url","file_id",...]
+resolve_duration_ms,
+result                    // "ok"|"error"
+```
+
+Failures log at ERROR with the same fields plus `error_class` (typed from §5) and `error_message`. No log MAY contain raw attachment bytes or base64 content; this is enforced by a unit test that asserts the log shape against zap's observer.
+
+### 10.5.3 Distributed tracing (OpenTelemetry)
+
+The existing tracing setup (`internal/telemetry/`) gains the following spans:
+
+| Span | Parent | Attributes |
+|---|---|---|
+| `attachment.resolve` | `worker.send` | `app_id`, `notification_id`, `attachment.count`, `attachment.source` (per child span), `attachment.bytes`, `attachment.cache_hit` |
+| `attachment.resolve.fetch_url` | `attachment.resolve` | `url.host`, `http.status_code`, `attachment.bytes` |
+| `attachment.resolve.read_file_id` | `attachment.resolve` | `file.id`, `file.backend`, `attachment.bytes` |
+| `attachment.resolve.decode_base64` | `attachment.resolve` | `attachment.bytes` |
+| `filestore.put` | API handler / SDK | `app_id`, `mime`, `size_bytes` |
+| `filestore.get` | resolver | `app_id`, `file.id`, `cache_hit` |
+
+Each span sets `error=true` and records the typed error from §5 on failure.
+
+### 10.5.4 Alerts (suggested, owned by Platform on-call)
+
+| Alert | Trigger | Severity |
+|---|---|---|
+| `AttachmentResolveErrorSpike` | `rate(frn_attachment_resolve_total{result="error"}[5m]) > 0.1 × rate(...[1h])` for 10 min | warn |
+| `FileStoreSignedURLVerifyFailureSpike` | `rate(frn_filestore_signed_url_verify_failure_total[5m]) > 1/s` for 5 min | page |
+| `AttachmentProviderSendErrorSpike` | per-provider `result="error"` rate > 5 % for 10 min | warn |
+| `FileStoreQuotaApproaching` | `frn_filestore_bytes_total / quota > 0.85` | warn (per-tenant) |
+| `AttachmentResolveLatencyHigh` | p99 of `frn_attachment_resolve_duration_seconds` > 2 s for 15 min | warn |
+
+### 10.5.5 Dashboards
+
+A Grafana dashboard `file-attachments-overview` MUST exist under `config/grafana-datasources.yaml`'s sibling dashboards directory before P1 is marked DONE. Required panels: resolve volume by source, resolve error rate, provider send error rate split by channel, p50/p95/p99 latency overlay against the no-attachment baseline, top-10 tenants by `frn_filestore_bytes_total`.
+
 ---
 
 ## 11. Phased Delivery
 
-| Phase | Deliverable | Exit criteria |
-|---|---|---|
-| **P0** | Domain + `FileStore` (local-only) + `POST /v1/files` + resolver + capability mixin + unit tests | Files can be uploaded, fetched, deleted; resolver passes all three source modes; coverage ≥ 85 %. |
-| **P1** | Email (SMTP first, then the five SaaS providers) end-to-end | Invoice PDF arrives at a Mailpit inbox in CI; HTML inline `cid:` image works on Gmail manual test. |
-| **P2** | Meta WhatsApp `/media` upload | Mocked-Meta integration test green; real-account smoke test from staging documented. |
-| **P3** | Webhook (both modes) + Slack + Discord | Integration suite green for all three. |
-| **P4** | Twilio WhatsApp / MMS / push / Teams via signed URL | Signed URL verifier + expiry tests green. |
-| **P5** | S3 `FileStore` backend + virus-scan hook + OpenAPI / SDK polish | Prod-ready; feature flag flips to default-on. |
+Each phase ships as one PR. A phase is only complete when **every row it claims to deliver** passes all nine gates in §0.1 — i.e. code merged, unit + integration tests green, recipient evidence captured in §0.2, UI surface live (where applicable), SDK example recorded, observability signals emitting per §10.5, backward-compat golden tests green, and §0.3 sign-off recorded.
 
-Each phase is its own PR. P0 unblocks everything downstream and is the only PR that touches the domain model.
+| Phase | Scope | Exit criteria |
+|---|---|---|
+| **P0** (merged) | Domain extension, `domain/file`, FileStore local backend, `/v1/files` endpoints, AttachmentResolver, capability mixin types, OpenAPI, Go + JS SDK files clients, caller-facing docs. | All P0 rows in §0 verified at CODE COMPLETE. |
+| **P1a — Email backend** (this branch, unpushed) | Wire the six email providers (SMTP, SES, SendGrid, Mailgun, Postmark, Resend) to consume `AttachmentResolveFunc` from ctx. Unit tests for wire-format shape. Backward-compat golden test for the no-attachment fast path on every email provider. | Code merged. **One captured `.eml` per input mode (`url`, `content_base64`, `file_id`) against a MailHog inbox** stored under `documents/evidence/p1a/` and listed in §0.2. SHA-256 of received bytes matches source. Observability metrics from §10.5 firing in dev. Sign-off in §0.3. |
+| **P1b — UI for email** | `AttachmentEditor` component + Quick Send / Advanced Send / Broadcast wiring + `AppFiles` manager page + Notification History attachments column. Playwright spec `e2e/attachments-email.spec.ts` (upload → send → assert MailHog receipt). | All P1b §0 rows DONE per §0.1. UI accessible without engineering intervention. |
+| **P2 — Meta WhatsApp** | `/media` upload helper; provider switches to `media_id` when `Attachments` non-empty. Mocked integration test + sandbox screenshot in §0.2. | Per §0.1. |
+| **P3 — Twilio WhatsApp + MMS + Vonage MMS** | Signed-URL passthrough. Twilio sandbox screenshot. | Per §0.1. |
+| **P4 — Slack + Discord + Teams + Webhook + Custom** | Each provider per §3 capability matrix. Per-provider sandbox or recorded HTTP fixture evidence. | Per §0.1. |
+| **P5 — APNs + FCM rich push** | `mutable-content` / `notification.image` URL flow. Simulator screenshot. | Per §0.1. |
+| **P6 — Hardening** | S3 FileStore backend; virus-scan hook (ClamAV adapter, no-op default); signing-key rotation; per-app quota enforcement in API + UI; Grafana dashboard; production canary stages per §10.2. | All §13 acceptance criteria met. Feature flag default-on in prod. Plan moved to `documents/IMPLEMENTATION_AUDIT.md` as "shipped". |
+
+P1a is the only currently-active phase. P1b cannot start until P1a's recipient evidence is captured; P2 cannot start until P1b ships, to keep CI minutes bounded and avoid stacking unverified channels.
 
 ---
 
