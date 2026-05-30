@@ -2269,6 +2269,63 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Delete current account and all owned data",
+                "parameters": [
+                    {
+                        "description": "Password and confirmation text",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DeleteAccountRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
         "/v1/auth/refresh": {
@@ -2349,10 +2406,57 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse"
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/auth/resend-otp": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Resend registration OTP",
+                "parameters": [
+                    {
+                        "description": "Email to resend OTP to",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResendOTPRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse"
                         }
                     },
                     "400": {
@@ -2435,6 +2539,53 @@ const docTemplate = `{
                 ],
                 "summary": "Redirect to SSO Identity Provider",
                 "responses": {}
+            }
+        },
+        "/v1/auth/verify-otp": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Verify registration OTP",
+                "parameters": [
+                    {
+                        "description": "OTP verification details",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.VerifyOTPRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
         "/v1/digest-rules": {
@@ -2706,6 +2857,353 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "List files",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size (max 200, default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page offset (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Uploads a file to the tenant's namespace. Returned file_id can be referenced from notification attachments.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Upload a file",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File contents (max 50 MiB by default)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "415": {
+                        "description": "Unsupported Media Type",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files/download/{id}": {
+            "get": {
+                "description": "Downloads a file using a signed URL. Authentication is performed by verifying the signature in the query string; no API key is required.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Public signed download",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Application ID embedded in the signed URL",
+                        "name": "app_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Unix expiry timestamp embedded in the signed URL",
+                        "name": "exp",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "HMAC-SHA256 signature",
+                        "name": "sig",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Get file metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Delete a file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files/{id}/content": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Streams the file bytes back to the authenticated caller.",
+                "produces": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Stream file content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/files/{id}/download-url": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns a short-lived URL for unauthenticated download. TTL is configured server-side (default 15 minutes).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Files"
+                ],
+                "summary": "Mint a signed download URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "File ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SignedURLResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -3305,6 +3803,211 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/otp/resend": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Re-issues a new code for an existing request_id (subject to 60s cooldown). The previous code is invalidated and attempt counter is reset.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OTP"
+                ],
+                "summary": "Resend an OTP",
+                "parameters": [
+                    {
+                        "description": "OTP resend request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResendRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/otp/send": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Generates a one-time passcode and dispatches it through SMS, WhatsApp, or email via the standard notification pipeline. Subject to standard per-channel credit billing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OTP"
+                ],
+                "summary": "Send an OTP",
+                "parameters": [
+                    {
+                        "description": "OTP send request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/otp/verify": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Verifies a code against a previously-issued request_id. Uses constant-time comparison and atomic attempt counting.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OTP"
+                ],
+                "summary": "Verify an OTP",
+                "parameters": [
+                    {
+                        "description": "OTP verify request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse"
+                        }
+                    },
+                    "410": {
+                        "description": "Gone",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/playground/{id}": {
             "get": {
                 "description": "Retrieve all received webhook payloads for a playground session",
@@ -3746,6 +4449,74 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/templates/library/{name}/render": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Render a pre-built library template without cloning it first",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Templates"
+                ],
+                "summary": "Render a library template",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Library template name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Render request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/RenderTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5164,6 +5935,12 @@ const docTemplate = `{
                         "description": "Filter by language",
                         "name": "language",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search email, name, user ID, external ID, or phone",
+                        "name": "search",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -5302,6 +6079,128 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/users/by-external-id/{external_id}": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retrieve a single user by their external_id within the authenticated app",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Get a user by external ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "External ID",
+                        "name": "external_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Update a user directly by their external_id without internal ID resolution",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Update a user by external ID",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "External ID",
+                        "name": "external_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "User update request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6185,6 +7084,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/v1/workflows/trigger-by-topic": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Trigger a workflow for all users subscribed to a topic",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Workflows"
+                ],
+                "summary": "Trigger workflow for topic subscribers",
+                "parameters": [
+                    {
+                        "description": "Trigger by topic request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerByTopicRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/v1/workflows/{id}": {
             "get": {
                 "security": [
@@ -6476,12 +7436,21 @@ const docTemplate = `{
                 "data": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "editable": {
+                    "type": "boolean"
                 }
             }
         },
         "RenderTemplateResponse": {
             "type": "object",
             "properties": {
+                "attribute_variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_template.AttributeVar"
+                    }
+                },
                 "rendered_body": {
                     "type": "string"
                 }
@@ -6489,10 +7458,11 @@ const docTemplate = `{
         },
         "RollbackRequest": {
             "type": "object",
-            "required": [
-                "version"
-            ],
             "properties": {
+                "target_version": {
+                    "type": "integer",
+                    "minimum": 1
+                },
                 "updated_by": {
                     "type": "string"
                 },
@@ -6651,10 +7621,16 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "kind": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
                 "provider_id": {
+                    "type": "string"
+                },
+                "signature_version": {
                     "type": "string"
                 },
                 "signing_key": {
@@ -6714,6 +7690,21 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig": {
+            "type": "object",
+            "properties": {
+                "event_mapping": {
+                    "description": "event name -\u003e workflow trigger_id",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "secret": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_the-monkeys_freerangenotify_internal_domain_application.ProviderFallback": {
             "type": "object",
             "properties": {
@@ -6727,6 +7718,20 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig": {
+            "type": "object",
+            "properties": {
+                "account_sid": {
+                    "type": "string"
+                },
+                "auth_token": {
+                    "type": "string"
+                },
+                "from_number": {
+                    "type": "string"
                 }
             }
         },
@@ -6806,6 +7811,18 @@ const docTemplate = `{
                     "description": "webhook notifications",
                     "type": "boolean"
                 },
+                "inbound_webhook_config": {
+                    "description": "Phase 7: inbound webhook config (secret, event mapping)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig"
+                        }
+                    ]
+                },
+                "on_user_created_trigger_id": {
+                    "description": "Phase 5: workflow to trigger on user create",
+                    "type": "string"
+                },
                 "provider_fallbacks": {
                     "type": "array",
                     "items": {
@@ -6828,8 +7845,16 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "sms_config": {
+                    "description": "Billing: per-app SMS creds",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig"
+                        }
+                    ]
+                },
                 "subscriber_throttle": {
-                    "description": "App-wide per-channel subscriber throttle defaults (Phase 2)",
+                    "description": "Phase 2",
                     "type": "object",
                     "additionalProperties": {
                         "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SubscriberThrottleConfig"
@@ -6840,6 +7865,22 @@ const docTemplate = `{
                 },
                 "validation_url": {
                     "type": "string"
+                },
+                "whatsapp_config": {
+                    "description": "Phase 3",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig"
+                        }
+                    ]
+                },
+                "whatsapp_inbound": {
+                    "description": "WhatsApp Meta inbound config",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundConfig"
+                        }
+                    ]
                 }
             }
         },
@@ -6884,6 +7925,52 @@ const docTemplate = `{
                 },
                 "token_placement": {
                     "description": "header, cookie, query, body_json, body_form",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig": {
+            "type": "object",
+            "properties": {
+                "account_sid": {
+                    "description": "Twilio fields (used when Provider == \"\" or \"twilio\")",
+                    "type": "string"
+                },
+                "auth_token": {
+                    "type": "string"
+                },
+                "connected_at": {
+                    "type": "string"
+                },
+                "connection_status": {
+                    "description": "connected, disconnected, pending",
+                    "type": "string"
+                },
+                "display_phone_number": {
+                    "type": "string"
+                },
+                "from_number": {
+                    "type": "string"
+                },
+                "meta_access_token": {
+                    "type": "string"
+                },
+                "meta_business_id": {
+                    "description": "Embedded Signup metadata (populated during OAuth connect flow)",
+                    "type": "string"
+                },
+                "meta_phone_number_id": {
+                    "description": "Meta Cloud API fields (used when Provider == \"meta\")",
+                    "type": "string"
+                },
+                "meta_waba_id": {
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "\"twilio\" (default) or \"meta\"",
+                    "type": "string"
+                },
+                "quality_rating": {
                     "type": "string"
                 }
             }
@@ -7059,6 +8146,140 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Action": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "style": {
+                    "description": "primary | danger | default",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "link | submit | dismiss",
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment": {
+            "type": "object",
+            "properties": {
+                "alt_text": {
+                    "type": "string"
+                },
+                "content_base64": {
+                    "description": "New optional fields (file-attachments feature). All omitempty —\ncallers using only URL continue to work unchanged.",
+                    "type": "string"
+                },
+                "content_id": {
+                    "description": "RFC 2392 cid:* token for inline HTML email embed",
+                    "type": "string"
+                },
+                "disposition": {
+                    "description": "\"attachment\" (default) | \"inline\"",
+                    "type": "string"
+                },
+                "file_id": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "type": {
+                    "description": "image | video | file | audio",
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Field": {
+            "type": "object",
+            "properties": {
+                "inline": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention": {
+            "type": "object",
+            "properties": {
+                "display": {
+                    "type": "string"
+                },
+                "platform": {
+                    "description": "discord | slack | teams",
+                    "type": "string"
+                },
+                "platform_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll": {
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.PollChoice"
+                    }
+                },
+                "duration_hours": {
+                    "type": "integer"
+                },
+                "multi_select": {
+                    "type": "boolean"
+                },
+                "question": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.PollChoice": {
+            "type": "object",
+            "properties": {
+                "emoji": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_notification.Style": {
+            "type": "object",
+            "properties": {
+                "color": {
+                    "description": "hex override, e.g. \"#3498DB\"",
+                    "type": "string"
+                },
+                "severity": {
+                    "description": "info | success | warning | danger",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ImportRequest": {
             "type": "object",
             "required": [
@@ -7096,6 +8317,18 @@ const docTemplate = `{
                 "TypeTopic",
                 "TypeProvider"
             ]
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_template.AttributeVar": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"image\", \"url\", \"attribute\"",
+                    "type": "string"
+                }
+            }
         },
         "github_com_the-monkeys_freerangenotify_internal_domain_template.ControlValues": {
             "type": "object",
@@ -7196,6 +8429,10 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255,
                     "minLength": 1
+                },
+                "on_subscribe_trigger_id": {
+                    "description": "Phase 4: workflow to trigger on subscribe",
+                    "type": "string"
                 }
             }
         },
@@ -7210,6 +8447,10 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 255,
                     "minLength": 1
+                },
+                "on_subscribe_trigger_id": {
+                    "description": "Phase 4: workflow to trigger on subscribe",
+                    "type": "string"
                 }
             }
         },
@@ -7329,6 +8570,44 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundConfig": {
+            "type": "object",
+            "properties": {
+                "auto_reply_template_id": {
+                    "type": "string"
+                },
+                "auto_reply_text": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "route_action": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundRouteAction"
+                },
+                "webhook_forward_url": {
+                    "type": "string"
+                },
+                "workflow_trigger_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundRouteAction": {
+            "type": "string",
+            "enum": [
+                "auto_reply",
+                "workflow_trigger",
+                "webhook_forward",
+                "inbox"
+            ],
+            "x-enum-varnames": [
+                "RouteAutoReply",
+                "RouteWorkflow",
+                "RouteWebhookForward",
+                "RouteInbox"
+            ]
+        },
         "github_com_the-monkeys_freerangenotify_internal_domain_workflow.Condition": {
             "type": "object",
             "properties": {
@@ -7380,6 +8659,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 100,
                     "minLength": 3
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.WorkflowStatus"
                 },
                 "steps": {
                     "type": "array",
@@ -7492,6 +8774,25 @@ const docTemplate = `{
                 "StepTypeCondition"
             ]
         },
+        "github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerByTopicRequest": {
+            "type": "object",
+            "required": [
+                "topic_id",
+                "trigger_id"
+            ],
+            "properties": {
+                "payload": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "topic_id": {
+                    "type": "string"
+                },
+                "trigger_id": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerRequest": {
             "type": "object",
             "required": [
@@ -7592,6 +8893,12 @@ const docTemplate = `{
                 "last_login_at": {
                     "type": "string"
                 },
+                "phone": {
+                    "type": "string"
+                },
+                "phone_verified": {
+                    "type": "boolean"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -7611,6 +8918,9 @@ const docTemplate = `{
                 },
                 "refresh_token": {
                     "type": "string"
+                },
+                "require_trial_welcome": {
+                    "type": "boolean"
                 },
                 "user": {
                     "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AdminUserResponse"
@@ -7651,10 +8961,22 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "channel",
-                "priority",
-                "template_id"
+                "priority"
             ],
             "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action"
+                    }
+                },
+                "attachments": {
+                    "description": "Rich webhook content (Phase 7).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment"
+                    }
+                },
                 "body": {
                     "type": "string"
                 },
@@ -7669,12 +8991,33 @@ const docTemplate = `{
                         "sms",
                         "webhook",
                         "in_app",
-                        "sse"
+                        "sse",
+                        "whatsapp"
                     ]
                 },
                 "data": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field"
+                    }
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention"
+                    }
+                },
+                "metadata": {
+                    "description": "Digest: {\"digest_key\": \"rule_key\"}",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "poll": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll"
                 },
                 "priority": {
                     "type": "string",
@@ -7688,16 +9031,28 @@ const docTemplate = `{
                 "scheduled_at": {
                     "type": "string"
                 },
+                "style": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style"
+                },
                 "template_id": {
+                    "description": "required when workflow_trigger_id is empty",
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                },
+                "topic_key": {
+                    "description": "Phase 2: limit to topic subscribers",
                     "type": "string"
                 },
                 "webhook_target": {
                     "type": "string"
                 },
                 "webhook_url": {
+                    "type": "string"
+                },
+                "workflow_trigger_id": {
+                    "description": "Phase 2: trigger workflow for each recipient",
                     "type": "string"
                 }
             }
@@ -7708,6 +9063,12 @@ const docTemplate = `{
                 "users"
             ],
             "properties": {
+                "skip_existing": {
+                    "type": "boolean"
+                },
+                "upsert": {
+                    "type": "boolean"
+                },
                 "users": {
                     "type": "array",
                     "maxItems": 1000,
@@ -7730,7 +9091,13 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkUserError"
                     }
                 },
+                "skipped": {
+                    "type": "integer"
+                },
                 "total": {
+                    "type": "integer"
+                },
+                "updated": {
                     "type": "integer"
                 }
             }
@@ -7738,13 +9105,24 @@ const docTemplate = `{
         "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendNotificationRequest": {
             "type": "object",
             "required": [
-                "body",
                 "channel",
                 "priority",
-                "title",
                 "user_ids"
             ],
             "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action"
+                    }
+                },
+                "attachments": {
+                    "description": "Rich webhook content (Phase 7).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment"
+                    }
+                },
                 "body": {
                     "type": "string"
                 },
@@ -7758,12 +9136,36 @@ const docTemplate = `{
                         "email",
                         "sms",
                         "webhook",
-                        "in_app"
+                        "in_app",
+                        "whatsapp"
                     ]
                 },
                 "data": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field"
+                    }
+                },
+                "media_url": {
+                    "type": "string"
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention"
+                    }
+                },
+                "metadata": {
+                    "description": "Digest: {\"digest_key\": \"rule_key\"}",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "poll": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll"
                 },
                 "priority": {
                     "type": "string",
@@ -7776,6 +9178,9 @@ const docTemplate = `{
                 },
                 "scheduled_at": {
                     "type": "string"
+                },
+                "style": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style"
                 },
                 "template_id": {
                     "type": "string"
@@ -7857,6 +9262,9 @@ const docTemplate = `{
                 "settings": {
                     "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings"
                 },
+                "tenant_id": {
+                    "type": "string"
+                },
                 "webhook_url": {
                     "type": "string"
                 },
@@ -7875,6 +9283,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "external_id": {
+                    "type": "string"
+                },
+                "full_name": {
                     "type": "string"
                 },
                 "language": {
@@ -7908,6 +9319,65 @@ const docTemplate = `{
                 },
                 "sms_enabled": {
                     "type": "boolean"
+                },
+                "whatsapp_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DeleteAccountRequest": {
+            "type": "object",
+            "required": [
+                "confirm_text",
+                "password"
+            ],
+            "properties": {
+                "confirm_text": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 8
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileListResponse": {
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "file_id": {
+                    "type": "string"
+                },
+                "mime_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sha256": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },
@@ -7949,6 +9419,19 @@ const docTemplate = `{
         "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationContentResponse": {
             "type": "object",
             "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action"
+                    }
+                },
+                "attachments": {
+                    "description": "Rich webhook content (Phase 7).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment"
+                    }
+                },
                 "body": {
                     "type": "string"
                 },
@@ -7956,8 +9439,29 @@ const docTemplate = `{
                     "type": "object",
                     "additionalProperties": true
                 },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field"
+                    }
+                },
+                "media_url": {
+                    "type": "string"
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention"
+                    }
+                },
                 "notification": {
                     "type": "string"
+                },
+                "poll": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll"
+                },
+                "style": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style"
                 },
                 "title": {
                     "type": "string"
@@ -8040,17 +9544,161 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.QuickSendRequest": {
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResendRequest": {
             "type": "object",
             "required": [
-                "to"
+                "request_id"
             ],
             "properties": {
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendRequest": {
+            "type": "object",
+            "required": [
+                "channel"
+            ],
+            "properties": {
+                "alphanumeric": {
+                    "description": "default false (numeric)",
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "string",
+                    "enum": [
+                        "sms",
+                        "whatsapp",
+                        "email"
+                    ]
+                },
+                "external_id": {
+                    "description": "caller-owned user identifier",
+                    "type": "string"
+                },
+                "length": {
+                    "description": "4-10, default 6",
+                    "type": "integer"
+                },
+                "max_attempts": {
+                    "description": "1-10, default 5",
+                    "type": "integer"
+                },
+                "recipient": {
+                    "description": "raw email / E.164 phone",
+                    "type": "string"
+                },
+                "template_body": {
+                    "description": "optional BYO body with {{code}}",
+                    "type": "string"
+                },
+                "template_data": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "ttl_seconds": {
+                    "description": "30-900, default 300",
+                    "type": "integer"
+                },
+                "user_id": {
+                    "description": "internal FRN user_id (UUID)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "string"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "max_attempts": {
+                    "type": "integer"
+                },
+                "notification_id": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "ttl_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyRequest": {
+            "type": "object",
+            "required": [
+                "code",
+                "request_id"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 10,
+                    "minLength": 4
+                },
+                "request_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse": {
+            "type": "object",
+            "properties": {
+                "attempts_remaining": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "verified": {
+                    "type": "boolean"
+                },
+                "verified_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.QuickSendRequest": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action"
+                    }
+                },
+                "attachments": {
+                    "description": "Rich webhook content. All optional. Only honored when the resolved\nchannel is webhook-like (webhook, discord, slack, teams). Per-provider\nrendering capabilities are documented in API_DOCUMENTATION.md.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment"
+                    }
+                },
                 "body": {
                     "type": "string"
                 },
                 "channel": {
-                    "description": "Channel: push, email, sms, webhook, in_app, sse.\nOptional if Template is specified (inferred from template).",
+                    "description": "Channel: push, email, sms, webhook, in_app, sse, whatsapp, discord, slack, teams.\nOptional if Template is specified (inferred from template).",
                     "type": "string",
                     "enum": [
                         "push",
@@ -8058,13 +9706,36 @@ const docTemplate = `{
                         "sms",
                         "webhook",
                         "in_app",
-                        "sse"
+                        "sse",
+                        "whatsapp",
+                        "discord",
+                        "slack",
+                        "teams"
                     ]
                 },
                 "data": {
                     "description": "Template variables (used when Template is specified).",
                     "type": "object",
                     "additionalProperties": true
+                },
+                "digest_key": {
+                    "description": "Optional: digest rule key — notifications with this key are batched by the matching digest rule",
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field"
+                    }
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention"
+                    }
+                },
+                "poll": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll"
                 },
                 "priority": {
                     "description": "Priority: low, normal, high, critical. Defaults to \"normal\".",
@@ -8073,6 +9744,9 @@ const docTemplate = `{
                 "scheduled_at": {
                     "description": "Optional scheduling",
                     "type": "string"
+                },
+                "style": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style"
                 },
                 "subject": {
                     "description": "Inline content (used when Template is empty).",
@@ -8083,7 +9757,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "to": {
-                    "description": "Recipient: email address, external user ID, or internal UUID.\nIf recipient doesn't exist as a user, auto-creates one (email only).",
+                    "description": "Recipient: email address, external user ID, or internal UUID.\nIf recipient doesn't exist as a user, auto-creates one (email only).\nOptional for webhook-like channels (webhook, discord, slack, teams).",
+                    "type": "string"
+                },
+                "webhook_target": {
+                    "description": "Optional: name of a registered custom webhook provider on the app\n(e.g. \"Slack Alerts\"). When set, the worker dispatches through that\nprovider — which knows its kind (slack/discord/teams/generic) and\nrenders the channel-specific payload shape. Prefer this over\nWebhookURL when the destination is a registered provider, so the\nmessage is posted in a shape the destination accepts.",
                     "type": "string"
                 },
                 "webhook_url": {
@@ -8141,6 +9819,17 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResendOTPRequest": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResetPasswordRequest": {
             "type": "object",
             "required": [
@@ -8164,6 +9853,19 @@ const docTemplate = `{
                 "template_id"
             ],
             "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action"
+                    }
+                },
+                "attachments": {
+                    "description": "Rich webhook content (Phase 7 — Webhook channel expansion).\nDomain types are reused so existing client SDKs serialize identically.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment"
+                    }
+                },
                 "body": {
                     "type": "string"
                 },
@@ -8178,12 +9880,36 @@ const docTemplate = `{
                         "sms",
                         "webhook",
                         "in_app",
-                        "sse"
+                        "sse",
+                        "whatsapp"
                     ]
                 },
                 "data": {
                     "type": "object",
                     "additionalProperties": true
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field"
+                    }
+                },
+                "media_url": {
+                    "type": "string"
+                },
+                "mentions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention"
+                    }
+                },
+                "metadata": {
+                    "description": "Digest: {\"digest_key\": \"rule_key\"} routes to digest batching",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "poll": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll"
                 },
                 "priority": {
                     "type": "string",
@@ -8200,6 +9926,9 @@ const docTemplate = `{
                 "scheduled_at": {
                     "type": "string"
                 },
+                "style": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style"
+                },
                 "template_id": {
                     "type": "string"
                 },
@@ -8214,7 +9943,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "webhook_url": {
-                    "description": "New field",
+                    "type": "string"
+                },
+                "workflow_trigger_id": {
+                    "description": "Phase 3: trigger workflow after send",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SignedURLResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "url": {
                     "type": "string"
                 }
             }
@@ -8247,6 +9990,9 @@ const docTemplate = `{
                 },
                 "settings": {
                     "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings"
+                },
+                "tenant_id": {
+                    "type": "string"
                 },
                 "webhook_url": {
                     "type": "string"
@@ -8322,6 +10068,18 @@ const docTemplate = `{
                 "enable_webhooks": {
                     "type": "boolean"
                 },
+                "inbound_webhook_config": {
+                    "description": "Phase 7: inbound webhook (secret, event mapping)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig"
+                        }
+                    ]
+                },
+                "on_user_created_trigger_id": {
+                    "description": "Phase 5: workflow to trigger on user create",
+                    "type": "string"
+                },
                 "rate_limit": {
                     "type": "integer",
                     "minimum": 1
@@ -8331,11 +10089,17 @@ const docTemplate = `{
                     "maximum": 10,
                     "minimum": 0
                 },
+                "sms_config": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig"
+                },
                 "validation_config": {
                     "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig"
                 },
                 "validation_url": {
                     "type": "string"
+                },
+                "whatsapp_config": {
+                    "$ref": "#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig"
                 }
             }
         },
@@ -8370,6 +10134,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "external_id": {
+                    "type": "string"
+                },
+                "full_name": {
                     "type": "string"
                 },
                 "language": {
@@ -8410,6 +10177,9 @@ const docTemplate = `{
                 "external_id": {
                     "type": "string"
                 },
+                "full_name": {
+                    "type": "string"
+                },
                 "language": {
                     "type": "string"
                 },
@@ -8429,6 +10199,21 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "webhook_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.VerifyOTPRequest": {
+            "type": "object",
+            "required": [
+                "email",
+                "otp_code"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "otp_code": {
                     "type": "string"
                 }
             }
@@ -8466,10 +10251,26 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "generic",
+                        "discord",
+                        "slack",
+                        "teams"
+                    ]
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 50,
                     "minLength": 1
+                },
+                "signature_version": {
+                    "type": "string",
+                    "enum": [
+                        "v1",
+                        "v2"
+                    ]
                 },
                 "webhook_url": {
                     "type": "string"
@@ -8495,7 +10296,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.1.9-alpha",
+	Version:          "1.0.15",
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{"http", "https"},

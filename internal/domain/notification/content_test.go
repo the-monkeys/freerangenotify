@@ -78,7 +78,102 @@ func TestContent_Validate_AttachmentLimits(t *testing.T) {
 		t.Fatalf("want ErrTooManyAttachments, got %v", err)
 	}
 
-	c = Content{Attachments: []Attachment{{Type: "image"}}} // missing URL
+	// Missing Type still fails with the generic invalid sentinel.
+	c = Content{Attachments: []Attachment{{URL: "https://x/y"}}}
+	if err := c.Validate(); err != ErrInvalidAttachment {
+		t.Fatalf("want ErrInvalidAttachment, got %v", err)
+	}
+
+	// No source at all → ErrAttachmentMissingSource.
+	c = Content{Attachments: []Attachment{{Type: "image"}}}
+	if err := c.Validate(); err != ErrAttachmentMissingSource {
+		t.Fatalf("want ErrAttachmentMissingSource, got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_FileIDOnly(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", FileID: "file_01ABCD"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("file_id-only attachment should validate; got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_FileIDFormat(t *testing.T) {
+	// Each entry must produce ErrInvalidFileID. The motivating bug was a
+	// caller pasting a URL into the file_id slot; the resolver then asked
+	// ES for `/files/_doc/<url>` and the notification dead-lettered after
+	// pointless retries. Validation must reject the obvious misuse
+	// patterns before the doc ever enters the queue.
+	bad := []string{
+		"https://example.com/photo.jpg", // full URL
+		"http://example.com/x.png",      // http URL
+		"/etc/passwd",                   // absolute path
+		"file_with/slash",               // path separator
+		"file_with:colon",               // scheme separator
+		"file_with?q=1",                 // query
+		"file_with#frag",                // fragment
+		"file_with space",               // whitespace
+		"FILE_uppercase",                // wrong prefix case
+		"random_id",                     // missing prefix
+		"file_",                         // empty tail
+	}
+	for _, id := range bad {
+		c := Content{Attachments: []Attachment{{Type: "file", FileID: id}}}
+		if err := c.Validate(); err != ErrInvalidFileID {
+			t.Errorf("file_id %q: want ErrInvalidFileID, got %v", id, err)
+		}
+	}
+
+	good := []string{
+		"file_abc",
+		"file_1e7570ccb062489bb18c8ab432108aa5",
+		"file_test_1", // test-suite shape
+		"file_with-dash_and.underscore",
+	}
+	for _, id := range good {
+		c := Content{Attachments: []Attachment{{Type: "file", FileID: id}}}
+		if err := c.Validate(); err != nil {
+			t.Errorf("file_id %q should validate; got %v", id, err)
+		}
+	}
+}
+
+func TestContent_Validate_Attachment_InlineBase64Only(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", ContentBase64: "JVBERi0xLjQK"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("base64-only attachment should validate; got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_AmbiguousSource(t *testing.T) {
+	cases := []Attachment{
+		{Type: "file", URL: "https://x/y", FileID: "file_1"},
+		{Type: "file", URL: "https://x/y", ContentBase64: "AAA"},
+		{Type: "file", FileID: "file_1", ContentBase64: "AAA"},
+		{Type: "file", URL: "https://x/y", FileID: "file_1", ContentBase64: "AAA"},
+	}
+	for i, a := range cases {
+		c := Content{Attachments: []Attachment{a}}
+		if err := c.Validate(); err != ErrAmbiguousAttachmentSource {
+			t.Fatalf("case %d: want ErrAmbiguousAttachmentSource, got %v", i, err)
+		}
+	}
+}
+
+func TestContent_Validate_Attachment_InlineTooLarge(t *testing.T) {
+	// 14 MB + 1 of base64 characters
+	big := make([]byte, 14*1024*1024+1)
+	for i := range big {
+		big[i] = 'A'
+	}
+	c := Content{Attachments: []Attachment{{Type: "file", ContentBase64: string(big)}}}
+	if err := c.Validate(); err != ErrAttachmentTooLarge {
+		t.Fatalf("want ErrAttachmentTooLarge, got %v", err)
+	}
+}
+
+func TestContent_Validate_Attachment_InvalidDisposition(t *testing.T) {
+	c := Content{Attachments: []Attachment{{Type: "file", URL: "https://x/y", Disposition: "weird"}}}
 	if err := c.Validate(); err != ErrInvalidAttachment {
 		t.Fatalf("want ErrInvalidAttachment, got %v", err)
 	}

@@ -2,8 +2,103 @@ package notification
 
 import (
 	"context"
+	"strings"
 	"time"
+	"unicode"
 )
+
+// attachmentInlineMaxEncoded caps the base64-encoded length of an inline
+// attachment. 14 MB encoded ≈ 10.5 MB decoded — the per-element hard limit
+// enforced at the domain boundary; per-channel limits are stricter and
+// enforced at the provider layer.
+const attachmentInlineMaxEncoded = 14 * 1024 * 1024
+
+// containsControlChar reports whether s contains any Unicode control
+// character (tab, newline, NUL, etc.). Used by Content.Validate to reject
+// identifier-like attachment fields that would otherwise corrupt a downstream
+// URL parse or document lookup.
+func containsControlChar(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidFileID enforces the FRN file-id shape so the resolver cannot be
+// tricked into using the file_id slot as a URL/path. The id space is
+// intentionally loose ("file_" + arbitrary tail) because tests and seed
+// scripts inject simple names like "file_test_1"; we therefore reject only
+// the unambiguous-misuse characters (`/`, `:`, whitespace, `?`, `#`) rather
+// than enforcing a strict hex layout.
+func isValidFileID(id string) bool {
+	if !strings.HasPrefix(id, "file_") || len(id) <= len("file_") {
+		return false
+	}
+	for _, r := range id {
+		switch r {
+		case '/', '\\', ':', '?', '#', ' ', '\t', '\n', '\r':
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateAttachments enforces all attachment invariants and normalises
+// identifier-like fields in place. Shared by Content.Validate (worker /
+// persistence path) and SendRequest.Validate / BulkSendRequest.Validate
+// (API ingress path) so that bad payloads cannot reach the queue.
+func ValidateAttachments(atts []Attachment) error {
+	if len(atts) > 10 {
+		return ErrTooManyAttachments
+	}
+	for i := range atts {
+		a := &atts[i]
+		a.URL = strings.TrimSpace(a.URL)
+		a.FileID = strings.TrimSpace(a.FileID)
+		a.ContentBase64 = strings.TrimSpace(a.ContentBase64)
+		a.Name = strings.TrimSpace(a.Name)
+		a.MimeType = strings.TrimSpace(a.MimeType)
+		a.ContentID = strings.TrimSpace(a.ContentID)
+		a.Disposition = strings.TrimSpace(a.Disposition)
+
+		if a.Type == "" {
+			return ErrInvalidAttachment
+		}
+		if containsControlChar(a.FileID) || containsControlChar(a.URL) {
+			return ErrInvalidAttachment
+		}
+		if a.FileID != "" && !isValidFileID(a.FileID) {
+			return ErrInvalidFileID
+		}
+		sources := 0
+		if a.URL != "" {
+			sources++
+		}
+		if a.ContentBase64 != "" {
+			sources++
+		}
+		if a.FileID != "" {
+			sources++
+		}
+		switch sources {
+		case 0:
+			return ErrAttachmentMissingSource
+		case 1:
+			// ok
+		default:
+			return ErrAmbiguousAttachmentSource
+		}
+		if a.ContentBase64 != "" && len(a.ContentBase64) > attachmentInlineMaxEncoded {
+			return ErrAttachmentTooLarge
+		}
+		if a.Disposition != "" && a.Disposition != "attachment" && a.Disposition != "inline" {
+			return ErrInvalidAttachment
+		}
+	}
+	return nil
+}
 
 // Channel represents notification delivery channels
 type Channel string
@@ -165,15 +260,31 @@ type Content struct {
 	Style       *Style       `json:"style,omitempty"       es:"style"`
 }
 
-// Attachment describes a media or file attachment referenced by URL.
+// Attachment describes a media or file attachment.
+//
+// One — and only one — of the following sources must be set per element:
+//   - URL:           a public URL FRN will fetch at delivery time (legacy).
+//   - ContentBase64: inline base64-encoded bytes (capped at ~10 MB encoded).
+//   - FileID:        an opaque id returned by POST /v1/files.
+//
+// ContentBase64 is intentionally tagged `es:"-"` so raw bytes are never
+// indexed; the worker resolves it into a stored file before persistence.
+//
 // Size is in bytes when known; zero means unknown/not validated.
 type Attachment struct {
 	Type     string `json:"type"                 es:"type"` // image | video | file | audio
-	URL      string `json:"url"                  es:"url"`
+	URL      string `json:"url,omitempty"        es:"url"`
 	Name     string `json:"name,omitempty"       es:"name"`
 	MimeType string `json:"mime_type,omitempty"  es:"mime_type"`
 	Size     int64  `json:"size,omitempty"       es:"size"`
 	AltText  string `json:"alt_text,omitempty"   es:"alt_text"`
+
+	// New optional fields (file-attachments feature). All omitempty —
+	// callers using only URL continue to work unchanged.
+	ContentBase64 string `json:"content_base64,omitempty" es:"-"`
+	FileID        string `json:"file_id,omitempty"        es:"file_id"`
+	ContentID     string `json:"content_id,omitempty"     es:"content_id"`  // RFC 2392 cid:* token for inline HTML email embed
+	Disposition   string `json:"disposition,omitempty"    es:"disposition"` // "attachment" (default) | "inline"
 }
 
 // Action describes a call-to-action button.
@@ -230,14 +341,8 @@ type Style struct {
 // legacy fields (Title / Body / Data / MediaURL) are populated, so existing
 // callers see no behavior change.
 func (c *Content) Validate() error {
-	if len(c.Attachments) > 10 {
-		return ErrTooManyAttachments
-	}
-	for i := range c.Attachments {
-		a := c.Attachments[i]
-		if a.Type == "" || a.URL == "" {
-			return ErrInvalidAttachment
-		}
+	if err := ValidateAttachments(c.Attachments); err != nil {
+		return err
 	}
 
 	if len(c.Actions) > 5 {
@@ -593,6 +698,9 @@ func (r *SendRequest) Validate() error {
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime
 	}
+	if err := ValidateAttachments(r.Attachments); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -643,6 +751,9 @@ func (r *BulkSendRequest) Validate() error {
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime
+	}
+	if err := ValidateAttachments(r.Attachments); err != nil {
+		return err
 	}
 	return nil
 }

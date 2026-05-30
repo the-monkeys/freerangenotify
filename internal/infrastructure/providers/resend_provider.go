@@ -3,18 +3,22 @@ package providers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
 )
 
-const resendAPIURL = "https://api.resend.com/emails"
+// resendAPIURL is a var (not a const) so tests can point it at a stub
+// server. Treat it as read-only outside of test code.
+var resendAPIURL = "https://api.resend.com/emails"
 
 // ResendConfig holds Resend-specific configuration.
 type ResendConfig struct {
@@ -70,6 +74,38 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 		"to":      []string{usr.Email},
 		"subject": notif.Content.Title,
 		"html":    p.buildHTMLBody(notif),
+	}
+
+	// Resolve and attach binary attachments. Resend accepts:
+	//   { filename, content (base64), content_type? }
+	// Resend does NOT natively support inline (cid:) attachments; if the
+	// caller asked for inline we degrade to regular and warn — the file
+	// still ships, it just won't render embedded in the HTML body.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "resend")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+	}
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+		attsOut := make([]map[string]interface{}, 0, len(resolved))
+		for _, ra := range resolved {
+			raw, bErr := readResolvedBytes(ra)
+			if bErr != nil {
+				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+			}
+			if ra.Disposition == "inline" && ra.ContentID != "" {
+				p.logger.Warn("Resend does not support inline cid attachments; sending as regular attachment",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("content_id", ra.ContentID),
+					zap.String("filename", ra.Filename))
+			}
+			attsOut = append(attsOut, map[string]interface{}{
+				"filename":     coalesceFilename(ra.Filename),
+				"content":      base64.StdEncoding.EncodeToString(raw),
+				"content_type": coalesceMIME(ra.MIMEType),
+			})
+		}
+		payload["attachments"] = attsOut
 	}
 
 	body, err := json.Marshal(payload)

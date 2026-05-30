@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
@@ -88,12 +89,42 @@ func (p *SESProvider) Send(ctx context.Context, notif *notification.Notification
 		textBody = notif.Content.Title
 	}
 
+	// Resolve attachments. If any are present we must switch the SES
+	// payload from Simple (subject + body only) to Raw (full RFC 5322
+	// MIME), since SESv2's Simple mode cannot carry binary parts.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "ses")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+	}
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+	}
+
 	input := &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(from),
 		Destination: &types.Destination{
 			ToAddresses: []string{usr.Email},
 		},
-		Content: &types.EmailContent{
+	}
+
+	if len(resolved) > 0 {
+		// Build a full MIME message and ship it via SendRawEmail.
+		raw, mErr := buildSMTPMessage(smtpMessageOptions{
+			From:        p.config.FromEmail,
+			FromName:    p.config.FromName,
+			To:          usr.Email,
+			Subject:     notif.Content.Title,
+			HTMLBody:    htmlBody,
+			Attachments: resolved,
+		})
+		if mErr != nil {
+			return NewErrorResult(fmt.Errorf("ses: build raw MIME: %w", mErr), ErrorTypeInvalid), nil
+		}
+		input.Content = &types.EmailContent{
+			Raw: &types.RawMessage{Data: raw},
+		}
+	} else {
+		input.Content = &types.EmailContent{
 			Simple: &types.Message{
 				Subject: &types.Content{
 					Data: aws.String(notif.Content.Title),
@@ -103,7 +134,7 @@ func (p *SESProvider) Send(ctx context.Context, notif *notification.Notification
 					Text: &types.Content{Data: aws.String(textBody)},
 				},
 			},
-		},
+		}
 	}
 
 	resp, err := p.client.SendEmail(ctx, input)

@@ -5,6 +5,7 @@ import type { Application, ApplicationSettings, Workflow as WorkflowType, Tenant
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
 import AppNotifications from '../components/AppNotifications';
+import AppFiles from '../components/AppFiles';
 import AppTeam from '../components/apps/AppTeam';
 import AppProviders from '../components/apps/AppProviders';
 import AppEnvironments from '../components/apps/AppEnvironments';
@@ -328,6 +329,10 @@ const AppDetail: React.FC = () => {
                         )}
                         {app && activeTab === 'notifications' && (
                             <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={handleUnreadCount} />
+                        )}
+
+                        {activeTab === 'files' && (
+                            <AppFiles apiKey={app.api_key} />
                         )}
 
                         {app && activeTab === 'whatsapp' && (

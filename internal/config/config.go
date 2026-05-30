@@ -23,6 +23,27 @@ type Config struct {
 	Billing    BillingConfig    `mapstructure:"billing"`
 	Payment    PaymentConfig    `mapstructure:"payment"`
 	Licensing  LicensingConfig  `mapstructure:"licensing"`
+	Filestore  FilestoreConfig  `mapstructure:"filestore"`
+}
+
+// FilestoreConfig configures the file-attachments subsystem (POST /v1/files).
+//
+// Backend selects the storage backend (currently "local"). LocalRoot is the
+// on-disk root for the local backend, structured as <root>/<appID>/<fileID>.
+// SigningKeys are HMAC-SHA256 keys for signed download URLs; the first key
+// signs new URLs and all keys are accepted on verification (rotation).
+// SignedURLTTLSeconds is the validity window for freshly minted URLs.
+// MaxBytes is the per-file size cap. RetentionDays is the GC window; 0 keeps
+// the 30-day default, negative pins files forever. AllowedMIMETypes overrides
+// the conservative default allowlist (wildcards like "image/*" are supported).
+type FilestoreConfig struct {
+	Backend             string   `mapstructure:"backend"`
+	LocalRoot           string   `mapstructure:"local_root"`
+	SigningKeys         []string `mapstructure:"signing_keys"`
+	SignedURLTTLSeconds int      `mapstructure:"signed_url_ttl_seconds"`
+	MaxBytes            int64    `mapstructure:"max_bytes"`
+	RetentionDays       int      `mapstructure:"retention_days"`
+	AllowedMIMETypes    []string `mapstructure:"allowed_mime_types"`
 }
 
 // LicensingConfig contains licensing controls for hosted and self-hosted deployments.
@@ -471,6 +492,14 @@ func Load() (*Config, error) {
 	viper.SetDefault("licensing.self_hosted.verify_interval_seconds", 300)
 	viper.SetDefault("licensing.self_hosted.heartbeat_url", "")
 	viper.SetDefault("licensing.self_hosted.heartbeat_interval_seconds", 21600)
+
+	viper.SetDefault("filestore.backend", "local")
+	viper.SetDefault("filestore.local_root", "./data/files")
+	viper.SetDefault("filestore.signing_keys", []string{})
+	viper.SetDefault("filestore.signed_url_ttl_seconds", 900)
+	viper.SetDefault("filestore.max_bytes", 50*1024*1024)
+	viper.SetDefault("filestore.retention_days", 30)
+	viper.SetDefault("filestore.allowed_mime_types", []string{})
 
 	// Configure viper
 	viper.SetConfigName("config")

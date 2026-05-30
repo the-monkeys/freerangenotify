@@ -6,7 +6,7 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 import { Badge } from '../ui/badge';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Upload, Loader2 } from 'lucide-react';
 import type {
     ContentAttachment,
     ContentAction,
@@ -15,6 +15,7 @@ import type {
     ContentPoll,
     ContentStyle,
 } from '../channels/ChannelPreview';
+import { filesAPI } from '../../services/api';
 
 export interface RichContentData {
     attachments: ContentAttachment[];
@@ -30,6 +31,12 @@ interface RichContentEditorProps {
     onChange: (data: RichContentData) => void;
     /** Optional: show a JSON preview of the payload fields sent to the API. Defaults to true. */
     showJsonPreview?: boolean;
+    /**
+     * App API key used for uploading files to `/v1/files` when the user picks the
+     * "Upload" attachment source. When absent the upload tab is disabled and the
+     * caller must use URL or an existing File ID.
+     */
+    apiKey?: string;
 }
 
 const EMPTY_RICH: RichContentData = {
@@ -60,7 +67,7 @@ export function isRichContentEmpty(data: RichContentData): boolean {
  * Filters out incomplete entries the user may have left blank in the UI:
  *   - actions without label or (for `link`) url
  *   - fields without key or value
- *   - attachments without url
+ *   - attachments without any of `url`, `content_base64`, or `file_id`
  *   - mentions without platform_id
  *   - poll choices without label (and the whole poll if it ends up choice-less)
  *
@@ -70,7 +77,13 @@ export function isRichContentEmpty(data: RichContentData): boolean {
 export function richContentToPayload(data: RichContentData): Record<string, any> {
     const out: Record<string, any> = {};
 
-    const attachments = data.attachments.filter((a) => a && a.url && a.url.trim() !== '');
+    const attachments = data.attachments.filter((a) => {
+        if (!a) return false;
+        const hasURL = !!(a.url && a.url.trim() !== '');
+        const hasInline = !!(a.content_base64 && a.content_base64.trim() !== '');
+        const hasFileID = !!(a.file_id && a.file_id.trim() !== '');
+        return hasURL || hasInline || hasFileID;
+    });
     if (attachments.length > 0) out.attachments = attachments;
 
     const actions = data.actions.filter((a) => {
@@ -100,7 +113,188 @@ export function richContentToPayload(data: RichContentData): Record<string, any>
     return out;
 }
 
-const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, showJsonPreview = true }) => {
+type AttachmentSource = 'url' | 'upload' | 'file_id';
+
+function inferAttachmentSource(att: ContentAttachment): AttachmentSource {
+    if (att.file_id) return 'file_id';
+    if (att.content_base64) return 'upload';
+    return 'url';
+}
+
+function formatBytes(n?: number): string {
+    if (!n || n <= 0) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+interface AttachmentRowProps {
+    attachment: ContentAttachment;
+    apiKey?: string;
+    onChange: (next: ContentAttachment) => void;
+    onRemove: () => void;
+}
+
+const AttachmentRow: React.FC<AttachmentRowProps> = ({ attachment, apiKey, onChange, onRemove }) => {
+    const [source, setSource] = React.useState<AttachmentSource>(() => inferAttachmentSource(attachment));
+    const [uploading, setUploading] = React.useState(false);
+    const [progress, setProgress] = React.useState(0);
+    const [error, setError] = React.useState<string | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const switchSource = (next: AttachmentSource) => {
+        setSource(next);
+        setError(null);
+        // Clear sources that no longer apply so the payload stays unambiguous
+        // (the backend rejects multi-source attachments with 400
+        // attachment_ambiguous_source).
+        onChange({
+            ...attachment,
+            url: next === 'url' ? attachment.url : undefined,
+            content_base64: undefined,
+            file_id: next === 'file_id' ? attachment.file_id : undefined,
+        });
+    };
+
+    const handleFilePicked = async (file: File) => {
+        if (!apiKey) {
+            setError('Upload disabled: no app API key in context.');
+            return;
+        }
+        setUploading(true);
+        setError(null);
+        setProgress(0);
+        try {
+            const obj = await filesAPI.upload(apiKey, file, (p) => setProgress(p));
+            onChange({
+                ...attachment,
+                file_id: obj.file_id,
+                name: obj.name,
+                mime_type: obj.mime_type,
+                size: obj.size,
+                url: undefined,
+                content_base64: undefined,
+            });
+            setSource('file_id');
+        } catch (e: any) {
+            const msg =
+                e?.response?.data?.error ||
+                e?.response?.data?.message ||
+                e?.message ||
+                'Upload failed';
+            setError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    return (
+        <div className="flex gap-2 items-start">
+            <div className="flex-1 space-y-1">
+                <div className="flex gap-2 items-center">
+                    <Select value={attachment.type} onValueChange={(v) => onChange({ ...attachment, type: v as ContentAttachment['type'] })}>
+                        <SelectTrigger className="w-[90px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="image">Image</SelectItem>
+                            <SelectItem value="video">Video</SelectItem>
+                            <SelectItem value="file">File</SelectItem>
+                            <SelectItem value="audio">Audio</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={source} onValueChange={(v) => switchSource(v as AttachmentSource)}>
+                        <SelectTrigger className="w-[110px] h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="url">URL</SelectItem>
+                            <SelectItem value="upload" disabled={!apiKey}>Upload</SelectItem>
+                            <SelectItem value="file_id">File ID</SelectItem>
+                        </SelectContent>
+                    </Select>
+
+                    {source === 'url' && (
+                        <Input
+                            value={attachment.url ?? ''}
+                            onChange={(e) => onChange({ ...attachment, url: e.target.value })}
+                            placeholder="https://..."
+                            className="h-8 text-xs flex-1"
+                        />
+                    )}
+
+                    {source === 'upload' && (
+                        <div className="flex-1 flex items-center gap-2">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) void handleFilePicked(f);
+                                    e.target.value = '';
+                                }}
+                            />
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs"
+                                disabled={uploading || !apiKey}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                {uploading ? (
+                                    <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Uploading {(progress * 100).toFixed(0)}%</>
+                                ) : (
+                                    <><Upload className="h-3.5 w-3.5 mr-1" />{attachment.file_id ? 'Replace file' : 'Pick file'}</>
+                                )}
+                            </Button>
+                            {attachment.file_id && !uploading && (
+                                <span className="text-[11px] text-muted-foreground truncate max-w-[240px]">
+                                    {attachment.name || attachment.file_id}{attachment.size ? ` \u00b7 ${formatBytes(attachment.size)}` : ''}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    {source === 'file_id' && (
+                        <Input
+                            value={attachment.file_id ?? ''}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                // If the user pasted a URL into the File ID
+                                // input, auto-correct: route it to the URL
+                                // source instead. Mirrors the server-side
+                                // ErrInvalidFileID check and prevents the
+                                // notification from dead-lettering on the
+                                // worker for "file repo: get: [400]".
+                                if (/^https?:\/\//i.test(v.trim())) {
+                                    setError("That looks like a URL — switched source to URL. Use File ID only for ids returned by POST /v1/files.");
+                                    onChange({ ...attachment, file_id: undefined, url: v.trim() });
+                                    setSource('url');
+                                    return;
+                                }
+                                setError(null);
+                                onChange({ ...attachment, file_id: v });
+                            }}
+                            placeholder="file_xxxxxxxxxxxx"
+                            className="h-8 text-xs flex-1 font-mono"
+                        />
+                    )}
+
+                    <Input
+                        value={attachment.alt_text ?? ''}
+                        onChange={(e) => onChange({ ...attachment, alt_text: e.target.value })}
+                        placeholder="Alt text"
+                        className="h-8 text-xs w-[120px]"
+                    />
+                </div>
+                {error && <p className="text-[11px] text-red-500">{error}</p>}
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="h-8" onClick={onRemove}>
+                <X className="h-3.5 w-3.5" />
+            </Button>
+        </div>
+    );
+};
+
+const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, showJsonPreview = true, apiKey }) => {
     const update = (patch: Partial<RichContentData>) => onChange({ ...value, ...patch });
     const payloadPreview = richContentToPayload(value);
 
@@ -133,55 +327,30 @@ const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, 
                 {/* Attachments Tab */}
                 <TabsContent value="attachments" className="mt-2 space-y-2">
                     {value.attachments.map((att, i) => (
-                        <div key={i} className="flex gap-2 items-end">
-                            <div className="flex-1 space-y-1">
-                                <div className="flex gap-2">
-                                    <Select value={att.type} onValueChange={v => {
-                                        const next = [...value.attachments];
-                                        next[i] = { ...next[i], type: v };
-                                        update({ attachments: next });
-                                    }}>
-                                        <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue /></SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="image">Image</SelectItem>
-                                            <SelectItem value="video">Video</SelectItem>
-                                            <SelectItem value="file">File</SelectItem>
-                                            <SelectItem value="audio">Audio</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <Input
-                                        value={att.url}
-                                        onChange={e => {
-                                            const next = [...value.attachments];
-                                            next[i] = { ...next[i], url: e.target.value };
-                                            update({ attachments: next });
-                                        }}
-                                        placeholder="https://..."
-                                        className="h-8 text-xs flex-1"
-                                    />
-                                    <Input
-                                        value={att.alt_text || ''}
-                                        onChange={e => {
-                                            const next = [...value.attachments];
-                                            next[i] = { ...next[i], alt_text: e.target.value };
-                                            update({ attachments: next });
-                                        }}
-                                        placeholder="Alt text"
-                                        className="h-8 text-xs w-[120px]"
-                                    />
-                                </div>
-                            </div>
-                            <Button type="button" variant="ghost" size="sm" className="h-8" onClick={() => {
+                        <AttachmentRow
+                            key={i}
+                            attachment={att}
+                            apiKey={apiKey}
+                            onChange={(next) => {
+                                const list = [...value.attachments];
+                                list[i] = next;
+                                update({ attachments: list });
+                            }}
+                            onRemove={() => {
                                 update({ attachments: value.attachments.filter((_, j) => j !== i) });
-                            }}><X className="h-3.5 w-3.5" /></Button>
-                        </div>
+                            }}
+                        />
                     ))}
                     {value.attachments.length < 10 && (
                         <Button type="button" variant="outline" size="sm" className="text-xs" onClick={() => {
                             update({ attachments: [...value.attachments, { type: 'image', url: '' }] });
                         }}><Plus className="h-3.5 w-3.5 mr-1" />Add Attachment</Button>
                     )}
-                    <p className="text-[11px] text-muted-foreground">Up to 10 attachments. Images render inline; files as download links.</p>
+                    <p className="text-[11px] text-muted-foreground">
+                        Up to 10 attachments. Each row picks one source: a public URL, an uploaded file
+                        (stored as a managed <code>file_id</code>), or a pre-existing <code>file_id</code>.
+                        {!apiKey && <> Uploads are disabled here \u2014 no app API key in context.</>}
+                    </p>
                 </TabsContent>
 
                 {/* Actions Tab */}
@@ -353,7 +522,7 @@ const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, 
                                 This is the exact shape sent to the API as top-level rich fields (not inside template data).
                             </div>
                             <pre className="max-h-[260px] overflow-auto rounded bg-black/90 p-3 text-[11px] text-green-200">
-{JSON.stringify(payloadPreview, null, 2)}
+                                {JSON.stringify(payloadPreview, null, 2)}
                             </pre>
                         </div>
                     </TabsContent>

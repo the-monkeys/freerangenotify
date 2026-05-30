@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers/render"
@@ -84,12 +85,73 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 		payloadKind = inferProviderKindFromURL(p.webhookURL)
 	}
 
-	body, err := p.buildPayload(payloadKind, notif, usr, true /* preferNativePoll */)
+	// --- Phase 1: resolve uploadable attachments (discord only) ------------
+	//
+	// We resolve BEFORE building the payload because the renderer needs to
+	// know the upload filenames so it can emit `attachment://<filename>`
+	// references in the embed for file_id / inline images. Without that
+	// coordination the embed and the multipart body would describe
+	// different images (or worse: embed with empty URL → Discord 400).
+	var (
+		resolvedAtts   []*attachment.Resolved
+		attachmentRefs []render.DiscordAttachmentRef
+	)
+	if payloadKind == "discord" && len(notif.Content.Attachments) > 0 {
+		r, dropped, rErr := resolveDiscordAttachments(ctx, notif, p.logger)
+		if rErr != nil {
+			return NewErrorResult(fmt.Errorf("resolve discord attachments: %w", rErr), ErrorTypeInvalid), nil
+		}
+		if !dropped && len(r) > 0 {
+			resolvedAtts = r
+			defer attachment.CloseAll(resolvedAtts)
+			// Make filenames unique across the request and align them with
+			// the original Content.Attachments indices so the renderer can
+			// reference each uploaded file by its exact final name.
+			finalNames := assignUniqueFilenames(resolvedAtts)
+			for i, ra := range resolvedAtts {
+				ra.Filename = finalNames[i]
+			}
+			attachmentRefs = buildDiscordAttachmentRefs(notif.Content.Attachments, resolvedAtts)
+			p.logger.Info("Discord attachments resolved",
+				zap.String("provider", p.name),
+				zap.String("notification_id", notif.NotificationID),
+				zap.Int("attachment_count", len(resolvedAtts)),
+				zap.Int("attachment_bytes", discordAttachmentsTotalBytes(resolvedAtts)))
+		}
+	}
+
+	// --- Phase 2: build the JSON payload, aware of upload references -------
+
+	// For URL-only channels (slack, teams), resolve file_id attachments to
+	// signed download URLs so the renderer can include them as image_url.
+	if (payloadKind == "slack" || payloadKind == "teams") && len(notif.Content.Attachments) > 0 {
+		if dlFn, ok := ctx.Value(FileDownloadURLKey).(FileDownloadURLFunc); ok && dlFn != nil {
+			for i := range notif.Content.Attachments {
+				a := &notif.Content.Attachments[i]
+				if a.FileID != "" && a.URL == "" {
+					a.URL = dlFn(notif.AppID, a.FileID)
+				}
+			}
+		}
+	}
+
+	body, err := p.buildPayload(payloadKind, notif, usr, true /* preferNativePoll */, attachmentRefs)
 	if err != nil {
 		return NewErrorResult(fmt.Errorf("failed to marshal custom payload: %w", err), ErrorTypeInvalid), nil
 	}
 
-	status, respBody, err := p.postWebhook(ctx, body)
+	// --- Phase 3: multipart wrap when we have uploads ----------------------
+	contentType := "application/json"
+	if len(resolvedAtts) > 0 {
+		ct, mbody, mErr := buildDiscordMultipart(body, resolvedAtts)
+		if mErr != nil {
+			return NewErrorResult(fmt.Errorf("build discord multipart: %w", mErr), ErrorTypeInvalid), nil
+		}
+		contentType = ct
+		body = mbody
+	}
+
+	status, respBody, err := p.postWebhook(ctx, body, contentType)
 	if err != nil {
 		return NewErrorResult(err, ErrorTypeNetwork), nil
 	}
@@ -107,11 +169,22 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 			zap.String("provider", p.name),
 			zap.String("notification_id", notif.NotificationID))
 
-		body, err = p.buildPayload(payloadKind, notif, usr, false /* embed fallback */)
+		fallbackJSON, err := p.buildPayload(payloadKind, notif, usr, false /* embed fallback */, attachmentRefs)
 		if err != nil {
 			return NewErrorResult(fmt.Errorf("failed to marshal Discord embed-fallback payload: %w", err), ErrorTypeInvalid), nil
 		}
-		status, respBody, err = p.postWebhook(ctx, body)
+		fallbackCT := "application/json"
+		fallbackBody := fallbackJSON
+		if len(resolvedAtts) > 0 {
+			// Reuse the already-drained byte buffers cached on each Resolved.
+			ct, mbody, mErr := buildDiscordMultipart(fallbackJSON, resolvedAtts)
+			if mErr != nil {
+				return NewErrorResult(fmt.Errorf("rebuild discord multipart for poll fallback: %w", mErr), ErrorTypeInvalid), nil
+			}
+			fallbackCT = ct
+			fallbackBody = mbody
+		}
+		status, respBody, err = p.postWebhook(ctx, fallbackBody, fallbackCT)
 		if err != nil {
 			return NewErrorResult(err, ErrorTypeNetwork), nil
 		}
@@ -139,11 +212,17 @@ func (p *CustomProvider) Send(ctx context.Context, notif *notification.Notificat
 // Discord renderer is forced into embed-fallback mode for the Poll field;
 // when true the renderer emits a native Discord poll object so the caller
 // (Send) can let Discord accept it or trigger the fallback retry.
-func (p *CustomProvider) buildPayload(payloadKind string, notif *notification.Notification, usr *user.User, native bool) ([]byte, error) {
+//
+// attachmentRefs is honored by the discord branch only — it carries the
+// per-attachment upload filenames so the embed can reference multipart-
+// uploaded files via `attachment://<filename>`. nil/empty is valid and
+// means "URL-only attachments" (no multipart will be sent).
+func (p *CustomProvider) buildPayload(payloadKind string, notif *notification.Notification, usr *user.User, native bool, attachmentRefs []render.DiscordAttachmentRef) ([]byte, error) {
 	switch payloadKind {
 	case "discord":
 		return json.Marshal(render.BuildCustomDiscordPayloadWithOptions(notif, render.DiscordRenderOptions{
-			NativePolls: native,
+			NativePolls:    native,
+			AttachmentRefs: attachmentRefs,
 		}))
 	case "slack":
 		return json.Marshal(render.BuildCustomSlackPayload(notif))
@@ -155,13 +234,21 @@ func (p *CustomProvider) buildPayload(payloadKind string, notif *notification.No
 }
 
 // postWebhook performs a single signed POST to the configured webhook URL.
-func (p *CustomProvider) postWebhook(ctx context.Context, body []byte) (int, []byte, error) {
+// contentType is set on the request; pass "application/json" for the JSON
+// path or the multipart writer's FormDataContentType() for the Discord
+// attachment path. The HMAC signature is computed over the raw body bytes
+// regardless of content type, so signature verification on the receiver
+// side stays uniform.
+func (p *CustomProvider) postWebhook(ctx context.Context, body []byte, contentType string) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.webhookURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, fmt.Errorf("failed to create custom provider request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "FreeRangeNotify/1.0")
 	for k, v := range p.headers {
 		req.Header.Set(k, v)

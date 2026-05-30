@@ -272,6 +272,29 @@ Authorization: Bearer {api_key}
 
 ---
 
+## Files & Attachments
+
+FreeRangeNotify can attach files to notifications via one of three sources per
+attachment: a public `url`, inline `content_base64`, or a managed `file_id`
+returned by the Files API. See
+[FILE_ATTACHMENTS_GUIDE.md](./FILE_ATTACHMENTS_GUIDE.md) for the full guide,
+including the invoice-PDF walk-through, channel matrix, size limits, retention
+rules, and SDK examples.
+
+### Files endpoints
+
+| Method   | Endpoint                          | Auth         | Purpose                                  |
+|----------|-----------------------------------|--------------|------------------------------------------|
+| `POST`   | `/v1/files`                       | API key      | Upload (multipart `file` field).         |
+| `GET`    | `/v1/files`                       | API key      | List tenant files (`?limit=&offset=`).   |
+| `GET`    | `/v1/files/:id`                   | API key      | File metadata.                           |
+| `DELETE` | `/v1/files/:id`                   | API key      | Delete bytes + metadata.                 |
+| `GET`    | `/v1/files/:id/content`           | API key      | Stream the bytes.                        |
+| `GET`    | `/v1/files/:id/download-url`      | API key      | Mint a short-lived signed URL.           |
+| `GET`    | `/v1/files/download/:id`          | Signature    | Public download (signature in querystring). |
+
+---
+
 ## Data Models
 
 ### Application

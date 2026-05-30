@@ -183,6 +183,23 @@ billing:
   enforce_credit_checks: true
   enforce_free_tier_daily_cap: true
 
+# File attachments subsystem (POST /v1/files + Attachment.file_id source).
+# signing_keys is REQUIRED for /v1/files/:id/download-url; without it the
+# endpoint returns 503 "signed downloads are disabled". The first key signs new
+# URLs and every key is accepted on verification (zero-downtime rotation).
+# Override in prod via env: FREERANGE_FILESTORE_SIGNING_KEYS=key1,key2
+filestore:
+  backend: "local"
+  local_root: "./data/files"
+  signing_keys:
+    - "dev-only-filestore-signing-key-change-me"
+  signed_url_ttl_seconds: 900   # 15 min
+  max_bytes: 52428800           # 50 MiB
+  retention_days: 30
+  # allowed_mime_types: omitted -> uses DefaultAllowedMIMETypes from
+  # internal/usecases/services/file_service.go. Override per-environment if you
+  # need a tighter or broader allowlist (wildcards like "image/*" are supported).
+
 licensing:
   enabled: false
   deployment_mode: "hosted"   # hosted | self_hosted

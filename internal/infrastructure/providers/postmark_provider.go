@@ -3,18 +3,22 @@ package providers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
 )
 
-const postmarkAPIURL = "https://api.postmarkapp.com/email"
+// postmarkAPIURL is a var (not a const) so tests can point it at a stub
+// server. Treat it as read-only outside of test code.
+var postmarkAPIURL = "https://api.postmarkapp.com/email"
 
 // PostmarkConfig holds Postmark-specific configuration.
 type PostmarkConfig struct {
@@ -71,6 +75,36 @@ func (p *PostmarkProvider) Send(ctx context.Context, notif *notification.Notific
 		"Subject":  notif.Content.Title,
 		"HtmlBody": p.buildHTMLBody(notif),
 		"TextBody": notif.Content.Body,
+	}
+
+	// Resolve and attach binary attachments. Postmark expects each entry as
+	// { Name, Content (base64), ContentType, ContentID? } — when ContentID
+	// is set, the attachment is inline (cid:Name@host) for HTML embedding.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "postmark")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+	}
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+		attsOut := make([]map[string]interface{}, 0, len(resolved))
+		for _, ra := range resolved {
+			raw, bErr := readResolvedBytes(ra)
+			if bErr != nil {
+				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+			}
+			entry := map[string]interface{}{
+				"Name":        coalesceFilename(ra.Filename),
+				"Content":     base64.StdEncoding.EncodeToString(raw),
+				"ContentType": coalesceMIME(ra.MIMEType),
+			}
+			if ra.Disposition == "inline" && ra.ContentID != "" {
+				// Postmark inline contract: presence of ContentID flips the
+				// part to inline; the HTML body references it via cid:ContentID.
+				entry["ContentID"] = "cid:" + ra.ContentID
+			}
+			attsOut = append(attsOut, entry)
+		}
+		payload["Attachments"] = attsOut
 	}
 
 	body, err := json.Marshal(payload)

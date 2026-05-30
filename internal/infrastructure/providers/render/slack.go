@@ -37,13 +37,24 @@ func BuildSlackPayload(notif *notification.Notification) map[string]interface{} 
 	}
 
 	// --- Attachments → image blocks + file links ---
+	// Slack incoming webhooks only support URL-referenced media.
+	// file_id / base64 attachments and non-http URLs are skipped.
+	// Image blocks require HTTPS URLs — HTTP images degrade to links.
 	for _, a := range c.Attachments {
-		switch a.Type {
-		case "image":
+		if a.URL == "" || !strings.HasPrefix(a.URL, "http") {
+			continue
+		}
+		isHTTPS := strings.HasPrefix(a.URL, "https://")
+		switch {
+		case a.Type == "image" && isHTTPS:
+			altText := a.AltText
+			if altText == "" {
+				altText = "image"
+			}
 			imgBlock := map[string]interface{}{
 				"type":      "image",
 				"image_url": a.URL,
-				"alt_text":  a.AltText,
+				"alt_text":  altText,
 			}
 			if a.Name != "" {
 				imgBlock["title"] = map[string]interface{}{

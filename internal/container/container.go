@@ -15,6 +15,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
+	domainfile "github.com/the-monkeys/freerangenotify/internal/domain/file"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
@@ -27,6 +28,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/billingrepo"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/filestore"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -143,6 +145,19 @@ type Container struct {
 
 	// Media upload
 	MediaHandler *handlers.MediaHandler
+
+	// File attachments (P0)
+	FileStore   domainfile.FileStore
+	FileRepo    domainfile.Repository
+	FileService *services.FileService
+	FileSigner  *filestore.Signer
+	FileHandler *handlers.FileHandler
+
+	// AttachmentResolver materialises notification.Attachment specs
+	// (URL / inline base64 / file_id) into byte-ready attachment.Resolved
+	// values for provider adapters. Always constructed — even when no
+	// filestore backend is configured — so url/base64 sources keep working.
+	AttachmentResolver *services.AttachmentResolver
 
 	// Custom Providers (Phase 3)
 	CustomProviderHandler *handlers.CustomProviderHandler
@@ -549,6 +564,71 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Media upload handler
 	container.MediaHandler = handlers.NewMediaHandler(playgroundBaseURL, logger)
+
+	// ── File attachments (P0) ──
+	// Local backend by default; signed URLs are optional (when no signing
+	// keys are configured the /download-url endpoint returns 503).
+	{
+		fsCfg := cfg.Filestore
+		root := fsCfg.LocalRoot
+		if root == "" {
+			root = "./data/files"
+		}
+		fileStore, fsErr := filestore.NewLocalStore(root, logger)
+		if fsErr != nil {
+			return nil, fmt.Errorf("failed to initialize file store: %w", fsErr)
+		}
+		container.FileStore = fileStore
+		container.FileRepo = repository.NewFileRepository(dbManager.Client.GetClient(), logger)
+
+		retention := time.Duration(fsCfg.RetentionDays) * 24 * time.Hour
+		if fsCfg.RetentionDays < 0 {
+			retention = -1 // negative sentinel = never expire
+		}
+		container.FileService = services.NewFileService(
+			container.FileStore,
+			container.FileRepo,
+			services.FileServiceConfig{
+				MaxBytes:         fsCfg.MaxBytes,
+				Retention:        retention,
+				AllowedMIMETypes: fsCfg.AllowedMIMETypes,
+			},
+			logger,
+		)
+
+		if len(fsCfg.SigningKeys) > 0 {
+			ttl := time.Duration(fsCfg.SignedURLTTLSeconds) * time.Second
+			signer, sErr := filestore.NewSigner(ttl, fsCfg.SigningKeys...)
+			if sErr != nil {
+				logger.Warn("file attachments: signed-URL downloads disabled", zap.Error(sErr))
+			} else {
+				container.FileSigner = signer
+			}
+		} else {
+			logger.Info("file attachments: no signing keys configured; signed-URL downloads disabled")
+		}
+
+		container.FileHandler = handlers.NewFileHandler(
+			container.FileService,
+			container.FileSigner,
+			cfg.Server.PublicURL,
+			logger,
+		)
+		logger.Info("file attachments enabled",
+			zap.String("backend", "local"),
+			zap.String("root", root),
+		)
+	}
+
+	// AttachmentResolver is constructed unconditionally so URL and inline
+	// base64 attachments work even when the file-store backend is disabled.
+	// The resolver tolerates a nil FileService and will fail file_id sources
+	// with a clear error at resolve time instead of panicking at send time.
+	container.AttachmentResolver = services.NewAttachmentResolver(
+		container.FileService,
+		services.AttachmentResolverConfig{},
+		logger,
+	)
 
 	// Analytics handler (workflow repo wired below after feature-gate check)
 	container.AnalyticsHandler = handlers.NewAnalyticsHandler(

@@ -101,6 +101,13 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	if c.ClickRedirectHandler != nil {
 		v1.Get("/r/:sig", c.ClickRedirectHandler.Handle)
 	}
+
+	// File attachments: signed-URL download (public, signature-verified).
+	// MUST stay outside any API-key middleware so off-platform consumers can
+	// fetch by URL alone.
+	if c.FileHandler != nil {
+		v1.Get("/files/download/:id", c.FileHandler.PublicDownload)
+	}
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -182,6 +189,20 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Media upload (for WhatsApp file attachments)
 	v1.Post("/media/upload", apiAuth, c.MediaHandler.Upload)
+
+	// File attachments (P0): authenticated CRUD + streaming download +
+	// signed-URL minting. The public verify-and-stream endpoint lives in
+	// setupPublicRoutes so signed URLs work without an API key.
+	if c.FileHandler != nil {
+		files := v1.Group("/files")
+		applyAuth(files)
+		files.Post("/", c.FileHandler.Upload)
+		files.Get("/", c.FileHandler.List)
+		files.Get("/:id", c.FileHandler.Get)
+		files.Delete("/:id", c.FileHandler.Delete)
+		files.Get("/:id/content", c.FileHandler.Content)
+		files.Get("/:id/download-url", c.FileHandler.DownloadURL)
+	}
 
 	// Notification routes
 	notifications := v1.Group("/notifications")

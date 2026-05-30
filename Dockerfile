@@ -57,6 +57,11 @@ COPY --from=builder --chown=app:app /app/migrate .
 COPY --from=builder --chown=app:app /app/config ./config
 COPY --from=builder --chown=app:app /app/docs ./docs
 
+# Pre-create the FileStore data directory with correct ownership so that a
+# docker named volume mounted here inherits the right permissions on first
+# initialisation. Required for POST /v1/files when filestore.backend=local.
+RUN mkdir -p /home/app/data/files && chown -R app:app /home/app/data
+
 # Switch to app user
 USER app
 

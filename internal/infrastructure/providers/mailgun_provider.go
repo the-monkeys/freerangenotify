@@ -1,18 +1,26 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"go.uber.org/zap"
 )
+
+// mailgunAPIBase is the Mailgun API base URL. Var (not const) so tests can
+// point it at a stub server. Treat as read-only outside of test code.
+var mailgunAPIBase = "https://api.mailgun.net"
 
 // MailgunConfig holds Mailgun-specific configuration.
 type MailgunConfig struct {
@@ -64,20 +72,79 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 		from = fmt.Sprintf("%s <%s>", p.config.FromName, p.config.FromEmail)
 	}
 
-	apiURL := fmt.Sprintf("https://api.mailgun.net/v3/%s/messages", p.config.Domain)
+	apiURL := fmt.Sprintf("%s/v3/%s/messages", mailgunAPIBase, p.config.Domain)
 
-	form := url.Values{}
-	form.Set("from", from)
-	form.Set("to", usr.Email)
-	form.Set("subject", notif.Content.Title)
-	form.Set("html", p.buildHTMLBody(notif))
-	form.Set("text", notif.Content.Body)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return NewErrorResult(fmt.Errorf("failed to create Mailgun request: %w", err), ErrorTypeUnknown), nil
+	// Resolve attachments. When any are present we must POST multipart/form-data
+	// so the binary parts ride alongside the text fields; otherwise we keep
+	// the historical x-www-form-urlencoded fast path for byte-stable behaviour.
+	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "mailgun")
+	if rErr != nil {
+		return NewErrorResult(rErr, ErrorTypeInvalid), nil
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if resolved != nil {
+		defer attachment.CloseAll(resolved)
+	}
+
+	var req *http.Request
+	if len(resolved) == 0 {
+		form := url.Values{}
+		form.Set("from", from)
+		form.Set("to", usr.Email)
+		form.Set("subject", notif.Content.Title)
+		form.Set("html", p.buildHTMLBody(notif))
+		form.Set("text", notif.Content.Body)
+
+		var rerr error
+		req, rerr = http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(form.Encode()))
+		if rerr != nil {
+			return NewErrorResult(fmt.Errorf("failed to create Mailgun request: %w", rerr), ErrorTypeUnknown), nil
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	} else {
+		buf := &bytes.Buffer{}
+		mw := multipart.NewWriter(buf)
+		_ = mw.WriteField("from", from)
+		_ = mw.WriteField("to", usr.Email)
+		_ = mw.WriteField("subject", notif.Content.Title)
+		_ = mw.WriteField("html", p.buildHTMLBody(notif))
+		_ = mw.WriteField("text", notif.Content.Body)
+
+		for _, ra := range resolved {
+			raw, bErr := readResolvedBytes(ra)
+			if bErr != nil {
+				_ = mw.Close()
+				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+			}
+			// Mailgun: `attachment` field for regular, `inline` field for
+			// HTML-embedded parts (the cid: reference is just the filename).
+			fieldName := "attachment"
+			if ra.Disposition == "inline" && ra.ContentID != "" {
+				fieldName = "inline"
+			}
+			h := make(textproto.MIMEHeader)
+			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, fieldName, coalesceFilename(ra.Filename)))
+			h.Set("Content-Type", coalesceMIME(ra.MIMEType))
+			part, pErr := mw.CreatePart(h)
+			if pErr != nil {
+				_ = mw.Close()
+				return NewErrorResult(fmt.Errorf("mailgun: create part: %w", pErr), ErrorTypeUnknown), nil
+			}
+			if _, wErr := part.Write(raw); wErr != nil {
+				_ = mw.Close()
+				return NewErrorResult(fmt.Errorf("mailgun: write part: %w", wErr), ErrorTypeUnknown), nil
+			}
+		}
+		if cErr := mw.Close(); cErr != nil {
+			return NewErrorResult(fmt.Errorf("mailgun: close multipart: %w", cErr), ErrorTypeUnknown), nil
+		}
+
+		var rerr error
+		req, rerr = http.NewRequestWithContext(ctx, http.MethodPost, apiURL, buf)
+		if rerr != nil {
+			return NewErrorResult(fmt.Errorf("failed to create Mailgun request: %w", rerr), ErrorTypeUnknown), nil
+		}
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+	}
 	req.SetBasicAuth("api", p.config.APIKey)
 
 	resp, err := p.httpClient.Do(req)

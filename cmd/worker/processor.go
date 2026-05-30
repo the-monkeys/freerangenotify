@@ -15,6 +15,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
@@ -69,6 +70,15 @@ type NotificationProcessor struct {
 	throttle         *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
 	richTplService   services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
 
+	// attachmentResolver materialises notification.Attachment specs
+	// (URL / inline base64 / file_id) for provider adapters. Optional —
+	// when nil, providers fall back to their pre-attachment behaviour.
+	attachmentResolver *services.AttachmentResolver
+
+	// fileDownloadURL generates signed download URLs for file_id attachments.
+	// Used by channels that can't accept binary uploads (Slack, Teams).
+	fileDownloadURL providers.FileDownloadURLFunc
+
 	wg       sync.WaitGroup
 	stopChan chan struct{}
 }
@@ -91,6 +101,39 @@ func (p *NotificationProcessor) SetSubscriberThrottle(t *limiter.SubscriberThrot
 // See WHATSAPP_RICH_INTERACTIVE_PLAN.md §4.2 / §5.2.
 func (p *NotificationProcessor) SetWhatsAppRichTemplateService(svc services.WhatsAppRichTemplateService) {
 	p.richTplService = svc
+}
+
+// SetAttachmentResolver injects the optional attachment resolver. When set,
+// the processor populates providers.AttachmentResolverKey on the ctx of
+// every send so provider adapters (currently SMTP) can materialise binary
+// attachments without depending on the usecases layer.
+func (p *NotificationProcessor) SetAttachmentResolver(r *services.AttachmentResolver) {
+	p.attachmentResolver = r
+}
+
+// SetFileDownloadURL injects the signed-URL generator for file_id attachments.
+func (p *NotificationProcessor) SetFileDownloadURL(fn providers.FileDownloadURLFunc) {
+	p.fileDownloadURL = fn
+}
+
+// withAttachmentResolver returns a ctx pre-bound with a per-notification
+// AttachmentResolveFunc closure. The closure carries the notification's
+// app_id so providers stay tenant-agnostic. When the processor has no
+// resolver wired, or the notification has no attachments, the ctx is
+// returned unchanged.
+func (p *NotificationProcessor) withAttachmentResolver(ctx context.Context, notif *notification.Notification) context.Context {
+	if p.attachmentResolver == nil || notif == nil || len(notif.Content.Attachments) == 0 {
+		return ctx
+	}
+	appID := notif.AppID
+	fn := providers.AttachmentResolveFunc(func(c context.Context, atts []notification.Attachment) ([]*attachment.Resolved, error) {
+		return p.attachmentResolver.ResolveAll(c, appID, atts)
+	})
+	ctx = context.WithValue(ctx, providers.AttachmentResolverKey, fn)
+	if p.fileDownloadURL != nil {
+		ctx = context.WithValue(ctx, providers.FileDownloadURLKey, p.fileDownloadURL)
+	}
+	return ctx
 }
 
 // NewNotificationProcessor creates a new notification processor
@@ -350,7 +393,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			logger.Error("Failed to get user", zap.Error(err))
 			span.RecordError(err)
 			span.SetStatus(codes.Error, "user_not_found")
-			p.handleFailure(ctx, notif, item, "user not found")
+			p.handleFailure(ctx, notif, item, err, "user not found")
 			return
 		}
 
@@ -382,7 +425,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	} else {
 		// No user ID and not a webhook-like channel? Should have been caught by validation, but fail safe here.
 		logger.Error("Missing user ID for non-webhook channel")
-		p.handleFailure(ctx, notif, item, "missing user id")
+		p.handleFailure(ctx, notif, item, nil, "missing user id")
 		return
 	}
 
@@ -597,7 +640,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("app_id", notif.AppID),
 				zap.Error(appErr))
-			p.handleFailure(ctx, notif, item, "license check failed: app not found")
+			p.handleFailure(ctx, notif, item, appErr, "license check failed: app not found")
 			return
 		}
 
@@ -607,7 +650,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				zap.String("notification_id", notif.NotificationID),
 				zap.String("app_id", notif.AppID),
 				zap.Error(checkErr))
-			p.handleFailure(ctx, notif, item, "license check failed")
+			p.handleFailure(ctx, notif, item, checkErr, "license check failed")
 			return
 		}
 
@@ -642,7 +685,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				p.handleCreditBlocked(ctx, notif, err.Error())
 				return
 			}
-			p.handleFailure(ctx, notif, item, fmt.Sprintf("credit reservation failed: %s", err.Error()))
+			p.handleFailure(ctx, notif, item, err, fmt.Sprintf("credit reservation failed: %s", err.Error()))
 			return
 		}
 		if notif.Metadata == nil {
@@ -667,7 +710,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		if p.metrics != nil {
 			p.metrics.RecordDeliveryFailure(string(notif.Channel), "default", "send_error")
 		}
-		p.handleFailure(ctx, notif, item, err.Error())
+		p.handleFailure(ctx, notif, item, err, err.Error())
 		return
 	}
 
@@ -764,6 +807,13 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		time.Sleep(100 * time.Millisecond)
 		return nil
 	}
+
+	// Inject the attachment-resolver closure (pre-bound to this notif's
+	// app_id) onto the ctx so provider adapters can materialise
+	// notification.Attachment specs without touching the usecases layer.
+	// No-op when the processor has no resolver wired or the notification
+	// carries no attachments — preserves the legacy fast path.
+	ctx = p.withAttachmentResolver(ctx, notif)
 
 	// Send via provider manager
 	// Send via provider manager
@@ -1016,6 +1066,9 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		zap.String("provider_message_id", result.ProviderMessageID))
 
 	if !result.Success {
+		if result.Error != nil {
+			return fmt.Errorf("provider delivery failed (%s): %w", result.ErrorType, result.Error)
+		}
 		return fmt.Errorf("provider delivery failed: %s", result.ErrorType)
 	}
 
@@ -1033,31 +1086,49 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 	return nil
 }
 
-// handleFailure handles notification send failure
-func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notification.Notification, item *queue.NotificationQueueItem, errorMsg string) {
+// handleFailure handles notification send failure. When err is non-nil and
+// classified as non-retryable, the notification is moved directly to the
+// dead-letter queue without consuming further retry attempts.
+func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notification.Notification, item *queue.NotificationQueueItem, err error, errorMsg string) {
 	// Record retry metric
 	if p.metrics != nil {
 		p.metrics.RecordRetry(string(notif.Channel), errorMsg)
 	}
 
 	// Increment retry count
-	if err := p.notifRepo.IncrementRetryCount(ctx, notif.NotificationID, errorMsg); err != nil {
-		p.logger.Error("Failed to increment retry count", zap.Error(err))
+	if incErr := p.notifRepo.IncrementRetryCount(ctx, notif.NotificationID, errorMsg); incErr != nil {
+		p.logger.Error("Failed to increment retry count", zap.Error(incErr))
 	}
 
 	// Check if can retry
 	maxRetries := p.config.MaxRetries
 	// Attempt to fetch app-specific retry limit
-	app, err := p.appRepo.GetByID(ctx, notif.AppID)
-	if err == nil && app.Settings.RetryAttempts > 0 {
+	app, appErr := p.appRepo.GetByID(ctx, notif.AppID)
+	if appErr == nil && app.Settings.RetryAttempts > 0 {
 		maxRetries = app.Settings.RetryAttempts
 	}
 
-	if notif.RetryCount >= maxRetries {
+	// Permanent-failure short-circuit: certain errors (bad attachment shape,
+	// missing file blob, oversize remote URL) cannot improve on retry. Fail
+	// immediately to free queue slots and surface the problem to operators
+	// without three identical retries cluttering logs.
+	terminal := isNonRetryableError(err)
+	if terminal {
+		p.logger.Warn("Notification non-retryable, skipping retries",
+			zap.String("notification_id", notif.NotificationID),
+			zap.String("channel", string(notif.Channel)),
+			zap.Error(err))
+	}
+
+	if terminal || notif.RetryCount >= maxRetries {
 		// Move to dead letter queue
 		redisQueue, ok := p.queue.(*queue.RedisQueue)
 		if ok {
-			if err := redisQueue.EnqueueDeadLetter(ctx, *item, fmt.Sprintf("max retries exceeded: %s", errorMsg)); err != nil {
+			reason := fmt.Sprintf("max retries exceeded: %s", errorMsg)
+			if terminal {
+				reason = fmt.Sprintf("non-retryable: %s", errorMsg)
+			}
+			if err := redisQueue.EnqueueDeadLetter(ctx, *item, reason); err != nil {
 				p.logger.Error("Failed to move to dead letter queue", zap.Error(err))
 			}
 		}

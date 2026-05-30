@@ -1469,4 +1469,73 @@ export const mediaAPI = {
   },
 };
 
+// ============= Files API (managed file store) =============
+//
+// Backs the `file_id` attachment source. Files are tenant-scoped; cross-tenant
+// access returns 404 by design. See documents/FILE_ATTACHMENTS_GUIDE.md.
+export const filesAPI = {
+  /** Multipart upload. `onProgress` (0..1) is invoked while the body uploads. */
+  upload: async (
+    apiKey: string,
+    file: File,
+    onProgress?: (progress: number) => void,
+  ): Promise<import('../types').FileObject> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post<import('../types').FileObject>('/files', formData, {
+      headers: {
+        ...getAuthHeaders(apiKey),
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(e.loaded / e.total);
+      },
+    });
+    return data;
+  },
+
+  list: async (apiKey: string, opts: import('../types').ListFilesOptions = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+    if (opts.offset !== undefined) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+    const { data } = await api.get<import('../types').FileListResponse>(
+      `/files${qs ? `?${qs}` : ''}`,
+      { headers: getAuthHeaders(apiKey) },
+    );
+    return data;
+  },
+
+  get: async (apiKey: string, fileId: string): Promise<import('../types').FileObject> => {
+    const { data } = await api.get<import('../types').FileObject>(`/files/${encodeURIComponent(fileId)}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+    return data;
+  },
+
+  delete: async (apiKey: string, fileId: string) => {
+    await api.delete(`/files/${encodeURIComponent(fileId)}`, {
+      headers: getAuthHeaders(apiKey),
+    });
+  },
+
+  /** Mint a short-lived public signed download URL (default 15 min TTL). */
+  signedDownloadUrl: async (apiKey: string, fileId: string): Promise<import('../types').FileSignedURL> => {
+    const { data } = await api.get<import('../types').FileSignedURL>(
+      `/files/${encodeURIComponent(fileId)}/download-url`,
+      { headers: getAuthHeaders(apiKey) },
+    );
+    return data;
+  },
+
+  /** Authenticated streaming content fetch (returns a Blob). */
+  content: async (apiKey: string, fileId: string): Promise<Blob> => {
+    const { data } = await api.get<Blob>(`/files/${encodeURIComponent(fileId)}/content`, {
+      headers: getAuthHeaders(apiKey),
+      responseType: 'blob',
+    });
+    return data;
+  },
+};
+
 export default api;

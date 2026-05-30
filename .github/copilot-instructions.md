@@ -50,8 +50,8 @@ graph TD
 ```
 
 ### Data Flow Breakdown
-1.  **Ingestion**: The API Server receives requests (Notifications, Webhooks, Topics). It validates the API Key, authenticates (OIDC SSO supported), and handles Multi-tenant RBAC.
-2.  **Orchestration**: Advanced functions like **Workflows**, **Topics (Pub/Sub)**, and **Digest Rules** intercept the standard flow to apply logic, delays, or aggregation.
+1.  **Ingestion**: The API Server receives requests (Notifications, Webhooks, Topics, OTP, File uploads). It validates the API Key, authenticates (OIDC SSO supported), and handles Multi-tenant RBAC.
+2.  **Orchestration**: Advanced functions like **Workflows**, **Topics (Pub/Sub)**, **Digest Rules**, and the **AttachmentResolver** intercept the standard flow to apply logic, delays, aggregation, or binary materialisation.
 3.  **Persistence**: Data and audit logs are safely stored in Elasticsearch.
 4.  **Queuing**: Redis acts as the priority queue for delivery or delayed workflow executions.
 5.  **Processing**: Workers pull from Redis. They resolve templates, preferences, and handle rendering.
@@ -188,6 +188,28 @@ docker-compose logs -f notification-worker
 -   **Dependency Injection**: Wire services through `container.Container` for testability and decoupling.
 -   **Validation**: Use struct tags with go-playground/validator for input validation.
 -   **Repository Pattern**: Access data through repository interfaces in `infrastructure/repository`.
+
+## OTP as a Service
+Programmatic one-time-passcode delivery + verification over SMS, WhatsApp, and Email. Reuses the standard notification pipeline (templates, providers, billing) for the send path; adds dedicated security primitives on the verify path.
+-   **Endpoints** (all require `X-API-Key`, `app_id` is derived server-side and must never be accepted from the body):
+    -   `POST /v1/otp/send` — generates a code, hashes it, dispatches via the chosen channel. Returns `request_id`.
+    -   `POST /v1/otp/verify` — verifies a code against a `request_id`. Constant-time comparison, atomic attempt counter.
+    -   `POST /v1/otp/resend` — re-issues a fresh code (60 s cooldown per record, attempt counter resets, previous code invalidated).
+-   **Defaults**: 6 digits, 5-minute TTL, 5 attempts. Per-recipient rate limiting enforced server-side.
+-   **Storage**: codes are hashed at rest. Never log raw codes; never return raw codes in API responses.
+-   **Templates**: OTP send uses the standard template/provider stack — the same auto-fill and rendering rules apply. The code itself is injected as a template variable (e.g. `{{.code}}`).
+-   **DO NOT** reimplement verify logic on top of `/v1/notifications`; the constant-time compare + atomic attempt decrement live in the OTP usecase for a reason.
+
+## File Attachments
+Files (PDFs, images, videos, documents) can be attached to a notification via **three** input modes — exactly one per attachment, or the API rejects with `400 attachment_ambiguous_source`:
+-   **`url`** — public URL fetched once by the worker (cap 25 MB, 20 s timeout). Best when the file already lives on a CDN.
+-   **`content_base64`** — inline (≤ ~14 MB encoded / ~10 MB decoded). Accepts URL-safe alphabet and strips `data:` prefixes.
+-   **`file_id`** — FRN-managed file uploaded via `POST /v1/files`. Recommended for files > 10 MB or reused across notifications.
+-   **Files endpoints** (`X-API-Key`): `POST /v1/files` (multipart), `GET /v1/files`, `GET|DELETE /v1/files/:id`, `GET /v1/files/:id/content`, `GET /v1/files/:id/download-url` (signed, default 15 min TTL), public `GET /v1/files/download/:id?sig=...` (signature is the auth — intentionally omits `@Security ApiKeyAuth`).
+-   **Retention**: default 30 days; set `filestore.retention_days: -1` to pin files (used for invoices, contracts). Pinned uploads omit `expires_at` in metadata.
+-   **Limits**: `filestore.max_bytes` (default 50 MiB), `filestore.allowed_mime_types` (wildcards). Multi-tenant: all queries scoped by `app_id`; cross-tenant access returns `404 file_not_found`, never 403.
+-   **Resolver**: `AttachmentResolver` in `internal/usecases` normalises all three modes to bytes+MIME before the provider call. Channels that cannot carry binaries (SMS, In-App, SSE) fail fast with `ErrChannelUnsupportedAttachment`.
+-   **Canonical guides**: `documents/FILE_ATTACHMENTS_GUIDE.md` (caller-facing), `documents/plans/FILE_ATTACHMENTS_PLAN.md` (implementation plan and progress meter), `ui/src/docs/file-attachments.md` (in-product docs).
 
 ## Template Variable Auto-Fill
 Any render path that has a `*user.User` in scope (today: `cmd/worker/processor.go`) must apply these auto-fill rules via the shared helper in `internal/usecases/template/autofill.go`:

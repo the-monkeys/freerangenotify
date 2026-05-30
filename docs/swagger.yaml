@@ -89,23 +89,30 @@ definitions:
       data:
         additionalProperties: true
         type: object
+      editable:
+        type: boolean
     required:
     - data
     type: object
   RenderTemplateResponse:
     properties:
+      attribute_variables:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_template.AttributeVar'
+        type: array
       rendered_body:
         type: string
     type: object
   RollbackRequest:
     properties:
+      target_version:
+        minimum: 1
+        type: integer
       updated_by:
         type: string
       version:
         minimum: 1
         type: integer
-    required:
-    - version
     type: object
   SendTestRequest:
     properties:
@@ -208,9 +215,13 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      kind:
+        type: string
       name:
         type: string
       provider_id:
+        type: string
+      signature_version:
         type: string
       signing_key:
         type: string
@@ -250,6 +261,16 @@ definitions:
       smtp:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMTPConfig'
     type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig:
+    properties:
+      event_mapping:
+        additionalProperties:
+          type: string
+        description: event name -> workflow trigger_id
+        type: object
+      secret:
+        type: string
+    type: object
   github_com_the-monkeys_freerangenotify_internal_domain_application.ProviderFallback:
     properties:
       channel:
@@ -260,6 +281,15 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig:
+    properties:
+      account_sid:
+        type: string
+      auth_token:
+        type: string
+      from_number:
+        type: string
     type: object
   github_com_the-monkeys_freerangenotify_internal_domain_application.SMTPConfig:
     properties:
@@ -311,6 +341,13 @@ definitions:
       enable_webhooks:
         description: webhook notifications
         type: boolean
+      inbound_webhook_config:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig'
+        description: 'Phase 7: inbound webhook config (secret, event mapping)'
+      on_user_created_trigger_id:
+        description: 'Phase 5: workflow to trigger on user create'
+        type: string
       provider_fallbacks:
         items:
           $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ProviderFallback'
@@ -325,15 +362,27 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SlackAppConfig'
         description: Phase 3
+      sms_config:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig'
+        description: 'Billing: per-app SMS creds'
       subscriber_throttle:
         additionalProperties:
           $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SubscriberThrottleConfig'
-        description: App-wide per-channel subscriber throttle defaults (Phase 2)
+        description: Phase 2
         type: object
       validation_config:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig'
       validation_url:
         type: string
+      whatsapp_config:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig'
+        description: Phase 3
+      whatsapp_inbound:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundConfig'
+        description: WhatsApp Meta inbound config
     type: object
   github_com_the-monkeys_freerangenotify_internal_domain_application.SlackAppConfig:
     properties:
@@ -363,6 +412,38 @@ definitions:
         type: string
       token_placement:
         description: header, cookie, query, body_json, body_form
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig:
+    properties:
+      account_sid:
+        description: Twilio fields (used when Provider == "" or "twilio")
+        type: string
+      auth_token:
+        type: string
+      connected_at:
+        type: string
+      connection_status:
+        description: connected, disconnected, pending
+        type: string
+      display_phone_number:
+        type: string
+      from_number:
+        type: string
+      meta_access_token:
+        type: string
+      meta_business_id:
+        description: Embedded Signup metadata (populated during OAuth connect flow)
+        type: string
+      meta_phone_number_id:
+        description: Meta Cloud API fields (used when Provider == "meta")
+        type: string
+      meta_waba_id:
+        type: string
+      provider:
+        description: '"twilio" (default) or "meta"'
+        type: string
+      quality_rating:
         type: string
     type: object
   github_com_the-monkeys_freerangenotify_internal_domain_auth.InviteMemberRequest:
@@ -489,6 +570,98 @@ definitions:
     - source_env_id
     - target_env_id
     type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Action:
+    properties:
+      label:
+        type: string
+      style:
+        description: primary | danger | default
+        type: string
+      type:
+        description: link | submit | dismiss
+        type: string
+      url:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment:
+    properties:
+      alt_text:
+        type: string
+      content_base64:
+        description: |-
+          New optional fields (file-attachments feature). All omitempty —
+          callers using only URL continue to work unchanged.
+        type: string
+      content_id:
+        description: RFC 2392 cid:* token for inline HTML email embed
+        type: string
+      disposition:
+        description: '"attachment" (default) | "inline"'
+        type: string
+      file_id:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+      type:
+        description: image | video | file | audio
+        type: string
+      url:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Field:
+    properties:
+      inline:
+        type: boolean
+      key:
+        type: string
+      value:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention:
+    properties:
+      display:
+        type: string
+      platform:
+        description: discord | slack | teams
+        type: string
+      platform_id:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll:
+    properties:
+      choices:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.PollChoice'
+        type: array
+      duration_hours:
+        type: integer
+      multi_select:
+        type: boolean
+      question:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.PollChoice:
+    properties:
+      emoji:
+        type: string
+      label:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_notification.Style:
+    properties:
+      color:
+        description: hex override, e.g. "#3498DB"
+        type: string
+      severity:
+        description: info | success | warning | danger
+        type: string
+    type: object
   github_com_the-monkeys_freerangenotify_internal_domain_resourcelink.ImportRequest:
     properties:
       resources:
@@ -518,6 +691,14 @@ definitions:
     - TypeDigest
     - TypeTopic
     - TypeProvider
+  github_com_the-monkeys_freerangenotify_internal_domain_template.AttributeVar:
+    properties:
+      name:
+        type: string
+      type:
+        description: '"image", "url", "attribute"'
+        type: string
+    type: object
   github_com_the-monkeys_freerangenotify_internal_domain_template.ControlValues:
     additionalProperties: true
     type: object
@@ -589,6 +770,9 @@ definitions:
         maxLength: 255
         minLength: 1
         type: string
+      on_subscribe_trigger_id:
+        description: 'Phase 4: workflow to trigger on subscribe'
+        type: string
     required:
     - key
     - name
@@ -601,6 +785,9 @@ definitions:
       name:
         maxLength: 255
         minLength: 1
+        type: string
+      on_subscribe_trigger_id:
+        description: 'Phase 4: workflow to trigger on subscribe'
         type: string
     type: object
   github_com_the-monkeys_freerangenotify_internal_domain_user.CategoryPreference:
@@ -682,6 +869,33 @@ definitions:
       max_per_hour:
         type: integer
     type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundConfig:
+    properties:
+      auto_reply_template_id:
+        type: string
+      auto_reply_text:
+        type: string
+      enabled:
+        type: boolean
+      route_action:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundRouteAction'
+      webhook_forward_url:
+        type: string
+      workflow_trigger_id:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_domain_whatsapp.InboundRouteAction:
+    enum:
+    - auto_reply
+    - workflow_trigger
+    - webhook_forward
+    - inbox
+    type: string
+    x-enum-varnames:
+    - RouteAutoReply
+    - RouteWorkflow
+    - RouteWebhookForward
+    - RouteInbox
   github_com_the-monkeys_freerangenotify_internal_domain_workflow.Condition:
     properties:
       field:
@@ -718,6 +932,8 @@ definitions:
         maxLength: 100
         minLength: 3
         type: string
+      status:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.WorkflowStatus'
       steps:
         items:
           $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.Step'
@@ -800,6 +1016,19 @@ definitions:
     - StepTypeDelay
     - StepTypeDigest
     - StepTypeCondition
+  github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerByTopicRequest:
+    properties:
+      payload:
+        additionalProperties: {}
+        type: object
+      topic_id:
+        type: string
+      trigger_id:
+        type: string
+    required:
+    - topic_id
+    - trigger_id
+    type: object
   github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerRequest:
     properties:
       overrides:
@@ -870,6 +1099,10 @@ definitions:
         type: boolean
       last_login_at:
         type: string
+      phone:
+        type: string
+      phone_verified:
+        type: boolean
       updated_at:
         type: string
       user_id:
@@ -883,6 +1116,8 @@ definitions:
         type: string
       refresh_token:
         type: string
+      require_trial_welcome:
+        type: boolean
       user:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AdminUserResponse'
     type: object
@@ -908,6 +1143,15 @@ definitions:
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BroadcastNotificationRequest:
     properties:
+      actions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action'
+        type: array
+      attachments:
+        description: Rich webhook content (Phase 7).
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment'
+        type: array
       body:
         type: string
       category:
@@ -920,10 +1164,25 @@ definitions:
         - webhook
         - in_app
         - sse
+        - whatsapp
         type: string
       data:
         additionalProperties: true
         type: object
+      fields:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field'
+        type: array
+      mentions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention'
+        type: array
+      metadata:
+        additionalProperties: true
+        description: 'Digest: {"digest_key": "rule_key"}'
+        type: object
+      poll:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll'
       priority:
         enum:
         - low
@@ -933,21 +1192,33 @@ definitions:
         type: string
       scheduled_at:
         type: string
+      style:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style'
       template_id:
+        description: required when workflow_trigger_id is empty
         type: string
       title:
+        type: string
+      topic_key:
+        description: 'Phase 2: limit to topic subscribers'
         type: string
       webhook_target:
         type: string
       webhook_url:
         type: string
+      workflow_trigger_id:
+        description: 'Phase 2: trigger workflow for each recipient'
+        type: string
     required:
     - channel
     - priority
-    - template_id
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkCreateUserRequest:
     properties:
+      skip_existing:
+        type: boolean
+      upsert:
+        type: boolean
       users:
         items:
           $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.CreateUserRequest'
@@ -965,11 +1236,24 @@ definitions:
         items:
           $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkUserError'
         type: array
+      skipped:
+        type: integer
       total:
+        type: integer
+      updated:
         type: integer
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendNotificationRequest:
     properties:
+      actions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action'
+        type: array
+      attachments:
+        description: Rich webhook content (Phase 7).
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment'
+        type: array
       body:
         type: string
       category:
@@ -981,10 +1265,27 @@ definitions:
         - sms
         - webhook
         - in_app
+        - whatsapp
         type: string
       data:
         additionalProperties: true
         type: object
+      fields:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field'
+        type: array
+      media_url:
+        type: string
+      mentions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention'
+        type: array
+      metadata:
+        additionalProperties: true
+        description: 'Digest: {"digest_key": "rule_key"}'
+        type: object
+      poll:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll'
       priority:
         enum:
         - low
@@ -994,6 +1295,8 @@ definitions:
         type: string
       scheduled_at:
         type: string
+      style:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style'
       template_id:
         type: string
       title:
@@ -1004,10 +1307,8 @@ definitions:
         minItems: 1
         type: array
     required:
-    - body
     - channel
     - priority
-    - title
     - user_ids
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.BulkSendResponse:
@@ -1052,6 +1353,8 @@ definitions:
         type: string
       settings:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings'
+      tenant_id:
+        type: string
       webhook_url:
         type: string
       webhooks:
@@ -1066,6 +1369,8 @@ definitions:
       email:
         type: string
       external_id:
+        type: string
+      full_name:
         type: string
       language:
         type: string
@@ -1088,6 +1393,45 @@ definitions:
         type: boolean
       sms_enabled:
         type: boolean
+      whatsapp_enabled:
+        type: boolean
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DeleteAccountRequest:
+    properties:
+      confirm_text:
+        type: string
+      password:
+        minLength: 8
+        type: string
+    required:
+    - confirm_text
+    - password
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileListResponse:
+    properties:
+      files:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse:
+    properties:
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      file_id:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+      sha256:
+        type: string
+      size:
+        type: integer
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ForgotPasswordRequest:
     properties:
@@ -1114,13 +1458,36 @@ definitions:
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.NotificationContentResponse:
     properties:
+      actions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action'
+        type: array
+      attachments:
+        description: Rich webhook content (Phase 7).
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment'
+        type: array
       body:
         type: string
       data:
         additionalProperties: true
         type: object
+      fields:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field'
+        type: array
+      media_url:
+        type: string
+      mentions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention'
+        type: array
       notification:
         type: string
+      poll:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll'
+      style:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style'
       title:
         type: string
     type: object
@@ -1174,13 +1541,117 @@ definitions:
       user_id:
         type: string
     type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResendRequest:
+    properties:
+      request_id:
+        type: string
+    required:
+    - request_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse:
+    properties:
+      expires_in:
+        type: integer
+      message:
+        type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendRequest:
+    properties:
+      alphanumeric:
+        description: default false (numeric)
+        type: boolean
+      channel:
+        enum:
+        - sms
+        - whatsapp
+        - email
+        type: string
+      external_id:
+        description: caller-owned user identifier
+        type: string
+      length:
+        description: 4-10, default 6
+        type: integer
+      max_attempts:
+        description: 1-10, default 5
+        type: integer
+      recipient:
+        description: raw email / E.164 phone
+        type: string
+      template_body:
+        description: optional BYO body with {{code}}
+        type: string
+      template_data:
+        additionalProperties: true
+        type: object
+      ttl_seconds:
+        description: 30-900, default 300
+        type: integer
+      user_id:
+        description: internal FRN user_id (UUID)
+        type: string
+    required:
+    - channel
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse:
+    properties:
+      channel:
+        type: string
+      expires_at:
+        type: string
+      max_attempts:
+        type: integer
+      notification_id:
+        type: string
+      request_id:
+        type: string
+      ttl_seconds:
+        type: integer
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyRequest:
+    properties:
+      code:
+        maxLength: 10
+        minLength: 4
+        type: string
+      request_id:
+        type: string
+    required:
+    - code
+    - request_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse:
+    properties:
+      attempts_remaining:
+        type: integer
+      error:
+        type: string
+      request_id:
+        type: string
+      verified:
+        type: boolean
+      verified_at:
+        type: string
+    type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.QuickSendRequest:
     properties:
+      actions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action'
+        type: array
+      attachments:
+        description: |-
+          Rich webhook content. All optional. Only honored when the resolved
+          channel is webhook-like (webhook, discord, slack, teams). Per-provider
+          rendering capabilities are documented in API_DOCUMENTATION.md.
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment'
+        type: array
       body:
         type: string
       channel:
         description: |-
-          Channel: push, email, sms, webhook, in_app, sse.
+          Channel: push, email, sms, webhook, in_app, sse, whatsapp, discord, slack, teams.
           Optional if Template is specified (inferred from template).
         enum:
         - push
@@ -1189,17 +1660,37 @@ definitions:
         - webhook
         - in_app
         - sse
+        - whatsapp
+        - discord
+        - slack
+        - teams
         type: string
       data:
         additionalProperties: true
         description: Template variables (used when Template is specified).
         type: object
+      digest_key:
+        description: 'Optional: digest rule key — notifications with this key are
+          batched by the matching digest rule'
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field'
+        type: array
+      mentions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention'
+        type: array
+      poll:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll'
       priority:
         description: 'Priority: low, normal, high, critical. Defaults to "normal".'
         type: string
       scheduled_at:
         description: Optional scheduling
         type: string
+      style:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style'
       subject:
         description: Inline content (used when Template is empty).
         type: string
@@ -1212,13 +1703,21 @@ definitions:
         description: |-
           Recipient: email address, external user ID, or internal UUID.
           If recipient doesn't exist as a user, auto-creates one (email only).
+          Optional for webhook-like channels (webhook, discord, slack, teams).
+        type: string
+      webhook_target:
+        description: |-
+          Optional: name of a registered custom webhook provider on the app
+          (e.g. "Slack Alerts"). When set, the worker dispatches through that
+          provider — which knows its kind (slack/discord/teams/generic) and
+          renders the channel-specific payload shape. Prefer this over
+          WebhookURL when the destination is a registered provider, so the
+          message is posted in a shape the destination accepts.
         type: string
       webhook_url:
         description: 'Optional: explicit webhook URL (for webhook channel without
           user)'
         type: string
-    required:
-    - to
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RecurrenceRequest:
     properties:
@@ -1253,6 +1752,13 @@ definitions:
     - full_name
     - password
     type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResendOTPRequest:
+    properties:
+      email:
+        type: string
+    required:
+    - email
+    type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResetPasswordRequest:
     properties:
       new_password:
@@ -1266,6 +1772,17 @@ definitions:
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SendNotificationRequest:
     properties:
+      actions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Action'
+        type: array
+      attachments:
+        description: |-
+          Rich webhook content (Phase 7 — Webhook channel expansion).
+          Domain types are reused so existing client SDKs serialize identically.
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Attachment'
+        type: array
       body:
         type: string
       category:
@@ -1278,10 +1795,27 @@ definitions:
         - webhook
         - in_app
         - sse
+        - whatsapp
         type: string
       data:
         additionalProperties: true
         type: object
+      fields:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Field'
+        type: array
+      media_url:
+        type: string
+      mentions:
+        items:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Mention'
+        type: array
+      metadata:
+        additionalProperties: true
+        description: 'Digest: {"digest_key": "rule_key"} routes to digest batching'
+        type: object
+      poll:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Poll'
       priority:
         enum:
         - low
@@ -1293,6 +1827,8 @@ definitions:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.RecurrenceRequest'
       scheduled_at:
         type: string
+      style:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_notification.Style'
       template_id:
         type: string
       title:
@@ -1303,11 +1839,20 @@ definitions:
       webhook_target:
         type: string
       webhook_url:
-        description: New field
+        type: string
+      workflow_trigger_id:
+        description: 'Phase 3: trigger workflow after send'
         type: string
     required:
     - priority
     - template_id
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SignedURLResponse:
+    properties:
+      expires_at:
+        type: string
+      url:
+        type: string
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.TokenPairResponse:
     properties:
@@ -1329,6 +1874,8 @@ definitions:
         type: string
       settings:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.Settings'
+      tenant_id:
+        type: string
       webhook_url:
         type: string
       webhooks:
@@ -1379,6 +1926,13 @@ definitions:
         type: boolean
       enable_webhooks:
         type: boolean
+      inbound_webhook_config:
+        allOf:
+        - $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.InboundWebhookConfig'
+        description: 'Phase 7: inbound webhook (secret, event mapping)'
+      on_user_created_trigger_id:
+        description: 'Phase 5: workflow to trigger on user create'
+        type: string
       rate_limit:
         minimum: 1
         type: integer
@@ -1386,10 +1940,14 @@ definitions:
         maximum: 10
         minimum: 0
         type: integer
+      sms_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.SMSAppConfig'
       validation_config:
         $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.ValidationConfig'
       validation_url:
         type: string
+      whatsapp_config:
+        $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_application.WhatsAppAppConfig'
     type: object
   github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateStatusRequest:
     properties:
@@ -1414,6 +1972,8 @@ definitions:
       email:
         type: string
       external_id:
+        type: string
+      full_name:
         type: string
       language:
         type: string
@@ -1440,6 +2000,8 @@ definitions:
         type: string
       external_id:
         type: string
+      full_name:
+        type: string
       language:
         type: string
       phone:
@@ -1454,6 +2016,16 @@ definitions:
         type: string
       webhook_url:
         type: string
+    type: object
+  github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.VerifyOTPRequest:
+    properties:
+      email:
+        type: string
+      otp_code:
+        type: string
+    required:
+    - email
+    - otp_code
     type: object
   internal_interfaces_http_handlers.CheckInRequest:
     properties:
@@ -1474,9 +2046,21 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      kind:
+        enum:
+        - generic
+        - discord
+        - slack
+        - teams
+        type: string
       name:
         maxLength: 50
         minLength: 1
+        type: string
+      signature_version:
+        enum:
+        - v1
+        - v2
         type: string
       webhook_url:
         type: string
@@ -1496,7 +2080,7 @@ info:
     url: https://opensource.org/licenses/MIT
   termsOfService: http://swagger.io/terms/
   title: FreeRangeNotify API
-  version: 0.1.9-alpha
+  version: 1.0.15
 paths:
   /v1/admin/analytics/summary:
     get:
@@ -2973,6 +3557,43 @@ paths:
       tags:
       - Auth
   /v1/auth/me:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Password and confirmation text
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.DeleteAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete current account and all owned data
+      tags:
+      - Auth
     get:
       produces:
       - application/json
@@ -3046,10 +3667,10 @@ paths:
       produces:
       - application/json
       responses:
-        "201":
-          description: Created
+        "200":
+          description: OK
           schema:
-            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse'
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse'
         "400":
           description: Bad Request
           schema:
@@ -3061,6 +3682,37 @@ paths:
             additionalProperties: true
             type: object
       summary: Register a new user
+      tags:
+      - Auth
+  /v1/auth/resend-otp:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Email to resend OTP to
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.ResendOTPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Resend registration OTP
       tags:
       - Auth
   /v1/auth/reset-password:
@@ -3104,6 +3756,37 @@ paths:
     get:
       responses: {}
       summary: Redirect to SSO Identity Provider
+      tags:
+      - Auth
+  /v1/auth/verify-otp:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: OTP verification details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.VerifyOTPRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Verify registration OTP
       tags:
       - Auth
   /v1/digest-rules:
@@ -3289,6 +3972,235 @@ paths:
       summary: Update a digest rule
       tags:
       - Digest Rules
+  /v1/files:
+    get:
+      parameters:
+      - description: Page size (max 200, default 50)
+        in: query
+        name: limit
+        type: integer
+      - description: Page offset (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileListResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: List files
+      tags:
+      - Files
+    post:
+      consumes:
+      - multipart/form-data
+      description: Uploads a file to the tenant's namespace. Returned file_id can
+        be referenced from notification attachments.
+      parameters:
+      - description: File contents (max 50 MiB by default)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "413":
+          description: Request Entity Too Large
+          schema:
+            additionalProperties: true
+            type: object
+        "415":
+          description: Unsupported Media Type
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Upload a file
+      tags:
+      - Files
+  /v1/files/{id}:
+    delete:
+      parameters:
+      - description: File ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a file
+      tags:
+      - Files
+    get:
+      parameters:
+      - description: File ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.FileResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "410":
+          description: Gone
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get file metadata
+      tags:
+      - Files
+  /v1/files/{id}/content:
+    get:
+      description: Streams the file bytes back to the authenticated caller.
+      parameters:
+      - description: File ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "410":
+          description: Gone
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Stream file content
+      tags:
+      - Files
+  /v1/files/{id}/download-url:
+    get:
+      description: Returns a short-lived URL for unauthenticated download. TTL is
+        configured server-side (default 15 minutes).
+      parameters:
+      - description: File ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.SignedURLResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Mint a signed download URL
+      tags:
+      - Files
+  /v1/files/download/{id}:
+    get:
+      description: Downloads a file using a signed URL. Authentication is performed
+        by verifying the signature in the query string; no API key is required.
+      parameters:
+      - description: File ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Application ID embedded in the signed URL
+        in: query
+        name: app_id
+        required: true
+        type: string
+      - description: Unix expiry timestamp embedded in the signed URL
+        in: query
+        name: exp
+        required: true
+        type: integer
+      - description: HMAC-SHA256 signature
+        in: query
+        name: sig
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "410":
+          description: Gone
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Public signed download
+      tags:
+      - Files
   /v1/health:
     get:
       description: Check the health status of the API and its dependencies (Elasticsearch,
@@ -3675,6 +4587,144 @@ paths:
       summary: Send bulk notifications
       tags:
       - notifications
+  /v1/otp/resend:
+    post:
+      consumes:
+      - application/json
+      description: Re-issues a new code for an existing request_id (subject to 60s
+        cooldown). The previous code is invalidated and attempt counter is reset.
+      parameters:
+      - description: OTP resend request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPResendRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Resend an OTP
+      tags:
+      - OTP
+  /v1/otp/send:
+    post:
+      consumes:
+      - application/json
+      description: Generates a one-time passcode and dispatches it through SMS, WhatsApp,
+        or email via the standard notification pipeline. Subject to standard per-channel
+        credit billing.
+      parameters:
+      - description: OTP send request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Send an OTP
+      tags:
+      - OTP
+  /v1/otp/verify:
+    post:
+      consumes:
+      - application/json
+      description: Verifies a code against a previously-issued request_id. Uses constant-time
+        comparison and atomic attempt counting.
+      parameters:
+      - description: OTP verify request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.OTPVerifyResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Verify an OTP
+      tags:
+      - OTP
   /v1/playground/{id}:
     get:
       description: Retrieve all received webhook payloads for a playground session
@@ -4542,6 +5592,51 @@ paths:
       summary: Clone a library template
       tags:
       - Templates
+  /v1/templates/library/{name}/render:
+    post:
+      consumes:
+      - application/json
+      description: Render a pre-built library template without cloning it first
+      parameters:
+      - description: Library template name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Render request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/RenderTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Render a library template
+      tags:
+      - Templates
   /v1/topics:
     get:
       description: List all topics for the authenticated application
@@ -4908,6 +6003,10 @@ paths:
       - description: Filter by language
         in: query
         name: language
+        type: string
+      - description: Search email, name, user ID, external ID, or phone
+        in: query
+        name: search
         type: string
       produces:
       - application/json
@@ -5369,6 +6468,89 @@ paths:
       summary: Bulk create users
       tags:
       - Users
+  /v1/users/by-external-id/{external_id}:
+    get:
+      description: Retrieve a single user by their external_id within the authenticated
+        app
+      parameters:
+      - description: External ID
+        in: path
+        name: external_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Get a user by external ID
+      tags:
+      - Users
+    put:
+      consumes:
+      - application/json
+      description: Update a user directly by their external_id without internal ID
+        resolution
+      parameters:
+      - description: External ID
+        in: path
+        name: external_id
+        required: true
+        type: string
+      - description: User update request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_interfaces_http_dto.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Update a user by external ID
+      tags:
+      - Users
   /v1/workflows:
     get:
       description: List all workflows for the authenticated application
@@ -5695,6 +6877,46 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Trigger a workflow
+      tags:
+      - Workflows
+  /v1/workflows/trigger-by-topic:
+    post:
+      consumes:
+      - application/json
+      description: Trigger a workflow for all users subscribed to a topic
+      parameters:
+      - description: Trigger by topic request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_the-monkeys_freerangenotify_internal_domain_workflow.TriggerByTopicRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - ApiKeyAuth: []
+      summary: Trigger workflow for topic subscribers
       tags:
       - Workflows
 schemes:

@@ -349,6 +349,35 @@ func main() {
 	processor.SetWhatsAppRichTemplateService(richTplSvc)
 	logger.Info("WhatsApp rich-template resolver wired into worker")
 
+	// Wire the attachment resolver so providers (currently SMTP) can
+	// materialise notification.Attachment specs (URL / inline base64 /
+	// file_id) into byte-ready payloads via ctx injection. Always wired —
+	// nil-safe when no file-store backend is configured.
+	if c.AttachmentResolver != nil {
+		processor.SetAttachmentResolver(c.AttachmentResolver)
+		logger.Info("Attachment resolver wired into worker",
+			zap.Bool("file_store_enabled", c.FileService != nil))
+	}
+
+	// Wire signed-URL generator so URL-only channels (Slack, Teams) can
+	// resolve file_id attachments to publicly downloadable links.
+	if c.FileSigner != nil && cfg.Server.PublicURL != "" {
+		signer := c.FileSigner
+		baseURL := cfg.Server.PublicURL
+		processor.SetFileDownloadURL(func(appID, fileID string) string {
+			exp, sig := signer.Sign(appID, fileID)
+			return fmt.Sprintf("%s/v1/files/download/%s?exp=%d&sig=%s", baseURL, fileID, exp, sig)
+		})
+		logger.Info("File download URL signer wired into worker")
+	}
+
+	// File orphan cleanup: wire enqueuer into FileService + start drain loop.
+	if c.FileService != nil && c.FileStore != nil {
+		c.FileService.SetCleanupEnqueuer(NewFileCleanupEnqueuer(c.RedisClient))
+		go StartFileCleanupLoop(processorCtx, c.RedisClient, c.FileStore, logger)
+		logger.Info("File cleanup loop started")
+	}
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
