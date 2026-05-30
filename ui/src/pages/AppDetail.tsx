@@ -331,7 +331,7 @@ const AppDetail: React.FC = () => {
                             <AppNotifications apiKey={app.api_key} webhooks={webhooks} onUnreadCount={handleUnreadCount} />
                         )}
 
-                        {app && activeTab === 'files' && (
+                        {activeTab === 'files' && (
                             <AppFiles apiKey={app.api_key} />
                         )}
 

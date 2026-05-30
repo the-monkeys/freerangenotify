@@ -2,7 +2,9 @@ package notification
 
 import (
 	"context"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // attachmentInlineMaxEncoded caps the base64-encoded length of an inline
@@ -10,6 +12,93 @@ import (
 // enforced at the domain boundary; per-channel limits are stricter and
 // enforced at the provider layer.
 const attachmentInlineMaxEncoded = 14 * 1024 * 1024
+
+// containsControlChar reports whether s contains any Unicode control
+// character (tab, newline, NUL, etc.). Used by Content.Validate to reject
+// identifier-like attachment fields that would otherwise corrupt a downstream
+// URL parse or document lookup.
+func containsControlChar(s string) bool {
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidFileID enforces the FRN file-id shape so the resolver cannot be
+// tricked into using the file_id slot as a URL/path. The id space is
+// intentionally loose ("file_" + arbitrary tail) because tests and seed
+// scripts inject simple names like "file_test_1"; we therefore reject only
+// the unambiguous-misuse characters (`/`, `:`, whitespace, `?`, `#`) rather
+// than enforcing a strict hex layout.
+func isValidFileID(id string) bool {
+	if !strings.HasPrefix(id, "file_") || len(id) <= len("file_") {
+		return false
+	}
+	for _, r := range id {
+		switch r {
+		case '/', '\\', ':', '?', '#', ' ', '\t', '\n', '\r':
+			return false
+		}
+	}
+	return true
+}
+
+// ValidateAttachments enforces all attachment invariants and normalises
+// identifier-like fields in place. Shared by Content.Validate (worker /
+// persistence path) and SendRequest.Validate / BulkSendRequest.Validate
+// (API ingress path) so that bad payloads cannot reach the queue.
+func ValidateAttachments(atts []Attachment) error {
+	if len(atts) > 10 {
+		return ErrTooManyAttachments
+	}
+	for i := range atts {
+		a := &atts[i]
+		a.URL = strings.TrimSpace(a.URL)
+		a.FileID = strings.TrimSpace(a.FileID)
+		a.ContentBase64 = strings.TrimSpace(a.ContentBase64)
+		a.Name = strings.TrimSpace(a.Name)
+		a.MimeType = strings.TrimSpace(a.MimeType)
+		a.ContentID = strings.TrimSpace(a.ContentID)
+		a.Disposition = strings.TrimSpace(a.Disposition)
+
+		if a.Type == "" {
+			return ErrInvalidAttachment
+		}
+		if containsControlChar(a.FileID) || containsControlChar(a.URL) {
+			return ErrInvalidAttachment
+		}
+		if a.FileID != "" && !isValidFileID(a.FileID) {
+			return ErrInvalidFileID
+		}
+		sources := 0
+		if a.URL != "" {
+			sources++
+		}
+		if a.ContentBase64 != "" {
+			sources++
+		}
+		if a.FileID != "" {
+			sources++
+		}
+		switch sources {
+		case 0:
+			return ErrAttachmentMissingSource
+		case 1:
+			// ok
+		default:
+			return ErrAmbiguousAttachmentSource
+		}
+		if a.ContentBase64 != "" && len(a.ContentBase64) > attachmentInlineMaxEncoded {
+			return ErrAttachmentTooLarge
+		}
+		if a.Disposition != "" && a.Disposition != "attachment" && a.Disposition != "inline" {
+			return ErrInvalidAttachment
+		}
+	}
+	return nil
+}
 
 // Channel represents notification delivery channels
 type Channel string
@@ -252,41 +341,8 @@ type Style struct {
 // legacy fields (Title / Body / Data / MediaURL) are populated, so existing
 // callers see no behavior change.
 func (c *Content) Validate() error {
-	if len(c.Attachments) > 10 {
-		return ErrTooManyAttachments
-	}
-	for i := range c.Attachments {
-		a := c.Attachments[i]
-		if a.Type == "" {
-			return ErrInvalidAttachment
-		}
-		// Exactly one of {URL, ContentBase64, FileID} must be set.
-		sources := 0
-		if a.URL != "" {
-			sources++
-		}
-		if a.ContentBase64 != "" {
-			sources++
-		}
-		if a.FileID != "" {
-			sources++
-		}
-		switch sources {
-		case 0:
-			return ErrAttachmentMissingSource
-		case 1:
-			// ok
-		default:
-			return ErrAmbiguousAttachmentSource
-		}
-		// Hard cap on inline bytes (base64-encoded length).
-		// 14 MB encoded ≈ 10.5 MB decoded — beyond per-channel safety net.
-		if a.ContentBase64 != "" && len(a.ContentBase64) > attachmentInlineMaxEncoded {
-			return ErrAttachmentTooLarge
-		}
-		if a.Disposition != "" && a.Disposition != "attachment" && a.Disposition != "inline" {
-			return ErrInvalidAttachment
-		}
+	if err := ValidateAttachments(c.Attachments); err != nil {
+		return err
 	}
 
 	if len(c.Actions) > 5 {
@@ -642,6 +698,9 @@ func (r *SendRequest) Validate() error {
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime
 	}
+	if err := ValidateAttachments(r.Attachments); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -692,6 +751,9 @@ func (r *BulkSendRequest) Validate() error {
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {
 		return ErrInvalidScheduleTime
+	}
+	if err := ValidateAttachments(r.Attachments); err != nil {
+		return err
 	}
 	return nil
 }

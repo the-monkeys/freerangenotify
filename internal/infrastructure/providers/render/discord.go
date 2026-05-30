@@ -11,6 +11,27 @@ import (
 
 type DiscordRenderOptions struct {
 	NativePolls bool
+	// AttachmentRefs is aligned 1:1 with notif.Content.Attachments by index.
+	// A non-empty UploadedFilename signals that the attachment at that index
+	// will be uploaded as a `files[N]` part in the multipart body Discord
+	// receives. The renderer uses `attachment://<filename>` references for
+	// those instead of a URL, per Discord's webhook upload contract.
+	//
+	// When AttachmentRefs is nil or shorter than Attachments, the renderer
+	// falls back to URL-only behavior — preserving legacy/JSON-only callers.
+	AttachmentRefs []DiscordAttachmentRef
+}
+
+// DiscordAttachmentRef captures the multipart-side identity of an attachment
+// so the embed renderer and the multipart writer agree on filenames. Two
+// values rendered with different filenames would produce broken
+// `attachment://` references.
+type DiscordAttachmentRef struct {
+	// UploadedFilename is the exact filename that will appear in the
+	// multipart part's `Content-Disposition: filename=` for this attachment.
+	// Must be unique across the request; the custom-provider layer is
+	// responsible for de-duplication.
+	UploadedFilename string
 }
 
 // BuildDiscordPayload constructs a Discord webhook payload with embeds.
@@ -51,15 +72,45 @@ func BuildDiscordPayloadWithOptions(notif *notification.Notification, opts Disco
 		embed["fields"] = fields
 	}
 
-	// --- First image attachment → embed image, additional → extra embeds ---
+	// --- Attachments → embed image / video / download field, with
+	//                  attachment:// references for multipart-uploaded files
+	//
+	// Routing matrix (per Attachment, by source × type):
+	//
+	//   url  + image           → embed.image.url = url          (first), extra → new embed
+	//   url  + video           → embed.video.url = url
+	//   url  + file/audio/...  → "[Download](url)" field
+	//   ref  + image           → embed.image.url = attachment://<filename>
+	//   ref  + video           → omit; Discord renders the uploaded file natively
+	//   ref  + file/audio/...  → omit; Discord renders the uploaded file natively
+	//
+	// "ref" = AttachmentRefs[i].UploadedFilename is non-empty (i.e. this
+	// attachment will ride the multipart body as files[N]). Skipping
+	// image-less ref attachments from the embed avoids the Discord
+	// `400 {"embeds":["N"]}` rejection that "embed.image.url = ''" produces.
 	embeds := []map[string]interface{}{embed}
 
 	if len(c.Attachments) > 0 {
 		first := true
-		for _, a := range c.Attachments {
+		for i, a := range c.Attachments {
+			var uploadedName string
+			if i < len(opts.AttachmentRefs) {
+				uploadedName = opts.AttachmentRefs[i].UploadedFilename
+			}
+
 			switch a.Type {
 			case "image":
-				img := map[string]interface{}{"url": a.URL}
+				var imgURL string
+				switch {
+				case a.URL != "":
+					imgURL = a.URL
+				case uploadedName != "":
+					imgURL = "attachment://" + uploadedName
+				default:
+					// No URL and no uploaded file — nothing to reference.
+					continue
+				}
+				img := map[string]interface{}{"url": imgURL}
 				if first {
 					embed["image"] = img
 					first = false
@@ -71,9 +122,19 @@ func BuildDiscordPayloadWithOptions(notif *notification.Notification, opts Disco
 					})
 				}
 			case "video":
-				embed["video"] = map[string]interface{}{"url": a.URL}
+				// Discord's embed.video object only honors a public URL.
+				// `attachment://` is unsupported here; the uploaded video
+				// appears as a Discord-hosted file under the embed instead.
+				if a.URL != "" {
+					embed["video"] = map[string]interface{}{"url": a.URL}
+				}
 			default:
-				// file/audio: append as linked field
+				// file/audio/document/etc.
+				if a.URL == "" {
+					// Uploaded via multipart; Discord renders the file
+					// natively below the embed — no field needed.
+					continue
+				}
 				label := a.Name
 				if label == "" {
 					label = a.Type
@@ -230,11 +291,11 @@ func buildDiscordNativePoll(p *notification.Poll) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"question": map[string]interface{}{"text": p.Question},
-		"answers":  answers,
-		"duration": d,
+		"question":          map[string]interface{}{"text": p.Question},
+		"answers":           answers,
+		"duration":          d,
 		"allow_multiselect": p.MultiSelect,
-		"layout_type": 1,
+		"layout_type":       1,
 	}
 }
 

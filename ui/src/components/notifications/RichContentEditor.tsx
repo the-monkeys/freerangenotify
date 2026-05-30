@@ -256,7 +256,23 @@ const AttachmentRow: React.FC<AttachmentRowProps> = ({ attachment, apiKey, onCha
                     {source === 'file_id' && (
                         <Input
                             value={attachment.file_id ?? ''}
-                            onChange={(e) => onChange({ ...attachment, file_id: e.target.value })}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                // If the user pasted a URL into the File ID
+                                // input, auto-correct: route it to the URL
+                                // source instead. Mirrors the server-side
+                                // ErrInvalidFileID check and prevents the
+                                // notification from dead-lettering on the
+                                // worker for "file repo: get: [400]".
+                                if (/^https?:\/\//i.test(v.trim())) {
+                                    setError("That looks like a URL — switched source to URL. Use File ID only for ids returned by POST /v1/files.");
+                                    onChange({ ...attachment, file_id: undefined, url: v.trim() });
+                                    setSource('url');
+                                    return;
+                                }
+                                setError(null);
+                                onChange({ ...attachment, file_id: v });
+                            }}
                             placeholder="file_xxxxxxxxxxxx"
                             className="h-8 text-xs flex-1 font-mono"
                         />
@@ -506,7 +522,7 @@ const RichContentEditor: React.FC<RichContentEditorProps> = ({ value, onChange, 
                                 This is the exact shape sent to the API as top-level rich fields (not inside template data).
                             </div>
                             <pre className="max-h-[260px] overflow-auto rounded bg-black/90 p-3 text-[11px] text-green-200">
-{JSON.stringify(payloadPreview, null, 2)}
+                                {JSON.stringify(payloadPreview, null, 2)}
                             </pre>
                         </div>
                     </TabsContent>

@@ -64,6 +64,12 @@ type VirusScanner interface {
 	Scan(ctx context.Context, name, mimeType string, content []byte) error
 }
 
+// CleanupEnqueuer accepts orphaned file references for async cleanup.
+// The implementation pushes to a Redis set; the worker drains it.
+type CleanupEnqueuer interface {
+	EnqueueBlobDelete(ctx context.Context, appID, fileID string)
+}
+
 // FileService orchestrates file uploads, retrieval, listing and deletion.
 //
 // Upload is a single end-to-end transaction: validate metadata -> stream
@@ -71,11 +77,12 @@ type VirusScanner interface {
 // after the bytes hit the store, the bytes are removed so we do not leak
 // orphaned objects.
 type FileService struct {
-	store     domainfile.FileStore
-	repo      domainfile.Repository
-	cfg       FileServiceConfig
-	allowed   map[string]struct{}
-	logger    *zap.Logger
+	store   domainfile.FileStore
+	repo    domainfile.Repository
+	cfg     FileServiceConfig
+	allowed map[string]struct{}
+	logger  *zap.Logger
+	cleanup CleanupEnqueuer
 	// now and idGen are overridable for tests.
 	now   func() time.Time
 	idGen func() string
@@ -239,16 +246,22 @@ func (s *FileService) OpenContent(ctx context.Context, appID, fileID string) (*d
 	return obj, rc, nil
 }
 
+// SetCleanupEnqueuer wires async orphan cleanup. Optional — nil disables it.
+func (s *FileService) SetCleanupEnqueuer(c CleanupEnqueuer) { s.cleanup = c }
+
 // Delete removes the file and its metadata. Cross-tenant requests return
-// ErrFileNotFound. Best-effort cleanup: if the metadata delete succeeds but
-// the bytes delete fails, the bytes are orphaned and the error is logged.
+// ErrFileNotFound. If the metadata delete succeeds but the bytes delete fails,
+// the file_id is enqueued for async cleanup by the worker.
 func (s *FileService) Delete(ctx context.Context, appID, fileID string) error {
 	if err := s.repo.Delete(ctx, appID, fileID); err != nil {
 		return err
 	}
 	if err := s.store.Delete(ctx, appID, fileID); err != nil && !errors.Is(err, domainfile.ErrFileNotFound) {
-		s.logger.Warn("file service: bytes orphaned after metadata delete",
+		s.logger.Warn("file service: blob delete failed, enqueuing cleanup",
 			zap.String("app_id", appID), zap.String("file_id", fileID), zap.Error(err))
+		if s.cleanup != nil {
+			s.cleanup.EnqueueBlobDelete(ctx, appID, fileID)
+		}
 	}
 	return nil
 }

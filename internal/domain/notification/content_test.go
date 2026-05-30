@@ -98,6 +98,46 @@ func TestContent_Validate_Attachment_FileIDOnly(t *testing.T) {
 	}
 }
 
+func TestContent_Validate_Attachment_FileIDFormat(t *testing.T) {
+	// Each entry must produce ErrInvalidFileID. The motivating bug was a
+	// caller pasting a URL into the file_id slot; the resolver then asked
+	// ES for `/files/_doc/<url>` and the notification dead-lettered after
+	// pointless retries. Validation must reject the obvious misuse
+	// patterns before the doc ever enters the queue.
+	bad := []string{
+		"https://example.com/photo.jpg", // full URL
+		"http://example.com/x.png",      // http URL
+		"/etc/passwd",                   // absolute path
+		"file_with/slash",               // path separator
+		"file_with:colon",               // scheme separator
+		"file_with?q=1",                 // query
+		"file_with#frag",                // fragment
+		"file_with space",               // whitespace
+		"FILE_uppercase",                // wrong prefix case
+		"random_id",                     // missing prefix
+		"file_",                         // empty tail
+	}
+	for _, id := range bad {
+		c := Content{Attachments: []Attachment{{Type: "file", FileID: id}}}
+		if err := c.Validate(); err != ErrInvalidFileID {
+			t.Errorf("file_id %q: want ErrInvalidFileID, got %v", id, err)
+		}
+	}
+
+	good := []string{
+		"file_abc",
+		"file_1e7570ccb062489bb18c8ab432108aa5",
+		"file_test_1", // test-suite shape
+		"file_with-dash_and.underscore",
+	}
+	for _, id := range good {
+		c := Content{Attachments: []Attachment{{Type: "file", FileID: id}}}
+		if err := c.Validate(); err != nil {
+			t.Errorf("file_id %q should validate; got %v", id, err)
+		}
+	}
+}
+
 func TestContent_Validate_Attachment_InlineBase64Only(t *testing.T) {
 	c := Content{Attachments: []Attachment{{Type: "file", ContentBase64: "JVBERi0xLjQK"}}}
 	if err := c.Validate(); err != nil {

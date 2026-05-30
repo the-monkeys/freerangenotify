@@ -1739,22 +1739,34 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
 
-                                {/* Rich Content Editor — visible for any channel whose provider can carry attachments / rich blocks. */}
-                                {quickSelectedTemplate && ATTACHMENT_CAPABLE_CHANNELS.includes(quickSelectedTemplate.channel) && (
-                                    <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
-                                        <RichContentEditor value={quickRichContent} onChange={setQuickRichContent} apiKey={apiKey} />
-                                        {!isRichContentEmpty(quickRichContent) && (
-                                            <ChannelPreview
-                                                channel={quickSelectedTemplate.channel}
-                                                content={{
-                                                    title: quickSelectedTemplate.name,
-                                                    body: quickSelectedTemplate.body?.slice(0, 200),
-                                                    ...richContentToPayload(quickRichContent),
-                                                }}
-                                            />
-                                        )}
-                                    </div>
-                                )}
+                                {/* Rich Content Editor — reused for FRN templates, Twilio WhatsApp
+                                    Content templates, and freeform WhatsApp. The Twilio and freeform
+                                    paths target the whatsapp channel, which the worker's
+                                    AttachmentResolver supports. */}
+                                {(() => {
+                                    const quickEffectiveChannel: string | undefined =
+                                        (quickSelectedTwilioTemplate || isFreeformWhatsApp)
+                                            ? 'whatsapp'
+                                            : quickSelectedTemplate?.channel;
+                                    if (!quickEffectiveChannel || !ATTACHMENT_CAPABLE_CHANNELS.includes(quickEffectiveChannel)) {
+                                        return null;
+                                    }
+                                    return (
+                                        <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
+                                            <RichContentEditor value={quickRichContent} onChange={setQuickRichContent} apiKey={apiKey} />
+                                            {!isRichContentEmpty(quickRichContent) && quickSelectedTemplate && (
+                                                <ChannelPreview
+                                                    channel={quickSelectedTemplate.channel}
+                                                    content={{
+                                                        title: quickSelectedTemplate.name,
+                                                        body: quickSelectedTemplate.body?.slice(0, 200),
+                                                        ...richContentToPayload(quickRichContent),
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="flex justify-end gap-2">
                                     {quickTemplateId && (
@@ -2713,6 +2725,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* Rich Content Editor — reused for Broadcast. Gated on the
+                                            selected channel's provider capability. Uses the shared
+                                            advRichContent state so the existing handleBroadcastSubmit
+                                            spread of richContentToPayload(advRichContent) just works. */}
+                                        {ATTACHMENT_CAPABLE_CHANNELS.includes(formData.channel) && (
+                                            <div className="space-y-3 border-t border-border/50 pt-4 mt-2">
+                                                <RichContentEditor value={advRichContent} onChange={setAdvRichContent} apiKey={apiKey} />
+                                            </div>
+                                        )}
 
                                         <div className="flex justify-end pt-2">
                                             <div className="flex gap-2">

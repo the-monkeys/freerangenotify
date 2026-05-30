@@ -38,6 +38,7 @@ var (
 	ErrAttachmentMissingSource   = errors.New("content.attachments: each item requires exactly one of url, content_base64, or file_id")
 	ErrAmbiguousAttachmentSource = errors.New("content.attachments: provide exactly one of url, content_base64, or file_id per item")
 	ErrAttachmentTooLarge        = errors.New("content.attachments: inline payload exceeds the per-item size limit")
+	ErrInvalidFileID             = errors.New("content.attachments: file_id must start with 'file_' and contain no URL/path characters — use the url field for remote URLs")
 )
 
 // IsValidationError checks if an error is a validation error
@@ -51,5 +52,13 @@ func IsValidationError(err error) bool {
 		errors.Is(err, ErrInvalidNotificationID) ||
 		errors.Is(err, ErrInvalidStatus) ||
 		errors.Is(err, ErrTemplateRequired) ||
-		errors.Is(err, ErrTemplateNotFound)
+		errors.Is(err, ErrTemplateNotFound) ||
+		errors.Is(err, ErrTooManyAttachments) ||
+		errors.Is(err, ErrInvalidAttachment) ||
+		errors.Is(err, ErrAttachmentMissingSource) ||
+		errors.Is(err, ErrAmbiguousAttachmentSource) ||
+		errors.Is(err, ErrAttachmentTooLarge) ||
+		errors.Is(err, ErrInvalidFileID) ||
+		errors.Is(err, ErrTooManyActions) ||
+		errors.Is(err, ErrInvalidAction)
 }

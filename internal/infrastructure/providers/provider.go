@@ -112,6 +112,11 @@ const (
 	// (URL / inline base64 / file_id) without taking a hard dependency on
 	// the usecases or file-storage packages.
 	AttachmentResolverKey contextKey = "attachment_resolver"
+
+	// FileDownloadURLKey carries a FileDownloadURLFunc so providers that
+	// cannot accept binary uploads (Slack, Teams) can resolve file_id
+	// attachments to publicly accessible signed download URLs.
+	FileDownloadURLKey contextKey = "file_download_url"
 )
 
 // AttachmentResolveFunc resolves a slice of notification.Attachment specs
@@ -124,3 +129,7 @@ const (
 // On success the caller MUST invoke (*attachment.Resolved).Close on every
 // returned entry (attachment.CloseAll is a convenient helper).
 type AttachmentResolveFunc func(ctx context.Context, atts []notification.Attachment) ([]*attachment.Resolved, error)
+
+// FileDownloadURLFunc returns a signed public download URL for a file_id.
+// Returns "" if signing is unavailable or the file doesn't exist.
+type FileDownloadURLFunc func(appID, fileID string) string
