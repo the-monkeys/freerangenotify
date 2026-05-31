@@ -165,3 +165,51 @@ func applySubscriptionRenewal(
 		sub.Metadata[key] = value
 	}
 }
+
+type paidCreditAllocation struct {
+	PlanID        string
+	PlanName      string
+	Credits       int64
+	ValidityDays  int
+	RenewalMethod string
+	Metadata      map[string]interface{}
+}
+
+func applyPaidCreditAllocation(sub *license.Subscription, allocation paidCreditAllocation) {
+	if allocation.PlanID == "" {
+		allocation.PlanID = "pro"
+	}
+	if allocation.ValidityDays <= 0 {
+		allocation.ValidityDays = 365
+	}
+
+	now := time.Now().UTC()
+	creditExpiry := now.AddDate(0, 0, allocation.ValidityDays)
+
+	sub.Status = license.SubscriptionStatusActive
+	sub.Plan = allocation.PlanID
+	sub.CurrentPeriodStart = now
+	sub.CurrentPeriodEnd = creditExpiry
+	sub.CreditsTotal = allocation.Credits
+	sub.CreditsRemaining = allocation.Credits
+	sub.CreditsReserved = 0
+	sub.CreditsExpireAt = &creditExpiry
+	sub.UpdatedAt = now
+	if sub.Metadata == nil {
+		sub.Metadata = make(map[string]interface{})
+	}
+	sub.Metadata["billing_model"] = billing.BillingModelCredits
+	sub.Metadata["renewed_at"] = now.Format(time.RFC3339)
+	sub.Metadata["renewal_method"] = allocation.RenewalMethod
+	if allocation.PlanName != "" {
+		sub.Metadata["plan_name"] = allocation.PlanName
+	}
+	delete(sub.Metadata, "message_limit")
+	delete(sub.Metadata, "messages_sent")
+	delete(sub.Metadata, "base_message_limit")
+	delete(sub.Metadata, "rollover_messages")
+
+	for key, value := range allocation.Metadata {
+		sub.Metadata[key] = value
+	}
+}

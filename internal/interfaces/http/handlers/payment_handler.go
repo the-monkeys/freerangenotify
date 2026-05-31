@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,6 +18,7 @@ type PaymentHandler struct {
 	subRepo         license.Repository
 	appRepo         application.Repository
 	usageRepo       billing.UsageRepository
+	rateCardMgr     billing.RateCardManager
 	rateCard        map[string]billing.PlanTier
 	billingEnabled  bool
 	usageEnabled    bool
@@ -48,6 +50,160 @@ func (h *PaymentHandler) SetUsageRepo(repo billing.UsageRepository, enabled bool
 	h.usageEnabled = enabled
 }
 
+func (h *PaymentHandler) SetRateCardManager(manager billing.RateCardManager) {
+	h.rateCardMgr = manager
+}
+
+func isPaidActiveSubscription(sub *license.Subscription, now time.Time) bool {
+	if sub == nil || !sub.IsActiveAt(now) {
+		return false
+	}
+	return !billing.IsFreeTierPlan(sub.Plan)
+}
+
+func (h *PaymentHandler) resolveCheckoutPlan(planID string) (billing.PlanBundle, bool) {
+	if h.rateCardMgr != nil {
+		if plan, ok := h.rateCardMgr.GetCheckoutPlan(planID); ok {
+			return plan, true
+		}
+	}
+	id := planID
+	if id == "" {
+		id = "pro"
+	}
+	if plan, ok := billing.DefaultPlanBundles()[id]; ok {
+		return plan, true
+	}
+	if plan, ok := billing.ResolveCheckoutPlan(id); ok {
+		return billing.PlanBundle{
+			ID:              id,
+			Name:            id,
+			AmountPaisa:     plan.MonthlyFeePaisa,
+			Currency:        "INR",
+			CreditsIncluded: plan.CreditsIncluded,
+			ValidityDays:    365,
+			Active:          true,
+		}, true
+	}
+	return billing.PlanBundle{}, false
+}
+
+func (h *PaymentHandler) rateCardVersion() string {
+	if h.rateCardMgr == nil {
+		return "default"
+	}
+	return h.rateCardMgr.GetRateCardVersion()
+}
+
+func (h *PaymentHandler) pendingCheckoutAllocation(sub *license.Subscription, method string) (paidCreditAllocation, bool) {
+	if sub == nil {
+		return paidCreditAllocation{}, false
+	}
+	planID := metaString(sub.Metadata, "pending_checkout_plan_id", "")
+	if planID == "" {
+		planID = metaString(sub.Metadata, "pending_checkout_tier", "")
+	}
+	if planID == "" && sub.Plan != "" && !billing.IsFreeTierPlan(sub.Plan) {
+		planID = sub.Plan
+	}
+	if planID == "" {
+		return paidCreditAllocation{}, false
+	}
+
+	credits := metaInt64(sub.Metadata, "pending_checkout_credits", 0)
+	validityDays := metaInt(sub.Metadata, "pending_checkout_validity_days", 365)
+	amountPaisa := metaInt64(sub.Metadata, "pending_checkout_amount_paisa", 0)
+	if amountPaisa == 0 {
+		amountPaisa = metaInt64(sub.Metadata, "pending_checkout_amount", 0)
+	}
+	currency := metaString(sub.Metadata, "pending_checkout_currency", "INR")
+	planName := metaString(sub.Metadata, "pending_checkout_plan_name", planID)
+	rateCardVersion := metaString(sub.Metadata, "pending_checkout_rate_card_version", h.rateCardVersion())
+
+	if credits <= 0 {
+		if plan, ok := h.resolveCheckoutPlan(planID); ok {
+			credits = plan.CreditsIncluded
+			if validityDays <= 0 {
+				validityDays = plan.ValidityDays
+			}
+			if amountPaisa <= 0 {
+				amountPaisa = plan.AmountPaisa
+			}
+			if currency == "" {
+				currency = plan.Currency
+			}
+			if planName == "" {
+				planName = plan.Name
+			}
+		} else if plan, ok := billing.ResolveRenewalPlan(planID); ok {
+			credits = plan.CreditsIncluded
+			if amountPaisa <= 0 {
+				amountPaisa = plan.MonthlyFeePaisa
+			}
+		}
+	}
+	if credits <= 0 {
+		return paidCreditAllocation{}, false
+	}
+	if validityDays <= 0 {
+		validityDays = 365
+	}
+
+	return paidCreditAllocation{
+		PlanID:        planID,
+		PlanName:      planName,
+		Credits:       credits,
+		ValidityDays:  validityDays,
+		RenewalMethod: method,
+		Metadata: map[string]interface{}{
+			"last_paid_amount_paisa": amountPaisa,
+			"last_paid_currency":     currency,
+			"last_paid_credits":      credits,
+			"last_paid_plan_id":      planID,
+			"last_rate_card_version": rateCardVersion,
+		},
+	}, true
+}
+
+func clearPendingCheckoutMetadata(meta map[string]interface{}) {
+	delete(meta, "pending_checkout_tier")
+	delete(meta, "pending_checkout_plan_id")
+	delete(meta, "pending_checkout_plan_name")
+	delete(meta, "pending_checkout_order_id")
+	delete(meta, "pending_checkout_amount")
+	delete(meta, "pending_checkout_amount_paisa")
+	delete(meta, "pending_checkout_currency")
+	delete(meta, "pending_checkout_credits")
+	delete(meta, "pending_checkout_validity_days")
+	delete(meta, "pending_checkout_rate_card_version")
+	delete(meta, "pending_checkout_created_at")
+	delete(meta, "pending_checkout_provider")
+}
+
+func metaInt64(meta map[string]interface{}, key string, defaultVal int64) int64 {
+	if meta == nil {
+		return defaultVal
+	}
+	v, ok := meta[key]
+	if !ok {
+		return defaultVal
+	}
+	switch val := v.(type) {
+	case int:
+		return int64(val)
+	case int64:
+		return val
+	case float64:
+		return int64(val)
+	case json.Number:
+		n, err := val.Int64()
+		if err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
 // CreateOrder handles POST /v1/billing/checkout
 // Creates a Razorpay order for subscription payment.
 func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
@@ -60,26 +216,37 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
 	var req struct {
-		Tier string `json:"tier" validate:"required"`
+		Tier   string `json:"tier" validate:"required"`
+		PlanID string `json:"plan_id"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
-	if req.Tier == "" {
-		req.Tier = "pro"
+	if req.PlanID == "" {
+		req.PlanID = req.Tier
 	}
+	if req.PlanID == "" {
+		req.PlanID = "pro"
+	}
+	req.Tier = req.PlanID
 
-	plan, ok := billing.ResolveCheckoutPlan(req.Tier)
+	plan, ok := h.resolveCheckoutPlan(req.PlanID)
 	if !ok {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "unknown plan tier: " + req.Tier,
+			"error": "unknown plan tier: " + req.PlanID,
+		})
+	}
+	if plan.AmountPaisa <= 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "free plans do not require payment checkout",
 		})
 	}
 
-	// Check for existing active subscription — prevent double payment
+	// Prevent double payment for already-paid plans while still allowing the
+	// active Free credit subscription from the backfill to upgrade via checkout.
 	now := time.Now().UTC()
 	existingSub, _ := h.subRepo.GetActiveSubscription(c.Context(), userID, "", now)
-	if existingSub != nil && existingSub.Status == license.SubscriptionStatusActive {
+	if isPaidActiveSubscription(existingSub, now) {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error":              "active subscription already exists",
 			"current_period_end": existingSub.CurrentPeriodEnd.Format(time.RFC3339),
@@ -87,11 +254,11 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	}
 
 	// Create payment order
-	checkout, err := h.paymentProvider.CreateOrder(c.Context(), userID, req.Tier, plan.MonthlyFeePaisa)
+	checkout, err := h.paymentProvider.CreateOrder(c.Context(), userID, plan.ID, plan.AmountPaisa)
 	if err != nil {
 		h.logger.Error("failed to create payment order",
 			zap.String("user_id", userID),
-			zap.String("tier", req.Tier),
+			zap.String("tier", plan.ID),
 			zap.Error(err),
 		)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -102,7 +269,7 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	h.logger.Info("payment order created",
 		zap.String("user_id", userID),
 		zap.String("order_id", checkout.OrderID),
-		zap.String("tier", req.Tier),
+		zap.String("tier", plan.ID),
 	)
 
 	sub, err := h.subRepo.GetActiveSubscription(c.Context(), userID, "", now)
@@ -131,7 +298,7 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 		sub = &license.Subscription{
 			ID:                 uuid.NewString(),
 			TenantID:           userID,
-			Plan:               req.Tier,
+			Plan:               plan.ID,
 			Status:             license.SubscriptionStatusPending,
 			CurrentPeriodStart: now,
 			CurrentPeriodEnd:   now,
@@ -141,10 +308,16 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	if sub.Metadata == nil {
 		sub.Metadata = make(map[string]interface{})
 	}
-	sub.Metadata["pending_checkout_tier"] = req.Tier
+	sub.Metadata["pending_checkout_tier"] = plan.ID
+	sub.Metadata["pending_checkout_plan_id"] = plan.ID
+	sub.Metadata["pending_checkout_plan_name"] = plan.Name
 	sub.Metadata["pending_checkout_order_id"] = checkout.OrderID
 	sub.Metadata["pending_checkout_amount"] = checkout.AmountINR
+	sub.Metadata["pending_checkout_amount_paisa"] = plan.AmountPaisa
 	sub.Metadata["pending_checkout_currency"] = checkout.Currency
+	sub.Metadata["pending_checkout_credits"] = plan.CreditsIncluded
+	sub.Metadata["pending_checkout_validity_days"] = plan.ValidityDays
+	sub.Metadata["pending_checkout_rate_card_version"] = h.rateCardVersion()
 	sub.Metadata["pending_checkout_created_at"] = now.Format(time.RFC3339)
 	sub.Metadata["pending_checkout_provider"] = "gateway"
 
@@ -178,7 +351,11 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 		"amount":       checkout.AmountINR,
 		"currency":     checkout.Currency,
 		"key_id":       checkout.KeyID,
-		"tier":         checkout.Tier,
+		"tier":         plan.ID,
+		"plan_id":      plan.ID,
+		"plan_name":    plan.Name,
+		"credits":      plan.CreditsIncluded,
+		"validity_days": plan.ValidityDays,
 		"checkout_url": checkout.URL,
 	})
 }
@@ -250,46 +427,17 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		})
 	}
 
-	planName := metaString(sub.Metadata, "pending_checkout_tier", "")
-	if planName == "" && sub.Plan != "" && sub.Plan != "free" {
-		planName = sub.Plan
-	}
-	if planName == "" {
+	allocation, ok := h.pendingCheckoutAllocation(sub, "razorpay")
+	if !ok {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": "pending checkout tier is missing; create a new checkout session and try again",
 		})
 	}
-
-	plan, ok := billing.ResolveRenewalPlan(planName)
-	if !ok {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "unknown plan tier: " + planName,
-		})
-	}
-
-	applySubscriptionRenewal(
-		c.Context(),
-		sub,
-		userID,
-		h.rateCard,
-		plan,
-		1,
-		"razorpay",
-		h.appRepo,
-		h.usageRepo,
-		h.usageEnabled,
-		map[string]interface{}{
-			"last_payment_id": req.PaymentID,
-			"last_order_id":   req.OrderID,
-			"last_payment_at": now.Format(time.RFC3339),
-		},
-	)
-	delete(sub.Metadata, "pending_checkout_tier")
-	delete(sub.Metadata, "pending_checkout_order_id")
-	delete(sub.Metadata, "pending_checkout_amount")
-	delete(sub.Metadata, "pending_checkout_currency")
-	delete(sub.Metadata, "pending_checkout_created_at")
-	delete(sub.Metadata, "pending_checkout_provider")
+	allocation.Metadata["last_payment_id"] = req.PaymentID
+	allocation.Metadata["last_order_id"] = req.OrderID
+	allocation.Metadata["last_payment_at"] = now.Format(time.RFC3339)
+	applyPaidCreditAllocation(sub, allocation)
+	clearPendingCheckoutMetadata(sub.Metadata)
 
 	if err := h.subRepo.Update(c.Context(), sub); err != nil {
 		h.logger.Error("failed to activate subscription after payment",
@@ -376,45 +524,36 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 				break
 			}
 
-			planName := event.Tier
-			if planName == "" {
-				planName = metaString(sub.Metadata, "pending_checkout_tier", "")
+			allocation, ok := h.pendingCheckoutAllocation(sub, "razorpay_webhook")
+			if !ok && event.Tier != "" {
+				if plan, planOK := h.resolveCheckoutPlan(event.Tier); planOK {
+					allocation = paidCreditAllocation{
+						PlanID:        plan.ID,
+						PlanName:      plan.Name,
+						Credits:       plan.CreditsIncluded,
+						ValidityDays:  plan.ValidityDays,
+						RenewalMethod: "razorpay_webhook",
+						Metadata: map[string]interface{}{
+							"last_paid_amount_paisa": plan.AmountPaisa,
+							"last_paid_currency":     plan.Currency,
+						},
+					}
+					ok = true
+				}
 			}
-			if planName == "" && sub.Plan != "" && sub.Plan != "free" {
-				planName = sub.Plan
-			}
-			if planName == "" {
-				planName = "pro"
-			}
-			plan, ok := billing.ResolveRenewalPlan(planName)
 			if !ok {
-				plan, _ = billing.ResolveRenewalPlan("pro")
+				h.logger.Warn("webhook: no checkout snapshot found",
+					zap.String("tenant_id", event.TenantID),
+					zap.String("order_id", event.OrderID),
+				)
+				break
 			}
-
-			applySubscriptionRenewal(
-				c.Context(),
-				sub,
-				event.TenantID,
-				h.rateCard,
-				plan,
-				1,
-				"razorpay_webhook",
-				h.appRepo,
-				h.usageRepo,
-				h.usageEnabled,
-				map[string]interface{}{
-					"webhook_payment_id": event.PaymentID,
-					"last_payment_id":    event.PaymentID,
-					"last_order_id":      event.OrderID,
-					"last_payment_at":    now.Format(time.RFC3339),
-				},
-			)
-			delete(sub.Metadata, "pending_checkout_tier")
-			delete(sub.Metadata, "pending_checkout_order_id")
-			delete(sub.Metadata, "pending_checkout_amount")
-			delete(sub.Metadata, "pending_checkout_currency")
-			delete(sub.Metadata, "pending_checkout_created_at")
-			delete(sub.Metadata, "pending_checkout_provider")
+			allocation.Metadata["webhook_payment_id"] = event.PaymentID
+			allocation.Metadata["last_payment_id"] = event.PaymentID
+			allocation.Metadata["last_order_id"] = event.OrderID
+			allocation.Metadata["last_payment_at"] = now.Format(time.RFC3339)
+			applyPaidCreditAllocation(sub, allocation)
+			clearPendingCheckoutMetadata(sub.Metadata)
 
 			var updateErr error
 			if sub.CreatedAt.IsZero() {

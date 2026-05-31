@@ -615,6 +615,19 @@ export interface ApiResponse<T> {
     success: boolean;
 }
 
+// ============= Billing Types =============
+export interface BillingPlanBundle {
+  id: string;
+  name: string;
+  amount_paisa: number;
+  currency: string;
+  credits_included: number;
+  validity_days: number;
+  active: boolean;
+  display_order?: number;
+}
+
+
 // ============= Provider Health Types =============
 export interface ProviderHealth {
     name: string;
