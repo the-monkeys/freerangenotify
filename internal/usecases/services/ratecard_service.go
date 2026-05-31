@@ -213,14 +213,24 @@ func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel stri
 		return nil, fmt.Errorf("ratecard: no active card available")
 	}
 
+	var nextVersion string
+	var createdAt time.Time
+	if current.Version != "v1" && !current.CreatedAt.IsZero() && time.Now().UTC().Sub(current.CreatedAt) < 5*time.Minute {
+		nextVersion = current.Version
+		createdAt = current.CreatedAt
+	} else {
+		nextVersion = fmt.Sprintf("v%d", time.Now().UTC().UnixNano())
+		createdAt = time.Now().UTC()
+	}
+
 	next := &billing.RateCard{
-		Version:           fmt.Sprintf("v%d", time.Now().UTC().UnixNano()),
+		Version:           nextVersion,
 		Active:            false,
 		CreditValueINR:    current.CreditValueINR,
 		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
 		OveragePerMessage: cloneMap(current.OveragePerMessage),
 		Plans:             clonePlans(current.Plans),
-		CreatedAt:         time.Now().UTC(),
+		CreatedAt:         createdAt,
 		UpdatedAt:         time.Now().UTC(),
 	}
 	next.ChannelCreditCost[normalized] = credits
@@ -264,14 +274,24 @@ func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.Pla
 		return nil, fmt.Errorf("ratecard: no active card available")
 	}
 
+	var nextVersion string
+	var createdAt time.Time
+	if current.Version != "v1" && !current.CreatedAt.IsZero() && time.Now().UTC().Sub(current.CreatedAt) < 5*time.Minute {
+		nextVersion = current.Version
+		createdAt = current.CreatedAt
+	} else {
+		nextVersion = fmt.Sprintf("v%d", time.Now().UTC().UnixNano())
+		createdAt = time.Now().UTC()
+	}
+
 	next := &billing.RateCard{
-		Version:           fmt.Sprintf("v%d", time.Now().UTC().UnixNano()),
+		Version:           nextVersion,
 		Active:            false,
 		CreditValueINR:    current.CreditValueINR,
 		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
 		OveragePerMessage: cloneMap(current.OveragePerMessage),
 		Plans:             clonePlans(plansForCard(current)),
-		CreatedAt:         time.Now().UTC(),
+		CreatedAt:         createdAt,
 		UpdatedAt:         time.Now().UTC(),
 	}
 	next.Plans[id] = plan

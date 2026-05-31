@@ -65,6 +65,13 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		v1.Get("/public/stats", c.PublicHandler.GetStats)
 	}
 
+	// Public pricing (marketing site, no auth) — same data shape as
+	// /v1/billing/plans + /v1/billing/rates combined, always served from
+	// the active rate card in Elasticsearch.
+	if c.BillingHandler != nil {
+		v1.Get("/public/billing/pricing", c.BillingHandler.GetPublicPricing)
+	}
+
 	// SSE endpoint
 	v1.Get("/sse", c.SSEHandler.Connect)
 
