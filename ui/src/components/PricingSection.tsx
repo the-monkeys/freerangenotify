@@ -12,10 +12,13 @@ import {
   OVERAGE_CHANNEL_LABELS,
   PLAN_CONTENT,
   PricingPlan,
+  PricingTier,
   formatGST,
   formatINR,
 } from "../constants/pricing";
 import { CheckCircleIcon as CheckIcon } from "lucide-react";
+import { publicBillingAPI } from "../services/api";
+import type { PublicBillingPricing } from "../types";
 
 interface PricingSectionProps {
   id?: string;
@@ -29,6 +32,26 @@ interface PricingSectionProps {
   onPlanSelect: (plan: PricingPlan) => void;
 }
 
+// Map live API plans onto the marketing card shape. The Enterprise card is
+// always appended from constants because it is a "contact-us" tier with no
+// row in the rate card.
+const mergePlans = (api: PublicBillingPricing | null): PricingPlan[] => {
+  if (!api?.plans?.length) return PRICING_PLANS;
+  const enterprise = PRICING_PLANS.find((p) => p.tier === "enterprise");
+  const knownTiers: PricingTier[] = ["free", "starter", "pro", "growth", "scale"];
+  const live: PricingPlan[] = api.plans
+    .filter((p) => knownTiers.includes(p.id as PricingTier))
+    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+    .map((p) => ({
+      name: p.name,
+      tier: p.id as PricingTier,
+      monthlyINR: p.amount_paisa > 0 ? p.amount_paisa / 100 : undefined,
+      credits: p.credits_included,
+      highlight: p.id === "starter",
+    }));
+  return enterprise ? [...live, enterprise] : live;
+};
+
 const PricingSection: React.FC<PricingSectionProps> = ({
   id,
   heading,
@@ -41,6 +64,28 @@ const PricingSection: React.FC<PricingSectionProps> = ({
   onPlanSelect,
 }) => {
   const HeadingTag = headingAs;
+  const [apiPricing, setApiPricing] = React.useState<PublicBillingPricing | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    publicBillingAPI
+      .getPricing()
+      .then((data) => {
+        if (!cancelled) setApiPricing(data);
+      })
+      .catch((err) => {
+        // Non-fatal: fall back to hardcoded constants so the marketing page
+        // always renders. Logged for debugging.
+        console.warn("public pricing fetch failed, using fallback:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const plans = React.useMemo(() => mergePlans(apiPricing), [apiPricing]);
+  const channelCreditCost = apiPricing?.channel_credit_cost ?? CHANNEL_CREDIT_COST;
+  const overagePerMessage = apiPricing?.overage_per_message ?? OVERAGE_PER_MESSAGE_INR;
 
   return (
     <section id={id} className={sectionClassName}>
@@ -63,7 +108,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({
 
         {/* Plan cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
-          {PRICING_PLANS.map((plan) => {
+          {plans.map((plan) => {
             const content = PLAN_CONTENT[plan.tier];
             return (
               <Card
@@ -178,7 +223,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({
                 </p>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                {Object.entries(CHANNEL_CREDIT_COST)
+                {Object.entries(channelCreditCost)
                   .filter(([ch]) => ch !== "sse") // sse already listed under webhook
                   .map(([channel, credits]) => (
                     <div
@@ -207,7 +252,7 @@ const PricingSection: React.FC<PricingSectionProps> = ({
                 </p>
               </CardHeader>
               <CardContent className="space-y-1.5">
-                {Object.entries(OVERAGE_PER_MESSAGE_INR).map(
+                {Object.entries(overagePerMessage).map(
                   ([channel, amount]) => (
                     <div
                       key={channel}

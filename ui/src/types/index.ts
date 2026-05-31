@@ -617,14 +617,14 @@ export interface ApiResponse<T> {
 
 // ============= Billing Types =============
 export interface BillingPlanBundle {
-  id: string;
-  name: string;
-  amount_paisa: number;
-  currency: string;
-  credits_included: number;
-  validity_days: number;
-  active: boolean;
-  display_order?: number;
+    id: string;
+    name: string;
+    amount_paisa: number;
+    currency: string;
+    credits_included: number;
+    validity_days: number;
+    active: boolean;
+    display_order?: number;
 }
 
 
@@ -1118,6 +1118,12 @@ export interface BillingRates {
     channel_credit_cost: Record<string, number>;
     overage_per_message: Record<string, number>;
     free_tier_daily_caps: Record<string, number>;
+}
+
+// Public pricing endpoint response — unauthenticated, served from the
+// active rate card in Elasticsearch. Used by the marketing /pricing page.
+export interface PublicBillingPricing extends BillingRates {
+    plans: BillingPlanBundle[];
 }
 
 // ============= Custom Provider Types =============

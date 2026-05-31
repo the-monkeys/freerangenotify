@@ -83,6 +83,7 @@ import type {
   BillingRates,
   AcceptTrialResponse,
   BillingPlanBundle,
+  PublicBillingPricing,
 } from '../types';
 
 // Resolve API base URL:
@@ -1170,6 +1171,14 @@ export const billingAPI = {
     const { data } = await api.post<any>('/billing/verify-payment', payload);
     return data;
   }
+};
+
+// ============= Public Billing API (no auth) =============
+export const publicBillingAPI = {
+  getPricing: async () => {
+    const { data } = await api.get<PublicBillingPricing>('/public/billing/pricing');
+    return data;
+  },
 };
 
 // ============= Custom Provider APIs =============

@@ -12,6 +12,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -25,6 +26,7 @@ type OpsHandler struct {
 	subRepo       license.Repository
 	appRepo       application.Repository
 	creditService *services.CreditService
+	rateCardMgr   billing.RateCardManager
 	notifier      dashboard_notification.Notifier
 	smtp          config.SMTPConfig
 	logger        *zap.Logger
@@ -344,6 +346,183 @@ func (h *OpsHandler) DeleteAccount(c *fiber.Ctx) error {
 		"data": fiber.Map{
 			"user_id": userID,
 			"deleted": true,
+		},
+	})
+}
+
+// SetRateCardManager wires the rate-card manager used by RebalanceCredits.
+func (h *OpsHandler) SetRateCardManager(mgr billing.RateCardManager) {
+	h.rateCardMgr = mgr
+}
+
+// RebalanceCredits handles POST /v1/ops/billing/rebalance-credits.
+//
+// One-shot migration that re-baselines existing active/trial subscriptions
+// onto the new active rate card. For each subscription whose plan is present
+// in the active card, the new credit allotment is compared with the current
+// balance and a top-up is granted equal to:
+//
+//	delta = max(0, new_plan.credits_included - already_consumed - credits_remaining)
+//
+// where already_consumed = max(0, credits_total - credits_remaining). This
+// guarantees nobody loses balance while bringing everyone to at least the
+// new plan's credit pool — the safe default for a rate-card change where
+// some channels (SMS, WhatsApp) cost more credits per send.
+//
+// The grant is recorded via the credit ledger (audit + idempotent re-runs:
+// once topped up, the next run computes delta=0).
+func (h *OpsHandler) RebalanceCredits(c *fiber.Ctx) error {
+	if h.subRepo == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription repository unavailable"})
+	}
+	if h.creditService == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "credit service unavailable"})
+	}
+	if h.rateCardMgr == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card manager unavailable"})
+	}
+
+	var req struct {
+		Apply  bool   `json:"apply"`
+		Reason string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		req.Reason = "rebalance-2026 credit migration"
+	}
+
+	card := h.rateCardMgr.GetActiveRateCard()
+	if card == nil {
+		if err := h.rateCardMgr.RefreshActiveRateCard(c.Context()); err != nil {
+			h.logger.Error("rebalance: refresh rate card failed", zap.Error(err))
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to load active rate card"})
+		}
+		card = h.rateCardMgr.GetActiveRateCard()
+	}
+	if card == nil || len(card.Plans) == 0 {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "active rate card has no plan bundles"})
+	}
+
+	subs, err := h.subRepo.List(c.Context(), license.SubscriptionFilter{
+		Statuses: []license.SubscriptionStatus{
+			license.SubscriptionStatusActive,
+			license.SubscriptionStatusTrial,
+		},
+		Limit: 1000,
+	})
+	if err != nil {
+		h.logger.Error("rebalance: list subscriptions failed", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to list subscriptions"})
+	}
+
+	type result struct {
+		TenantID         string `json:"tenant_id"`
+		SubscriptionID   string `json:"subscription_id"`
+		Plan             string `json:"plan"`
+		Status           string `json:"status"`
+		OldCreditsTotal  int64  `json:"old_credits_total"`
+		OldCreditsRemain int64  `json:"old_credits_remaining"`
+		NewPlanCredits   int64  `json:"new_plan_credits_included"`
+		Delta            int64  `json:"delta"`
+		Action           string `json:"action"` // applied | dry_run | skipped:reason
+	}
+	results := make([]result, 0, len(subs))
+	var appliedCount, skippedCount int
+
+	for _, sub := range subs {
+		if sub == nil {
+			continue
+		}
+		r := result{
+			TenantID:         sub.TenantID,
+			SubscriptionID:   sub.ID,
+			Plan:             sub.Plan,
+			Status:           string(sub.Status),
+			OldCreditsTotal:  sub.CreditsTotal,
+			OldCreditsRemain: sub.CreditsRemaining,
+		}
+		newPlan, ok := card.Plans[sub.Plan]
+		if !ok {
+			r.Action = "skipped:plan_not_in_active_card"
+			results = append(results, r)
+			skippedCount++
+			continue
+		}
+		if sub.TenantID == "" {
+			r.Action = "skipped:no_tenant_id"
+			results = append(results, r)
+			skippedCount++
+			continue
+		}
+		r.NewPlanCredits = newPlan.CreditsIncluded
+
+		alreadyConsumed := sub.CreditsTotal - sub.CreditsRemaining
+		if alreadyConsumed < 0 {
+			alreadyConsumed = 0
+		}
+		targetRemaining := newPlan.CreditsIncluded - alreadyConsumed
+		if targetRemaining < sub.CreditsRemaining {
+			targetRemaining = sub.CreditsRemaining
+		}
+		delta := targetRemaining - sub.CreditsRemaining
+		r.Delta = delta
+
+		if delta <= 0 {
+			r.Action = "skipped:already_at_or_above_target"
+			results = append(results, r)
+			skippedCount++
+			continue
+		}
+
+		if !req.Apply {
+			r.Action = "dry_run"
+			results = append(results, r)
+			continue
+		}
+
+		_, grantErr := h.creditService.GrantCredits(c.Context(), sub.TenantID, delta, req.Reason, map[string]interface{}{
+			"migration":         "rebalance-2026",
+			"old_credits_total": sub.CreditsTotal,
+			"new_plan":          sub.Plan,
+			"new_plan_credits":  newPlan.CreditsIncluded,
+			"subscription_id":   sub.ID,
+		})
+		if grantErr != nil {
+			h.logger.Error("rebalance: grant credits failed",
+				zap.String("tenant_id", sub.TenantID),
+				zap.String("subscription_id", sub.ID),
+				zap.Int64("delta", delta),
+				zap.Error(grantErr),
+			)
+			r.Action = "error:" + grantErr.Error()
+			results = append(results, r)
+			skippedCount++
+			continue
+		}
+		r.Action = "applied"
+		results = append(results, r)
+		appliedCount++
+	}
+
+	h.logger.Info("rebalance credits completed",
+		zap.Bool("apply", req.Apply),
+		zap.Int("scanned", len(subs)),
+		zap.Int("applied", appliedCount),
+		zap.Int("skipped", skippedCount),
+		zap.String("rate_card_version", card.Version),
+	)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"dry_run":           !req.Apply,
+			"rate_card_version": card.Version,
+			"scanned":           len(subs),
+			"applied":           appliedCount,
+			"skipped":           skippedCount,
+			"results":           results,
 		},
 	})
 }

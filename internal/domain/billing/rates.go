@@ -122,10 +122,10 @@ func cloneInt64Map(src map[string]int64) map[string]int64 {
 // Used for internal margin tracking — NOT exposed to users.
 func CarrierCosts() map[string]int64 {
 	return map[string]int64{
-		"email":              8,   // ~₹0.08 (SES/SMTP)
-		"whatsapp_utility":   15,  // ~₹0.145 (rounded)
-		"whatsapp_marketing": 109, // ~₹1.09
-		"sms":                17,  // ~₹0.17
+		"email":              2,   // ~₹0.021 (Zoho ZeptoMail)
+		"whatsapp_utility":   56,  // ~₹0.56 (Meta ₹0.145 + Twilio ~₹0.42)
+		"whatsapp_marketing": 151, // ~₹1.51 (Meta ₹1.09 + Twilio ~₹0.42)
+		"sms":                693, // ~₹6.93 (Twilio India outbound, $0.0832/segment)
 		"push":               0,   // FCM/APNS free
 	}
 }

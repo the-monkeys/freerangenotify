@@ -14,6 +14,7 @@ func newAdminBillingCmd() *cobra.Command {
 		Short: "Manage billing controls",
 	}
 	cmd.AddCommand(newAdminBillingRatesCmd())
+	cmd.AddCommand(newAdminBillingPlansCmd())
 	return cmd
 }
 
@@ -195,5 +196,78 @@ func newAdminBillingRatesRollbackCmd() *cobra.Command {
 	cmd.Flags().StringVar(&adminToken, "admin-token", "", "Admin JWT token (env: FREERANGE_ADMIN_TOKEN)")
 	cmd.Flags().StringVar(&version, "version", "", "Previous rate-card version to restore")
 	_ = cmd.MarkFlagRequired("version")
+	return cmd
+}
+
+func newAdminBillingPlansCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "plans",
+		Short: "Manage billing plan bundles",
+	}
+	cmd.AddCommand(newAdminBillingPlansSetCmd())
+	return cmd
+}
+
+func newAdminBillingPlansSetCmd() *cobra.Command {
+	var apiURL, adminToken, id, name, currency string
+	var amountPaisa, creditsIncluded int64
+	var validityDays, displayOrder int
+	var active bool
+
+	cmd := &cobra.Command{
+		Use:   "set",
+		Short: "Create or update a billing plan bundle in the active rate card",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := LoadConfig()
+			if apiURL != "" {
+				cfg.APIURL = apiURL
+			}
+			if adminToken != "" {
+				cfg.AdminToken = adminToken
+			}
+			if cfg.APIURL == "" {
+				cfg.APIURL = "http://localhost:8080"
+			}
+			if cfg.AdminToken == "" {
+				return fmt.Errorf("admin token required: set FREERANGE_ADMIN_TOKEN or use --admin-token")
+			}
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			payload := map[string]interface{}{
+				"id":               id,
+				"name":             name,
+				"amount_paisa":     amountPaisa,
+				"currency":         currency,
+				"credits_included": creditsIncluded,
+				"validity_days":    validityDays,
+				"active":           active,
+				"display_order":    displayOrder,
+			}
+
+			resp, err := doJSONRequest(http.MethodPost, cfg.APIURL+"/v1/admin/billing/plans/set", payload, map[string]string{
+				"Authorization": "Bearer " + cfg.AdminToken,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stdout, "Billing plan bundle updated")
+			return printJSON(resp)
+		},
+	}
+
+	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
+	cmd.Flags().StringVar(&adminToken, "admin-token", "", "Admin JWT token (env: FREERANGE_ADMIN_TOKEN)")
+	cmd.Flags().StringVar(&id, "id", "", "Plan ID (e.g. lite, starter, pro)")
+	cmd.Flags().StringVar(&name, "name", "", "Display name of the plan")
+	cmd.Flags().Int64Var(&amountPaisa, "amount-paisa", 0, "Price in paisa (1 INR = 100 paisa)")
+	cmd.Flags().StringVar(&currency, "currency", "INR", "Currency code (default INR)")
+	cmd.Flags().Int64Var(&creditsIncluded, "credits-included", 0, "Credits included in the plan")
+	cmd.Flags().IntVar(&validityDays, "validity-days", 365, "Validity in days (default 365)")
+	cmd.Flags().BoolVar(&active, "active", true, "Whether the plan is active")
+	cmd.Flags().IntVar(&displayOrder, "display-order", 0, "Display order sequence")
+
+	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }

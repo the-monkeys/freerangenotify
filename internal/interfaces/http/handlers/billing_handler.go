@@ -508,3 +508,45 @@ func (h *BillingHandler) AdminSetPlan(c *fiber.Ctx) error {
 		"updated": card,
 	})
 }
+
+// GetPublicPricing handles GET /v1/public/billing/pricing — unauthenticated
+// endpoint that serves the marketing site. Returns the same data shape as
+// GetPlans + GetRates combined so the public page renders one round-trip and
+// always shows the live active rate card.
+func (h *BillingHandler) GetPublicPricing(c *fiber.Ctx) error {
+	var active *billing.RateCard
+	var plans []billing.PlanBundle
+	if h.rateCardMgr != nil {
+		active = h.rateCardMgr.GetActiveRateCard()
+		if active == nil {
+			_ = h.rateCardMgr.RefreshActiveRateCard(c.Context())
+			active = h.rateCardMgr.GetActiveRateCard()
+		}
+		plans = h.rateCardMgr.ListCheckoutPlans()
+	}
+	if active == nil {
+		pro := resolvePlan(h.rateCard, "pro")
+		active = &billing.RateCard{
+			Version:           "default",
+			CreditValueINR:    pro.CreditValueINR,
+			ChannelCreditCost: cloneInt64MapLocal(pro.ChannelCreditCost),
+			OveragePerMessage: cloneInt64MapLocal(pro.OveragePerMessage),
+			UpdatedAt:         time.Now().UTC(),
+		}
+	}
+	overageINR := make(map[string]float64, len(active.OveragePerMessage))
+	for ch, paisa := range active.OveragePerMessage {
+		overageINR[ch] = float64(paisa) / 100.0
+	}
+
+	return c.JSON(fiber.Map{
+		"currency":             "INR",
+		"active_version":       active.Version,
+		"effective_at":         active.UpdatedAt.Format(time.RFC3339),
+		"credit_value_inr":     active.CreditValueINR,
+		"channel_credit_cost":  active.ChannelCreditCost,
+		"overage_per_message":  overageINR,
+		"free_tier_daily_caps": map[string]int64{"sms": 3, "whatsapp": 2},
+		"plans":                plans,
+	})
+}

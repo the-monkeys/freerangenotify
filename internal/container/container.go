@@ -808,6 +808,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		cfg.Providers.SMTP,
 		logger,
 	)
+	if container.RateCardService != nil {
+		container.OpsHandler.SetRateCardManager(container.RateCardService)
+	}
 
 	// ── WhatsApp Meta Tech Provider (feature-gated) ──
 	if cfg.Features.WhatsAppMetaEnabled {

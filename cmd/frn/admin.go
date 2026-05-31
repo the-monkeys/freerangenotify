@@ -26,6 +26,7 @@ func newAdminCmd() *cobra.Command {
 	cmd.AddCommand(newAdminGrantCreditsCmd())
 	cmd.AddCommand(newAdminDeleteAccountCmd())
 	cmd.AddCommand(newAdminBillingCmd())
+	cmd.AddCommand(newAdminRebalanceCreditsCmd())
 
 	return cmd
 }
@@ -208,6 +209,72 @@ func newAdminDeleteAccountCmd() *cobra.Command {
 	cmd.Flags().StringVar(&userID, "user-id", "", "User ID to delete")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason for deletion (recommended for audit)")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm destructive account deletion")
+
+	return cmd
+}
+
+// newAdminRebalanceCreditsCmd re-baselines existing active/trial subscriptions
+// onto the active rate card. Defaults to dry-run; pass --apply to write.
+//
+// Each subscription is topped up so that:
+//
+//	credits_remaining = max(current_remaining,
+//	                        new_plan.credits_included - already_consumed)
+//
+// where already_consumed = max(0, credits_total - credits_remaining). Already-
+// migrated tenants compute delta=0 and are skipped, so re-runs are safe.
+func newAdminRebalanceCreditsCmd() *cobra.Command {
+	var apiURL, opsSecret, reason string
+	var apply bool
+
+	cmd := &cobra.Command{
+		Use:   "rebalance-credits",
+		Short: "Re-baseline existing subscriptions onto the active rate card",
+		Long: "Top up active/trial subscriptions to at least the new plan's credit allotment.\n" +
+			"Idempotent: dry-run by default, --apply to actually grant credits.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := LoadConfig()
+			if apiURL != "" {
+				cfg.APIURL = apiURL
+			}
+			if opsSecret != "" {
+				cfg.OpsSecret = opsSecret
+			}
+			if cfg.APIURL == "" {
+				cfg.APIURL = "http://localhost:8080"
+			}
+			if cfg.OpsSecret == "" {
+				return fmt.Errorf("ops secret required: set FREERANGE_OPS_SECRET or use --ops-secret")
+			}
+
+			payload := map[string]interface{}{
+				"apply":  apply,
+				"reason": strings.TrimSpace(reason),
+			}
+
+			target := cfg.APIURL + "/v1/ops/billing/rebalance-credits"
+			headers, hErr := buildOpsAuthHeaders(http.MethodPost, target, cfg.OpsSecret)
+			if hErr != nil {
+				return hErr
+			}
+
+			respBody, err := doJSONRequest(http.MethodPost, target, payload, headers)
+			if err != nil {
+				return err
+			}
+			if apply {
+				fmt.Fprintln(os.Stdout, "Rebalance applied")
+			} else {
+				fmt.Fprintln(os.Stdout, "Rebalance dry-run (no changes written) — pass --apply to commit")
+			}
+			return printJSON(respBody)
+		},
+	}
+
+	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
+	cmd.Flags().StringVar(&opsSecret, "ops-secret", "", "Ops secret (env: FREERANGE_OPS_SECRET)")
+	cmd.Flags().BoolVar(&apply, "apply", false, "Actually grant credits (default: dry-run)")
+	cmd.Flags().StringVar(&reason, "reason", "rebalance-2026 credit migration", "Reason recorded in the credit ledger")
 
 	return cmd
 }
