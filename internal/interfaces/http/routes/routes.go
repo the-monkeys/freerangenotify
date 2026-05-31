@@ -371,7 +371,6 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// Billing routes (JWT-protected, user-facing)
 	billing := v1.Group("/billing")
 	billing.Use(jwtAuth)
-	billing.Get("/plans", c.BillingHandler.GetPlans)
 	billing.Get("/usage", c.BillingHandler.GetUsage)
 	billing.Get("/subscription", c.BillingHandler.GetSubscription)
 	billing.Post("/accept-trial", c.BillingHandler.AcceptTrial)
@@ -385,8 +384,6 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Admin billing rate-card controls (JWT-protected)
 	adminBilling := adminAuth.Group("/billing")
-	adminBilling.Get("/plans", c.BillingHandler.AdminGetPlans)
-	adminBilling.Post("/plans/set", c.BillingHandler.AdminSetPlan)
 	adminBilling.Get("/rates", c.BillingHandler.AdminGetRates)
 	adminBilling.Post("/rates/set", c.BillingHandler.AdminSetRate)
 	adminBilling.Post("/rates/activate", c.BillingHandler.AdminActivateRate)
@@ -415,8 +412,6 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 		tenants.Post("/:id/members", c.TenantHandler.InviteMember)
 		tenants.Put("/:id/members/:memberId", c.TenantHandler.UpdateMemberRole)
 		tenants.Delete("/:id/members/:memberId", c.TenantHandler.RemoveMember)
-		// Deprecated tenant billing APIs are not used by the UI. Keep them
-		// mounted for backward compatibility while the dashboard uses /v1/billing/*.
 		tenants.Get("/:id/billing", c.TenantHandler.GetBilling)
 		tenants.Post("/:id/billing/checkout", c.TenantHandler.Checkout)
 	}

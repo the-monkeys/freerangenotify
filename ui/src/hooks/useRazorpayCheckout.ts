@@ -64,7 +64,7 @@ export const loadRazorpayScript = (): Promise<boolean> => {
 export const useRazorpayCheckout = (onSuccess?: () => void) => {
     const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
 
-    const initiateCheckout = async (planId: string) => {
+    const initiateCheckout = async (tier: string = 'pro') => {
         setIsCheckoutLoading(true);
 
         try {
@@ -77,7 +77,7 @@ export const useRazorpayCheckout = (onSuccess?: () => void) => {
             }
 
             // Step 1: Create Order locally
-            const orderRes = await billingAPI.checkoutBilling(planId);
+            const orderRes = await billingAPI.checkoutBilling(tier);
 
             if (orderRes.checkout_url === 'mock_success') {
                 alert('Mock payment provider is active. Set FREERANGE_PAYMENT_PROVIDER=razorpay and configure Razorpay keys to collect real card details.');
@@ -93,7 +93,7 @@ export const useRazorpayCheckout = (onSuccess?: () => void) => {
                 amount: orderData.amount.toString(),
                 currency: orderData.currency,
                 name: 'FreeRangeNotify',
-                description: `Upgrade to ${orderData.plan_name || planId.toUpperCase()}`,
+                description: `Upgrade to ${tier.toUpperCase()}`,
                 order_id: orderData.order_id,
                 handler: async function (response: RazorpayPaymentResponse) {
                     try {
@@ -104,7 +104,7 @@ export const useRazorpayCheckout = (onSuccess?: () => void) => {
                             razorpay_signature: response.razorpay_signature,
                         });
 
-                        alert(`Payment Successful! You are now on the ${orderData.plan_name || planId.toUpperCase()} plan.`);
+                        alert(`Payment Successful! You are now on the ${tier.toUpperCase()} plan.`);
                         onSuccess?.();
                     } catch (err: any) {
                         alert(err.response?.data?.error || 'Payment verification failed.');

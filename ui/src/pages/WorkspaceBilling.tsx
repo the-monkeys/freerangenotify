@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useRazorpayCheckout } from '../hooks/useRazorpayCheckout';
 import { Button } from '../components/ui/button';
-import type { BillingRates, BillingUsage, BillingSubscription, BillingPlanBundle } from '../types';
+import type { BillingRates, BillingUsage, BillingSubscription } from '../types';
 
 // ─── Types ───
 interface BreakdownItem {
@@ -108,25 +108,20 @@ export default function WorkspaceBilling() {
     const [subscription, setSubscription] = useState<BillingSubscription | null>(null);
     const [breakdown, setBreakdown]     = useState<BreakdownResponse | null>(null);
     const [rates, setRates]             = useState<BillingRates | null>(null);
-    const [plansInfo, setPlansInfo]     = useState<{ active_version: string, plans: BillingPlanBundle[] } | null>(null);
     const [loading, setLoading]         = useState(true);
 
     const refreshData = async () => {
         try {
-            const [usageData, subData, breakdownData, ratesData, plansData] = await Promise.all([
+            const [usageData, subData, breakdownData, ratesData] = await Promise.all([
                 billingAPI.getUsage().catch(() => null),
                 billingAPI.getSubscription().catch(() => null),
                 billingAPI.getUsageBreakdown().catch(() => null),
                 billingAPI.getRates().catch(() => null),
-                billingAPI.getPlans().catch(() => null),
             ]);
             setUsage(usageData);
             setSubscription(subData);
             setBreakdown(breakdownData);
             setRates(ratesData);
-            if (plansData) {
-                setPlansInfo(plansData);
-            }
         } catch (error) {
             console.error('Billing fetch error:', error);
         }
@@ -140,21 +135,17 @@ export default function WorkspaceBilling() {
         let mounted = true;
         const fetchData = async () => {
             try {
-                const [usageData, subData, breakdownData, ratesData, plansData] = await Promise.all([
+                const [usageData, subData, breakdownData, ratesData] = await Promise.all([
                     billingAPI.getUsage().catch(() => null),
                     billingAPI.getSubscription().catch(() => null),
                     billingAPI.getUsageBreakdown().catch(() => null),
                     billingAPI.getRates().catch(() => null),
-                    billingAPI.getPlans().catch(() => null),
                 ]);
                 if (mounted) {
                     setUsage(usageData);
                     setSubscription(subData);
                     setBreakdown(breakdownData);
                     setRates(ratesData);
-                    if (plansData) {
-                        setPlansInfo(plansData);
-                    }
                 }
             } catch (error) {
                 console.error('Billing fetch error:', error);
@@ -205,18 +196,13 @@ export default function WorkspaceBilling() {
                         {subscription.plan.replace('_', ' ')} Plan
                     </Badge>
                 ) : (
-                    <div className="flex gap-2">
-                        {plansInfo?.plans?.filter(p => p.amount_paisa > 0).map((plan) => (
-                            <Button 
-                                key={plan.id}
-                                onClick={() => initiateCheckout(plan.id)} 
-                                disabled={isCheckoutLoading}
-                            >
-                                {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Upgrade to {plan.name.toUpperCase()}
-                            </Button>
-                        ))}
-                    </div>
+                    <Button 
+                        onClick={() => initiateCheckout('pro')} 
+                        disabled={isCheckoutLoading}
+                    >
+                        {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Upgrade to PRO
+                    </Button>
                 )}
             </div>
 
@@ -254,22 +240,17 @@ export default function WorkspaceBilling() {
                             </div>
                         ) : (
                             <div className="mt-4 space-y-4">
-                                <p className="text-sm text-muted-foreground mb-4">
+                                <p className="text-sm text-muted-foreground">
                                     No active premium subscription. Upgrade your workspace to unlock team billing and dedicated quotas.
                                 </p>
-                                <div className="space-y-2">
-                                    {plansInfo?.plans?.filter(p => p.amount_paisa > 0).map((plan) => (
-                                        <Button 
-                                            key={plan.id}
-                                            className="w-full" 
-                                            onClick={() => initiateCheckout(plan.id)}
-                                            disabled={isCheckoutLoading}
-                                        >
-                                            {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                            Upgrade to {plan.name}
-                                        </Button>
-                                    ))}
-                                </div>
+                                <Button 
+                                    className="w-full" 
+                                    onClick={() => initiateCheckout('pro')}
+                                    disabled={isCheckoutLoading}
+                                >
+                                    {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Upgrade to Pro
+                                </Button>
                             </div>
                         )}
                     </CardContent>
@@ -340,14 +321,12 @@ export default function WorkspaceBilling() {
                         <p className="text-sm mt-4 text-muted-foreground mb-4">
                             Looking to scale? Upgrade your workspace to unlock team billing and dedicated quotas.
                         </p>
-                        <div className="space-y-2">
-                            {plansInfo?.plans?.filter(p => p.amount_paisa > 0 && p.id !== subscription?.plan).map((plan) => (
-                                <Button key={plan.id} variant="outline" className="w-full" onClick={() => initiateCheckout(plan.id)} disabled={isCheckoutLoading}>
-                                    {isCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-                                    Upgrade to {plan.name}
-                                </Button>
-                            ))}
-                        </div>
+                        {subscription?.plan !== 'pro' && (
+                            <Button variant="outline" className="w-full" onClick={() => initiateCheckout('pro')} disabled={isCheckoutLoading}>
+                                {isCheckoutLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                                Upgrade to Pro
+                            </Button>
+                        )}
                     </CardContent>
                 </Card>
             </div>
@@ -381,25 +360,13 @@ export default function WorkspaceBilling() {
                                 <p className="text-sm text-muted-foreground">
                                     {subscription?.plan === 'free' ? 'Active free onboarding period — no payment method required.' : 'No payment method attached.'}
                                 </p>
-                                {(() => {
-                                    const defaultPlan = plansInfo?.plans?.find(p => p.id === 'pro') || plansInfo?.plans?.find(p => p.amount_paisa > 0);
-                                    if (!defaultPlan) return null;
-                                    return (
-                                        <Button 
-                                            variant="link" 
-                                            className="mt-2 text-primary inline-flex items-center justify-center gap-2"
-                                            onClick={() => initiateCheckout(defaultPlan.id)}
-                                            disabled={isCheckoutLoading}
-                                        >
-                                            {isCheckoutLoading ? (
-                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                            ) : (
-                                                <CreditCard className="h-4 w-4" />
-                                            )}
-                                            Add Payment Method
-                                        </Button>
-                                    );
-                                })()}
+                                <Button 
+                                    variant="link" 
+                                    className="mt-2 text-primary"
+                                    onClick={() => initiateCheckout('pro')}
+                                >
+                                    {subscription?.plan === 'free' ? 'Add payment method for Pro' : 'Add payment method'}
+                                </Button>
                             </div>
                         )}
                     </CardContent>

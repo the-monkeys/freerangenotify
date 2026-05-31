@@ -791,7 +791,6 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BillingHandler.SetUsageRepo(usageRepo, true)
 		container.BillingHandler.SetRateCardManager(rateCardService)
 		container.PaymentHandler.SetUsageRepo(usageRepo, true)
-		container.PaymentHandler.SetRateCardManager(rateCardService)
 		container.RenewalHandler.SetUsageRepo(usageRepo, true)
 		container.UsageRepo = usageRepo
 		logger.Info("Billing metering enabled", zap.String("index", "usage_events"))

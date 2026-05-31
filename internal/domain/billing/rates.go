@@ -53,40 +53,6 @@ func DefaultRates() map[string]PlanTier {
 	}
 }
 
-// DefaultPlanBundles returns the fallback checkout catalog used when the active
-// DB-backed rate card does not yet contain plan bundles.
-func DefaultPlanBundles() map[string]PlanBundle {
-	rates := DefaultRates()
-	order := map[string]int{
-		"free":    10,
-		"starter": 20,
-		"pro":     30,
-		"growth":  40,
-		"scale":   50,
-	}
-	names := map[string]string{
-		"free":    "Free",
-		"starter": "Starter",
-		"pro":     "Pro",
-		"growth":  "Growth",
-		"scale":   "Scale",
-	}
-	bundles := make(map[string]PlanBundle, len(rates))
-	for id, plan := range rates {
-		bundles[id] = PlanBundle{
-			ID:              id,
-			Name:            names[id],
-			AmountPaisa:     plan.MonthlyFeePaisa,
-			Currency:        "INR",
-			CreditsIncluded: plan.CreditsIncluded,
-			ValidityDays:    365,
-			Active:          true,
-			DisplayOrder:    order[id],
-		}
-	}
-	return bundles
-}
-
 func newCreditPlan(name string, monthlyFeePaisa, creditsIncluded int64) PlanTier {
 	return PlanTier{
 		Name:              name,

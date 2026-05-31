@@ -82,7 +82,6 @@ import type {
   BillingUsageBreakdown,
   BillingRates,
   AcceptTrialResponse,
-  BillingPlanBundle,
 } from '../types';
 
 // Resolve API base URL:
@@ -1156,13 +1155,8 @@ export const billingAPI = {
     return data;
   },
 
-  getPlans: async () => {
-    const { data } = await api.get<{ currency: string; active_version: string; plans: BillingPlanBundle[] }>('/billing/plans');
-    return data;
-  },
-
-  checkoutBilling: async (planId: string) => {
-    const { data } = await api.post<any>('/billing/checkout', { tier: planId });
+  checkoutBilling: async (tier: string = 'pro') => {
+    const { data } = await api.post<any>('/billing/checkout', { tier });
     return data;
   },
 

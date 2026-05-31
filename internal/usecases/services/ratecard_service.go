@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +87,6 @@ func (s *RateCardService) GetActiveRateCard() *billing.RateCard {
 	cp := *s.activeCard
 	cp.ChannelCreditCost = cloneMap(s.activeCard.ChannelCreditCost)
 	cp.OveragePerMessage = cloneMap(s.activeCard.OveragePerMessage)
-	cp.Plans = clonePlans(s.activeCard.Plans)
 	return &cp
 }
 
@@ -124,45 +122,6 @@ func (s *RateCardService) GetChannelCreditCost(channel string) int64 {
 	default:
 		return 1
 	}
-}
-
-func (s *RateCardService) GetCheckoutPlan(planID string) (billing.PlanBundle, bool) {
-	id := strings.ToLower(strings.TrimSpace(planID))
-	if id == "" {
-		return billing.PlanBundle{}, false
-	}
-
-	card := s.GetActiveRateCard()
-	plans := plansForCard(card)
-	plan, ok := plans[id]
-	if !ok || !plan.Active {
-		return billing.PlanBundle{}, false
-	}
-	normalizePlanBundle(&plan, id)
-	if plan.AmountPaisa < 0 || plan.CreditsIncluded < 0 {
-		return billing.PlanBundle{}, false
-	}
-	return plan, true
-}
-
-func (s *RateCardService) ListCheckoutPlans() []billing.PlanBundle {
-	card := s.GetActiveRateCard()
-	plans := plansForCard(card)
-	out := make([]billing.PlanBundle, 0, len(plans))
-	for id, plan := range plans {
-		if !plan.Active {
-			continue
-		}
-		normalizePlanBundle(&plan, id)
-		out = append(out, plan)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].DisplayOrder == out[j].DisplayOrder {
-			return out[i].ID < out[j].ID
-		}
-		return out[i].DisplayOrder < out[j].DisplayOrder
-	})
-	return out
 }
 
 func (s *RateCardService) RefreshActiveRateCard(ctx context.Context) error {
@@ -219,62 +178,10 @@ func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel stri
 		CreditValueINR:    current.CreditValueINR,
 		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
 		OveragePerMessage: cloneMap(current.OveragePerMessage),
-		Plans:             clonePlans(current.Plans),
 		CreatedAt:         time.Now().UTC(),
 		UpdatedAt:         time.Now().UTC(),
 	}
 	next.ChannelCreditCost[normalized] = credits
-
-	if err := s.repo.CreateVersion(ctx, next); err != nil {
-		return nil, err
-	}
-	if err := s.ActivateVersion(ctx, next.Version); err != nil {
-		return nil, err
-	}
-	return s.GetActiveRateCard(), nil
-}
-
-func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.PlanBundle) (*billing.RateCard, error) {
-	id := strings.ToLower(strings.TrimSpace(plan.ID))
-	if id == "" {
-		return nil, fmt.Errorf("ratecard: plan id is required")
-	}
-	normalizePlanBundle(&plan, id)
-	if plan.AmountPaisa < 0 {
-		return nil, fmt.Errorf("ratecard: plan amount must be >= 0")
-	}
-	if plan.CreditsIncluded < 0 {
-		return nil, fmt.Errorf("ratecard: plan credits must be >= 0")
-	}
-	if plan.Currency == "" {
-		plan.Currency = "INR"
-	}
-	if plan.ValidityDays <= 0 && plan.AmountPaisa > 0 {
-		plan.ValidityDays = 365
-	}
-
-	current := s.GetActiveRateCard()
-	if current == nil {
-		if err := s.RefreshActiveRateCard(ctx); err != nil {
-			return nil, err
-		}
-		current = s.GetActiveRateCard()
-	}
-	if current == nil {
-		return nil, fmt.Errorf("ratecard: no active card available")
-	}
-
-	next := &billing.RateCard{
-		Version:           fmt.Sprintf("v%d", time.Now().UTC().UnixNano()),
-		Active:            false,
-		CreditValueINR:    current.CreditValueINR,
-		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
-		OveragePerMessage: cloneMap(current.OveragePerMessage),
-		Plans:             clonePlans(plansForCard(current)),
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
-	}
-	next.Plans[id] = plan
 
 	if err := s.repo.CreateVersion(ctx, next); err != nil {
 		return nil, err
@@ -344,7 +251,6 @@ func (s *RateCardService) bootstrapDefaultRateCard(ctx context.Context) *billing
 		CreditValueINR:    proPlan.CreditValueINR,
 		ChannelCreditCost: cloneMap(proPlan.ChannelCreditCost),
 		OveragePerMessage: cloneMap(proPlan.OveragePerMessage),
-		Plans:             billing.DefaultPlanBundles(),
 		CreatedAt:         time.Now().UTC(),
 		UpdatedAt:         time.Now().UTC(),
 	}
@@ -377,40 +283,4 @@ func cloneMap(src map[string]int64) map[string]int64 {
 		dst[k] = v
 	}
 	return dst
-}
-
-func plansForCard(card *billing.RateCard) map[string]billing.PlanBundle {
-	if card != nil && len(card.Plans) > 0 {
-		return clonePlans(card.Plans)
-	}
-	return billing.DefaultPlanBundles()
-}
-
-func clonePlans(src map[string]billing.PlanBundle) map[string]billing.PlanBundle {
-	dst := make(map[string]billing.PlanBundle, len(src))
-	for k, v := range src {
-		if v.Metadata != nil {
-			meta := make(map[string]interface{}, len(v.Metadata))
-			for mk, mv := range v.Metadata {
-				meta[mk] = mv
-			}
-			v.Metadata = meta
-		}
-		dst[k] = v
-	}
-	return dst
-}
-
-func normalizePlanBundle(plan *billing.PlanBundle, fallbackID string) {
-	plan.ID = strings.ToLower(strings.TrimSpace(plan.ID))
-	if plan.ID == "" {
-		plan.ID = fallbackID
-	}
-	if plan.Name == "" {
-		plan.Name = strings.Title(strings.ReplaceAll(plan.ID, "_", " "))
-	}
-	plan.Currency = strings.ToUpper(strings.TrimSpace(plan.Currency))
-	if plan.Currency == "" {
-		plan.Currency = "INR"
-	}
 }

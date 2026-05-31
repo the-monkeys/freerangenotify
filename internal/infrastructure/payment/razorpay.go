@@ -7,9 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 
-	"github.com/google/uuid"
 	razorpay "github.com/razorpay/razorpay-go"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"go.uber.org/zap"
@@ -54,7 +52,7 @@ func (p *RazorpayProvider) CreateOrder(ctx context.Context, tenantID, tier strin
 	orderData := map[string]interface{}{
 		"amount":   amountPaisa,
 		"currency": p.currency,
-		"receipt":  razorpayReceipt(tier),
+		"receipt":  fmt.Sprintf("rcpt_%s_%s", tenantID, tier),
 		"notes": map[string]interface{}{
 			"tenant_id": tenantID,
 			"tier":      tier,
@@ -89,29 +87,6 @@ func (p *RazorpayProvider) CreateOrder(ctx context.Context, tenantID, tier strin
 		Currency:  p.currency,
 		KeyID:     p.keyID, // Public key — safe to send to frontend
 	}, nil
-}
-
-func razorpayReceipt(tier string) string {
-	normalizedTier := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + ('a' - 'A')
-		case r >= '0' && r <= '9':
-			return r
-		default:
-			return -1
-		}
-	}, tier)
-	if normalizedTier == "" {
-		normalizedTier = "plan"
-	}
-	if len(normalizedTier) > 8 {
-		normalizedTier = normalizedTier[:8]
-	}
-	id := strings.ReplaceAll(uuid.NewString(), "-", "")
-	return fmt.Sprintf("frn_%s_%s", normalizedTier, id[:24])
 }
 
 // VerifyPayment validates the payment signature using HMAC-SHA256.
