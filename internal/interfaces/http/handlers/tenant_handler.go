@@ -207,7 +207,11 @@ func (h *TenantHandler) InviteMember(c *fiber.Ctx) error {
 	})
 }
 
-// GetBilling handles GET /v1/tenants/:id/billing
+// GetBilling handles GET /v1/tenants/:id/billing.
+//
+// Deprecated: the dashboard no longer uses tenant billing after the credit
+// billing migration in PR #107. Use /v1/billing/subscription, /v1/billing/usage,
+// and /v1/billing/rates for UI billing surfaces.
 func (h *TenantHandler) GetBilling(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -240,7 +244,10 @@ func (h *TenantHandler) GetBilling(c *fiber.Ctx) error {
 	})
 }
 
-// Checkout handles POST /v1/tenants/:id/billing/checkout
+// Checkout handles POST /v1/tenants/:id/billing/checkout.
+//
+// Deprecated: the UI uses /v1/billing/checkout. This legacy tenant-scoped route
+// is retained only to return a clear migration error.
 func (h *TenantHandler) Checkout(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {

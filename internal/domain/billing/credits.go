@@ -73,14 +73,27 @@ type CreditReservationManager interface {
 	Release(ctx context.Context, reservationID string, reason string) error
 }
 
+type PlanBundle struct {
+	ID              string                 `json:"id"`
+	Name            string                 `json:"name"`
+	AmountPaisa     int64                  `json:"amount_paisa"`
+	Currency        string                 `json:"currency"`
+	CreditsIncluded int64                  `json:"credits_included"`
+	ValidityDays    int                    `json:"validity_days"`
+	Active          bool                   `json:"active"`
+	DisplayOrder    int                    `json:"display_order"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+}
+
 type RateCard struct {
-	Version           string           `json:"version"`
-	Active            bool             `json:"active"`
-	CreditValueINR    float64          `json:"credit_value_inr"`
-	ChannelCreditCost map[string]int64 `json:"channel_credit_cost"`
-	OveragePerMessage map[string]int64 `json:"overage_per_message"`
-	CreatedAt         time.Time        `json:"created_at"`
-	UpdatedAt         time.Time        `json:"updated_at"`
+	Version           string                `json:"version"`
+	Active            bool                  `json:"active"`
+	CreditValueINR    float64               `json:"credit_value_inr"`
+	ChannelCreditCost map[string]int64      `json:"channel_credit_cost"`
+	OveragePerMessage map[string]int64      `json:"overage_per_message"`
+	Plans             map[string]PlanBundle `json:"plans,omitempty"`
+	CreatedAt         time.Time             `json:"created_at"`
+	UpdatedAt         time.Time             `json:"updated_at"`
 }
 
 type CreditBalanceRepository interface {
@@ -104,7 +117,10 @@ type RateCardManager interface {
 	GetActiveRateCard() *RateCard
 	GetChannelCreditCost(channel string) int64
 	GetRateCardVersion() string
+	GetCheckoutPlan(planID string) (PlanBundle, bool)
+	ListCheckoutPlans() []PlanBundle
 	RefreshActiveRateCard(ctx context.Context) error
 	ActivateVersion(ctx context.Context, version string) error
 	UpdateChannelCredits(ctx context.Context, channel string, credits int64) (*RateCard, error)
+	UpdatePlanBundle(ctx context.Context, plan PlanBundle) (*RateCard, error)
 }

@@ -1127,6 +1127,10 @@ func (it *IndexTemplates) GetBillingRateCardsTemplate() map[string]interface{} {
 					"type":    "object",
 					"enabled": false,
 				},
+				"plans": map[string]interface{}{
+					"type":    "object",
+					"enabled": false,
+				},
 				"created_at": map[string]interface{}{"type": "date"},
 				"updated_at": map[string]interface{}{"type": "date"},
 			},

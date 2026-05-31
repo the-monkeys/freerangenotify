@@ -466,3 +466,45 @@ func (h *BillingHandler) AdminRollbackRate(c *fiber.Ctx) error {
 	// Rollback is activate-by-version, with explicit endpoint for operational intent clarity.
 	return h.AdminActivateRate(c)
 }
+
+// GetPlans handles GET /v1/billing/plans
+func (h *BillingHandler) GetPlans(c *fiber.Ctx) error {
+	if h.rateCardMgr == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
+	}
+	plans := h.rateCardMgr.ListCheckoutPlans()
+	active := h.rateCardMgr.GetActiveRateCard()
+	version := "default"
+	if active != nil {
+		version = active.Version
+	}
+	return c.JSON(fiber.Map{
+		"currency":       "INR",
+		"active_version": version,
+		"plans":          plans,
+	})
+}
+
+// AdminGetPlans handles GET /v1/admin/billing/plans
+func (h *BillingHandler) AdminGetPlans(c *fiber.Ctx) error {
+	return h.GetPlans(c)
+}
+
+// AdminSetPlan handles POST /v1/admin/billing/plans/set
+func (h *BillingHandler) AdminSetPlan(c *fiber.Ctx) error {
+	if h.rateCardMgr == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
+	}
+	var plan billing.PlanBundle
+	if err := c.BodyParser(&plan); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	card, err := h.rateCardMgr.UpdatePlanBundle(c.Context(), plan)
+	if err != nil {
+		h.logger.Error("admin billing plans: set failed", zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{
+		"updated": card,
+	})
+}
