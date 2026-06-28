@@ -1008,6 +1008,10 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 					zap.String("content_sid", sid))
 				// Strip any Meta BYOC config that was injected earlier; content_sid requires Twilio.
 				ctx = context.WithValue(ctx, providers.WhatsAppConfigKey, nil)
+			} else if _, hasMetaTemplate := notif.Content.Data["whatsapp_template"]; hasMetaTemplate {
+				waProviderChain = []string{"meta_whatsapp"}
+				p.logger.Info("Forcing Meta WhatsApp provider (whatsapp_template present)",
+					zap.String("notification_id", notif.NotificationID))
 			}
 		}
 		if len(waProviderChain) > 1 && app != nil && app.Settings.WhatsApp != nil {

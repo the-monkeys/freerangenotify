@@ -21,7 +21,7 @@ test.describe('Bulk Send', () => {
         // Bulk Send defaults channel=email so we don't need to change it. Open
         // the user picker dialog (button "Select users") and pick all filtered.
         await page.getByRole('button', { name: /Select users|user(s)? selected/ }).click();
-        await page.getByRole('button', { name: 'Select all (filtered)' }).click();
+        await page.getByRole('button', { name: 'Select all', exact: true }).click();
         await page.keyboard.press('Escape');
 
         // Verify multi-select reflected on the trigger button.

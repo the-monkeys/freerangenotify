@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
@@ -646,5 +648,340 @@ func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data":    settings,
+	})
+}
+
+// GetCodeSamples handles GET /v1/apps/:id/code-samples
+// @Summary Get dynamic code samples
+// @Description Get boilerplate integration code for the application with real credentials pre-filled
+// @Tags Applications
+// @Produce json
+// @Param id path string true "Application ID"
+// @Param language query string false "Specific language (go, python, java, js, cpp, rust, ruby). Defaults to all."
+// @Success 200 {object} map[string]string
+// @Security BearerAuth
+// @Router /v1/apps/{id}/code-samples [get]
+func (h *ApplicationHandler) GetCodeSamples(c *fiber.Ctx) error {
+	userID, ok := c.Locals("user_id").(string)
+	if !ok || userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+
+	appID := c.Params("id")
+	if appID == "" {
+		return errors.BadRequest("app_id is required")
+	}
+
+	app, _, err := h.authorizeAppAccess(c, appID, userID)
+	if err != nil {
+		return err
+	}
+
+	apiKey := app.APIKey
+	// TODO: Make this dynamic - Get it from the config or environment
+	baseURL := "https://freerangenotify.monkeys.support/v1"
+
+	type Snippet struct {
+		Title string `json:"title"`
+		Code  string `json:"code"`
+	}
+	type ChannelSamples struct {
+		Sender   Snippet  `json:"sender"`
+		Receiver *Snippet `json:"receiver,omitempty"`
+		Auth     *Snippet `json:"auth,omitempty"`
+	}
+
+	// Helper to create the auth snippet (Step 1 of SSE)
+	getAuthSnippet := func(lang, apiKey, baseURL string) Snippet {
+		switch lang {
+		case "python":
+			return Snippet{
+				Title: "Step 1: Generate SSE Token (Server-side)",
+				Code: `import requests
+
+# This MUST be done on your backend to keep API Key secret
+api_key = "` + apiKey + `"
+url = "` + baseURL + `/sse/tokens"
+
+response = requests.post(url, 
+    json={"user_id": "CUSTOMER_USER_ID"}, 
+    headers={"X-API-Key": api_key}
+)
+sse_token = response.json()["sse_token"]
+print(f"Token for client: {sse_token}")`,
+			}
+		case "javascript":
+			return Snippet{
+				Title: "Step 1: Generate SSE Token (Server-side Node.js)",
+				Code: `const axios = require('axios');
+
+// This MUST be done on your backend to keep API Key secret
+async function getSseToken(userId) {
+  const response = await axios.post("` + baseURL + `/sse/tokens", 
+    { user_id: userId },
+    { headers: { "X-API-Key": "` + apiKey + `" } }
+  );
+  return response.data.sse_token;
+}`,
+			}
+		default: // Go
+			return Snippet{
+				Title: "Step 1: Generate SSE Token (Server-side)",
+				Code: `// POST ` + baseURL + `/sse/tokens 
+// Header: X-API-Key: ` + apiKey + `
+// Body: {"user_id": "USER_ID"}`,
+			}
+		}
+	}
+
+	samples := make(map[string]map[string]ChannelSamples)
+
+	// ── GOLANG ──
+	goSamples := make(map[string]ChannelSamples)
+	goBaseSender := `package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+)
+
+func main() {
+	apiKey := "` + apiKey + `"
+	url := "` + baseURL + `/notifications"
+
+	payload := map[string]interface{}{
+		"user_id":     "USER_ID_HERE",
+		"template_id": "YOUR_TEMPLATE_ID",
+		"channel":     "%s",
+		"data": map[string]string{
+			"key": "value",
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req.Header.Set("X-API-Key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	http.DefaultClient.Do(req)
+}`
+
+	goSamples["email"] = ChannelSamples{Sender: Snippet{Title: "Publish Email", Code: fmt.Sprintf(goBaseSender, "email")}}
+	goSamples["sms"] = ChannelSamples{Sender: Snippet{Title: "Publish SMS", Code: fmt.Sprintf(goBaseSender, "sms")}}
+	goSamples["whatsapp"] = ChannelSamples{Sender: Snippet{Title: "Publish WhatsApp", Code: fmt.Sprintf(goBaseSender, "whatsapp")}}
+	goSamples["webhook"] = ChannelSamples{Sender: Snippet{Title: "Publish Webhook", Code: fmt.Sprintf(goBaseSender, "webhook")}}
+	goSamples["sse"] = ChannelSamples{
+		Sender:   Snippet{Title: "Publish InApp (SSE)", Code: fmt.Sprintf(goBaseSender, "sse")},
+		Auth:     &Snippet{Title: "Step 1: Generate SSE Token", Code: getAuthSnippet("go", apiKey, baseURL).Code},
+		Receiver: &Snippet{Title: "Step 2: Receive SSE (Client-side)", Code: `// Connect to ` + baseURL + `/sse?sse_token=TOKEN`},
+	}
+	samples["go"] = goSamples
+
+	// ── PYTHON ──
+	pySamples := make(map[string]ChannelSamples)
+	pyBaseSender := `import requests
+
+def send_notification(user_id):
+    url = "` + baseURL + `/notifications"
+    headers = {
+        "X-API-Key": "` + apiKey + `",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "user_id": user_id,
+        "channel": "%s",
+        "template_id": "YOUR_TEMPLATE_ID",
+        "data": {"key": "value"}
+    }
+    return requests.post(url, json=payload, headers=headers)`
+
+	pySamples["email"] = ChannelSamples{Sender: Snippet{Title: "Publish Email", Code: fmt.Sprint(fmt.Sprintf(pyBaseSender, "email"))}}
+	pySamples["sms"] = ChannelSamples{Sender: Snippet{Title: "Publish SMS", Code: fmt.Sprint(fmt.Sprintf(pyBaseSender, "sms"))}}
+	pySamples["whatsapp"] = ChannelSamples{Sender: Snippet{Title: "Publish WhatsApp", Code: fmt.Sprint(fmt.Sprintf(pyBaseSender, "whatsapp"))}}
+	pySamples["webhook"] = ChannelSamples{Sender: Snippet{Title: "Publish Webhook", Code: fmt.Sprint(fmt.Sprintf(pyBaseSender, "webhook"))}}
+	pySamples["sse"] = ChannelSamples{
+		Sender: Snippet{Title: "Publish InApp (SSE)", Code: fmt.Sprint(fmt.Sprintf(pyBaseSender, "sse"))},
+		Auth:   &Snippet{Title: "Step 1: Generate SSE Token", Code: getAuthSnippet("python", apiKey, baseURL).Code},
+		Receiver: &Snippet{Title: "Step 2: Receive SSE (Client-side)", Code: `import requests
+# 1. Get token from your backend
+# 2. Connect
+url = "` + baseURL + `/sse?sse_token=YOUR_TOKEN"
+r = requests.get(url, stream=True)
+for line in r.iter_lines():
+    if line.startswith(b"data: "):
+        print(line)`},
+	}
+	samples["python"] = pySamples
+
+	// ── JAVASCRIPT ──
+	jsSamples := make(map[string]ChannelSamples)
+	jsBaseSender := `const sendNotification = async (userId) => {
+  const url = "` + baseURL + `/notifications";
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': "` + apiKey + `",
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      user_id: userId,
+      channel: "%s",
+      template_id: "YOUR_TEMPLATE_ID",
+      data: { key: "value" }
+    })
+  });
+  return response.json();
+};`
+
+	jsSamples["email"] = ChannelSamples{Sender: Snippet{Title: "Publish Email", Code: fmt.Sprintf(jsBaseSender, "email")}}
+	jsSamples["sms"] = ChannelSamples{Sender: Snippet{Title: "Publish SMS", Code: fmt.Sprintf(jsBaseSender, "sms")}}
+	jsSamples["whatsapp"] = ChannelSamples{Sender: Snippet{Title: "Publish WhatsApp", Code: fmt.Sprintf(jsBaseSender, "whatsapp")}}
+	jsSamples["webhook"] = ChannelSamples{Sender: Snippet{Title: "Publish Webhook", Code: fmt.Sprintf(jsBaseSender, "webhook")}}
+	jsSamples["sse"] = ChannelSamples{
+		Sender: Snippet{Title: "Publish InApp (SSE)", Code: fmt.Sprintf(jsBaseSender, "sse")},
+		Auth:   &Snippet{Title: "Step 1: Generate SSE Token", Code: getAuthSnippet("javascript", apiKey, baseURL).Code},
+		Receiver: &Snippet{Title: "Step 2: Receive SSE (Browser)", Code: `// 1. Get sseToken from your backend
+const eventSource = new EventSource("` + baseURL + `/sse?sse_token=" + sseToken);
+eventSource.onmessage = (e) => console.log("New Notification:", JSON.parse(e.data));`},
+	}
+	samples["javascript"] = jsSamples
+
+	// Helper for others (simplified)
+	addSimpleSamples := func(lang string, baseSender string) {
+		lSamples := make(map[string]ChannelSamples)
+		for _, ch := range []string{"email", "sms", "whatsapp", "webhook", "sse"} {
+			lSamples[ch] = ChannelSamples{Sender: Snippet{Title: "Publish " + strings.Title(ch), Code: fmt.Sprintf(baseSender, ch)}}
+		}
+		samples[lang] = lSamples
+	}
+
+	addSimpleSamples("java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        String apiKey = "` + apiKey + `";
+        String url = "` + baseURL + `/notifications";
+
+        String jsonPayload = "{"
+            + "\"user_id\": \"USER_ID_HERE\","
+            + "\"template_id\": \"YOUR_TEMPLATE_ID\","
+            + "\"channel\": \"%s\","
+            + "\"data\": {\"key\": \"value\"}"
+            + "}";
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("X-API-Key", apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println("Status: " + response.statusCode());
+    }
+}`)
+	addSimpleSamples("cpp", `#include <iostream>
+#include <string>
+#include <curl/curl.h>
+
+int main() {
+    CURL* curl = curl_easy_init();
+    if(curl) {
+        std::string url = "` + baseURL + `/notifications";
+        std::string apiKey = "` + apiKey + `";
+        std::string jsonPayload = "{"
+            "\"user_id\": \"USER_ID_HERE\","
+            "\"template_id\": \"YOUR_TEMPLATE_ID\","
+            "\"channel\": \"%s\","
+            "\"data\": {\"key\": \"value\"}"
+        "}";
+
+        struct curl_slist* headers = NULL;
+        headers = curl_slist_append(headers, ("X-API-Key: " + apiKey).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonPayload.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        CURLcode res = curl_easy_perform(curl);
+        if(res != CURLE_OK) {
+            std::cerr << "curl failed: " << curl_easy_strerror(res) << std::endl;
+        }
+
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+    }
+    return 0;
+}`)
+	addSimpleSamples("rust", `use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let api_key = "` + apiKey + `";
+    let url = "` + baseURL + `/notifications";
+
+    let mut headers = HeaderMap::new();
+    headers.insert("X-API-Key", HeaderValue::from_str(api_key)?);
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    let client = reqwest::Client::new();
+    let payload = json!({
+        "user_id": "USER_ID_HERE",
+        "channel": "%s",
+        "template_id": "YOUR_TEMPLATE_ID",
+        "data": {
+            "key": "value"
+        }
+    });
+
+    let res = client.post(url)
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await?;
+
+    println!("Status: {}", res.status());
+    Ok(())
+}`)
+	addSimpleSamples("ruby", `require 'net/http'
+require 'uri'
+require 'json'
+
+api_key = "` + apiKey + `"
+uri = URI.parse("` + baseURL + `/notifications")
+
+header = {
+  'X-API-Key' => api_key,
+  'Content-Type' => 'application/json'
+}
+
+payload = {
+  user_id: 'USER_ID_HERE',
+  channel: '%s',
+  template_id: 'YOUR_TEMPLATE_ID',
+  data: { key: 'value' }
+}
+
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true
+request = Net::HTTP::Post.new(uri.request_uri, header)
+request.body = payload.to_json
+
+response = http.request(request)
+puts "Status: #{response.code}"`)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data":    samples,
 	})
 }

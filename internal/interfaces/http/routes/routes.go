@@ -439,6 +439,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
 	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
 	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
+	apps.Get("/:id/code-samples", c.ApplicationHandler.GetCodeSamples)
 
 	// Phase 3: Custom Provider Management
 	apps.Post("/:id/providers", c.CustomProviderHandler.Register)

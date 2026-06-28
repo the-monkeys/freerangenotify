@@ -190,6 +190,14 @@ export interface TwilioContentTemplate {
         content_type?: string;
         allow_category_change?: boolean;
     };
+    whatsapp?: {
+        name?: string;
+        status?: string;
+        category?: string;
+        rejection_reason?: string;
+        content_type?: string;
+        allow_category_change?: boolean;
+    };
 }
 
 export interface SMSConfig {

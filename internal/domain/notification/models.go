@@ -533,9 +533,13 @@ func (r *BroadcastRequest) Validate() error {
 	if r.WorkflowTriggerID == "" && r.TemplateID == "" {
 		hasContentSID := false
 		hasWhatsAppRichID := false
+		hasMetaWhatsAppTemplate := false
 		if r.Data != nil {
 			if _, ok := r.Data["content_sid"]; ok {
 				hasContentSID = true
+			}
+			if _, ok := r.Data["whatsapp_template"]; ok {
+				hasMetaWhatsAppTemplate = true
 			}
 			if rich, ok := r.Data["whatsapp_rich"].(map[string]interface{}); ok {
 				if id, _ := rich["template_id"].(string); id != "" {
@@ -543,7 +547,7 @@ func (r *BroadcastRequest) Validate() error {
 				}
 			}
 		}
-		if !hasContentSID && !hasWhatsAppRichID {
+		if !hasContentSID && !hasWhatsAppRichID && !hasMetaWhatsAppTemplate {
 			return ErrTemplateRequired
 		}
 	}
@@ -585,8 +589,9 @@ func (n *Notification) Validate() error {
 		return ErrInvalidStatus
 	}
 	hasContentSid := n.Content.Data != nil && n.Content.Data["content_sid"] != nil
+	hasMetaWhatsAppTemplate := n.Content.Data != nil && n.Content.Data["whatsapp_template"] != nil
 	hasMedia := n.Content.MediaURL != "" || (n.Content.Data != nil && n.Content.Data["media_url"] != nil)
-	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid && !hasMedia {
+	if n.TemplateID == "" && n.Content.Title == "" && n.Content.Body == "" && !hasContentSid && !hasMetaWhatsAppTemplate && !hasMedia {
 		return ErrEmptyContent
 	}
 	if err := n.Content.Validate(); err != nil {
@@ -676,14 +681,19 @@ func (r *SendRequest) Validate() error {
 	}
 	if r.TemplateID == "" && (r.Title == "" || r.Body == "") {
 		// Allow Twilio Content Templates: content_sid in Data is sufficient.
+		// Allow Meta WhatsApp templates: whatsapp_template in Data is sufficient.
 		// Allow FRN WhatsApp rich templates: whatsapp_rich.template_id in Data
 		// (resolved server-side to a Meta template_name and/or Twilio
 		// ContentSid) is also sufficient — see WHATSAPP_RICH_INTERACTIVE_PLAN §5.2.
 		hasContentSID := false
 		hasWhatsAppRichID := false
+		hasMetaWhatsAppTemplate := false
 		if r.Data != nil {
 			if _, ok := r.Data["content_sid"]; ok {
 				hasContentSID = true
+			}
+			if _, ok := r.Data["whatsapp_template"]; ok {
+				hasMetaWhatsAppTemplate = true
 			}
 			if rich, ok := r.Data["whatsapp_rich"].(map[string]interface{}); ok {
 				if id, _ := rich["template_id"].(string); id != "" {
@@ -691,7 +701,7 @@ func (r *SendRequest) Validate() error {
 				}
 			}
 		}
-		if !hasContentSID && !hasWhatsAppRichID {
+		if !hasContentSID && !hasWhatsAppRichID && !hasMetaWhatsAppTemplate {
 			return ErrTemplateRequired
 		}
 	}
@@ -745,8 +755,9 @@ func (r *BulkSendRequest) Validate() error {
 		return ErrInvalidPriority
 	}
 	hasContentSid := r.Data != nil && r.Data["content_sid"] != nil
+	hasMetaWhatsAppTemplate := r.Data != nil && r.Data["whatsapp_template"] != nil
 	hasMedia := r.MediaURL != "" || (r.Data != nil && r.Data["media_url"] != nil)
-	if r.TemplateID == "" && (r.Title == "" || r.Body == "") && !hasContentSid && !hasMedia {
+	if r.TemplateID == "" && (r.Title == "" || r.Body == "") && !hasContentSid && !hasMetaWhatsAppTemplate && !hasMedia {
 		return ErrEmptyContent
 	}
 	if r.ScheduledAt != nil && r.ScheduledAt.Before(time.Now()) {

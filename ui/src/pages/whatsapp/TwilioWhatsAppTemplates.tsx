@@ -51,11 +51,11 @@ const approvalStatusColors: Record<string, string> = {
 };
 
 function getApprovalStatus(tpl: TwilioContentTemplate): string {
-    return tpl.approval_requests?.status || 'unsubmitted';
+    return (tpl.whatsapp?.status || tpl.approval_requests?.status || 'unsubmitted').toLowerCase();
 }
 
 function getApprovalCategory(tpl: TwilioContentTemplate): string {
-    return tpl.approval_requests?.category || '';
+    return tpl.whatsapp?.category || tpl.approval_requests?.category || '';
 }
 
 function getBodyText(tpl: TwilioContentTemplate): string {
@@ -526,11 +526,11 @@ const TwilioWhatsAppTemplates: React.FC<TwilioWhatsAppTemplatesProps> = ({ apiKe
                                                             </div>
                                                         </div>
                                                     )}
-                                                    {tpl.approval_requests?.rejection_reason && (
-                                                        <div className="text-xs p-2 rounded bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300">
-                                                            <span className="font-medium">Rejection reason:</span> {tpl.approval_requests.rejection_reason}
-                                                        </div>
-                                                    )}
+                                                     {(tpl.whatsapp?.rejection_reason || tpl.approval_requests?.rejection_reason) && (
+                                                         <div className="text-xs p-2 rounded bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300">
+                                                             <span className="font-medium">Rejection reason:</span> {tpl.whatsapp?.rejection_reason || tpl.approval_requests?.rejection_reason}
+                                                         </div>
+                                                     )}
 
                                                     {/* Preview section */}
                                                     {previewData?.sid === tpl.sid && (

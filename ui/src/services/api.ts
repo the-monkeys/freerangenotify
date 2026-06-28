@@ -277,6 +277,12 @@ export const applicationsAPI = {
   removeAllLinks: async (appId: string) => {
     await api.delete(`/apps/${appId}/links`);
   },
+
+  getCodeSamples: async (id: string, language?: string) => {
+    const params = language ? `?language=${language}` : '';
+    const { data } = await api.get<ApiResponse<Record<string, Record<string, any>>>>(`/apps/${id}/code-samples${params}`);
+    return data.data;
+  },
 };
 
 // Helper to get auth headers — sends app API key via X-API-Key so the JWT

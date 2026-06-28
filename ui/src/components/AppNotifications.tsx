@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI } from '../services/api';
+import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI, whatsappTemplatesAPI } from '../services/api';
 import type { TwilioContentTemplate } from '../types';
 import { applyUserAutoFillVars } from '../lib/templateAutofill';
 import type { Notification, NotificationRequest, Template, BroadcastNotificationRequest } from '../types';
@@ -171,8 +171,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     );
     const twilioApproved = useMemo<TwilioContentTemplate[]>(() => {
         const all: TwilioContentTemplate[] = twilioData?.contents || [];
-        return all.filter(t => t.approval_requests?.status === 'approved');
+        return all.filter(t => {
+            const status = (t.whatsapp?.status || t.approval_requests?.status || '').toLowerCase();
+            return status === 'approved';
+        });
     }, [twilioData]);
+
+    // 3c. Meta WhatsApp Templates
+    const { data: metaTemplatesData } = useApiQuery(
+        () => whatsappTemplatesAPI.list(apiKey),
+        [apiKey],
+        { cacheKey: `meta-whatsapp-templates-${apiKey}`, staleTime: 60000 }
+    );
+    const metaApproved = useMemo<any[]>(() => {
+        const all = metaTemplatesData?.data || [];
+        return all.filter((t: any) => t.status === 'APPROVED');
+    }, [metaTemplatesData]);
 
     // 4. Workflows
     const { data: workflowsData } = useApiQuery(
@@ -559,6 +573,76 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const extractTwilioSid = (id: string) => id.slice('twilio:'.length);
     const findTwilioTemplate = (id: string) => twilioApproved.find(t => t.sid === extractTwilioSid(id));
 
+    // Helper: check if a template selection is a Meta WhatsApp Template
+    const isMetaSelection = (id: string) => id.startsWith('meta:');
+    const extractMetaName = (id: string) => id.slice('meta:'.length);
+    const findMetaTemplate = (id: string) => metaApproved.find((t: any) => t.name === extractMetaName(id));
+
+    const extractVariablesFromMetaTemplate = (template: any) => {
+        if (!template || !template.components) return [];
+        const varsSet = new Set<string>();
+        const regex = /\{\{(\d+)\}\}/g;
+        template.components.forEach((comp: any) => {
+            if (comp.text) {
+                let match;
+                while ((match = regex.exec(comp.text)) !== null) {
+                    varsSet.add(match[1]);
+                }
+            }
+        });
+        return Array.from(varsSet).sort((a, b) => Number(a) - Number(b));
+    };
+
+    const getMetaTemplateBody = (template: any): string => {
+        if (!template || !template.components) return '';
+        const bodyComp = template.components.find((c: any) => c.type === 'BODY' || c.type === 'body');
+        return bodyComp?.text || '';
+    };
+
+    const buildMetaWhatsappTemplateData = (name: string, lang: string, variables: string[], values: Record<string, string>) => {
+        const parameters = variables.map(v => ({
+            type: 'text',
+            text: values[v] || ''
+        }));
+        const components = parameters.length > 0 ? [
+            {
+                type: 'body',
+                parameters: parameters
+            }
+        ] : [];
+        return {
+            whatsapp_template: {
+                name: name,
+                language: lang || 'en_US',
+                components: components
+            }
+        };
+    };
+
+    const mergeMetaData = (
+        customData: Record<string, unknown>,
+        metaPayload: Record<string, unknown> | null
+    ): Record<string, unknown> => {
+        if (!metaPayload) {
+            return { ...customData };
+        }
+        const { whatsapp_template: _wt, ...rest } = customData;
+        return { ...rest, ...metaPayload };
+    };
+
+    function metaVariablesIncompleteMessage(
+        template: any,
+        vars: Record<string, string>
+    ): string | null {
+        const keys = extractVariablesFromMetaTemplate(template);
+        for (const k of keys) {
+            if (String(vars[k] ?? '').trim() === '') {
+                return `Fill every WhatsApp template variable. Missing value for {{${k}}}.`;
+            }
+        }
+        return null;
+    }
+
     // Selected Twilio template (memoised) — used to drive variable inputs and preview
     const quickSelectedTwilioTemplate = useMemo<TwilioContentTemplate | undefined>(() => {
         if (!isTwilioSelection(quickTemplateId)) return undefined;
@@ -579,11 +663,26 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     // content lives locally and doesn't need a server render call)
     const [twilioPreviewOpen, setTwilioPreviewOpen] = useState(false);
 
-    // Form tabs (Bulk Send + Broadcast) share formData.template_id. Twilio vars live
-    // in a separate record so they can drive both variable inputs and the inline preview
-    // without polluting dataInput. They are serialized into content_variables at send time.
+    // Selected Meta template (memoised) — used to drive variable inputs and preview
+    const quickSelectedMetaTemplate = useMemo(() => {
+        if (!isMetaSelection(quickTemplateId)) return undefined;
+        return findMetaTemplate(quickTemplateId);
+    }, [quickTemplateId, metaApproved]);
+
+    // Ordered list of Meta variable keys for the selected template
+    const quickMetaVariableKeys = useMemo<string[]>(() => {
+        return extractVariablesFromMetaTemplate(quickSelectedMetaTemplate);
+    }, [quickSelectedMetaTemplate]);
+
+    const [quickMetaPreviewOpen, setQuickMetaPreviewOpen] = useState(false);
+
+    // Form tabs (Bulk Send + Broadcast) share formData.template_id. Twilio/Meta vars live
+    // in separate records so they can drive both variable inputs and the inline preview
     const [formTwilioVars, setFormTwilioVars] = useState<Record<string, string>>({});
     const [formTwilioPreviewOpen, setFormTwilioPreviewOpen] = useState(false);
+
+    const [formMetaVars, setFormMetaVars] = useState<Record<string, string>>({});
+    const [formMetaPreviewOpen, setFormMetaPreviewOpen] = useState(false);
 
     const formSelectedTwilioTemplate = useMemo<TwilioContentTemplate | undefined>(() => {
         if (!isTwilioSelection(formData.template_id || '')) return undefined;
@@ -597,6 +696,22 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         const named = keys.filter(k => !/^\d+$/.test(k));
         return [...numeric, ...named];
     }, [formSelectedTwilioTemplate]);
+
+    const formSelectedMetaTemplate = useMemo(() => {
+        if (!isMetaSelection(formData.template_id || '')) return undefined;
+        return findMetaTemplate(formData.template_id!);
+    }, [formData.template_id, metaApproved]);
+
+    const formMetaVariableKeys = useMemo<string[]>(() => {
+        return extractVariablesFromMetaTemplate(formSelectedMetaTemplate);
+    }, [formSelectedMetaTemplate]);
+
+    // Auto-select first user when users load and quickTo is empty
+    useEffect(() => {
+        if (!quickTo && !quickToManual && users.length > 0) {
+            setQuickTo(users[0].user_id);
+        }
+    }, [users, quickTo, quickToManual]);
 
     // Auto-fill name-style Twilio variables ({{first_name}}, {{last_name}},
     // {{full_name}}, {{user_name}}, {{name}}) from the selected user. Twilio
@@ -892,7 +1007,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const handleQuickSend = async () => {
         const isFreeform = isFreeformWhatsApp;
         const isTwilioCheck = !isFreeform && isTwilioSelection(quickTemplateId);
-        const selTpl = (isTwilioCheck || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
+        const isMetaCheck = !isFreeform && isMetaSelection(quickTemplateId);
+        const selTpl = (isTwilioCheck || isMetaCheck || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
         const isWebhookLike = selTpl ? WEBHOOK_LIKE_CHANNELS.includes(selTpl.channel) : false;
         if (!quickTemplateId || (!isWebhookLike && !isFreeform && !quickTo)) return;
         if (isFreeform && !quickTo) return;
@@ -902,8 +1018,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         }
 
         const isTwilio = isTwilioCheck;
-        const selectedTemplate = (isTwilio || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
-        const channel = (isTwilio || isFreeform) ? 'whatsapp' : (selectedTemplate?.channel || 'email');
+        const isMeta = isMetaCheck;
+        const selectedTemplate = (isTwilio || isMeta || isFreeform) ? undefined : templates.find(t => t.id === quickTemplateId);
+        const channel = (isTwilio || isMeta || isFreeform) ? 'whatsapp' : (selectedTemplate?.channel || 'email');
         if (checkVerificationAndBlock(channel)) return;
 
         // Webhook routing: MUST resolve a destination endpoint. If the template
@@ -938,6 +1055,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     return;
                 }
             }
+
+            const metaTpl = isMeta ? findMetaTemplate(quickTemplateId) : undefined;
+            if (isMeta && metaTpl) {
+                const vErr = metaVariablesIncompleteMessage(metaTpl, quickData);
+                if (vErr) {
+                    toast.error(vErr);
+                    setQuickSending(false);
+                    return;
+                }
+            }
+
             // For Twilio: quickData contains user-typed variable values keyed by variable name
             // (e.g. "1", "2"). Bundle them into content_variables JSON string and attach
             // content_sid. Do NOT pass the raw variable keys at the top level — the provider
@@ -947,27 +1075,34 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     content_sid: twilioTpl.sid,
                     content_variables: JSON.stringify(quickData || {}),
                 }
-                : isFreeform
-                    ? (quickMedia ? { media_url: quickMedia.url } : undefined)
-                    : (() => {
-                        // Strip routing keys — they belong on dedicated top-level
-                        // request fields (`webhook_url`, `webhook_target`), never
-                        // in template `data`. Leaving `webhook_target` in `data`
-                        // causes the worker to resolve it as a custom provider
-                        // and override the explicit `webhook_url`, silently
-                        // misrouting (Slack URL → Discord, etc.).
-                        const cleaned: Record<string, unknown> = {};
-                        for (const [k, v] of Object.entries(quickData)) {
-                            if (k === 'webhook_target' || k === 'webhook_url') continue;
-                            cleaned[k] = v;
-                        }
-                        return Object.keys(cleaned).length > 0 ? cleaned : undefined;
-                    })();
+                : isMeta && metaTpl
+                    ? buildMetaWhatsappTemplateData(
+                        metaTpl.name,
+                        metaTpl.language || 'en_US',
+                        extractVariablesFromMetaTemplate(metaTpl),
+                        quickData
+                    )
+                    : isFreeform
+                        ? (quickMedia ? { media_url: quickMedia.url } : undefined)
+                        : (() => {
+                            // Strip routing keys — they belong on dedicated top-level
+                            // request fields (`webhook_url`, `webhook_target`), never
+                            // in template `data`. Leaving `webhook_target` in `data`
+                            // causes the worker to resolve it as a custom provider
+                            // and override the explicit `webhook_url`, silently
+                            // misrouting (Slack URL → Discord, etc.).
+                            const cleaned: Record<string, unknown> = {};
+                            for (const [k, v] of Object.entries(quickData)) {
+                                if (k === 'webhook_target' || k === 'webhook_url') continue;
+                                cleaned[k] = v;
+                            }
+                            return Object.keys(cleaned).length > 0 ? cleaned : undefined;
+                        })();
 
             await quickSendAPI.send(apiKey, {
                 to: isWebhookLike ? '' : quickTo,
-                template: (isTwilio || isFreeform) ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
-                channel: (isTwilio || isFreeform) ? 'whatsapp' : undefined,
+                template: (isTwilio || isMeta || isFreeform) ? undefined : (quickSelectedTemplate?.name || quickTemplateId),
+                channel: (isTwilio || isMeta || isFreeform) ? 'whatsapp' : undefined,
                 subject: isFreeform && quickFreeformTitle ? quickFreeformTitle : undefined,
                 body: isFreeform ? quickFreeformBody : undefined,
                 data: sendData,
@@ -981,9 +1116,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             prependOptimisticNotifications([
                 buildOptimisticNotification({
                     userId: quickTo,
-                    channel: (quickSelectedTemplate?.channel || 'email') as Notification['channel'],
+                    channel: (isMeta || isTwilio || isFreeform) ? 'whatsapp' : ((quickSelectedTemplate?.channel || 'email') as Notification['channel']),
                     priority: (quickPriority || 'normal') as Notification['priority'],
-                    templateId: quickSelectedTemplate?.id,
+                    templateId: (isMeta || isTwilio || isFreeform) ? quickTemplateId : quickSelectedTemplate?.id,
                     data: Object.keys(quickData).length > 0 ? quickData : undefined,
                     scheduledAt,
                     metadata: selectedDigestRule ? { digest_key: selectedDigestRule.digest_key } : undefined,
@@ -1000,6 +1135,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setQuickWebhookTarget('');
             setQuickFreeformBody('');
             setQuickFreeformTitle('');
+            setQuickMetaPreviewOpen(false);
             if (quickMedia?.previewUrl) {
                 URL.revokeObjectURL(quickMedia.previewUrl);
             }
@@ -1045,6 +1181,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
             const useWorkflow = !!broadcastWorkflowTriggerId;
             const isTwilio = isTwilioSelection(formData.template_id || '');
+            const isMeta = isMetaSelection(formData.template_id || '');
             if (!useWorkflow && !formData.template_id) {
                 toast.error('Select a template or a workflow to trigger');
                 setIsSubmitting(false);
@@ -1052,7 +1189,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             }
 
             const twilioTpl = isTwilio ? findTwilioTemplate(formData.template_id!) : undefined;
+            const metaTpl = isMeta ? findMetaTemplate(formData.template_id!) : undefined;
             const broadcastDigestRule = broadcastDigestRuleId ? digestRules.find(r => r.id === broadcastDigestRuleId) : null;
+            
             const twilioPayload = isTwilio && twilioTpl ? {
                 content_sid: twilioTpl.sid,
                 content_variables: JSON.stringify(formTwilioVars || {}),
@@ -1065,12 +1204,35 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     return;
                 }
             }
+
+            const metaPayload = isMeta && metaTpl ? buildMetaWhatsappTemplateData(
+                metaTpl.name,
+                metaTpl.language || 'en_US',
+                extractVariablesFromMetaTemplate(metaTpl),
+                formMetaVars
+            ) : null;
+            if (isMeta && metaTpl) {
+                const vErr = metaVariablesIncompleteMessage(metaTpl, formMetaVars);
+                if (vErr) {
+                    toast.error(vErr);
+                    setIsSubmitting(false);
+                    return;
+                }
+            }
+
+            let mergedData = customData as Record<string, unknown>;
+            if (isTwilio && twilioPayload) {
+                mergedData = mergeTwilioData(mergedData, twilioPayload);
+            } else if (isMeta && metaPayload) {
+                mergedData = mergeMetaData(mergedData, metaPayload);
+            }
+
             const richPayload = !isRichContentEmpty(advRichContent) ? richContentToPayload(advRichContent) : {};
             const payload: BroadcastNotificationRequest = {
                 channel: formData.channel,
                 priority: formData.priority,
-                template_id: (useWorkflow || isTwilio) ? undefined : formData.template_id,
-                data: mergeTwilioData(customData as Record<string, unknown>, twilioPayload),
+                template_id: (useWorkflow || isTwilio || isMeta) ? undefined : formData.template_id,
+                data: mergedData,
                 scheduled_at: formData.scheduled_at,
                 workflow_trigger_id: broadcastWorkflowTriggerId || undefined,
                 topic_key: broadcastTopicKey || undefined,
@@ -1113,6 +1275,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             setBroadcastDigestRuleId('');
             setFormTwilioVars({});
             setFormTwilioPreviewOpen(false);
+            setFormMetaVars({});
+            setFormMetaPreviewOpen(false);
             clearFormMedia();
             refresh();
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
@@ -1159,7 +1323,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
 
             const advDigestRule = advDigestRuleId ? digestRules.find(r => r.id === advDigestRuleId) : null;
             const isTwilio = isTwilioSelection(formData.template_id || '');
+            const isMeta = isMetaSelection(formData.template_id || '');
             const twilioTpl = isTwilio ? findTwilioTemplate(formData.template_id!) : undefined;
+            const metaTpl = isMeta ? findMetaTemplate(formData.template_id!) : undefined;
+            
             const twilioPayload = isTwilio && twilioTpl ? {
                 content_sid: twilioTpl.sid,
                 content_variables: JSON.stringify(formTwilioVars || {}),
@@ -1171,13 +1338,34 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     return;
                 }
             }
-            const finalData = mergeTwilioData(customData as Record<string, unknown>, twilioPayload);
+
+            const metaPayload = isMeta && metaTpl ? buildMetaWhatsappTemplateData(
+                metaTpl.name,
+                metaTpl.language || 'en_US',
+                extractVariablesFromMetaTemplate(metaTpl),
+                formMetaVars
+            ) : null;
+            if (isMeta && metaTpl) {
+                const vErr = metaVariablesIncompleteMessage(metaTpl, formMetaVars);
+                if (vErr) {
+                    toast.error(vErr);
+                    return;
+                }
+            }
+
+            let finalData = customData as Record<string, unknown>;
+            if (isTwilio && twilioPayload) {
+                finalData = mergeTwilioData(finalData, twilioPayload);
+            } else if (isMeta && metaPayload) {
+                finalData = mergeMetaData(finalData, metaPayload);
+            }
+
             const richPayload = !isRichContentEmpty(advRichContent) ? richContentToPayload(advRichContent) : {};
             const payload: NotificationRequest = {
                 user_id: '',
                 channel: formData.channel,
                 priority: formData.priority,
-                template_id: isTwilio ? undefined : (formData.template_id || undefined),
+                template_id: (isTwilio || isMeta) ? undefined : (formData.template_id || undefined),
                 data: finalData,
                 scheduled_at: formData.scheduled_at,
                 recurrence: formData.recurrence,
@@ -1369,11 +1557,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         )}
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="quickTemplate">Template</Label>
-                                        <Select value={quickTemplateId} onValueChange={(value) => {
+                                                                             <Select value={quickTemplateId} onValueChange={(value) => {
 
                                             setQuickTemplateId(value);
                                             setTwilioPreviewOpen(false);
+                                            setQuickMetaPreviewOpen(false);
                                             if (isTwilioSelection(value)) {
                                                 const tpl = findTwilioTemplate(value);
                                                 // Seed quickData with one empty entry per Twilio variable key
@@ -1386,6 +1574,12 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                 } else {
                                                     setQuickData({});
                                                 }
+                                            } else if (isMetaSelection(value)) {
+                                                const tpl = findMetaTemplate(value);
+                                                const keys = extractVariablesFromMetaTemplate(tpl);
+                                                const seed: Record<string, string> = {};
+                                                for (const k of keys) seed[k] = '';
+                                                setQuickData(seed);
                                             } else {
                                                 // Pre-fill variables with sample_data
                                                 const selected = templates.find(t => t.id === value);
@@ -1421,7 +1615,17 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Twilio WhatsApp Templates</div>
                                                         {twilioApproved.map(t => (
                                                             <SelectItem key={t.sid} value={`twilio:${t.sid}`}>
-                                                                {t.friendly_name} (whatsapp)
+                                                                 {t.friendly_name} (whatsapp)
+                                                            </SelectItem>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                {metaApproved.length > 0 && (
+                                                    <>
+                                                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Meta WhatsApp Templates</div>
+                                                        {metaApproved.map(t => (
+                                                            <SelectItem key={t.name} value={`meta:${t.name}`}>
+                                                                {t.name} (whatsapp)
                                                             </SelectItem>
                                                         ))}
                                                     </>
@@ -1528,6 +1732,52 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     template={quickSelectedTwilioTemplate}
                                                     variables={quickData}
                                                     header={quickSelectedTwilioTemplate.friendly_name}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Meta WhatsApp Template variables + inline WhatsApp preview */}
+                                {quickSelectedMetaTemplate && (
+                                    <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium flex items-center gap-2">
+                                                Template Variables
+                                                {quickMetaVariableKeys.length > 0 && (
+                                                    <Badge variant="secondary" className="text-xs">{quickMetaVariableKeys.length}</Badge>
+                                                )}
+                                                <span className="text-xs text-muted-foreground font-normal">• Meta WhatsApp template</span>
+                                            </span>
+                                        </div>
+                                        {quickMetaVariableKeys.length === 0 ? (
+                                            <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                {quickMetaVariableKeys.map((k) => {
+                                                    const currentVal = quickData[k] || '';
+                                                    return (
+                                                        <div key={k} className="space-y-1">
+                                                            <Label className="text-xs text-muted-foreground">
+                                                                <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                            </Label>
+                                                            <Input
+                                                                value={currentVal}
+                                                                onChange={(e) => setQuickData((d) => ({ ...d, [k]: e.target.value }))}
+                                                                placeholder={`Value for {{${k}}}`}
+                                                                className={currentVal ? '' : 'text-muted-foreground'}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {quickMetaPreviewOpen && (
+                                            <div className="pt-2 flex justify-center">
+                                                <WhatsAppPreview
+                                                    body={getMetaTemplateBody(quickSelectedMetaTemplate)}
+                                                    variables={quickData}
+                                                    header={quickSelectedMetaTemplate.name}
                                                 />
                                             </div>
                                         )}
@@ -1773,12 +2023,14 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         <Button
                                             variant="outline"
                                             disabled={
-                                                !quickSelectedTwilioTemplate &&
+                                                !quickSelectedTwilioTemplate && !quickSelectedMetaTemplate &&
                                                 (!!activePreviews[quickTemplateId]?.loading || !quickTemplateId)
                                             }
                                             onClick={() => {
                                                 if (quickSelectedTwilioTemplate) {
                                                     setTwilioPreviewOpen((v) => !v);
+                                                } else if (quickSelectedMetaTemplate) {
+                                                    setQuickMetaPreviewOpen((v) => !v);
                                                 } else {
                                                     renderQuickPreview();
                                                 }
@@ -1787,7 +2039,9 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             <Eye className="w-4 h-4 mr-1" />
                                             {quickSelectedTwilioTemplate
                                                 ? (twilioPreviewOpen ? 'Hide Preview' : 'Preview')
-                                                : (activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview')}
+                                                : quickSelectedMetaTemplate
+                                                    ? (quickMetaPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                    : (activePreviews[quickTemplateId]?.loading ? 'Rendering...' : 'Preview')}
                                         </Button>
                                     )}
                                     <Button onClick={handleQuickSend} disabled={quickSending || (!isQuickWebhookLike && !quickTo) || !quickTemplateId}>
@@ -1871,11 +2125,27 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     }
                                                     setFormTwilioVars(seed);
                                                     setFormTwilioPreviewOpen(false);
+                                                    setFormMetaVars({});
+                                                    setFormMetaPreviewOpen(false);
+                                                    setDataInput('');
+                                                } else if (isMetaSelection(value)) {
+                                                    const tpl = findMetaTemplate(value);
+                                                    setFormData({ ...formData, template_id: value });
+                                                    // Seed Meta var inputs; clear JSON data block
+                                                    const seed: Record<string, string> = {};
+                                                    const keys = extractVariablesFromMetaTemplate(tpl);
+                                                    for (const k of keys) seed[k] = '';
+                                                    setFormMetaVars(seed);
+                                                    setFormTwilioVars({});
+                                                    setFormTwilioPreviewOpen(false);
+                                                    setFormMetaPreviewOpen(false);
                                                     setDataInput('');
                                                 } else {
                                                     setFormData({ ...formData, template_id: value });
                                                     setFormTwilioVars({});
                                                     setFormTwilioPreviewOpen(false);
+                                                    setFormMetaVars({});
+                                                    setFormMetaPreviewOpen(false);
                                                     const selected = templates.find(t => t.id === value);
                                                     const sample = getSampleData(selected);
                                                     if (Object.keys(sample).length > 0) {
@@ -1904,12 +2174,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         ))}
                                                     </>
                                                 )}
-                                                {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || twilioApproved.length === 0) && (
+                                                {formData.channel === 'whatsapp' && metaApproved.length > 0 && (
+                                                    <>
+                                                        {(filteredTemplates.length > 0 || twilioApproved.length > 0) && <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Meta WhatsApp Templates</div>}
+                                                        {(filteredTemplates.length === 0 && twilioApproved.length === 0) && <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Meta WhatsApp Templates</div>}
+                                                        {metaApproved.map(t => (
+                                                            <SelectItem key={t.name} value={`meta:${t.name}`}>
+                                                                {t.name} (Meta)
+                                                            </SelectItem>
+                                                        ))}
+                                                    </>
+                                                )}
+                                                {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || (twilioApproved.length === 0 && metaApproved.length === 0)) && (
                                                     <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
                                                 )}
                                             </SelectContent>
                                         </Select>
-                                        {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || twilioApproved.length === 0) && (
+                                        {filteredTemplates.length === 0 && (formData.channel !== 'whatsapp' || (twilioApproved.length === 0 && metaApproved.length === 0)) && (
                                             <p className="text-xs text-amber-600">No templates found for the &quot;{formData.channel}&quot; channel. Create one in the Templates tab.</p>
                                         )}
                                     </div>
@@ -1999,6 +2280,54 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                             template={formSelectedTwilioTemplate}
                                                             variables={formTwilioVars}
                                                             header={formSelectedTwilioTemplate.friendly_name}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Meta WhatsApp Template variables + inline WhatsApp preview */}
+                                    {formSelectedMetaTemplate && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-medium flex items-center gap-2">
+                                                        Template Variables
+                                                        {formMetaVariableKeys.length > 0 && (
+                                                            <Badge variant="secondary" className="text-xs">{formMetaVariableKeys.length}</Badge>
+                                                        )}
+                                                        <span className="text-xs text-muted-foreground font-normal">• Meta WhatsApp template</span>
+                                                    </span>
+                                                </div>
+                                                {formMetaVariableKeys.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {formMetaVariableKeys.map((k) => {
+                                                            const currentVal = formMetaVars[k] || '';
+                                                            return (
+                                                                <div key={k} className="space-y-1">
+                                                                    <Label className="text-xs text-muted-foreground">
+                                                                        <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                                    </Label>
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setFormMetaVars((d) => ({ ...d, [k]: e.target.value }))}
+                                                                        placeholder={`Value for {{${k}}}`}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {formMetaPreviewOpen && (
+                                                    <div className="pt-2 flex justify-center">
+                                                        <WhatsAppPreview
+                                                            body={getMetaTemplateBody(formSelectedMetaTemplate)}
+                                                            variables={formMetaVars}
+                                                            header={formSelectedMetaTemplate.name}
                                                         />
                                                     </div>
                                                 )}
@@ -2316,19 +2645,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             onClick={() => {
                                                 if (formSelectedTwilioTemplate) {
                                                     setFormTwilioPreviewOpen((v) => !v);
+                                                } else if (formSelectedMetaTemplate) {
+                                                    setFormMetaPreviewOpen((v) => !v);
                                                 } else {
                                                     renderSendPreview('advanced');
                                                 }
                                             }}
                                             disabled={
-                                                !formSelectedTwilioTemplate &&
+                                                !formSelectedTwilioTemplate && !formSelectedMetaTemplate &&
                                                 (!!activePreviews[formData.template_id || '']?.loading || !formData.template_id)
                                             }
                                         >
                                             <Eye className="h-4 w-4 mr-1" />
                                             {formSelectedTwilioTemplate
                                                 ? (formTwilioPreviewOpen ? 'Hide Preview' : 'Preview')
-                                                : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
+                                                : formSelectedMetaTemplate
+                                                    ? (formMetaPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                    : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
                                         </Button>
                                         <Button
                                             type="button"
@@ -2414,12 +2747,29 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                             }
                                                             setFormTwilioVars(seed);
                                                             setFormTwilioPreviewOpen(false);
+                                                            setFormMetaVars({});
+                                                            setFormMetaPreviewOpen(false);
+                                                            setDataInput('');
+                                                            return;
+                                                        }
+                                                        if (isMetaSelection(val)) {
+                                                            const tpl = findMetaTemplate(val);
+                                                            setFormData({ ...formData, template_id: val });
+                                                            const seed: Record<string, string> = {};
+                                                            const keys = extractVariablesFromMetaTemplate(tpl);
+                                                            for (const k of keys) seed[k] = '';
+                                                            setFormMetaVars(seed);
+                                                            setFormTwilioVars({});
+                                                            setFormTwilioPreviewOpen(false);
+                                                            setFormMetaPreviewOpen(false);
                                                             setDataInput('');
                                                             return;
                                                         }
                                                         setFormData({ ...formData, template_id: val });
                                                         setFormTwilioVars({});
                                                         setFormTwilioPreviewOpen(false);
+                                                        setFormMetaVars({});
+                                                        setFormMetaPreviewOpen(false);
                                                         const selected = templates.find(t => t.id === val);
                                                         const sample = getSampleData(selected);
                                                         if (Object.keys(sample).length > 0) {
@@ -2433,7 +2783,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                         <SelectValue placeholder="Select a template" />
                                                     </SelectTrigger>
                                                     <SelectContent>
-                                                        {filteredTemplates.length === 0 && !(formData.channel === 'whatsapp' && twilioApproved.length > 0) ? (
+                                                        {filteredTemplates.length === 0 && !(formData.channel === 'whatsapp' && (twilioApproved.length > 0 || metaApproved.length > 0)) ? (
                                                             <div className="px-2 py-3 text-sm text-muted-foreground text-center">No templates for {formData.channel}</div>
                                                         ) : (
                                                             filteredTemplates.map(t => (
@@ -2446,6 +2796,16 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                                 {twilioApproved.map(t => (
                                                                     <SelectItem key={t.sid} value={`twilio:${t.sid}`}>
                                                                         {t.friendly_name}
+                                                                    </SelectItem>
+                                                                ))}
+                                                            </>
+                                                        )}
+                                                        {formData.channel === 'whatsapp' && metaApproved.length > 0 && (
+                                                            <>
+                                                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Meta WhatsApp Templates</div>
+                                                                {metaApproved.map(t => (
+                                                                    <SelectItem key={t.name} value={`meta:${t.name}`}>
+                                                                        {t.name}
                                                                     </SelectItem>
                                                                 ))}
                                                             </>
@@ -2576,6 +2936,52 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                             template={formSelectedTwilioTemplate}
                                                             variables={formTwilioVars}
                                                             header={formSelectedTwilioTemplate.friendly_name}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Meta WhatsApp Template variables + inline WhatsApp preview */}
+                                        {formSelectedMetaTemplate && (
+                                            <div className={`${SEND_FORM_SECTION_CLASS} p-4 space-y-3`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-sm font-medium flex items-center gap-2">
+                                                        Template Variables
+                                                        {formMetaVariableKeys.length > 0 && (
+                                                            <Badge variant="secondary" className="text-xs">{formMetaVariableKeys.length}</Badge>
+                                                        )}
+                                                        <span className="text-xs text-muted-foreground font-normal">• Meta WhatsApp template</span>
+                                                    </span>
+                                                </div>
+                                                {formMetaVariableKeys.length === 0 ? (
+                                                    <p className="text-xs text-muted-foreground">This template has no variables.</p>
+                                                ) : (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                        {formMetaVariableKeys.map((k) => {
+                                                            const currentVal = formMetaVars[k] || '';
+                                                            return (
+                                                                <div key={k} className="space-y-1">
+                                                                    <Label className="text-xs text-muted-foreground">
+                                                                        <code className="bg-muted px-1 rounded mr-1">{`{{${k}}}`}</code>
+                                                                    </Label>
+                                                                    <Input
+                                                                        value={currentVal}
+                                                                        onChange={(e) => setFormMetaVars((d) => ({ ...d, [k]: e.target.value }))}
+                                                                        placeholder={`Value for {{${k}}}`}
+                                                                        className={currentVal ? '' : 'text-muted-foreground'}
+                                                                    />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {formMetaPreviewOpen && (
+                                                    <div className="pt-2 flex justify-center">
+                                                        <WhatsAppPreview
+                                                            body={getMetaTemplateBody(formSelectedMetaTemplate)}
+                                                            variables={formMetaVars}
+                                                            header={formSelectedMetaTemplate.name}
                                                         />
                                                     </div>
                                                 )}
@@ -2744,19 +3150,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     onClick={() => {
                                                         if (formSelectedTwilioTemplate) {
                                                             setFormTwilioPreviewOpen((v) => !v);
+                                                        } else if (formSelectedMetaTemplate) {
+                                                            setFormMetaPreviewOpen((v) => !v);
                                                         } else {
                                                             renderSendPreview('broadcast');
                                                         }
                                                     }}
                                                     disabled={
-                                                        !formSelectedTwilioTemplate &&
+                                                        !formSelectedTwilioTemplate && !formSelectedMetaTemplate &&
                                                         (!!activePreviews[formData.template_id || '']?.loading || !formData.template_id)
                                                     }
                                                 >
                                                     <Eye className="h-4 w-4 mr-1" />
                                                     {formSelectedTwilioTemplate
                                                         ? (formTwilioPreviewOpen ? 'Hide Preview' : 'Preview')
-                                                        : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
+                                                        : formSelectedMetaTemplate
+                                                            ? (formMetaPreviewOpen ? 'Hide Preview' : 'Preview')
+                                                            : ((formData.template_id && activePreviews[formData.template_id]?.loading) ? 'Rendering...' : 'Preview')}
                                                 </Button>
                                                 <Button
                                                     type="submit"
