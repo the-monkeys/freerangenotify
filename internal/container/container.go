@@ -850,6 +850,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			repos.Application,
 			container.SSEBroadcaster,
 			cfg.Providers.MetaWhatsApp.APIVersion,
+			cfg.Providers.MetaWhatsApp.WABAID,
+			cfg.Providers.MetaWhatsApp.AccessToken,
+			cfg.Providers.MetaWhatsApp.PhoneNumberID,
 			logger,
 		)
 		container.MetaWebhookHandler.SetTemplateHandler(container.WhatsAppTemplateHandler)
@@ -913,11 +916,16 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}
 
 	// ── Twilio Content Templates ──
-	if cfg.Providers.Twilio.AccountSID != "" && cfg.Providers.Twilio.AuthToken != "" {
+	// Twilio Content Templates (WhatsApp message templates) belong to the Twilio
+	// account that owns the WhatsApp Business phone number. That is providers.whatsapp,
+	// NOT providers.twilio (which is the SMS-only account and may be a different
+	// Twilio account entirely). Using the wrong credentials causes 401 from content.twilio.com.
+	if cfg.Providers.WhatsApp.AccountSID != "" && cfg.Providers.WhatsApp.AuthToken != "" {
 		container.TwilioTemplateHandler = handlers.NewTwilioTemplateHandler(
+			repos.Application,
 			container.SSEBroadcaster,
-			cfg.Providers.Twilio.AccountSID,
-			cfg.Providers.Twilio.AuthToken,
+			cfg.Providers.WhatsApp.AccountSID,
+			cfg.Providers.WhatsApp.AuthToken,
 			logger,
 		)
 		logger.Info("Twilio Content Template management enabled")

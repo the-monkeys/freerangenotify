@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -20,6 +21,7 @@ const twilioContentAPIBase = "https://content.twilio.com"
 
 // TwilioTemplateHandler manages Twilio Content Templates via the Twilio Content API.
 type TwilioTemplateHandler struct {
+	appRepo        application.Repository
 	sseBroadcaster *sse.Broadcaster
 	accountSID     string
 	authToken      string
@@ -28,16 +30,47 @@ type TwilioTemplateHandler struct {
 
 // NewTwilioTemplateHandler creates a new Twilio template handler.
 func NewTwilioTemplateHandler(
+	appRepo application.Repository,
 	sseBroadcaster *sse.Broadcaster,
 	accountSID, authToken string,
 	logger *zap.Logger,
 ) *TwilioTemplateHandler {
 	return &TwilioTemplateHandler{
+		appRepo:        appRepo,
 		sseBroadcaster: sseBroadcaster,
 		accountSID:     accountSID,
 		authToken:      authToken,
 		logger:         logger,
 	}
+}
+
+// resolveTwilioConfig resolves per-app Twilio credentials if configured, otherwise falls back to system.
+// The provider field only governs the active WhatsApp delivery channel (meta, twilio, self_hosted) —
+// it is orthogonal to Twilio Content Template management. An app may have Meta as the active delivery
+// provider while still holding valid Twilio credentials for template management.
+func (h *TwilioTemplateHandler) resolveTwilioConfig(ctx context.Context, appID string) (string, string, error) {
+	if appID == "" {
+		return h.accountSID, h.authToken, nil
+	}
+
+	app, err := h.appRepo.GetByID(ctx, appID)
+	if err != nil {
+		// Graceful fallback: a transient ES error must not block template management.
+		h.logger.Warn("failed to load app for Twilio credential resolution, using system credentials",
+			zap.String("app_id", appID),
+			zap.Error(err),
+		)
+		return h.accountSID, h.authToken, nil
+	}
+
+	// Use per-app Twilio credentials when present, regardless of the active delivery provider.
+	if app.Settings.WhatsApp != nil &&
+		app.Settings.WhatsApp.AccountSID != "" &&
+		app.Settings.WhatsApp.AuthToken != "" {
+		return app.Settings.WhatsApp.AccountSID, app.Settings.WhatsApp.AuthToken, nil
+	}
+
+	return h.accountSID, h.authToken, nil
 }
 
 // CreateTemplate handles POST /v1/twilio/templates
@@ -68,7 +101,7 @@ func (h *TwilioTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 
 	payload, _ := json.Marshal(body)
 
-	resp, err := h.twilioRequest(c.Context(), http.MethodPost, "/v1/Content", strings.NewReader(string(payload)))
+	resp, err := h.twilioRequest(c, http.MethodPost, "/v1/Content", strings.NewReader(string(payload)))
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -111,7 +144,7 @@ func (h *TwilioTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		path += "&Content=" + search
 	}
 
-	resp, err := h.twilioRequest(c.Context(), http.MethodGet, path, nil)
+	resp, err := h.twilioRequest(c, http.MethodGet, path, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -141,7 +174,7 @@ func (h *TwilioTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 		return pkgerrors.BadRequest("content_sid is required")
 	}
 
-	resp, err := h.twilioRequest(c.Context(), http.MethodGet, "/v1/Content/"+contentSid, nil)
+	resp, err := h.twilioRequest(c, http.MethodGet, "/v1/Content/"+contentSid, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -178,7 +211,7 @@ func (h *TwilioTemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 
 	payload, _ := json.Marshal(body)
 
-	resp, err := h.twilioRequest(c.Context(), http.MethodPut, "/v1/Content/"+contentSid, strings.NewReader(string(payload)))
+	resp, err := h.twilioRequest(c, http.MethodPut, "/v1/Content/"+contentSid, strings.NewReader(string(payload)))
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -210,7 +243,7 @@ func (h *TwilioTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		return pkgerrors.BadRequest("content_sid is required")
 	}
 
-	resp, err := h.twilioRequest(c.Context(), http.MethodDelete, "/v1/Content/"+contentSid, nil)
+	resp, err := h.twilioRequest(c, http.MethodDelete, "/v1/Content/"+contentSid, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -256,7 +289,7 @@ func (h *TwilioTemplateHandler) SubmitApproval(c *fiber.Ctx) error {
 	payload, _ := json.Marshal(body)
 
 	path := fmt.Sprintf("/v1/Content/%s/ApprovalRequests/whatsapp", contentSid)
-	resp, err := h.twilioRequest(c.Context(), http.MethodPost, path, strings.NewReader(string(payload)))
+	resp, err := h.twilioRequest(c, http.MethodPost, path, strings.NewReader(string(payload)))
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Approval API request failed: "+err.Error())
 	}
@@ -295,7 +328,7 @@ func (h *TwilioTemplateHandler) GetApprovalStatus(c *fiber.Ctx) error {
 	}
 
 	path := fmt.Sprintf("/v1/Content/%s/ApprovalRequests", contentSid)
-	resp, err := h.twilioRequest(c.Context(), http.MethodGet, path, nil)
+	resp, err := h.twilioRequest(c, http.MethodGet, path, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Approval API request failed: "+err.Error())
 	}
@@ -327,7 +360,7 @@ func (h *TwilioTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 
 	// Fetch approval status
 	path := fmt.Sprintf("/v1/Content/%s/ApprovalRequests", contentSid)
-	resp, err := h.twilioRequest(c.Context(), http.MethodGet, path, nil)
+	resp, err := h.twilioRequest(c, http.MethodGet, path, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Approval API request failed: "+err.Error())
 	}
@@ -394,7 +427,7 @@ func (h *TwilioTemplateHandler) PreviewTemplate(c *fiber.Ctx) error {
 	}
 
 	// Fetch template from Twilio
-	resp, err := h.twilioRequest(c.Context(), http.MethodGet, "/v1/Content/"+contentSid, nil)
+	resp, err := h.twilioRequest(c, http.MethodGet, "/v1/Content/"+contentSid, nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Twilio Content API request failed: "+err.Error())
 	}
@@ -431,14 +464,20 @@ func (h *TwilioTemplateHandler) PreviewTemplate(c *fiber.Ctx) error {
 }
 
 // twilioRequest executes an authenticated HTTP request to the Twilio Content API.
-func (h *TwilioTemplateHandler) twilioRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+func (h *TwilioTemplateHandler) twilioRequest(c *fiber.Ctx, method, path string, body io.Reader) (*http.Response, error) {
+	appID, _ := c.Locals("app_id").(string)
+	accountSID, authToken, err := h.resolveTwilioConfig(c.Context(), appID)
+	if err != nil {
+		return nil, err
+	}
+
 	url := twilioContentAPIBase + path
 
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	req, err := http.NewRequestWithContext(c.Context(), method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.SetBasicAuth(h.accountSID, h.authToken)
+	req.SetBasicAuth(accountSID, authToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	return (&http.Client{Timeout: 15 * time.Second}).Do(req)

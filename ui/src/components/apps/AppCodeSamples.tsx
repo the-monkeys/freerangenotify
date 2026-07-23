@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 
 interface AppCodeSamplesProps {
     appId: string;
+    apiKey?: string;
 }
 
 interface Snippet {
@@ -23,11 +24,12 @@ interface ChannelSamples {
     auth?: Snippet;
 }
 
-const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
+const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
     const [samples, setSamples] = useState<Record<string, Record<string, ChannelSamples>>>({});
     const [loading, setLoading] = useState(true);
     const [copied, setCopied] = useState<string | null>(null);
     const [selectedChannel, setSelectedChannel] = useState('sse');
+    const [showApiKey, setShowApiKey] = useState(false);
 
     useEffect(() => {
         const fetchSamples = async () => {
@@ -45,8 +47,13 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
         fetchSamples();
     }, [appId]);
 
+    const getCodeToDisplay = (code: string) => {
+        if (!apiKey) return code;
+        return showApiKey ? code : code.split(apiKey).join('YOUR_API_KEY');
+    };
+
     const handleCopy = (id: string, code: string) => {
-        navigator.clipboard.writeText(code);
+        navigator.clipboard.writeText(getCodeToDisplay(code));
         setCopied(id);
         toast.success(`Code copied to clipboard`);
         setTimeout(() => setCopied(null), 2000);
@@ -88,17 +95,28 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
                         <Terminal className="h-5 w-5 text-primary" />
                         <CardTitle className="text-lg">Integration Boilerplate</CardTitle>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <label className="text-xs text-muted-foreground">Channel:</label>
-                        <select
-                            value={selectedChannel}
-                            onChange={(e) => setSelectedChannel(e.target.value)}
-                            className="bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                        >
-                            {channels.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                        </select>
+                    <div className="flex items-center gap-4">
+                        {apiKey && (
+                            <button
+                                type="button"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                                className="text-muted-foreground hover:text-foreground text-xs font-semibold hover:underline"
+                            >
+                                {showApiKey ? 'Hide Token' : 'Show Token'}
+                            </button>
+                        )}
+                        <div className="flex items-center gap-2">
+                            <label className="text-xs text-muted-foreground">Channel:</label>
+                            <select
+                                value={selectedChannel}
+                                onChange={(e) => setSelectedChannel(e.target.value)}
+                                className="bg-background border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                                {channels.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <p className="text-sm text-muted-foreground pt-1">
@@ -127,7 +145,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
 
                         return (
                             <TabsContent key={lang.id} value={lang.id} className="m-0">
-                                <Tabs defaultValue="sender" className="w-full">
+                                <Tabs defaultValue={channelData.auth ? "auth" : "sender"} className="w-full">
                                     <div className="px-4 py-2 bg-muted/5 flex items-center justify-between border-b border-border/30">
                                         <TabsList className="bg-muted/20 h-8 gap-1">
                                             {channelData.auth && <TabsTrigger value="auth" className="text-[10px] h-8 px-3">1. Auth</TabsTrigger>}
@@ -157,7 +175,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
                                                 </Button>
                                             </div>
                                             <SyntaxHighlighter language={lang.id} style={vscDarkPlus} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '0.85rem' }}>
-                                                {channelData.auth.code}
+                                                {getCodeToDisplay(channelData.auth.code)}
                                             </SyntaxHighlighter>
                                         </TabsContent>
                                     )}
@@ -176,7 +194,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
                                             </Button>
                                         </div>
                                         <SyntaxHighlighter language={lang.id} style={vscDarkPlus} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '0.85rem' }}>
-                                            {channelData.sender.code}
+                                            {getCodeToDisplay(channelData.sender.code)}
                                         </SyntaxHighlighter>
                                     </TabsContent>
 
@@ -195,7 +213,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
                                                 </Button>
                                             </div>
                                             <SyntaxHighlighter language={lang.id} style={vscDarkPlus} customStyle={{ margin: 0, padding: '1.5rem', fontSize: '0.85rem' }}>
-                                                {channelData.receiver.code}
+                                                {getCodeToDisplay(channelData.receiver.code)}
                                             </SyntaxHighlighter>
                                         </TabsContent>
                                     )}

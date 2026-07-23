@@ -678,6 +678,7 @@ func (h *ApplicationHandler) GetCodeSamples(c *fiber.Ctx) error {
 	}
 
 	apiKey := app.APIKey
+	// TODO: Make this dynamic - Get it from the config or environment
 	baseURL := "https://freerangenotify.monkeys.support/v1"
 
 	type Snippet struct {
@@ -857,14 +858,127 @@ eventSource.onmessage = (e) => console.log("New Notification:", JSON.parse(e.dat
 		samples[lang] = lSamples
 	}
 
-	addSimpleSamples("java", `// Java Sender for %s
-// ... body with channel: %s ...`)
-	addSimpleSamples("cpp", `// C++ Sender for %s
-// ... body with channel: %s ...`)
-	addSimpleSamples("rust", `// Rust Sender for %s
-// ... body with channel: %s ...`)
-	addSimpleSamples("ruby", `// Ruby Sender for %s
-// ... body with channel: %s ...`)
+	addSimpleSamples("java", `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        String apiKey = "` + apiKey + `";
+        String url = "` + baseURL + `/notifications";
+
+        String jsonPayload = "{"
+            + "\"user_id\": \"USER_ID_HERE\","
+            + "\"template_id\": \"YOUR_TEMPLATE_ID\","
+            + "\"channel\": \"%s\","
+            + "\"data\": {\"key\": \"value\"}"
+            + "}";
+
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(url))
+            .header("X-API-Key", apiKey)
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println("Status: " + response.statusCode());
+    }
+}`)
+	addSimpleSamples("cpp", `#include <iostream>
+#include <string>
+#include <curl/curl.h>
+
+int main() {
+    CURL* curl = curl_easy_init();
+    if(curl) {
+        std::string url = "` + baseURL + `/notifications";
+        std::string apiKey = "` + apiKey + `";
+        std::string jsonPayload = "{"
+            "\"user_id\": \"USER_ID_HERE\","
+            "\"template_id\": \"YOUR_TEMPLATE_ID\","
+            "\"channel\": \"%s\","
+            "\"data\": {\"key\": \"value\"}"
+        "}";
+
+        struct curl_slist* headers = NULL;
+        headers = curl_slist_append(headers, ("X-API-Key: " + apiKey).c_str());
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonPayload.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        CURLcode res = curl_easy_perform(curl);
+        if(res != CURLE_OK) {
+            std::cerr << "curl failed: " << curl_easy_strerror(res) << std::endl;
+        }
+
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+    }
+    return 0;
+}`)
+	addSimpleSamples("rust", `use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let api_key = "` + apiKey + `";
+    let url = "` + baseURL + `/notifications";
+
+    let mut headers = HeaderMap::new();
+    headers.insert("X-API-Key", HeaderValue::from_str(api_key)?);
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    let client = reqwest::Client::new();
+    let payload = json!({
+        "user_id": "USER_ID_HERE",
+        "channel": "%s",
+        "template_id": "YOUR_TEMPLATE_ID",
+        "data": {
+            "key": "value"
+        }
+    });
+
+    let res = client.post(url)
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await?;
+
+    println!("Status: {}", res.status());
+    Ok(())
+}`)
+	addSimpleSamples("ruby", `require 'net/http'
+require 'uri'
+require 'json'
+
+api_key = "` + apiKey + `"
+uri = URI.parse("` + baseURL + `/notifications")
+
+header = {
+  'X-API-Key' => api_key,
+  'Content-Type' => 'application/json'
+}
+
+payload = {
+  user_id: 'USER_ID_HERE',
+  channel: '%s',
+  template_id: 'YOUR_TEMPLATE_ID',
+  data: { key: 'value' }
+}
+
+http = Net::HTTP.new(uri.host, uri.port)
+http.use_ssl = true
+request = Net::HTTP::Post.new(uri.request_uri, header)
+request.body = payload.to_json
+
+response = http.request(request)
+puts "Status: #{response.code}"`)
 
 	return c.JSON(fiber.Map{
 		"success": true,

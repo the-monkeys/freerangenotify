@@ -318,7 +318,7 @@ const AppDetail: React.FC = () => {
                                 </form>
                             </CardContent>
                         </Card>
-                        <AppCodeSamples appId={app.app_id} />
+                        <AppCodeSamples appId={app.app_id} apiKey={app.api_key} />
                     </>
                 )}
 

@@ -70,6 +70,13 @@ func (s *QuickSendService) Send(ctx context.Context, appID string, req *dto.Quic
 			} else {
 				channel = notification.ChannelWhatsApp
 			}
+		} else if _, ok := req.Data["whatsapp_template"]; ok {
+			// Meta WhatsApp Template: whatsapp_template in data is sufficient
+			if req.Channel != "" {
+				channel = notification.Channel(req.Channel)
+			} else {
+				channel = notification.ChannelWhatsApp
+			}
 		} else {
 			return nil, notification.ErrEmptyContent
 		}

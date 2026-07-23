@@ -65,7 +65,7 @@ test.describe('WhatsApp Rich Templates', () => {
         // Fill template-level fields.
         await page.locator('input[placeholder="diwali_carousel"]').fill('spec_carousel');
         await page.locator('input[placeholder="en_US"]').fill('en_US');
-        await page.locator('textarea[placeholder="Hi {{1}}, check these out:"]').fill(
+        await page.locator('input[placeholder="Hi {{1}}, check these out:"]').fill(
             'Hi {{1}}, check these carousel picks:',
         );
 

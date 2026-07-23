@@ -18,10 +18,13 @@ import (
 
 // WhatsAppTemplateHandler manages WhatsApp message templates via Meta Graph API.
 type WhatsAppTemplateHandler struct {
-	appRepo        application.Repository
-	sseBroadcaster *sse.Broadcaster
-	metaAPIVersion string
-	logger         *zap.Logger
+	appRepo           application.Repository
+	sseBroadcaster    *sse.Broadcaster
+	metaAPIVersion    string
+	globalWABAID      string
+	globalAccessToken string
+	globalPhoneNumID  string
+	logger            *zap.Logger
 }
 
 // NewWhatsAppTemplateHandler creates a new WhatsApp template handler.
@@ -29,16 +32,22 @@ func NewWhatsAppTemplateHandler(
 	appRepo application.Repository,
 	sseBroadcaster *sse.Broadcaster,
 	metaAPIVersion string,
+	globalWABAID string,
+	globalAccessToken string,
+	globalPhoneNumID string,
 	logger *zap.Logger,
 ) *WhatsAppTemplateHandler {
 	if metaAPIVersion == "" {
 		metaAPIVersion = "v23.0"
 	}
 	return &WhatsAppTemplateHandler{
-		appRepo:        appRepo,
-		sseBroadcaster: sseBroadcaster,
-		metaAPIVersion: metaAPIVersion,
-		logger:         logger,
+		appRepo:           appRepo,
+		sseBroadcaster:    sseBroadcaster,
+		metaAPIVersion:    metaAPIVersion,
+		globalWABAID:      globalWABAID,
+		globalAccessToken: globalAccessToken,
+		globalPhoneNumID:  globalPhoneNumID,
+		logger:            logger,
 	}
 }
 
@@ -363,6 +372,15 @@ func (h *WhatsAppTemplateHandler) resolveMetaConfig(c *fiber.Ctx) (*application.
 
 	wa := app.Settings.WhatsApp
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" || wa.MetaWABAID == "" {
+		// Fallback to global credentials
+		if h.globalAccessToken != "" && h.globalWABAID != "" {
+			return &application.WhatsAppAppConfig{
+				Provider:          "meta",
+				MetaWABAID:        h.globalWABAID,
+				MetaAccessToken:   h.globalAccessToken,
+				MetaPhoneNumberID: h.globalPhoneNumID,
+			}, appID, nil
+		}
 		return nil, "", pkgerrors.BadRequest(
 			"WhatsApp Meta is not configured for this app. Connect via Embedded Signup or set Meta credentials in app settings.")
 	}
