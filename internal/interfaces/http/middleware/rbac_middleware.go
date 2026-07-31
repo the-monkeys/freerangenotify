@@ -60,3 +60,17 @@ func RequirePermission(perm auth.Permission, membershipRepo auth.MembershipRepos
 		return c.Next()
 	}
 }
+
+// RequirePermissionForWrites applies a permission check only to state-changing
+// HTTP methods. Read requests (GET/HEAD/OPTIONS) pass through so roles without
+// the permission keep read-only access (e.g. viewers on billing data).
+func RequirePermissionForWrites(perm auth.Permission, membershipRepo auth.MembershipRepository, appRepo application.Repository, logger *zap.Logger) fiber.Handler {
+	check := RequirePermission(perm, membershipRepo, appRepo, logger)
+	return func(c *fiber.Ctx) error {
+		switch c.Method() {
+		case fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions:
+			return c.Next()
+		}
+		return check(c)
+	}
+}

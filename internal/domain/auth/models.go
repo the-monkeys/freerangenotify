@@ -200,14 +200,15 @@ const (
 	PermSendNotifications Permission = "send_notifications"
 	PermViewLogs          Permission = "view_logs"
 	PermViewAudit         Permission = "view_audit"
+	PermManageBilling     Permission = "manage_billing" // Business billing module
 )
 
 // RolePermissions maps each role to its set of permissions.
 // Roles are cumulative — higher roles inherit lower-role permissions.
 var RolePermissions = map[Role][]Permission{
-	RoleOwner:  {PermManageApp, PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit},
-	RoleAdmin:  {PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit},
-	RoleEditor: {PermManageTemplates, PermSendNotifications, PermViewLogs},
+	RoleOwner:  {PermManageApp, PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit, PermManageBilling},
+	RoleAdmin:  {PermManageMembers, PermManageTemplates, PermSendNotifications, PermViewLogs, PermViewAudit, PermManageBilling},
+	RoleEditor: {PermManageTemplates, PermSendNotifications, PermViewLogs, PermManageBilling},
 	RoleViewer: {PermViewLogs},
 }
 

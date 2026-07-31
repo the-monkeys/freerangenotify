@@ -1268,3 +1268,419 @@ export interface SubscriberHashResponse {
     user_id: string;
     subscriber_hash: string;
 }
+
+// ============= Business Billing Types =============
+export interface BizProduct {
+    id?: string;
+    app_id?: string;
+    name: string;
+    description: string;
+    active: boolean;
+    metadata?: Record<string, any>;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface BizPlan {
+    id?: string;
+    app_id?: string;
+    product_id: string;
+    name: string;
+    description: string;
+    billing_cycle: 'monthly' | 'yearly' | 'one-time' | string;
+    amount_paisa: number;
+    currency: string;
+    trial_days?: number;
+    active: boolean;
+    limits?: Record<string, any>;
+    features?: string[];
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface BizPlanAddon {
+    id?: string;
+    plan_id?: string;
+    name: string;
+    description: string;
+    amount_paisa: number;
+    currency?: string;
+    billing_cycle?: string;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export interface BizConfig {
+    app_id?: string;
+    config_type: 'stripe' | 'razorpay' | 'paddle' | string;
+    settings?: Record<string, any>;
+    data?: Record<string, any>;
+    updated_at?: string;
+}
+
+export interface BizSubscription {
+    id: string;
+    app_id: string;
+    user_id: string;
+    plan_id: string;
+    addon_ids?: string[];
+    status: 'active' | 'paused' | 'canceled' | 'trialing' | 'past_due' | 'unpaid';
+    quantity: number;
+    cancel_at_period_end?: boolean;
+    current_period_start: string;
+    current_period_end: string;
+    trial_start?: string;
+    trial_end?: string;
+    paused_at?: string;
+    canceled_at?: string;
+    plan_name?: string;
+    plan_amount_paisa?: number;
+    billing_cycle?: string;
+    created_at: string;
+}
+
+export interface BizInvoice {
+    id: string;
+    app_id: string;
+    user_id: string;
+    subscription_id?: string;
+    invoice_number: string;
+    status: 'draft' | 'open' | 'paid' | 'void' | 'uncollectible' | 'overdue';
+    total_paisa: number;
+    amount_due_paisa: number;
+    currency: string;
+    payment_link?: string;
+    issued_at?: string;
+    created_at: string;
+}
+
+export interface BizPayment {
+    id: string;
+    invoice_ids: string[];
+    amount_paisa: number;
+    currency: string;
+    method: string;
+    status: 'pending' | 'success' | 'failed' | 'refunded';
+    gateway_payment_id?: string;
+    created_at: string;
+}
+
+// ── Phase 2: Request Types ──
+
+export interface CreateBizSubscriptionRequest {
+    user_id: string;
+    plan_id: string;
+    quantity?: number;
+    addon_ids?: string[];
+    trial_days?: number;
+    metadata?: Record<string, any>;
+}
+
+export interface UpdateBizSubscriptionRequest {
+    plan_id?: string;
+    quantity?: number;
+    addon_ids?: string[];
+    cancel_at_period_end?: boolean;
+    metadata?: Record<string, any>;
+}
+
+export interface CreateBizInvoiceRequest {
+    user_id: string;
+    subscription_id?: string;
+    line_items?: BizInvoiceLineItem[];
+    currency?: string;
+    payment_terms?: string;
+    due_days?: number;
+    metadata?: Record<string, any>;
+}
+
+export interface UpdateBizInvoiceRequest {
+    line_items?: BizInvoiceLineItem[];
+    metadata?: Record<string, any>;
+}
+
+export interface BizInvoiceLineItem {
+    description: string;
+    hsn_code?: string;
+    quantity: number;
+    /** Unit price in paisa (matches backend `unit_price`). */
+    unit_price: number;
+    discount_paisa?: number;
+    tax_rate?: number;
+    amount_paisa?: number;
+}
+
+export interface RecordPaymentRequest {
+    method: string;
+    gateway_payment_id?: string;
+    amount_paisa?: number;
+    gateway_txn_id?: string;
+    tds_paisa?: number;
+    notes?: string;
+}
+
+export interface ChangeBizPlanRequest {
+    plan_id: string;
+    quantity?: number;
+}
+
+export interface RefundBizPaymentRequest {
+    amount_paisa?: number;
+    reason?: string;
+}
+
+export interface ApplyBizCouponRequest {
+    code: string;
+}
+
+export interface ApplyBizCreditRequest {
+    credit_note_id?: string;
+    retainer_id?: string;
+}
+
+export interface BizEstimate {
+    id: string;
+    app_id: string;
+    user_id: string;
+    estimate_number: string;
+    status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'converted' | string;
+    line_items?: BizInvoiceLineItem[];
+    subtotal_paisa: number;
+    tax_paisa: number;
+    total_paisa: number;
+    currency: string;
+    valid_until?: string;
+    notes?: string;
+    terms?: string;
+    converted_invoice_id?: string;
+    created_at: string;
+    updated_at?: string;
+}
+
+export interface CreateBizEstimateRequest {
+    user_id: string;
+    line_items: BizInvoiceLineItem[];
+    currency?: string;
+    valid_until?: string;
+    notes?: string;
+    terms?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface BizCoupon {
+    id: string;
+    app_id: string;
+    code: string;
+    discount_type: 'percentage' | 'fixed' | string;
+    discount_value: number;
+    max_uses?: number;
+    current_uses: number;
+    max_uses_per_user?: number;
+    applicable_plan_ids?: string[];
+    stackable: boolean;
+    valid_from?: string;
+    valid_until?: string;
+    active: boolean;
+    created_at: string;
+}
+
+export interface CreateBizCouponRequest {
+    code: string;
+    discount_type: 'percentage' | 'fixed' | string;
+    discount_value: number;
+    max_uses?: number;
+    max_uses_per_user?: number;
+    applicable_plan_ids?: string[];
+    stackable?: boolean;
+    valid_from?: string;
+    valid_until?: string;
+}
+
+export interface BulkGenerateBizCouponsRequest {
+    count: number;
+    prefix?: string;
+    rules: CreateBizCouponRequest;
+}
+
+export interface BizCreditNote {
+    id: string;
+    app_id: string;
+    user_id: string;
+    invoice_id?: string;
+    credit_note_number: string;
+    amount_paisa: number;
+    balance_paisa: number;
+    reason?: string;
+    status: 'open' | 'applied' | 'refunded' | 'void' | string;
+    created_at: string;
+}
+
+export interface CreateBizCreditNoteRequest {
+    user_id: string;
+    invoice_id?: string;
+    amount_paisa: number;
+    reason?: string;
+}
+
+export interface BizRetainer {
+    id: string;
+    app_id: string;
+    user_id: string;
+    amount_paisa: number;
+    balance_paisa: number;
+    status: 'open' | 'paid' | 'applied' | 'void' | string;
+    notes?: string;
+    created_at: string;
+}
+
+export interface CreateBizRetainerRequest {
+    user_id: string;
+    amount_paisa: number;
+    notes?: string;
+}
+
+export interface BizContract {
+    id: string;
+    app_id: string;
+    user_id: string;
+    subscription_id?: string;
+    contract_number: string;
+    status: 'draft' | 'sent' | 'active' | 'expired' | 'terminated' | string;
+    terms?: string;
+    value_paisa: number;
+    start_date: string;
+    end_date: string;
+    auto_renew: boolean;
+    created_at: string;
+}
+
+export interface CreateBizContractRequest {
+    user_id: string;
+    subscription_id?: string;
+    terms?: string;
+    value_paisa?: number;
+    start_date: string;
+    end_date: string;
+    auto_renew?: boolean;
+    metadata?: Record<string, any>;
+}
+
+export interface AmendBizContractRequest {
+    description: string;
+    effective_date: string;
+}
+
+export interface BizUsageMeter {
+    id: string;
+    app_id: string;
+    name: string;
+    unit?: string;
+    aggregation: string;
+    created_at: string;
+}
+
+export interface CreateBizUsageMeterRequest {
+    name: string;
+    unit?: string;
+    aggregation?: string;
+}
+
+export interface ReportBizUsageRequest {
+    events: Array<{
+        user_id: string;
+        subscription_id?: string;
+        meter_id: string;
+        quantity: number;
+        timestamp?: string;
+    }>;
+}
+
+export interface BizUsageSummary {
+    meter_id: string;
+    meter_name?: string;
+    unit?: string;
+    aggregation: string;
+    quantity: number;
+    period_start: string;
+    period_end: string;
+}
+
+export interface BizExpense {
+    id: string;
+    app_id: string;
+    category: string;
+    description?: string;
+    amount_paisa: number;
+    vendor?: string;
+    date: string;
+    billable: boolean;
+    billed_to_user?: string;
+    invoice_id?: string;
+    recurring?: boolean;
+    recurrence_cycle?: string;
+    created_at: string;
+}
+
+export interface CreateBizExpenseRequest {
+    category: string;
+    description?: string;
+    amount_paisa: number;
+    vendor?: string;
+    date?: string;
+    billable?: boolean;
+    billed_to_user?: string;
+    receipt_file_id?: string;
+    recurring?: boolean;
+    recurrence_cycle?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface BizConnector {
+    id: string;
+    app_id: string;
+    provider: string;
+    webhook_secret?: string;
+    event_mappings?: Record<string, any>;
+    active: boolean;
+    created_at: string;
+}
+
+export interface CreateBizConnectorRequest {
+    provider: string;
+    webhook_secret: string;
+    event_mappings?: Record<string, any>;
+}
+
+export interface UpdateBizConnectorRequest {
+    webhook_secret?: string;
+    event_mappings?: Record<string, any>;
+    active?: boolean;
+}
+
+export interface BizStatement {
+    user_id: string;
+    entries: Array<{
+        date: string;
+        type: string;
+        reference: string;
+        description?: string;
+        debit_paisa?: number;
+        credit_paisa?: number;
+    }>;
+    total_billed_paisa: number;
+    total_paid_paisa: number;
+    balance_owed_paisa: number;
+    credit_balance_paisa: number;
+    generated_at: string;
+}
+
+export interface BizPortalLink {
+    url: string;
+    expires_at: string;
+}
+
+export interface BizListResponse<T> {
+    success: boolean;
+    data: T[];
+    total?: number;
+}

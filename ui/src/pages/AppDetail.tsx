@@ -21,6 +21,7 @@ import WhatsAppTemplates from './whatsapp/WhatsAppTemplates';
 import WhatsAppRichTemplates from './whatsapp/WhatsAppRichTemplates';
 import WhatsAppConversations from './whatsapp/WhatsAppConversations';
 import TwilioWhatsAppTemplates from './whatsapp/TwilioWhatsAppTemplates';
+import AppBizBilling from '../components/AppBizBilling';
 
 import { Button } from '../components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
@@ -1172,6 +1173,12 @@ const AppDetail: React.FC = () => {
                         }}
                     />
                 )}
+
+                {/* Business Billing Tab */}
+                {activeTab === 'biz-billing' && app && (
+                    <AppBizBilling apiKey={app.api_key} appId={app.app_id} />
+                )}
+
                 {/* Integration Tab */}
                 {activeTab === 'integration' && (
                     <div className="space-y-4">

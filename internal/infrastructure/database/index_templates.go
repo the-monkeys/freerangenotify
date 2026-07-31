@@ -196,6 +196,20 @@ func (it *IndexTemplates) GetUsersTemplate() map[string]interface{} {
 						},
 					},
 				},
+				// Business billing fields (omitempty on User; only set when used).
+				"billing_address": map[string]interface{}{
+					"properties": map[string]interface{}{
+						"line1":   map[string]interface{}{"type": "text"},
+						"line2":   map[string]interface{}{"type": "text"},
+						"city":    map[string]interface{}{"type": "keyword"},
+						"state":   map[string]interface{}{"type": "keyword"},
+						"pincode": map[string]interface{}{"type": "keyword"},
+						"country": map[string]interface{}{"type": "keyword"},
+					},
+				},
+				"gstin":         map[string]interface{}{"type": "keyword"},
+				"balance_paisa": map[string]interface{}{"type": "long"},
+				"billing_meta":  map[string]interface{}{"type": "object", "enabled": false},
 				"created_at": map[string]interface{}{
 					"type": "date",
 				},

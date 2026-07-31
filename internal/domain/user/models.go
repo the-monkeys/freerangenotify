@@ -24,6 +24,23 @@ type User struct {
 	Devices           []Device    `json:"devices,omitempty" es:"devices"`
 	CreatedAt         time.Time   `json:"created_at" es:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at" es:"updated_at"`
+
+	// Billing fields — only populated when biz billing module is active.
+	// All fields are omitempty so existing API responses are unchanged.
+	BillingAddress *BillingAddress        `json:"billing_address,omitempty" es:"billing_address"`
+	GSTIN          string                 `json:"gstin,omitempty" es:"gstin"`
+	BalancePaisa   int64                  `json:"balance_paisa,omitempty" es:"balance_paisa"`
+	BillingMeta    map[string]interface{} `json:"billing_meta,omitempty" es:"billing_meta"`
+}
+
+// BillingAddress holds the billing address for a user (used by biz billing module).
+type BillingAddress struct {
+	Line1   string `json:"line1,omitempty" es:"line1"`
+	Line2   string `json:"line2,omitempty" es:"line2"`
+	City    string `json:"city,omitempty" es:"city"`
+	State   string `json:"state,omitempty" es:"state"`
+	Pincode string `json:"pincode,omitempty" es:"pincode"`
+	Country string `json:"country,omitempty" es:"country"`
 }
 
 // Preferences represents user notification preferences
@@ -118,31 +135,39 @@ type Service interface {
 
 // CreateRequest represents a request to create a user
 type CreateRequest struct {
-	AppID             string      `json:"app_id" validate:"required"`
-	ExternalID        string      `json:"external_id,omitempty"`
-	FullName          string      `json:"full_name,omitempty"`
-	Email             string      `json:"email,omitempty" validate:"omitempty,email"`
-	Phone             string      `json:"phone,omitempty"`
-	Timezone          string      `json:"timezone,omitempty"`
-	Language          string      `json:"language,omitempty"`
-	WebhookURL        string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
-	SlackWebhookURL   string      `json:"slack_webhook_url,omitempty" validate:"omitempty,url"`   // Phase 3
-	SlackChannelID    string      `json:"slack_channel_id,omitempty"`                             // Phase 3: Direct channel delivery via Bot API
-	DiscordWebhookURL string      `json:"discord_webhook_url,omitempty" validate:"omitempty,url"` // Phase 3
-	Preferences       Preferences `json:"preferences"`
+	AppID             string                 `json:"app_id" validate:"required"`
+	ExternalID        string                 `json:"external_id,omitempty"`
+	FullName          string                 `json:"full_name,omitempty"`
+	Email             string                 `json:"email,omitempty" validate:"omitempty,email"`
+	Phone             string                 `json:"phone,omitempty"`
+	Timezone          string                 `json:"timezone,omitempty"`
+	Language          string                 `json:"language,omitempty"`
+	WebhookURL        string                 `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	SlackWebhookURL   string                 `json:"slack_webhook_url,omitempty" validate:"omitempty,url"`   // Phase 3
+	SlackChannelID    string                 `json:"slack_channel_id,omitempty"`                             // Phase 3: Direct channel delivery via Bot API
+	DiscordWebhookURL string                 `json:"discord_webhook_url,omitempty" validate:"omitempty,url"` // Phase 3
+	Preferences       Preferences            `json:"preferences"`
+	BillingAddress    *BillingAddress        `json:"billing_address,omitempty"`
+	GSTIN             string                 `json:"gstin,omitempty" validate:"omitempty,max=15"`
+	BalancePaisa      int64                  `json:"balance_paisa,omitempty" validate:"omitempty,min=0"`
+	BillingMeta       map[string]interface{} `json:"billing_meta,omitempty"`
 }
 
 // UpdateRequest represents a request to update a user
 type UpdateRequest struct {
-	ExternalID        *string      `json:"external_id,omitempty"`
-	FullName          *string      `json:"full_name,omitempty"`
-	Email             *string      `json:"email,omitempty" validate:"omitempty,email"`
-	Phone             *string      `json:"phone,omitempty"`
-	Timezone          *string      `json:"timezone,omitempty"`
-	Language          *string      `json:"language,omitempty"`
-	WebhookURL        *string      `json:"webhook_url,omitempty" validate:"omitempty,url"`
-	SlackWebhookURL   *string      `json:"slack_webhook_url,omitempty" validate:"omitempty,url"`   // Phase 3
-	SlackChannelID    *string      `json:"slack_channel_id,omitempty"`                             // Phase 3: Direct channel delivery via Bot API
-	DiscordWebhookURL *string      `json:"discord_webhook_url,omitempty" validate:"omitempty,url"` // Phase 3
-	Preferences       *Preferences `json:"preferences,omitempty"`
+	ExternalID        *string                `json:"external_id,omitempty"`
+	FullName          *string                `json:"full_name,omitempty"`
+	Email             *string                `json:"email,omitempty" validate:"omitempty,email"`
+	Phone             *string                `json:"phone,omitempty"`
+	Timezone          *string                `json:"timezone,omitempty"`
+	Language          *string                `json:"language,omitempty"`
+	WebhookURL        *string                `json:"webhook_url,omitempty" validate:"omitempty,url"`
+	SlackWebhookURL   *string                `json:"slack_webhook_url,omitempty" validate:"omitempty,url"`   // Phase 3
+	SlackChannelID    *string                `json:"slack_channel_id,omitempty"`                             // Phase 3: Direct channel delivery via Bot API
+	DiscordWebhookURL *string                `json:"discord_webhook_url,omitempty" validate:"omitempty,url"` // Phase 3
+	Preferences       *Preferences           `json:"preferences,omitempty"`
+	BillingAddress    *BillingAddress        `json:"billing_address,omitempty"`
+	GSTIN             *string                `json:"gstin,omitempty" validate:"omitempty,max=15"`
+	BalancePaisa      *int64                 `json:"balance_paisa,omitempty" validate:"omitempty,min=0"`
+	BillingMeta       map[string]interface{} `json:"billing_meta,omitempty"`
 }

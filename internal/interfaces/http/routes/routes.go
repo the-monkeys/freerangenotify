@@ -115,6 +115,26 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	if c.FileHandler != nil {
 		v1.Get("/files/download/:id", c.FileHandler.PublicDownload)
 	}
+
+	// Business Billing: third-party connector webhooks (HMAC-verified inside handler).
+	if c.BizBillingHandler != nil {
+		v1.Post("/webhooks/billing/:connector_id", c.BizBillingHandler.HandleConnectorWebhook)
+	}
+
+	// Business Billing: customer portal (token in URL is the credential).
+	if c.BizPortalHandler != nil {
+		portal := v1.Group("/portal/:token")
+		portal.Get("/", c.BizPortalHandler.Overview)
+		portal.Get("/invoices", c.BizPortalHandler.ListInvoices)
+		portal.Get("/invoices/:id", c.BizPortalHandler.GetInvoice)
+		portal.Post("/invoices/:id/pay", c.BizPortalHandler.PayInvoice)
+		portal.Get("/estimates", c.BizPortalHandler.ListEstimates)
+		portal.Post("/estimates/:id/accept", c.BizPortalHandler.AcceptEstimate)
+		portal.Post("/estimates/:id/reject", c.BizPortalHandler.RejectEstimate)
+		portal.Post("/contracts/:id/accept", c.BizPortalHandler.AcceptContract)
+		portal.Get("/statement", c.BizPortalHandler.GetStatement)
+		portal.Get("/usage", c.BizPortalHandler.GetUsage)
+	}
 }
 
 // setupProtectedRoutes configures routes that require API key authentication
@@ -363,6 +383,147 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		topics.Post("/:id/subscribers", c.TopicHandler.AddSubscribers)
 		topics.Delete("/:id/subscribers", c.TopicHandler.RemoveSubscribers)
 		topics.Get("/:id/subscribers", c.TopicHandler.GetSubscribers)
+	}
+
+	// ── Business Billing Module (feature-gated) ──
+	if c.BizBillingHandler != nil {
+		biz := v1.Group("/biz")
+		applyAuth(biz)
+		biz.Use(middleware.BillingModuleCheck(c.Config.Features.BizBillingEnabled, c.Logger))
+		// Writes require the manage-billing permission for dashboard (JWT)
+		// callers; viewers keep read-only access. Pure API-key calls are the
+		// app owner and pass through.
+		if c.MembershipRepo != nil {
+			biz.Use(middleware.RequirePermissionForWrites(auth.PermManageBilling, c.MembershipRepo, c.AppRepo, c.Logger))
+		}
+
+		// ── Products ──
+		biz.Post("/products", c.BizBillingHandler.CreateProduct)
+		biz.Get("/products", c.BizBillingHandler.ListProducts)
+		biz.Get("/products/:id", c.BizBillingHandler.GetProduct)
+		biz.Put("/products/:id", c.BizBillingHandler.UpdateProduct)
+		biz.Delete("/products/:id", c.BizBillingHandler.DeleteProduct)
+
+		// ── Plans & Addons ──
+		biz.Post("/plans", c.BizBillingHandler.CreatePlan)
+		biz.Get("/plans", c.BizBillingHandler.ListPlans)
+		biz.Get("/plans/:id", c.BizBillingHandler.GetPlan)
+		biz.Put("/plans/:id", c.BizBillingHandler.UpdatePlan)
+		biz.Delete("/plans/:id", c.BizBillingHandler.DeletePlan)
+		biz.Post("/plans/:id/addons", c.BizBillingHandler.AddPlanAddon)
+		biz.Get("/plans/:id/addons", c.BizBillingHandler.ListPlanAddons)
+		biz.Delete("/plans/:id/addons/:addon_id", c.BizBillingHandler.RemovePlanAddon)
+
+		// ── Config ──
+		biz.Get("/config/:config_type", c.BizBillingHandler.GetConfig)
+		biz.Put("/config/:config_type", c.BizBillingHandler.UpdateConfig)
+
+		// ── Subscriptions ──
+		biz.Post("/subscriptions", c.BizBillingHandler.CreateSubscription)
+		biz.Get("/subscriptions", c.BizBillingHandler.ListSubscriptions)
+		biz.Get("/subscriptions/:id", c.BizBillingHandler.GetSubscription)
+		biz.Put("/subscriptions/:id", c.BizBillingHandler.UpdateSubscription)
+		biz.Post("/subscriptions/:id/change-plan", c.BizBillingHandler.ChangePlan)
+		biz.Post("/subscriptions/:id/cancel", c.BizBillingHandler.CancelSubscription)
+		biz.Post("/subscriptions/:id/pause", c.BizBillingHandler.PauseSubscription)
+		biz.Post("/subscriptions/:id/resume", c.BizBillingHandler.ResumeSubscription)
+		biz.Post("/subscriptions/:id/reactivate", c.BizBillingHandler.ReactivateSubscription)
+		biz.Post("/subscriptions/:id/non-renewing", c.BizBillingHandler.SetNonRenewing)
+
+		// ── Invoices ──
+		biz.Post("/invoices", c.BizBillingHandler.CreateInvoice)
+		biz.Get("/invoices", c.BizBillingHandler.ListInvoices)
+		biz.Get("/invoices/:id", c.BizBillingHandler.GetInvoice)
+		biz.Put("/invoices/:id", c.BizBillingHandler.UpdateDraftInvoice)
+		biz.Post("/invoices/:id/issue", c.BizBillingHandler.IssueInvoice)
+		biz.Post("/invoices/:id/send", c.BizBillingHandler.SendInvoice)
+		biz.Post("/invoices/:id/void", c.BizBillingHandler.VoidInvoice)
+		biz.Post("/invoices/:id/write-off", c.BizBillingHandler.WriteOffInvoice)
+		biz.Post("/invoices/:id/apply-coupon", c.BizBillingHandler.ApplyCoupon)
+		biz.Post("/invoices/:id/apply-credit", c.BizBillingHandler.ApplyCredit)
+		biz.Post("/invoices/:id/late-fee", c.BizBillingHandler.AddLateFee)
+
+		// ── Payments ──
+		biz.Post("/invoices/:id/payments", c.BizBillingHandler.RecordPayment)
+		biz.Get("/payments", c.BizBillingHandler.ListPayments)
+		biz.Get("/payments/:id", c.BizBillingHandler.GetPayment)
+		biz.Post("/payments/:id/refund", c.BizBillingHandler.RefundPayment)
+
+		// ── Estimates ──
+		biz.Post("/estimates", c.BizBillingHandler.CreateEstimate)
+		biz.Get("/estimates", c.BizBillingHandler.ListEstimates)
+		biz.Get("/estimates/:id", c.BizBillingHandler.GetEstimate)
+		biz.Put("/estimates/:id", c.BizBillingHandler.UpdateEstimate)
+		biz.Delete("/estimates/:id", c.BizBillingHandler.DeleteEstimate)
+		biz.Post("/estimates/:id/send", c.BizBillingHandler.SendEstimate)
+		biz.Post("/estimates/:id/accept", c.BizBillingHandler.AcceptEstimate)
+		biz.Post("/estimates/:id/reject", c.BizBillingHandler.RejectEstimate)
+		biz.Post("/estimates/:id/convert", c.BizBillingHandler.ConvertEstimate)
+
+		// ── Coupons ──
+		biz.Post("/coupons", c.BizBillingHandler.CreateCoupon)
+		biz.Post("/coupons/bulk-generate", c.BizBillingHandler.BulkGenerateCoupons)
+		biz.Get("/coupons", c.BizBillingHandler.ListCoupons)
+		biz.Get("/coupons/:id", c.BizBillingHandler.GetCoupon)
+		biz.Put("/coupons/:id", c.BizBillingHandler.UpdateCoupon)
+		biz.Delete("/coupons/:id", c.BizBillingHandler.DeleteCoupon)
+
+		// ── Credit Notes & Retainers ──
+		biz.Post("/credit-notes", c.BizBillingHandler.CreateCreditNote)
+		biz.Get("/credit-notes", c.BizBillingHandler.ListCreditNotes)
+		biz.Get("/credit-notes/:id", c.BizBillingHandler.GetCreditNote)
+		biz.Post("/credit-notes/:id/refund", c.BizBillingHandler.RefundCreditNote)
+		biz.Post("/retainers", c.BizBillingHandler.CreateRetainer)
+		biz.Get("/retainers", c.BizBillingHandler.ListRetainers)
+		biz.Get("/retainers/:id", c.BizBillingHandler.GetRetainer)
+		biz.Post("/retainers/:id/mark-paid", c.BizBillingHandler.MarkRetainerPaid)
+
+		// ── Contracts ──
+		biz.Post("/contracts", c.BizBillingHandler.CreateContract)
+		biz.Get("/contracts", c.BizBillingHandler.ListContracts)
+		biz.Get("/contracts/:id", c.BizBillingHandler.GetContract)
+		biz.Put("/contracts/:id", c.BizBillingHandler.UpdateContract)
+		biz.Post("/contracts/:id/send", c.BizBillingHandler.SendContract)
+		biz.Post("/contracts/:id/accept", c.BizBillingHandler.AcceptContract)
+		biz.Post("/contracts/:id/amend", c.BizBillingHandler.AmendContract)
+		biz.Post("/contracts/:id/renew", c.BizBillingHandler.RenewContract)
+		biz.Post("/contracts/:id/terminate", c.BizBillingHandler.TerminateContract)
+
+		// ── Usage Metering ──
+		biz.Post("/usage/meters", c.BizBillingHandler.CreateUsageMeter)
+		biz.Get("/usage/meters", c.BizBillingHandler.ListUsageMeters)
+		biz.Post("/usage/events", c.BizBillingHandler.ReportUsage)
+		biz.Get("/usage/summary", c.BizBillingHandler.GetUsageSummary)
+
+		// ── Expenses (static paths before /:id) ──
+		biz.Post("/expenses", c.BizBillingHandler.CreateExpense)
+		biz.Get("/expenses", c.BizBillingHandler.ListExpenses)
+		biz.Get("/expenses/summary", c.BizBillingHandler.GetExpenseSummary)
+		biz.Post("/expenses/convert", c.BizBillingHandler.ConvertExpensesToInvoice)
+		biz.Get("/expenses/:id", c.BizBillingHandler.GetExpense)
+		biz.Put("/expenses/:id", c.BizBillingHandler.UpdateExpense)
+		biz.Delete("/expenses/:id", c.BizBillingHandler.DeleteExpense)
+
+		// ── Customer billing (statement, credit balance, portal link) ──
+		biz.Get("/users/:user_id/statement", c.BizBillingHandler.GetUserStatement)
+		biz.Post("/users/:user_id/balance", c.BizBillingHandler.AdjustUserBalance)
+		biz.Post("/users/:user_id/portal-link", c.BizBillingHandler.CreatePortalLink)
+
+		// ── Analytics (same API-key auth as rest of /v1/biz; dashboard sends X-API-Key) ──
+		biz.Get("/analytics/revenue", c.BizBillingHandler.AnalyticsRevenue)
+		biz.Get("/analytics/subscriptions", c.BizBillingHandler.AnalyticsSubscriptions)
+		biz.Get("/analytics/invoices", c.BizBillingHandler.AnalyticsInvoices)
+		biz.Get("/analytics/aging", c.BizBillingHandler.AnalyticsAging)
+		biz.Get("/analytics/customers", c.BizBillingHandler.AnalyticsCustomers)
+		biz.Get("/analytics/dunning", c.BizBillingHandler.AnalyticsDunning)
+		biz.Get("/analytics/revenue-recognition", c.BizBillingHandler.AnalyticsRevenueRecognition)
+		biz.Get("/analytics/tax-summary", c.BizBillingHandler.AnalyticsTaxSummary)
+
+		// ── Third-party billing connectors ──
+		biz.Post("/connectors", c.BizBillingHandler.CreateConnector)
+		biz.Get("/connectors", c.BizBillingHandler.ListConnectors)
+		biz.Put("/connectors/:id", c.BizBillingHandler.UpdateConnector)
+		biz.Delete("/connectors/:id", c.BizBillingHandler.DeleteConnector)
 	}
 }
 

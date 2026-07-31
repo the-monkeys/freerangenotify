@@ -26,18 +26,9 @@ COPY . .
 # GOMAXPROCS=4 prevents OOM from unbounded parallel compilation.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
-    -ldflags='-w -s' -o server ./cmd/server
-
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
-    -ldflags='-w -s' -o worker ./cmd/worker
-
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build \
-    -ldflags='-w -s' -o migrate ./cmd/migrate
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build -ldflags='-w -s' -o server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build -ldflags='-w -s' -o worker ./cmd/worker && \
+    CGO_ENABLED=0 GOOS=linux GOMAXPROCS=4 go build -ldflags='-w -s' -o migrate ./cmd/migrate
 
 # Final stage
 FROM alpine:latest

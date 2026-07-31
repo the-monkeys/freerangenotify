@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -12,6 +13,12 @@ import (
 	"go.uber.org/zap"
 )
 
+// BizGatewayRecorder records biz-invoice gateway payments from webhooks.
+// Implemented by services.BizLifecycleService.
+type BizGatewayRecorder interface {
+	RecordGatewayPayment(ctx context.Context, gatewayOrderID, gatewayPaymentID string) error
+}
+
 // PaymentHandler handles payment-related HTTP requests.
 type PaymentHandler struct {
 	paymentProvider billing.Provider
@@ -20,6 +27,7 @@ type PaymentHandler struct {
 	usageRepo       billing.UsageRepository
 	rateCardMgr     billing.RateCardManager
 	rateCard        map[string]billing.PlanTier
+	bizRecorder     BizGatewayRecorder
 	billingEnabled  bool
 	usageEnabled    bool
 	logger          *zap.Logger
@@ -48,6 +56,12 @@ func NewPaymentHandler(
 func (h *PaymentHandler) SetUsageRepo(repo billing.UsageRepository, enabled bool) {
 	h.usageRepo = repo
 	h.usageEnabled = enabled
+}
+
+// SetBizGatewayRecorder wires the business billing module so gateway webhooks
+// for biz invoices (orders created on invoice issue) are recorded as payments.
+func (h *PaymentHandler) SetBizGatewayRecorder(recorder BizGatewayRecorder) {
+	h.bizRecorder = recorder
 }
 
 func (h *PaymentHandler) SetRateCardManager(manager billing.RateCardManager) {
@@ -498,6 +512,17 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 
 	switch event.EventType {
 	case "payment.captured":
+		// Business billing invoices carry their own gateway orders — try that
+		// path first; if the order maps to a biz invoice we are done.
+		if h.bizRecorder != nil && event.OrderID != "" {
+			if err := h.bizRecorder.RecordGatewayPayment(c.Context(), event.OrderID, event.PaymentID); err == nil {
+				h.logger.Info("webhook: biz invoice payment recorded",
+					zap.String("order_id", event.OrderID),
+					zap.String("payment_id", event.PaymentID))
+				return c.JSON(fiber.Map{"status": "ok"})
+			}
+		}
+
 		// Payment successful — ensure subscription is active
 		// (This is a fallback; primary activation happens via VerifyPayment)
 		if event.TenantID != "" {

@@ -44,7 +44,7 @@ func NewDatabaseManager(cfg *config.Config, logger *zap.Logger) (*DatabaseManage
 	}
 
 	// Create index manager
-	indexManager := NewIndexManager(client, logger)
+	indexManager := NewIndexManager(client, logger, cfg.Features.BizBillingEnabled)
 
 	// Create repositories
 	repositories := &Repositories{
