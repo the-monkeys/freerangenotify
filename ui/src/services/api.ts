@@ -1153,8 +1153,10 @@ export const billingAPI = {
     return data;
   },
 
-  getUsageBreakdown: async () => {
-    const { data } = await api.get<BillingUsageBreakdown>('/billing/usage/breakdown');
+  getUsageBreakdown: async (appId?: string) => {
+    const { data } = await api.get<BillingUsageBreakdown>('/billing/usage/breakdown', {
+      params: appId ? { app_id: appId } : undefined,
+    });
     return data;
   },
 
