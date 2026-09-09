@@ -512,11 +512,13 @@ func (r *BaseRepository) ScriptUpdate(ctx context.Context, id string, script map
 	if err != nil {
 		return fmt.Errorf("failed to marshal script: %w", err)
 	}
+	retry := 5
 	req := esapi.UpdateRequest{
-		Index:      r.indexName,
-		DocumentID: id,
-		Body:       strings.NewReader(string(data)),
-		Refresh:    string(r.defaultRefresh),
+		Index:           r.indexName,
+		DocumentID:      id,
+		Body:            strings.NewReader(string(data)),
+		Refresh:         string(r.defaultRefresh),
+		RetryOnConflict: &retry,
 	}
 	res, err := req.Do(ctx, r.client)
 	if err != nil {

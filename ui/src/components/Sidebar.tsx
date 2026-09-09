@@ -146,11 +146,12 @@ const SidebarNav: React.FC = () => {
                 <div className="mt-2 rounded-lg border border-border/70 bg-sidebar-accent/20 p-3 text-xs group-data-[collapsible=icon]:hidden">
                     <p className="text-muted-foreground">Credits</p>
                     <p className="mt-1 text-sm font-semibold text-sidebar-foreground">
-                        {billingUsage ? `${billingUsage.credits_remaining.toLocaleString()} / ${billingUsage.credits_total.toLocaleString()}` : 'Unavailable'}
+                        {billingUsage ? `${(billingUsage.credits_available ?? Math.max(0, billingUsage.credits_remaining - (billingUsage.credits_reserved ?? 0))).toLocaleString()} / ${billingUsage.credits_total.toLocaleString()}` : 'Unavailable'}
                     </p>
                     {billingUsage && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
                             {billingUsage.usage_percent.toFixed(1)}% used
+                            {(billingUsage.credits_reserved ?? 0) > 0 ? ` · ${billingUsage.credits_reserved!.toLocaleString()} reserved` : ''}
                         </p>
                     )}
                 </div>

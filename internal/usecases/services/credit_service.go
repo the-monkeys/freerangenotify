@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	ErrInsufficientCredits       = errors.New("insufficient credits")
+	ErrInsufficientCredits       = billing.ErrInsufficientCredits
 	ErrDailyCapExceeded          = errors.New("daily cap exceeded")
 	ErrGrantTenantRequired       = errors.New("tenant id is required")
 	ErrGrantInvalidAmount        = errors.New("credits amount must be greater than zero")
@@ -31,6 +31,7 @@ type CreditUsageSnapshot struct {
 	CreditsTotal     int64  `json:"credits_total"`
 	CreditsRemaining int64  `json:"credits_remaining"`
 	CreditsReserved  int64  `json:"credits_reserved"`
+	CreditsAvailable int64  `json:"credits_available"`
 }
 
 type CreditService struct {
@@ -46,6 +47,7 @@ type CreditService struct {
 
 	reservationsMu             sync.Mutex
 	reservations               map[string]*billing.CreditReservation
+	reservationStore           reservationStore
 	legacyPendingMu            sync.Mutex
 	legacyPending              map[string]int64 // quota hold key -> in-flight count
 	legacyHoldKeyByReservation map[string]string
@@ -73,6 +75,7 @@ func NewCreditService(
 		logger:              logger,
 		enforceCreditChecks: enforceCreditChecks,
 		reservations:               make(map[string]*billing.CreditReservation),
+		reservationStore:           newReservationStore(redisClient),
 		legacyPending:              make(map[string]int64),
 		legacyHoldKeyByReservation: make(map[string]string),
 	}
@@ -133,16 +136,27 @@ func (s *CreditService) reserveCredits(
 		return nil, ErrInsufficientCredits
 	}
 
-	available := balance.CreditsRemaining - balance.CreditsReserved
-	if available < creditsNeeded {
+	snapshot := balance
+	balance, err = s.balanceRepo.ReserveCredits(ctx, tenantID, creditsNeeded)
+	if err != nil {
+		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		if errors.Is(err, ErrInsufficientCredits) && s.logger != nil {
+			s.logger.Warn("insufficient credits",
+				zap.String("tenant_id", tenantID),
+				zap.String("app_id", appID),
+				zap.String("notification_id", notificationID),
+				zap.String("channel", normalizedChannel),
+				zap.Int64("credits_needed", creditsNeeded),
+				zap.Int64("credits_remaining", snapshot.CreditsRemaining),
+				zap.Int64("credits_reserved", snapshot.CreditsReserved),
+				zap.Int64("credits_available", snapshot.Available()),
+			)
+		}
+		return nil, err
+	}
+	if balance == nil {
 		s.undoDailyCap(ctx, tenantID, normalizedChannel)
 		return nil, ErrInsufficientCredits
-	}
-
-	balance.CreditsReserved += creditsNeeded
-	if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
-		return nil, err
 	}
 
 	reservation := &billing.CreditReservation{
@@ -159,9 +173,15 @@ func (s *CreditService) reserveCredits(
 		UpdatedAt:       time.Now().UTC(),
 	}
 
-	s.reservationsMu.Lock()
-	s.reservations[reservation.ID] = reservation
-	s.reservationsMu.Unlock()
+	if err := s.saveReservation(ctx, reservation); err != nil {
+		if _, releaseErr := s.balanceRepo.ReleaseReservedCredits(ctx, tenantID, creditsNeeded); releaseErr != nil && s.logger != nil {
+			s.logger.Error("credit: failed to compensate reservation after store error",
+				zap.String("tenant_id", tenantID),
+				zap.Error(releaseErr))
+		}
+		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		return nil, err
+	}
 
 	return reservation, nil
 }
@@ -251,17 +271,17 @@ func (s *CreditService) newLegacyReservation(tenantID, appID, notificationID, ch
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}
-	s.reservationsMu.Lock()
-	s.reservations[reservation.ID] = reservation
+	s.saveReservation(context.Background(), reservation)
 	if holdKey != "" {
+		s.reservationsMu.Lock()
 		s.legacyHoldKeyByReservation[reservation.ID] = holdKey
+		s.reservationsMu.Unlock()
 	}
-	s.reservationsMu.Unlock()
 	return reservation
 }
 
 func (s *CreditService) CommitOnSuccess(ctx context.Context, reservationID string) (*billing.CreditReservation, error) {
-	reservation, ok := s.loadReservation(reservationID)
+	reservation, ok := s.loadReservation(ctx, reservationID)
 	if !ok {
 		return nil, nil
 	}
@@ -272,27 +292,16 @@ func (s *CreditService) CommitOnSuccess(ctx context.Context, reservationID strin
 		s.releaseLegacyHold(reservationID)
 		reservation.Status = billing.CreditReservationCommitted
 		reservation.UpdatedAt = time.Now().UTC()
-		s.deleteReservation(reservationID)
+		s.deleteReservation(ctx, reservationID)
 		return reservation, nil
 	}
 
-	balance, err := s.balanceRepo.GetByTenantID(ctx, reservation.TenantID)
-	if err != nil || balance == nil {
-		return nil, fmt.Errorf("credit: balance not found during commit: %w", err)
-	}
-
-	if balance.CreditsReserved < reservation.CreditsReserved {
-		balance.CreditsReserved = 0
-	} else {
-		balance.CreditsReserved -= reservation.CreditsReserved
-	}
-	if balance.CreditsRemaining < reservation.CreditsReserved {
-		return nil, ErrInsufficientCredits
-	}
-	balance.CreditsRemaining -= reservation.CreditsReserved
-
-	if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
+	balance, err := s.balanceRepo.CommitReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
+	if err != nil {
 		return nil, err
+	}
+	if balance == nil {
+		return nil, fmt.Errorf("credit: balance not found during commit")
 	}
 
 	entry := &billing.CreditLedgerEntry{
@@ -314,17 +323,17 @@ func (s *CreditService) CommitOnSuccess(ctx context.Context, reservationID strin
 
 	reservation.Status = billing.CreditReservationCommitted
 	reservation.UpdatedAt = time.Now().UTC()
-	s.deleteReservation(reservationID)
+	s.deleteReservation(ctx, reservationID)
 	return reservation, nil
 }
 
 func (s *CreditService) ReleaseOnFailure(ctx context.Context, reservationID string, reason string) error {
-	reservation, ok := s.loadReservation(reservationID)
+	reservation, ok := s.loadReservation(ctx, reservationID)
 	if !ok {
 		return nil
 	}
 	if reservation.Status != billing.CreditReservationReserved {
-		s.deleteReservation(reservationID)
+		s.deleteReservation(ctx, reservationID)
 		return nil
 	}
 
@@ -332,24 +341,14 @@ func (s *CreditService) ReleaseOnFailure(ctx context.Context, reservationID stri
 		s.releaseLegacyHold(reservationID)
 		reservation.Status = billing.CreditReservationReleased
 		reservation.UpdatedAt = time.Now().UTC()
-		s.deleteReservation(reservationID)
+		s.deleteReservation(ctx, reservationID)
 		s.undoDailyCap(ctx, reservation.TenantID, reservation.Channel)
 		return nil
 	}
 
-	balance, err := s.balanceRepo.GetByTenantID(ctx, reservation.TenantID)
+	balance, err := s.balanceRepo.ReleaseReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
 	if err != nil {
 		return err
-	}
-	if balance != nil {
-		if balance.CreditsReserved < reservation.CreditsReserved {
-			balance.CreditsReserved = 0
-		} else {
-			balance.CreditsReserved -= reservation.CreditsReserved
-		}
-		if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
-			return err
-		}
 	}
 
 	entry := &billing.CreditLedgerEntry{
@@ -375,7 +374,7 @@ func (s *CreditService) ReleaseOnFailure(ctx context.Context, reservationID stri
 
 	reservation.Status = billing.CreditReservationReleased
 	reservation.UpdatedAt = time.Now().UTC()
-	s.deleteReservation(reservationID)
+	s.deleteReservation(ctx, reservationID)
 	s.undoDailyCap(ctx, reservation.TenantID, reservation.Channel)
 	return nil
 }
@@ -393,6 +392,89 @@ func (s *CreditService) GetUsageSnapshot(ctx context.Context, tenantID string) (
 		CreditsTotal:     balance.CreditsTotal,
 		CreditsRemaining: balance.CreditsRemaining,
 		CreditsReserved:  balance.CreditsReserved,
+		CreditsAvailable: balance.Available(),
+	}, nil
+}
+
+func (s *CreditService) ReapExpiredReservations(ctx context.Context) (int, error) {
+	if s.reservationStore == nil {
+		return 0, nil
+	}
+	expired := s.reservationStore.ListExpired(ctx, time.Now().UTC())
+	released := 0
+	for _, res := range expired {
+		if res == nil {
+			continue
+		}
+		if err := s.ReleaseOnFailure(ctx, res.ID, "reservation_expired"); err != nil {
+			if s.logger != nil {
+				s.logger.Error("credit: failed to reap expired reservation",
+					zap.String("reservation_id", res.ID),
+					zap.String("tenant_id", res.TenantID),
+					zap.Error(err))
+			}
+			continue
+		}
+		released++
+	}
+	if released > 0 && s.logger != nil {
+		s.logger.Warn("credit: reaped expired reservations", zap.Int("count", released))
+	}
+	return released, nil
+}
+
+func (s *CreditService) ResetReservedCredits(ctx context.Context, tenantID, reason string) (*CreditUsageSnapshot, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, ErrGrantTenantRequired
+	}
+	if strings.TrimSpace(reason) == "" {
+		return nil, ErrGrantReasonRequired
+	}
+
+	before, err := s.balanceRepo.GetByTenantID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if before == nil {
+		return nil, ErrGrantNoActiveSubscription
+	}
+
+	balance, err := s.balanceRepo.ClearReservedCredits(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if balance == nil {
+		return nil, ErrGrantNoActiveSubscription
+	}
+
+	entry := &billing.CreditLedgerEntry{
+		ID:           uuid.NewString(),
+		TenantID:     tenantID,
+		EntryType:    billing.CreditLedgerAdjust,
+		CreditsDelta: 0,
+		BalanceAfter: balance.CreditsRemaining,
+		Metadata: map[string]interface{}{
+			"reason":                  reason,
+			"source":                  "ops_reset_reserved",
+			"credits_reserved_before": before.CreditsReserved,
+			"credits_reserved_after":  int64(0),
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+	if s.rateCardSvc != nil {
+		entry.RateCardVersion = s.rateCardSvc.GetRateCardVersion()
+	}
+	if err := s.ledgerRepo.Append(ctx, entry); err != nil {
+		return nil, err
+	}
+
+	return &CreditUsageSnapshot{
+		TenantID:         tenantID,
+		CreditsTotal:     balance.CreditsTotal,
+		CreditsRemaining: balance.CreditsRemaining,
+		CreditsReserved:  balance.CreditsReserved,
+		CreditsAvailable: balance.Available(),
 	}, nil
 }
 
@@ -480,6 +562,7 @@ func (s *CreditService) GrantCredits(ctx context.Context, tenantID string, amoun
 		CreditsTotal:     balance.CreditsTotal,
 		CreditsRemaining: balance.CreditsRemaining,
 		CreditsReserved:  balance.CreditsReserved,
+		CreditsAvailable: balance.Available(),
 	}, nil
 }
 
@@ -705,18 +788,40 @@ func (s *CreditService) currentRateCardVersion() string {
 	return s.rateCardSvc.GetRateCardVersion()
 }
 
-func (s *CreditService) loadReservation(reservationID string) (*billing.CreditReservation, bool) {
+func (s *CreditService) loadReservation(ctx context.Context, reservationID string) (*billing.CreditReservation, bool) {
 	s.reservationsMu.Lock()
-	defer s.reservationsMu.Unlock()
 	res, ok := s.reservations[reservationID]
-	return res, ok
+	s.reservationsMu.Unlock()
+	if ok {
+		return res, true
+	}
+	if s.reservationStore == nil {
+		return nil, false
+	}
+	return s.reservationStore.Get(ctx, reservationID)
 }
 
-func (s *CreditService) deleteReservation(reservationID string) {
+func (s *CreditService) saveReservation(ctx context.Context, reservation *billing.CreditReservation) error {
+	if reservation == nil {
+		return nil
+	}
 	s.reservationsMu.Lock()
-	defer s.reservationsMu.Unlock()
+	s.reservations[reservation.ID] = reservation
+	s.reservationsMu.Unlock()
+	if s.reservationStore == nil {
+		return nil
+	}
+	return s.reservationStore.Save(ctx, reservation)
+}
+
+func (s *CreditService) deleteReservation(ctx context.Context, reservationID string) {
+	s.reservationsMu.Lock()
 	delete(s.reservations, reservationID)
 	delete(s.legacyHoldKeyByReservation, reservationID)
+	s.reservationsMu.Unlock()
+	if s.reservationStore != nil {
+		s.reservationStore.Delete(ctx, reservationID)
+	}
 }
 
 func normalizeCreditChannel(channel string) string {

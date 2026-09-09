@@ -756,6 +756,7 @@ func setupOpsRoutes(v1 fiber.Router, c *container.Container) {
 	if c.OpsHandler != nil {
 		ops.Post("/subscriptions/renew", c.OpsHandler.RenewSubscription)
 		ops.Post("/credits/grant", c.OpsHandler.GrantCredits)
+		ops.Post("/credits/reset-reserved", c.OpsHandler.ResetReservedCredits)
 		ops.Post("/billing/rebalance-credits", c.OpsHandler.RebalanceCredits)
 		ops.Delete("/users/:user_id", c.OpsHandler.DeleteAccount)
 	}

@@ -70,6 +70,18 @@ func (stubBalanceRepo) GetByTenantID(context.Context, string) (*billing.CreditBa
 	return &billing.CreditBalance{CreditsRemaining: 0}, nil
 }
 func (stubBalanceRepo) Upsert(context.Context, *billing.CreditBalance) error { return nil }
+func (stubBalanceRepo) ReserveCredits(context.Context, string, int64) (*billing.CreditBalance, error) {
+	return nil, billing.ErrInsufficientCredits
+}
+func (stubBalanceRepo) CommitReservedCredits(context.Context, string, int64) (*billing.CreditBalance, error) {
+	return &billing.CreditBalance{CreditsRemaining: 0}, nil
+}
+func (stubBalanceRepo) ReleaseReservedCredits(context.Context, string, int64) (*billing.CreditBalance, error) {
+	return &billing.CreditBalance{CreditsRemaining: 0}, nil
+}
+func (stubBalanceRepo) ClearReservedCredits(context.Context, string) (*billing.CreditBalance, error) {
+	return &billing.CreditBalance{CreditsRemaining: 0}, nil
+}
 
 type stubLedgerRepo struct{}
 

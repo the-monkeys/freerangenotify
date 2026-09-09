@@ -2,8 +2,11 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrInsufficientCredits = errors.New("insufficient credits")
 
 type CreditReservationStatus string
 
@@ -99,6 +102,66 @@ type RateCard struct {
 type CreditBalanceRepository interface {
 	GetByTenantID(ctx context.Context, tenantID string) (*CreditBalance, error)
 	Upsert(ctx context.Context, balance *CreditBalance) error
+	ReserveCredits(ctx context.Context, tenantID string, amount int64) (*CreditBalance, error)
+	CommitReservedCredits(ctx context.Context, tenantID string, amount int64) (*CreditBalance, error)
+	ReleaseReservedCredits(ctx context.Context, tenantID string, amount int64) (*CreditBalance, error)
+	ClearReservedCredits(ctx context.Context, tenantID string) (*CreditBalance, error)
+}
+
+func (b *CreditBalance) Available() int64 {
+	if b == nil {
+		return 0
+	}
+	available := b.CreditsRemaining - b.CreditsReserved
+	if available < 0 {
+		return 0
+	}
+	return available
+}
+
+func (b *CreditBalance) Reserve(amount int64) error {
+	if b == nil {
+		return ErrInsufficientCredits
+	}
+	if b.Available() < amount {
+		return ErrInsufficientCredits
+	}
+	b.CreditsReserved += amount
+	return nil
+}
+
+func (b *CreditBalance) Commit(amount int64) error {
+	if b == nil {
+		return ErrInsufficientCredits
+	}
+	if b.CreditsReserved < amount {
+		b.CreditsReserved = 0
+	} else {
+		b.CreditsReserved -= amount
+	}
+	if b.CreditsRemaining < amount {
+		return ErrInsufficientCredits
+	}
+	b.CreditsRemaining -= amount
+	return nil
+}
+
+func (b *CreditBalance) Release(amount int64) {
+	if b == nil {
+		return
+	}
+	if b.CreditsReserved < amount {
+		b.CreditsReserved = 0
+		return
+	}
+	b.CreditsReserved -= amount
+}
+
+func (b *CreditBalance) ClearReserved() {
+	if b == nil {
+		return
+	}
+	b.CreditsReserved = 0
 }
 
 type CreditLedgerRepository interface {

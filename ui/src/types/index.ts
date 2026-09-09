@@ -1081,6 +1081,8 @@ export interface BillingUsage {
     messages_sent: number;
     credits_consumed: number;
     credits_remaining: number;
+    credits_reserved?: number;
+    credits_available?: number;
     credits_total: number;
     usage_percent: number;
     current_period_start: string;

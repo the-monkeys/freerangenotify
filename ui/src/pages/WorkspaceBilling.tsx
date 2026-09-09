@@ -298,13 +298,17 @@ export default function WorkspaceBilling() {
                                 </p>
                             )}
                             <p className="flex justify-between items-center">
+                                <span>Credits available:</span>
+                                <span>{(usage?.credits_available ?? Math.max(0, (usage?.credits_remaining ?? 0) - (usage?.credits_reserved ?? 0))).toLocaleString()}</span>
+                            </p>
+                            <p className="flex justify-between items-center">
                                 <span>Credits remaining:</span>
                                 <span>{usage?.credits_remaining?.toLocaleString() ?? '-'}</span>
                             </p>
-                            {(subscription?.credits_reserved ?? 0) > 0 && (
+                            {(usage?.credits_reserved ?? subscription?.credits_reserved ?? 0) > 0 && (
                                 <p className="flex justify-between items-center">
                                     <span>Reserved (in flight):</span>
-                                    <span>{subscription!.credits_reserved!.toLocaleString()}</span>
+                                    <span>{(usage?.credits_reserved ?? subscription?.credits_reserved ?? 0).toLocaleString()}</span>
                                 </p>
                             )}
                             <p className="flex justify-between items-center">
