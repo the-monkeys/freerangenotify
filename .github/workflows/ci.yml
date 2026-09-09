@@ -66,7 +66,8 @@ jobs:
       # Shared across all steps — server, worker, migrate, and tests all use these.
       FREERANGE_DATABASE_URLS: http://localhost:9200
       FREERANGE_REDIS_HOST: localhost
-      FREERANGE_REDIS_PORT: "6379"
+      # docker-compose.yml publishes Redis on host 6380 (container still 6379).
+      FREERANGE_REDIS_PORT: "6380"
       FREERANGE_SECURITY_JWT_SECRET: ci-test-jwt-secret
       JWT_SECRET: ci-test-jwt-secret
       FREERANGE_SECURITY_OPS_SECRET: ci-test-ops-secret
@@ -105,15 +106,17 @@ jobs:
             sleep 2
           done
 
-          echo "Waiting for Redis..."
+          echo "Waiting for Redis on localhost:${FREERANGE_REDIS_PORT}..."
           for i in $(seq 1 15); do
-            if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+            if docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG \
+              && python3 -c "import socket; socket.create_connection(('127.0.0.1', int('${FREERANGE_REDIS_PORT}')), 1).close()"; then
               echo "Redis ready"
               break
             fi
             if [ "$i" -eq 15 ]; then
-              echo "ERROR: Redis did not become ready in time"
+              echo "ERROR: Redis did not become ready on localhost:${FREERANGE_REDIS_PORT}"
               docker compose logs redis
+              docker compose port redis 6379 || true
               exit 1
             fi
             sleep 1
@@ -160,7 +163,13 @@ jobs:
             fi
             if [ "$i" -eq 30 ]; then
               echo "ERROR: Notification service did not become healthy"
+              echo "GET /v1/health:"
+              curl -sS http://localhost:8080/v1/health || true
+              echo ""
+              echo "--- server.log ---"
               cat /tmp/server.log
+              echo "--- worker.log ---"
+              cat /tmp/worker.log || true
               exit 1
             fi
             sleep 2

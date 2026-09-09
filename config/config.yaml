@@ -176,12 +176,22 @@ features:
   multi_environment_enabled: true
   # WhatsApp Meta Cloud API (Tech Provider)
   whatsapp_meta_enabled: false
+  # Business Billing Module
+  biz_billing_enabled: false
 
 billing:
   rate_card_refresh_seconds: 45
   rate_card_pubsub_channel: "billing:ratecard:updated"
   enforce_credit_checks: true
   enforce_free_tier_daily_cap: true
+
+biz_billing:
+  default_currency: "INR"
+  invoice_prefix: "INV"
+  estimate_prefix: "EST"
+  # Used to mint invoice payment_link / portal URLs. Override via
+  # FREERANGE_BIZ_BILLING_PORTAL_BASE_URL (e.g. https://api.example.com/v1/portal).
+  portal_base_url: "http://localhost:8080/v1/portal"
 
 # File attachments subsystem (POST /v1/files + Attachment.file_id source).
 # signing_keys is REQUIRED for /v1/files/:id/download-url; without it the

@@ -310,7 +310,63 @@ func (h *OpsHandler) GrantCredits(c *fiber.Ctx) error {
 			"credits_total":      snap.CreditsTotal,
 			"credits_remaining":  snap.CreditsRemaining,
 			"credits_reserved":   snap.CreditsReserved,
+			"credits_available":  snap.CreditsAvailable,
 			"credits_granted":    req.Credits,
+		},
+	})
+}
+
+// ResetReservedCredits handles POST /v1/ops/credits/reset-reserved.
+// Zeros stuck credits_reserved without changing credits_remaining.
+func (h *OpsHandler) ResetReservedCredits(c *fiber.Ctx) error {
+	if h.creditService == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "credit service unavailable"})
+	}
+
+	var req struct {
+		UserID string `json:"user_id"`
+		Reason string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	userID := strings.TrimSpace(req.UserID)
+	if userID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "reason is required"})
+	}
+
+	h.logger.Warn("Ops reset reserved credits request received",
+		zap.String("user_id", userID),
+		zap.String("reason", req.Reason),
+	)
+
+	snap, err := h.creditService.ResetReservedCredits(c.Context(), userID, req.Reason)
+	if err != nil {
+		if isGrantCreditsClientError(err) {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+		}
+		h.logger.Error("failed to reset reserved credits", zap.String("user_id", userID), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to reset reserved credits"})
+	}
+
+	h.logger.Warn("Ops reset reserved credits completed",
+		zap.String("user_id", userID),
+		zap.Int64("credits_remaining", snap.CreditsRemaining),
+		zap.Int64("credits_reserved", snap.CreditsReserved),
+	)
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"data": fiber.Map{
+			"tenant_id":          snap.TenantID,
+			"credits_total":      snap.CreditsTotal,
+			"credits_remaining":  snap.CreditsRemaining,
+			"credits_reserved":   snap.CreditsReserved,
+			"credits_available":  snap.CreditsAvailable,
 		},
 	})
 }

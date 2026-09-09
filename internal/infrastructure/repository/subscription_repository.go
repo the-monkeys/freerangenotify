@@ -48,6 +48,10 @@ func (r *SubscriptionRepository) Update(ctx context.Context, sub *license.Subscr
 	return r.base.Update(ctx, sub.ID, sub)
 }
 
+func (r *SubscriptionRepository) ScriptUpdate(ctx context.Context, id string, script map[string]interface{}) error {
+	return r.base.ScriptUpdate(ctx, id, script)
+}
+
 func (r *SubscriptionRepository) Delete(ctx context.Context, id string) error {
 	return r.base.Delete(ctx, id)
 }

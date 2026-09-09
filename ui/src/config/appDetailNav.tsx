@@ -16,6 +16,7 @@ import {
     Link2,
     MessageCircle,
     Paperclip,
+    CreditCard,
 } from 'lucide-react';
 
 export type TabId =
@@ -35,7 +36,8 @@ export type TabId =
     | 'integration'
     | 'import'
     | 'browse-library'
-    | 'whatsapp';
+    | 'whatsapp'
+    | 'biz-billing';
 
 export const VALID_TABS: TabId[] = [
     'overview',
@@ -55,6 +57,7 @@ export const VALID_TABS: TabId[] = [
     'import',
     'browse-library',
     'whatsapp',
+    'biz-billing',
 ];
 
 export interface TabDef {
@@ -98,6 +101,12 @@ export const TAB_GROUPS: TabGroup[] = [
             { id: 'environments', label: 'Environments', icon: <GitBranch className="h-4 w-4" /> },
             { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
             { id: 'integration', label: 'Integration', icon: <Code className="h-4 w-4" /> },
+        ],
+    },
+    {
+        label: 'Monetization',
+        tabs: [
+            { id: 'biz-billing', label: 'Billing Setup', icon: <CreditCard className="h-4 w-4" /> },
         ],
     },
 ];

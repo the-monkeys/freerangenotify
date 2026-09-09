@@ -12,17 +12,19 @@ import (
 
 // IndexManager handles Elasticsearch index operations
 type IndexManager struct {
-	client    *ElasticsearchClient
-	templates *IndexTemplates
-	logger    *zap.Logger
+	client            *ElasticsearchClient
+	templates         *IndexTemplates
+	logger            *zap.Logger
+	bizBillingEnabled bool
 }
 
 // NewIndexManager creates a new index manager
-func NewIndexManager(client *ElasticsearchClient, logger *zap.Logger) *IndexManager {
+func NewIndexManager(client *ElasticsearchClient, logger *zap.Logger, bizBillingEnabled bool) *IndexManager {
 	return &IndexManager{
-		client:    client,
-		templates: &IndexTemplates{},
-		logger:    logger,
+		client:            client,
+		templates:         &IndexTemplates{},
+		logger:            logger,
+		bizBillingEnabled: bizBillingEnabled,
 	}
 }
 
@@ -82,6 +84,31 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		"whatsapp_messages": im.templates.GetWhatsAppMessagesTemplate,
 		// Rich (carousel / coupon / cta / list) authoring store
 		"whatsapp_rich_templates": im.templates.GetWhatsAppRichTemplatesTemplate,
+	}
+
+	if im.bizBillingEnabled {
+		indices["frn_biz_products"] = im.templates.GetBizProductsTemplate
+		indices["frn_biz_plans"] = im.templates.GetBizPlansTemplate
+		indices["frn_biz_plan_addons"] = im.templates.GetBizPlanAddonsTemplate
+		indices["frn_biz_configs"] = im.templates.GetBizConfigsTemplate
+		// Phase 2 additions
+		indices["frn_biz_subscriptions"] = im.templates.GetBizSubscriptionsTemplate
+		indices["frn_biz_invoices"] = im.templates.GetBizInvoicesTemplate
+		indices["frn_biz_payments"] = im.templates.GetBizPaymentsTemplate
+		// Extended entities: estimates, coupons, credit notes, retainers,
+		// contracts, usage metering, expenses, revenue recognition,
+		// third-party connectors, customer portal tokens.
+		indices["frn_biz_estimates"] = im.templates.GetBizEstimatesTemplate
+		indices["frn_biz_coupons"] = im.templates.GetBizCouponsTemplate
+		indices["frn_biz_credit_notes"] = im.templates.GetBizCreditNotesTemplate
+		indices["frn_biz_retainers"] = im.templates.GetBizRetainersTemplate
+		indices["frn_biz_contracts"] = im.templates.GetBizContractsTemplate
+		indices["frn_biz_usage_meters"] = im.templates.GetBizUsageMetersTemplate
+		indices["frn_biz_usage_events"] = im.templates.GetBizUsageEventsTemplate
+		indices["frn_biz_expenses"] = im.templates.GetBizExpensesTemplate
+		indices["frn_biz_revenue_schedules"] = im.templates.GetBizRevenueSchedulesTemplate
+		indices["frn_biz_connectors"] = im.templates.GetBizConnectorsTemplate
+		indices["frn_biz_portal_tokens"] = im.templates.GetBizPortalTokensTemplate
 	}
 
 	for indexName, templateFunc := range indices {

@@ -27,6 +27,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/billingrepo"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/bizbillingrepo"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/filestore"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/idempotency"
@@ -102,6 +103,9 @@ type Container struct {
 	BillingHandler               *handlers.BillingHandler
 	PaymentHandler               *handlers.PaymentHandler
 	RenewalHandler               *handlers.RenewalHandler
+	BizBillingHandler            *handlers.BizBillingHandler
+	BizPortalHandler             *handlers.BizPortalHandler
+	bizSchedulerCancel           context.CancelFunc
 
 	// Billing Metering and Payment
 	UsageRepo         billing.UsageRepository
@@ -799,6 +803,83 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger.Warn("Billing metering is DISABLED. Set FREERANGE_FEATURES_BILLING_ENABLED=true for production.")
 	}
 
+	// ── Business Billing Module (feature-gated) ──
+	if cfg.Features.BizBillingEnabled {
+		esClient := dbManager.Client.GetClient()
+
+		// Repositories
+		productRepo := bizbillingrepo.NewProductRepo(esClient, logger)
+		planRepo := bizbillingrepo.NewPlanRepo(esClient, logger)
+		addonRepo := bizbillingrepo.NewPlanAddonRepo(esClient, logger)
+		configRepo := bizbillingrepo.NewConfigRepo(esClient, logger)
+		lifecycleRepo := bizbillingrepo.NewLifecycleRepo(esClient, logger)
+		bizStores := bizbillingrepo.NewStores(esClient, logger)
+
+		// Services
+		productSvc := services.NewBizProductService(productRepo, logger)
+		planSvc := services.NewBizPlanService(planRepo, addonRepo, productRepo, logger)
+		configSvc := services.NewBizConfigService(configRepo, logger)
+		bizNotifier := services.NewBizNotifier(container.NotificationService, repos.Template, logger)
+		portalSvc := services.NewBizPortalService(bizStores, cfg.BizBilling.PortalBaseURL, logger)
+		creditSvc := services.NewBizCreditService(bizStores, configSvc, repos.User, bizNotifier, logger)
+		lifecycleSvc := services.NewBizLifecycleService(
+			lifecycleRepo,
+			bizStores,
+			planSvc,
+			configSvc,
+			creditSvc,
+			portalSvc,
+			bizNotifier,
+			container.PaymentProvider,
+			repos.User,
+			cfg.BizBilling.DefaultCurrency,
+			logger,
+		)
+		estimateSvc := services.NewBizEstimateService(bizStores, configSvc, lifecycleSvc, portalSvc, bizNotifier, logger)
+		couponSvc := services.NewBizCouponService(bizStores, logger)
+		contractSvc := services.NewBizContractService(bizStores, configSvc, portalSvc, bizNotifier, logger)
+		usageSvc := services.NewBizUsageService(bizStores, logger)
+		expenseSvc := services.NewBizExpenseService(bizStores, lifecycleSvc, logger)
+
+		analyticsSvc := services.NewBizAnalyticsService(bizStores, planSvc, logger)
+		connectorSvc := services.NewBizConnectorService(bizStores, bizNotifier, logger)
+
+		// Handlers
+		bizSvcs := handlers.BizBillingServices{
+			Product:   productSvc,
+			Plan:      planSvc,
+			Config:    configSvc,
+			Lifecycle: lifecycleSvc,
+			Estimate:  estimateSvc,
+			Coupon:    couponSvc,
+			Credit:    creditSvc,
+			Contract:  contractSvc,
+			Usage:     usageSvc,
+			Expense:   expenseSvc,
+			Portal:    portalSvc,
+		}
+		container.BizBillingHandler = handlers.NewBizBillingHandler(bizSvcs, logger)
+		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
+		container.BizBillingHandler.SetConnectorService(connectorSvc)
+		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)
+
+		// Route biz-invoice gateway payments from the Razorpay webhook.
+		if container.PaymentHandler != nil {
+			container.PaymentHandler.SetBizGatewayRecorder(lifecycleSvc)
+		}
+
+		// Periodic jobs: renewals, trials, dunning, expiries, revenue recognition.
+		scheduler := services.NewBizBillingScheduler(
+			lifecycleSvc, estimateSvc, contractSvc, configSvc, bizStores, bizNotifier,
+			time.Hour, logger,
+		)
+		schedCtx, schedCancel := context.WithCancel(context.Background())
+		scheduler.Start(schedCtx)
+		container.bizSchedulerCancel = schedCancel
+
+		logger.Info("Business Billing module enabled")
+	}
+
 	container.OpsHandler = handlers.NewOpsHandler(
 		container.AuthService,
 		repos.Subscription,
@@ -995,6 +1076,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 // Close cleans up all resources
 func (c *Container) Close() error {
+	if c.bizSchedulerCancel != nil {
+		c.bizSchedulerCancel()
+	}
 	if c.rateCardSvcCancel != nil {
 		c.rateCardSvcCancel()
 	}

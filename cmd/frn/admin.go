@@ -24,6 +24,7 @@ func newAdminCmd() *cobra.Command {
 
 	cmd.AddCommand(newAdminRenewLicenseCmd())
 	cmd.AddCommand(newAdminGrantCreditsCmd())
+	cmd.AddCommand(newAdminResetReservedCreditsCmd())
 	cmd.AddCommand(newAdminDeleteAccountCmd())
 	cmd.AddCommand(newAdminBillingCmd())
 	cmd.AddCommand(newAdminRebalanceCreditsCmd())
@@ -152,6 +153,62 @@ func newAdminGrantCreditsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&userID, "user-id", "", "User ID to grant credits to")
 	cmd.Flags().Int64Var(&credits, "credits", 0, "Number of credits to grant")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason for grant (required for audit)")
+
+	return cmd
+}
+
+func newAdminResetReservedCreditsCmd() *cobra.Command {
+	var apiURL, opsSecret string
+	var userID, reason string
+
+	cmd := &cobra.Command{
+		Use:   "reset-reserved-credits",
+		Short: "Zero stuck credits_reserved for a tenant without changing remaining balance",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := LoadConfig()
+			if apiURL != "" {
+				cfg.APIURL = apiURL
+			}
+			if opsSecret != "" {
+				cfg.OpsSecret = opsSecret
+			}
+			if cfg.APIURL == "" {
+				cfg.APIURL = "http://localhost:8080"
+			}
+			if cfg.OpsSecret == "" {
+				return fmt.Errorf("ops secret required: set FREERANGE_OPS_SECRET or use --ops-secret")
+			}
+			if strings.TrimSpace(userID) == "" {
+				return fmt.Errorf("--user-id is required")
+			}
+			if strings.TrimSpace(reason) == "" {
+				return fmt.Errorf("--reason is required")
+			}
+
+			payload := map[string]interface{}{
+				"user_id": strings.TrimSpace(userID),
+				"reason":  strings.TrimSpace(reason),
+			}
+
+			target := cfg.APIURL + "/v1/ops/credits/reset-reserved"
+			headers, hErr := buildOpsAuthHeaders(http.MethodPost, target, cfg.OpsSecret)
+			if hErr != nil {
+				return hErr
+			}
+
+			respBody, err := doJSONRequest(http.MethodPost, target, payload, headers)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(os.Stdout, "Reserved credits reset successfully")
+			return printJSON(respBody)
+		},
+	}
+
+	cmd.Flags().StringVar(&apiURL, "api-url", "", "API base URL (env: FREERANGE_API_URL)")
+	cmd.Flags().StringVar(&opsSecret, "ops-secret", "", "Ops secret (env: FREERANGE_OPS_SECRET)")
+	cmd.Flags().StringVar(&userID, "user-id", "", "User / tenant ID whose reservation counter should be zeroed")
+	cmd.Flags().StringVar(&reason, "reason", "", "Reason for the correction (required for audit)")
 
 	return cmd
 }

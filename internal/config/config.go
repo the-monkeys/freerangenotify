@@ -24,6 +24,7 @@ type Config struct {
 	Payment    PaymentConfig    `mapstructure:"payment"`
 	Licensing  LicensingConfig  `mapstructure:"licensing"`
 	Filestore  FilestoreConfig  `mapstructure:"filestore"`
+	BizBilling BizBillingConfig `mapstructure:"biz_billing"`
 }
 
 // FilestoreConfig configures the file-attachments subsystem (POST /v1/files).
@@ -95,6 +96,15 @@ type RazorpayConfig struct {
 	Currency      string `mapstructure:"currency"`
 }
 
+// BizBillingConfig configures the business billing module.
+// The module is feature-gated via features.biz_billing_enabled.
+type BizBillingConfig struct {
+	DefaultCurrency string `mapstructure:"default_currency" yaml:"default_currency"` // Default: "INR"
+	InvoicePrefix   string `mapstructure:"invoice_prefix" yaml:"invoice_prefix"`     // Default: "INV"
+	EstimatePrefix  string `mapstructure:"estimate_prefix" yaml:"estimate_prefix"`   // Default: "EST"
+	PortalBaseURL   string `mapstructure:"portal_base_url" yaml:"portal_base_url"`   // Public URL for customer portal
+}
+
 // FeaturesConfig contains feature flags for Phase 1 features.
 // All default to false — when disabled, the system behaves identically to pre-Phase-1.
 type FeaturesConfig struct {
@@ -117,6 +127,8 @@ type FeaturesConfig struct {
 	MultiEnvironmentEnabled bool `mapstructure:"multi_environment_enabled" yaml:"multi_environment_enabled"`
 	// WhatsApp Meta Cloud API (Tech Provider)
 	WhatsAppMetaEnabled bool `mapstructure:"whatsapp_meta_enabled" yaml:"whatsapp_meta_enabled"`
+	// Business Billing Module
+	BizBillingEnabled bool `mapstructure:"biz_billing_enabled" yaml:"biz_billing_enabled"`
 }
 
 // AppConfig contains application-level configuration
@@ -457,10 +469,16 @@ func Load() (*Config, error) {
 	viper.SetDefault("features.trial_welcome_enabled", true)
 	viper.SetDefault("features.billing_enabled", false)
 	viper.SetDefault("features.whatsapp_meta_enabled", false)
+	viper.SetDefault("features.biz_billing_enabled", false)
 	viper.SetDefault("billing.rate_card_refresh_seconds", 45)
 	viper.SetDefault("billing.rate_card_pubsub_channel", "billing:ratecard:updated")
 	viper.SetDefault("billing.enforce_credit_checks", true)
 	viper.SetDefault("billing.enforce_free_tier_daily_cap", true)
+
+	viper.SetDefault("biz_billing.default_currency", "INR")
+	viper.SetDefault("biz_billing.invoice_prefix", "INV")
+	viper.SetDefault("biz_billing.estimate_prefix", "EST")
+	viper.SetDefault("biz_billing.portal_base_url", "")
 
 	viper.SetDefault("providers.meta_whatsapp.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")

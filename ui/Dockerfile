@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install deps first for better cache
 COPY package*.json ./
-RUN npm install
+RUN npm ci --no-audit --no-fund --prefer-offline || npm install --no-audit --no-fund --prefer-offline
 
 # Copy app source into image (no bind mount needed)
 COPY . .

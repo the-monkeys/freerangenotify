@@ -45,6 +45,37 @@ var allIndices = []string{
 	"whatsapp_rich_templates",
 }
 
+// bizBillingIndices are created only when features.biz_billing_enabled=true.
+var bizBillingIndices = []string{
+	"frn_biz_products",
+	"frn_biz_plans",
+	"frn_biz_plan_addons",
+	"frn_biz_configs",
+	"frn_biz_subscriptions",
+	"frn_biz_invoices",
+	"frn_biz_payments",
+	"frn_biz_estimates",
+	"frn_biz_coupons",
+	"frn_biz_credit_notes",
+	"frn_biz_retainers",
+	"frn_biz_contracts",
+	"frn_biz_usage_meters",
+	"frn_biz_usage_events",
+	"frn_biz_expenses",
+	"frn_biz_revenue_schedules",
+	"frn_biz_connectors",
+	"frn_biz_portal_tokens",
+}
+
+// indicesFor returns the full index list for the given configuration.
+func indicesFor(cfg *config.Config) []string {
+	indices := allIndices
+	if cfg.Features.BizBillingEnabled {
+		indices = append(append([]string{}, allIndices...), bizBillingIndices...)
+	}
+	return indices
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "migrate",
 	Short: "Database migration tool for FreeRangeNotify",
@@ -84,7 +115,7 @@ var upCmd = &cobra.Command{
 		}
 
 		// Create all indices via IndexManager
-		indexManager := database.NewIndexManager(esClient, logger)
+		indexManager := database.NewIndexManager(esClient, logger, cfg.Features.BizBillingEnabled)
 		operations, err := indexManager.CreateIndices(ctx)
 		if err != nil {
 			log.Fatalf("Failed to create indices: %v", err)
@@ -137,11 +168,12 @@ var downCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		indexManager := database.NewIndexManager(esClient, logger)
+		indexManager := database.NewIndexManager(esClient, logger, cfg.Features.BizBillingEnabled)
 
 		// Delete indices in reverse order
-		for i := len(allIndices) - 1; i >= 0; i-- {
-			idx := allIndices[i]
+		indices := indicesFor(cfg)
+		for i := len(indices) - 1; i >= 0; i-- {
+			idx := indices[i]
 			exists, err := indexManager.IndexExists(ctx, idx)
 			if err != nil {
 				fmt.Printf("✗ %s — error checking: %v\n", idx, err)
@@ -183,11 +215,11 @@ var statusCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		indexManager := database.NewIndexManager(esClient, logger)
+		indexManager := database.NewIndexManager(esClient, logger, cfg.Features.BizBillingEnabled)
 
 		fmt.Println("Migration Status:")
 		missing := 0
-		for _, idx := range allIndices {
+		for _, idx := range indicesFor(cfg) {
 			exists, err := indexManager.IndexExists(ctx, idx)
 			if err != nil {
 				fmt.Printf("  ✗ %-25s error: %v\n", idx, err)

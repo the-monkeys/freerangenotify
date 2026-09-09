@@ -35,6 +35,54 @@ func (r *grantBalanceRepo) Upsert(_ context.Context, balance *billing.CreditBala
 	return nil
 }
 
+func (r *grantBalanceRepo) ReserveCredits(_ context.Context, tenantID string, amount int64) (*billing.CreditBalance, error) {
+	if r.balance == nil {
+		return nil, billing.ErrInsufficientCredits
+	}
+	if err := r.balance.Reserve(amount); err != nil {
+		return nil, err
+	}
+	copied := *r.balance
+	copied.TenantID = tenantID
+	r.upserted = &copied
+	return &copied, nil
+}
+
+func (r *grantBalanceRepo) CommitReservedCredits(_ context.Context, tenantID string, amount int64) (*billing.CreditBalance, error) {
+	if r.balance == nil {
+		return nil, billing.ErrInsufficientCredits
+	}
+	if err := r.balance.Commit(amount); err != nil {
+		return nil, err
+	}
+	copied := *r.balance
+	copied.TenantID = tenantID
+	r.upserted = &copied
+	return &copied, nil
+}
+
+func (r *grantBalanceRepo) ReleaseReservedCredits(_ context.Context, tenantID string, amount int64) (*billing.CreditBalance, error) {
+	if r.balance == nil {
+		return nil, nil
+	}
+	r.balance.Release(amount)
+	copied := *r.balance
+	copied.TenantID = tenantID
+	r.upserted = &copied
+	return &copied, nil
+}
+
+func (r *grantBalanceRepo) ClearReservedCredits(_ context.Context, tenantID string) (*billing.CreditBalance, error) {
+	if r.balance == nil {
+		return nil, nil
+	}
+	r.balance.ClearReserved()
+	copied := *r.balance
+	copied.TenantID = tenantID
+	r.upserted = &copied
+	return &copied, nil
+}
+
 type grantLedgerRepo struct {
 	last *billing.CreditLedgerEntry
 }

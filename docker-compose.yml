@@ -47,7 +47,9 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      # Host 6379 is often taken by other local Redis (e.g. the-monkeys-redis).
+      # Containers still reach this service as redis:6379 on freerange-network.
+      - "6380:6379"
     networks:
       - freerange-network
     healthcheck:
@@ -61,6 +63,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: freerangenotify-backend:latest
     container_name: freerange-notification-service
     ports:
       - "${FREERANGE_SERVER_PORT:-8080}:8080"
@@ -91,9 +94,7 @@ services:
     restart: unless-stopped
 
   notification-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: freerangenotify-backend:latest
     container_name: freerange-notification-worker
     command: ["./worker"]
     depends_on:

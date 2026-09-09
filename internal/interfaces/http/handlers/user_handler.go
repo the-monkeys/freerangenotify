@@ -114,15 +114,19 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 	}
 
 	u := &user.User{
-		UserID:     req.UserID,
-		AppID:      appID,
-		ExternalID: req.ExternalID,
-		FullName:   req.FullName,
-		Email:      req.Email,
-		Phone:      req.Phone,
-		Timezone:   req.Timezone,
-		Language:   req.Language,
-		WebhookURL: req.WebhookURL,
+		UserID:         req.UserID,
+		AppID:          appID,
+		ExternalID:     req.ExternalID,
+		FullName:       req.FullName,
+		Email:          req.Email,
+		Phone:          req.Phone,
+		Timezone:       req.Timezone,
+		Language:       req.Language,
+		WebhookURL:     req.WebhookURL,
+		BillingAddress: req.BillingAddress,
+		GSTIN:          req.GSTIN,
+		BalancePaisa:   req.BalancePaisa,
+		BillingMeta:    req.BillingMeta,
 	}
 
 	if envID, ok := c.Locals("environment_id").(string); ok {
@@ -266,6 +270,18 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 	if req.Preferences != nil {
 		u.Preferences = *req.Preferences
 	}
+	if req.BillingAddress != nil {
+		u.BillingAddress = req.BillingAddress
+	}
+	if req.GSTIN != "" {
+		u.GSTIN = req.GSTIN
+	}
+	if req.BalancePaisa != nil {
+		u.BalancePaisa = *req.BalancePaisa
+	}
+	if req.BillingMeta != nil {
+		u.BillingMeta = req.BillingMeta
+	}
 
 	if err := h.service.Update(c.Context(), u); err != nil {
 		return err
@@ -335,6 +351,18 @@ func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
 		}
 		if req.Preferences != nil {
 			u.Preferences = *req.Preferences
+		}
+		if req.BillingAddress != nil {
+			u.BillingAddress = req.BillingAddress
+		}
+		if req.GSTIN != "" {
+			u.GSTIN = req.GSTIN
+		}
+		if req.BalancePaisa != nil {
+			u.BalancePaisa = *req.BalancePaisa
+		}
+		if req.BillingMeta != nil {
+			u.BillingMeta = req.BillingMeta
 		}
 	})
 	if err != nil {
@@ -767,15 +795,19 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 
 	for i, ur := range req.Users {
 		u := &user.User{
-			UserID:     ur.UserID,
-			AppID:      appID,
-			ExternalID: ur.ExternalID,
-			FullName:   ur.FullName,
-			Email:      ur.Email,
-			Phone:      ur.Phone,
-			Timezone:   ur.Timezone,
-			Language:   ur.Language,
-			WebhookURL: ur.WebhookURL,
+			UserID:         ur.UserID,
+			AppID:          appID,
+			ExternalID:     ur.ExternalID,
+			FullName:       ur.FullName,
+			Email:          ur.Email,
+			Phone:          ur.Phone,
+			Timezone:       ur.Timezone,
+			Language:       ur.Language,
+			WebhookURL:     ur.WebhookURL,
+			BillingAddress: ur.BillingAddress,
+			GSTIN:          ur.GSTIN,
+			BalancePaisa:   ur.BalancePaisa,
+			BillingMeta:    ur.BillingMeta,
 		}
 		if ur.Preferences != nil {
 			u.Preferences = *ur.Preferences
@@ -821,6 +853,18 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 				}
 				if u.WebhookURL != "" {
 					existing.WebhookURL = u.WebhookURL
+				}
+				if u.BillingAddress != nil {
+					existing.BillingAddress = u.BillingAddress
+				}
+				if u.GSTIN != "" {
+					existing.GSTIN = u.GSTIN
+				}
+				if u.BalancePaisa != 0 {
+					existing.BalancePaisa = u.BalancePaisa
+				}
+				if u.BillingMeta != nil {
+					existing.BillingMeta = u.BillingMeta
 				}
 				if err := h.service.Update(c.Context(), existing); err != nil {
 					bulkErrors = append(bulkErrors, dto.BulkUserError{
