@@ -75,6 +75,11 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		creditsTotal = resolvePlan(h.rateCard, sub.Plan).CreditsIncluded
 	}
 	creditsRemaining := sub.CreditsRemaining
+	creditsReserved := sub.CreditsReserved
+	creditsAvailable := creditsRemaining - creditsReserved
+	if creditsAvailable < 0 {
+		creditsAvailable = 0
+	}
 	var creditsConsumed int64
 	var messagesSent int64
 
@@ -100,12 +105,17 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 	if messagesSent == 0 {
 		messagesSent = int64(subscriptionMessagesSent(c.Context(), userID, sub, h.appRepo, h.usageRepo, h.billingEnabled))
 	}
-	if creditsConsumed == 0 && creditsTotal > 0 && creditsRemaining <= creditsTotal {
-		creditsConsumed = creditsTotal - creditsRemaining
+	walletConsumed := int64(0)
+	if creditsTotal > 0 && creditsRemaining <= creditsTotal {
+		walletConsumed = creditsTotal - creditsRemaining
+	}
+	if creditsConsumed == 0 {
+		creditsConsumed = walletConsumed
 	}
 
 	usagePct := 0.0
 	if billingModel == billing.BillingModelCredits && creditsTotal > 0 {
+		creditsConsumed = walletConsumed
 		usagePct = float64(creditsConsumed) / float64(creditsTotal) * 100
 	} else if messageLimit > 0 {
 		usagePct = float64(messagesSent) / float64(messageLimit) * 100
@@ -126,6 +136,8 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 		"base_message_limit":   baseMessageLimit,
 		"credits_consumed":     creditsConsumed,
 		"credits_remaining":    creditsRemaining,
+		"credits_reserved":     creditsReserved,
+		"credits_available":    creditsAvailable,
 		"credits_total":        creditsTotal,
 		"usage_percent":        usagePct,
 		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),

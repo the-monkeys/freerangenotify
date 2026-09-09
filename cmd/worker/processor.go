@@ -228,6 +228,11 @@ func (p *NotificationProcessor) Start(ctx context.Context) error {
 	p.wg.Add(1)
 	go p.processingReaper(ctx)
 
+	if p.creditService != nil {
+		p.wg.Add(1)
+		go p.creditReservationReaper(ctx)
+	}
+
 	return nil
 }
 
@@ -778,6 +783,12 @@ func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif 
 }
 
 func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *notification.Notification, reason string) {
+	p.logger.Warn("Notification rejected: insufficient credits",
+		zap.String("notification_id", notif.NotificationID),
+		zap.String("app_id", notif.AppID),
+		zap.String("channel", string(notif.Channel)),
+		zap.String("reason", reason))
+
 	notif.Status = notification.StatusFailed
 	notif.ErrorMessage = reason
 	now := time.Now()
@@ -1759,6 +1770,35 @@ func (p *NotificationProcessor) processingReaper(ctx context.Context) {
 				if count > 0 {
 					p.logger.Info("Processing reaper requeued items", zap.Int("count", count))
 				}
+			}
+		}
+	}
+}
+
+func (p *NotificationProcessor) creditReservationReaper(ctx context.Context) {
+	defer p.wg.Done()
+
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
+	p.logger.Info("Credit reservation reaper started (60s interval)")
+
+	for {
+		select {
+		case <-ctx.Done():
+			p.logger.Info("Credit reservation reaper shutting down (context cancelled)")
+			return
+		case <-p.stopChan:
+			p.logger.Info("Credit reservation reaper shutting down (stop signal)")
+			return
+		case <-ticker.C:
+			released, err := p.creditService.ReapExpiredReservations(ctx)
+			if err != nil {
+				p.logger.Error("Credit reservation reaper failed", zap.Error(err))
+				continue
+			}
+			if released > 0 {
+				p.logger.Info("Credit reservation reaper released holds", zap.Int("count", released))
 			}
 		}
 	}
