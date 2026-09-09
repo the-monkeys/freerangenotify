@@ -49,6 +49,7 @@ func (h *HealthHandler) Check(c *fiber.Ctx) error {
 			"status": "unhealthy",
 			"error":  err.Error(),
 		}
+		h.logger.Warn("health: elasticsearch unhealthy", zap.Error(err))
 	} else {
 		components["elasticsearch"] = fiber.Map{"status": "healthy"}
 	}
@@ -61,6 +62,7 @@ func (h *HealthHandler) Check(c *fiber.Ctx) error {
 			"status": "unhealthy",
 			"error":  err.Error(),
 		}
+		h.logger.Warn("health: redis unhealthy", zap.Error(err))
 	} else {
 		components["redis"] = fiber.Map{"status": "healthy"}
 	}
