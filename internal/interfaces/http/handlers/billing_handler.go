@@ -296,9 +296,19 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to retrieve applications"})
 	}
 
+	// Optional ?app_id= scopes the breakdown to a single app (still drawn from
+	// the same shared tenant credit pool — this only narrows the usage view).
+	requestedAppID := c.Query("app_id")
+
 	var matchAppIDs []string
 	for _, app := range apps {
+		if requestedAppID != "" && app.AppID != requestedAppID {
+			continue
+		}
 		matchAppIDs = append(matchAppIDs, app.AppID)
+	}
+	if requestedAppID != "" && len(matchAppIDs) == 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "app not found or not owned by this user"})
 	}
 
 	summaries, err := h.usageRepo.GetSummary(c.Context(), matchAppIDs, from, to)

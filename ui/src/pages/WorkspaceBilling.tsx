@@ -103,7 +103,15 @@ function BreakdownTable({ breakdown }: { breakdown: BreakdownItem[] }) {
 }
 
 // ─── Main Page ───
-export default function WorkspaceBilling() {
+interface WorkspaceBillingProps {
+    // When set, scopes the channel usage breakdown to a single app and
+    // switches the page into a compact, read-only "per app" view. Credits
+    // and plan are always shared across the whole workspace — only the
+    // breakdown table narrows.
+    appId?: string;
+}
+
+export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) {
     const [usage, setUsage]             = useState<BillingUsage | null>(null);
     const [subscription, setSubscription] = useState<BillingSubscription | null>(null);
     const [breakdown, setBreakdown]     = useState<BreakdownResponse | null>(null);
@@ -116,7 +124,7 @@ export default function WorkspaceBilling() {
             const [usageData, subData, breakdownData, ratesData, plansData] = await Promise.all([
                 billingAPI.getUsage().catch(() => null),
                 billingAPI.getSubscription().catch(() => null),
-                billingAPI.getUsageBreakdown().catch(() => null),
+                billingAPI.getUsageBreakdown(appId).catch(() => null),
                 billingAPI.getRates().catch(() => null),
                 billingAPI.getPlans().catch(() => null),
             ]);
@@ -143,7 +151,7 @@ export default function WorkspaceBilling() {
                 const [usageData, subData, breakdownData, ratesData, plansData] = await Promise.all([
                     billingAPI.getUsage().catch(() => null),
                     billingAPI.getSubscription().catch(() => null),
-                    billingAPI.getUsageBreakdown().catch(() => null),
+                    billingAPI.getUsageBreakdown(appId).catch(() => null),
                     billingAPI.getRates().catch(() => null),
                     billingAPI.getPlans().catch(() => null),
                 ]);
@@ -164,7 +172,7 @@ export default function WorkspaceBilling() {
         };
         fetchData();
         return () => { mounted = false; };
-    }, []);
+    }, [appId]);
 
     const daysRemaining = usage?.days_remaining !== undefined 
         ? usage.days_remaining
@@ -192,24 +200,37 @@ export default function WorkspaceBilling() {
             {/* ── Header ── */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold tracking-tight">Billing &amp; Licensing</h1>
+                    <h1 className="text-2xl font-bold tracking-tight">
+                        {appId ? 'Billing' : 'Billing & Licensing'}
+                    </h1>
                     <p className="text-muted-foreground">
-                        Manage your workspace subscription, credits, and channel-level usage.{' '}
-                        <Link to="/docs/pricing" className="text-accent hover:underline">
-                            Understand credit burn and overage
-                        </Link>
+                        {appId ? (
+                            <>
+                                Usage for this app, drawn from your shared workspace credits.{' '}
+                                <Link to="/billing" className="text-accent hover:underline">
+                                    Manage plan & payment
+                                </Link>
+                            </>
+                        ) : (
+                            <>
+                                Manage your workspace subscription, credits, and channel-level usage.{' '}
+                                <Link to="/docs/pricing" className="text-accent hover:underline">
+                                    Understand credit burn and overage
+                                </Link>
+                            </>
+                        )}
                     </p>
                 </div>
-                {subscription?.plan ? (
+                {!appId && (subscription?.plan ? (
                     <Badge variant="secondary" className="px-3 py-1 text-sm font-medium capitalize">
                         {subscription.plan.replace('_', ' ')} Plan
                     </Badge>
                 ) : (
                     <div className="flex gap-2">
                         {plansInfo?.plans?.filter(p => p.amount_paisa > 0).map((plan) => (
-                            <Button 
+                            <Button
                                 key={plan.id}
-                                onClick={() => initiateCheckout(plan.id)} 
+                                onClick={() => initiateCheckout(plan.id)}
                                 disabled={isCheckoutLoading}
                             >
                                 {isCheckoutLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -217,7 +238,7 @@ export default function WorkspaceBilling() {
                             </Button>
                         ))}
                     </div>
-                )}
+                ))}
             </div>
 
             {/* ── Summary Cards ── */}
@@ -357,7 +378,7 @@ export default function WorkspaceBilling() {
             </div>
 
             {/* ── Payment & Transactions ── */}
-            <div className="grid gap-6 md:grid-cols-2">
+            {!appId && <div className="grid gap-6 md:grid-cols-2">
                 <Card className="bg-card/60 shadow-sm border-border">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -449,7 +470,7 @@ export default function WorkspaceBilling() {
                         )}
                     </CardContent>
                 </Card>
-            </div>
+            </div>}
 
             {/* ── Hybrid Billing Breakdown ── */}
             <Card className="bg-card/60 shadow-sm border-border">
@@ -461,7 +482,9 @@ export default function WorkspaceBilling() {
                                 Channel Usage Breakdown
                             </CardTitle>
                             <CardDescription className="mt-1">
-                                Per-channel message volume, credit burn, and overage from billing APIs.
+                                {appId
+                                    ? "Per-channel message volume, credit burn, and overage for this app."
+                                    : "Per-channel message volume, credit burn, and overage from billing APIs."}
                             </CardDescription>
                         </div>
                         {billingEnabled && (

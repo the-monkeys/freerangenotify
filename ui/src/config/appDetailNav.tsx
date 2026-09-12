@@ -25,6 +25,7 @@ export type TabId =
     | 'templates'
     | 'notifications'
     | 'files'
+    | 'billing'
     | 'digest-rules'
     | 'workflows'
     | 'schedules'
@@ -45,6 +46,7 @@ export const VALID_TABS: TabId[] = [
     'templates',
     'notifications',
     'files',
+    'billing',
     'digest-rules',
     'workflows',
     'schedules',
@@ -80,6 +82,7 @@ export const TAB_GROUPS: TabGroup[] = [
             { id: 'templates', label: 'Templates', icon: <FileText className="h-4 w-4" /> },
             { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
             { id: 'files', label: 'Files', icon: <Paperclip className="h-4 w-4" /> },
+            { id: 'billing', label: 'Billing', icon: <CreditCard className="h-4 w-4" /> },
         ],
     },
     {
