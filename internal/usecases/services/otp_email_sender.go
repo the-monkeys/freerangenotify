@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
+	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"go.uber.org/zap"
@@ -231,6 +232,68 @@ func (s *OTPEmailSender) SendPasswordChanged(toEmail, fullName string) error {
 
 	s.logger.Info("Password changed email sent", zap.String("to", toEmail))
 	return nil
+}
+
+// SendPaymentSuccess sends a payment confirmation email including the
+// amount charged, transaction identifiers, and tokens allocated.
+func (s *OTPEmailSender) SendPaymentSuccess(toEmail, fullName string, amountPaisa int64, currency, paymentID, orderID, plan string, credits int64, occurredAt time.Time) error {
+	if s.host == "" {
+		s.logger.Warn("SMTP not configured, skipping payment success email", zap.String("to", toEmail))
+		return nil
+	}
+
+	name := fullName
+	if name == "" {
+		name = "there"
+	}
+	amount := formatPaisaAsMajorUnits(amountPaisa)
+
+	subject := "Payment received — your tokens are ready"
+	body := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #18181b;">
+  <h2 style="margin-bottom: 12px;">Payment successful</h2>
+  <p style="font-size: 15px; line-height: 1.6;">Hi %s,</p>
+  <p style="font-size: 15px; line-height: 1.6;">We've received your payment and allocated your tokens.</p>
+  <div style="background: #f4f4f5; border-radius: 8px; padding: 16px 20px; margin: 24px 0; font-size: 14px; line-height: 1.8;">
+    <div>Amount: <strong>%s %s</strong></div>
+    <div>Plan: <strong>%s</strong></div>
+    <div>Tokens allocated: <strong>%d</strong></div>
+    <div>Payment ID: <strong>%s</strong></div>
+    <div>Order ID: <strong>%s</strong></div>
+    <div>Date: <strong>%s</strong></div>
+  </div>
+  <p style="font-size: 13px; color: #71717a; margin-top: 28px;">If you did not make this payment, contact support immediately.</p>
+</body>
+</html>`, name, currency, amount, plan, credits, paymentID, orderID, occurredAt.Format("2006-01-02 15:04 MST"))
+
+	msg := s.buildMessage(toEmail, subject, body)
+	addr := fmt.Sprintf("%s:%d", s.host, s.port)
+
+	var auth smtp.Auth
+	if s.username != "" && s.password != "" {
+		auth = smtp.PlainAuth("", s.username, s.password, s.host)
+	}
+
+	var err error
+	if s.port == 465 {
+		err = s.sendWithTLS(addr, auth, s.fromEmail, toEmail, msg)
+	} else {
+		err = smtp.SendMail(addr, auth, s.fromEmail, []string{toEmail}, msg)
+	}
+
+	if err != nil {
+		s.logger.Error("Failed to send payment success email", zap.String("to", toEmail), zap.Error(err))
+		return fmt.Errorf("failed to send payment success email: %w", err)
+	}
+
+	s.logger.Info("Payment success email sent", zap.String("to", toEmail))
+	return nil
+}
+
+func formatPaisaAsMajorUnits(paisa int64) string {
+	return fmt.Sprintf("%.2f", float64(paisa)/100.0)
 }
 
 func (s *OTPEmailSender) sendWithTLS(addr string, auth smtp.Auth, from, to string, msg []byte) error {

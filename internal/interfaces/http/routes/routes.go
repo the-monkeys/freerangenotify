@@ -549,6 +549,8 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	if c.PaymentHandler != nil {
 		billing.Post("/checkout", c.PaymentHandler.CreateOrder)
 		billing.Post("/verify-payment", c.PaymentHandler.VerifyPayment)
+		billing.Get("/notification-preferences", c.PaymentHandler.GetNotificationPreferences)
+		billing.Put("/notification-preferences", c.PaymentHandler.UpdateNotificationPreferences)
 	}
 
 	// Admin billing rate-card controls (JWT-protected)
