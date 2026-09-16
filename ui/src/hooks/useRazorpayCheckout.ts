@@ -98,13 +98,16 @@ export const useRazorpayCheckout = (onSuccess?: () => void) => {
                 handler: async function (response: RazorpayPaymentResponse) {
                     try {
                         // Step 3: Verify the payment signature on the backend
-                        await billingAPI.verifyPayment({
+                        const verifyRes = await billingAPI.verifyPayment({
                             razorpay_order_id: response.razorpay_order_id,
                             razorpay_payment_id: response.razorpay_payment_id,
                             razorpay_signature: response.razorpay_signature,
                         });
 
-                        alert(`Payment Successful! You are now on the ${orderData.plan_name || planId.toUpperCase()} plan.`);
+                        const tokensNote = verifyRes?.credits_total
+                            ? ` ${verifyRes.credits_total.toLocaleString()} tokens are now available on your account.`
+                            : '';
+                        alert(`Payment Successful! You are now on the ${orderData.plan_name || planId.toUpperCase()} plan.${tokensNote}`);
                         onSuccess?.();
                     } catch (err: any) {
                         alert(err.response?.data?.error || 'Payment verification failed.');

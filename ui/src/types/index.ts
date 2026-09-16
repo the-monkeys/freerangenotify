@@ -1130,6 +1130,31 @@ export interface BillingRates {
     free_tier_daily_caps: Record<string, number>;
 }
 
+export interface PaymentNotificationPreferences {
+    tenant_id?: string;
+    email_enabled: boolean;
+    email_address?: string;
+    sms_enabled: boolean;
+    phone_number?: string;
+    whatsapp_enabled: boolean;
+    whatsapp_number?: string;
+    updated_at?: string;
+}
+
+export interface VerifyPaymentResponse {
+    success: boolean;
+    message: string;
+    plan: string;
+    status: string;
+    billing_model: string;
+    message_limit: number;
+    credits_total: number;
+    credits_remaining: number;
+    credits_expire_at?: string;
+    current_period_start: string;
+    current_period_end: string;
+}
+
 // Public pricing endpoint response — unauthenticated, served from the
 // active rate card in Elasticsearch. Used by the marketing /pricing page.
 export interface PublicBillingPricing extends BillingRates {

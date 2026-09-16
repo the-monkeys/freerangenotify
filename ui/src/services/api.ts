@@ -83,6 +83,8 @@ import type {
   BillingRates,
   AcceptTrialResponse,
   BillingPlanBundle,
+  PaymentNotificationPreferences,
+  VerifyPaymentResponse,
   PublicBillingPricing,
   BizProduct,
   BizPlan,
@@ -1216,7 +1218,17 @@ export const billingAPI = {
   },
 
   verifyPayment: async (payload: { razorpay_order_id: string, razorpay_payment_id: string, razorpay_signature: string }) => {
-    const { data } = await api.post<any>('/billing/verify-payment', payload);
+    const { data } = await api.post<VerifyPaymentResponse>('/billing/verify-payment', payload);
+    return data;
+  },
+
+  getNotificationPreferences: async () => {
+    const { data } = await api.get<PaymentNotificationPreferences>('/billing/notification-preferences');
+    return data;
+  },
+
+  updateNotificationPreferences: async (prefs: PaymentNotificationPreferences) => {
+    const { data } = await api.put<PaymentNotificationPreferences>('/billing/notification-preferences', prefs);
     return data;
   }
 };

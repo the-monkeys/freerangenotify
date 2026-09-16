@@ -5,11 +5,15 @@ import { Badge } from '../components/ui/badge';
 import { billingAPI } from '../services/api';
 import {
     Loader2, CreditCard, Activity, CalendarDays, CheckCircle2,
-    Zap, BarChart3, Info
+    Zap, BarChart3, Info, Bell
 } from 'lucide-react';
 import { useRazorpayCheckout } from '../hooks/useRazorpayCheckout';
 import { Button } from '../components/ui/button';
-import type { BillingRates, BillingUsage, BillingSubscription, BillingPlanBundle } from '../types';
+import { Switch } from '../components/ui/switch';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { toast } from 'sonner';
+import type { BillingRates, BillingUsage, BillingSubscription, BillingPlanBundle, PaymentNotificationPreferences } from '../types';
 
 // ─── Types ───
 interface BreakdownItem {
@@ -118,6 +122,8 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
     const [rates, setRates]             = useState<BillingRates | null>(null);
     const [plansInfo, setPlansInfo]     = useState<{ active_version: string, plans: BillingPlanBundle[] } | null>(null);
     const [loading, setLoading]         = useState(true);
+    const [notifPrefs, setNotifPrefs]   = useState<PaymentNotificationPreferences | null>(null);
+    const [savingNotifPrefs, setSavingNotifPrefs] = useState(false);
 
     const refreshData = async () => {
         try {
@@ -148,12 +154,13 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
         let mounted = true;
         const fetchData = async () => {
             try {
-                const [usageData, subData, breakdownData, ratesData, plansData] = await Promise.all([
+                const [usageData, subData, breakdownData, ratesData, plansData, notifPrefsData] = await Promise.all([
                     billingAPI.getUsage().catch(() => null),
                     billingAPI.getSubscription().catch(() => null),
                     billingAPI.getUsageBreakdown(appId).catch(() => null),
                     billingAPI.getRates().catch(() => null),
                     billingAPI.getPlans().catch(() => null),
+                    appId ? Promise.resolve(null) : billingAPI.getNotificationPreferences().catch(() => null),
                 ]);
                 if (mounted) {
                     setUsage(usageData);
@@ -162,6 +169,9 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
                     setRates(ratesData);
                     if (plansData) {
                         setPlansInfo(plansData);
+                    }
+                    if (notifPrefsData) {
+                        setNotifPrefs(notifPrefsData);
                     }
                 }
             } catch (error) {
@@ -173,6 +183,21 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
         fetchData();
         return () => { mounted = false; };
     }, [appId]);
+
+    const saveNotifPrefs = async () => {
+        if (!notifPrefs) return;
+        setSavingNotifPrefs(true);
+        try {
+            const saved = await billingAPI.updateNotificationPreferences(notifPrefs);
+            setNotifPrefs(saved);
+            toast.success('Payment notification preferences saved.');
+        } catch (error) {
+            console.error('Failed to save notification preferences:', error);
+            toast.error('Failed to save notification preferences.');
+        } finally {
+            setSavingNotifPrefs(false);
+        }
+    };
 
     const daysRemaining = usage?.days_remaining !== undefined 
         ? usage.days_remaining
@@ -546,6 +571,74 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
                     )}
                 </CardContent>
             </Card>
+
+            {/* ── Payment Notification Preferences ── */}
+            {!appId && notifPrefs && (
+                <Card className="bg-card/60 shadow-sm border-border">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Bell className="h-5 w-5" />
+                            Payment Notifications
+                        </CardTitle>
+                        <CardDescription>
+                            Choose how you're notified when a payment succeeds and tokens are allocated to your account.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 space-y-1">
+                                <Label className="flex items-center gap-2">Email</Label>
+                                <Input
+                                    placeholder="you@example.com"
+                                    value={notifPrefs.email_address ?? ''}
+                                    disabled={!notifPrefs.email_enabled}
+                                    onChange={(e) => setNotifPrefs({ ...notifPrefs, email_address: e.target.value })}
+                                />
+                            </div>
+                            <Switch
+                                checked={notifPrefs.email_enabled}
+                                onCheckedChange={(checked) => setNotifPrefs({ ...notifPrefs, email_enabled: checked })}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 space-y-1">
+                                <Label className="flex items-center gap-2">SMS</Label>
+                                <Input
+                                    placeholder="+91XXXXXXXXXX"
+                                    value={notifPrefs.phone_number ?? ''}
+                                    disabled={!notifPrefs.sms_enabled}
+                                    onChange={(e) => setNotifPrefs({ ...notifPrefs, phone_number: e.target.value })}
+                                />
+                            </div>
+                            <Switch
+                                checked={notifPrefs.sms_enabled}
+                                onCheckedChange={(checked) => setNotifPrefs({ ...notifPrefs, sms_enabled: checked })}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 space-y-1">
+                                <Label className="flex items-center gap-2">WhatsApp</Label>
+                                <Input
+                                    placeholder="+91XXXXXXXXXX"
+                                    value={notifPrefs.whatsapp_number ?? ''}
+                                    disabled={!notifPrefs.whatsapp_enabled}
+                                    onChange={(e) => setNotifPrefs({ ...notifPrefs, whatsapp_number: e.target.value })}
+                                />
+                            </div>
+                            <Switch
+                                checked={notifPrefs.whatsapp_enabled}
+                                onCheckedChange={(checked) => setNotifPrefs({ ...notifPrefs, whatsapp_enabled: checked })}
+                            />
+                        </div>
+                        <div className="flex justify-end">
+                            <Button onClick={saveNotifPrefs} disabled={savingNotifPrefs}>
+                                {savingNotifPrefs && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Save preferences
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 }

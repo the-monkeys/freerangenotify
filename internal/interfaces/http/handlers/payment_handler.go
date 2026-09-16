@@ -8,8 +8,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"go.uber.org/zap"
 )
 
@@ -31,6 +33,11 @@ type PaymentHandler struct {
 	billingEnabled  bool
 	usageEnabled    bool
 	logger          *zap.Logger
+
+	authRepo      auth.Repository
+	ledgerRepo    billing.CreditLedgerRepository
+	prefsRepo     billing.PaymentNotificationPreferencesRepository
+	notifier      *services.PaymentNotificationService
 }
 
 // NewPaymentHandler creates a new PaymentHandler.
@@ -66,6 +73,71 @@ func (h *PaymentHandler) SetBizGatewayRecorder(recorder BizGatewayRecorder) {
 
 func (h *PaymentHandler) SetRateCardManager(manager billing.RateCardManager) {
 	h.rateCardMgr = manager
+}
+
+// SetPaymentNotificationDeps wires the dependencies needed to record a
+// durable token-allocation ledger entry and notify the admin after a
+// successful payment. Called from container.go once these are constructed.
+func (h *PaymentHandler) SetPaymentNotificationDeps(
+	authRepo auth.Repository,
+	ledgerRepo billing.CreditLedgerRepository,
+	prefsRepo billing.PaymentNotificationPreferencesRepository,
+	notifier *services.PaymentNotificationService,
+) {
+	h.authRepo = authRepo
+	h.ledgerRepo = ledgerRepo
+	h.prefsRepo = prefsRepo
+	h.notifier = notifier
+}
+
+// recordAllocationAndNotify appends an immutable credit-ledger entry for the
+// token allocation and fires the admin's configured payment-success
+// notifications. Both are best-effort: failures are logged, never returned,
+// so a notification/ledger issue can never fail an already-successful payment.
+func (h *PaymentHandler) recordAllocationAndNotify(ctx context.Context, sub *license.Subscription, allocation paidCreditAllocation, paymentID, orderID string) {
+	if h.ledgerRepo != nil {
+		entry := &billing.CreditLedgerEntry{
+			TenantID:     sub.TenantID,
+			EntryType:    billing.CreditLedgerAllocation,
+			CreditsDelta: allocation.Credits,
+			BalanceAfter: sub.CreditsRemaining,
+			Metadata: map[string]interface{}{
+				"payment_id": paymentID,
+				"order_id":   orderID,
+				"plan":       allocation.PlanID,
+			},
+		}
+		if err := h.ledgerRepo.Append(ctx, entry); err != nil {
+			h.logger.Error("payment notify: failed to append credit ledger entry",
+				zap.String("tenant_id", sub.TenantID), zap.Error(err))
+		}
+	}
+
+	if h.notifier == nil || h.authRepo == nil {
+		return
+	}
+
+	admin, err := h.authRepo.GetUserByID(ctx, sub.TenantID)
+	if err != nil || admin == nil {
+		h.logger.Error("payment notify: failed to load admin user for notification",
+			zap.String("tenant_id", sub.TenantID), zap.Error(err))
+		return
+	}
+
+	h.notifier.NotifyAsync(services.PaymentSuccessEvent{
+		TenantID:         sub.TenantID,
+		UserID:           admin.UserID,
+		Name:             admin.FullName,
+		Email:            admin.Email,
+		Phone:            admin.Phone,
+		AmountPaisa:      metaInt64(allocation.Metadata, "last_paid_amount_paisa", 0),
+		Currency:         metaString(allocation.Metadata, "last_paid_currency", "INR"),
+		PaymentID:        paymentID,
+		OrderID:          orderID,
+		Plan:             allocation.PlanID,
+		CreditsAllocated: allocation.Credits,
+		OccurredAt:       time.Now().UTC(),
+	})
 }
 
 func isPaidActiveSubscription(sub *license.Subscription, now time.Time) bool {
@@ -441,6 +513,25 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		})
 	}
 
+	// Idempotency guard: a client retry (or a race with the webhook path)
+	// replaying the same payment must not re-allocate credits or re-fire
+	// notifications. Mirrors the check HandleWebhook already performs.
+	if metaString(sub.Metadata, "last_payment_id", "") == req.PaymentID {
+		return c.JSON(fiber.Map{
+			"success":              true,
+			"message":              "payment already processed",
+			"plan":                 sub.Plan,
+			"status":               string(sub.Status),
+			"billing_model":        billing.BillingModelCredits,
+			"message_limit":        currentMessageLimit(sub, h.rateCard),
+			"credits_total":        sub.CreditsTotal,
+			"credits_remaining":    sub.CreditsRemaining,
+			"credits_expire_at":    sub.CreditsExpireAt,
+			"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),
+			"current_period_end":   sub.CurrentPeriodEnd.Format(time.RFC3339),
+		})
+	}
+
 	allocation, ok := h.pendingCheckoutAllocation(sub, "razorpay")
 	if !ok {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
@@ -462,6 +553,8 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 			"error": "payment succeeded but subscription activation failed — contact support",
 		})
 	}
+
+	h.recordAllocationAndNotify(c.Context(), sub, allocation, req.PaymentID, req.OrderID)
 
 	h.logger.Info("subscription activated via payment",
 		zap.String("user_id", userID),
@@ -591,6 +684,8 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 					zap.String("tenant_id", event.TenantID),
 					zap.Error(updateErr),
 				)
+			} else {
+				h.recordAllocationAndNotify(c.Context(), sub, allocation, event.PaymentID, event.OrderID)
 			}
 		}
 
@@ -607,4 +702,81 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 
 	// Always return 200 to Razorpay to acknowledge receipt
 	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+type notificationPreferencesRequest struct {
+	EmailEnabled    bool   `json:"email_enabled"`
+	EmailAddress    string `json:"email_address"`
+	SMSEnabled      bool   `json:"sms_enabled"`
+	PhoneNumber     string `json:"phone_number"`
+	WhatsAppEnabled bool   `json:"whatsapp_enabled"`
+	WhatsAppNumber  string `json:"whatsapp_number"`
+}
+
+// GetNotificationPreferences handles GET /v1/billing/notification-preferences
+// Returns sane all-enabled defaults (sourced from the admin's own account)
+// when the tenant has not saved any preferences yet.
+func (h *PaymentHandler) GetNotificationPreferences(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	if h.prefsRepo == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "notification preferences are not available"})
+	}
+
+	prefs, err := h.prefsRepo.GetByTenantID(c.Context(), userID)
+	if err != nil {
+		h.logger.Error("failed to get notification preferences", zap.String("user_id", userID), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to retrieve notification preferences"})
+	}
+
+	if prefs != nil {
+		return c.JSON(prefs)
+	}
+
+	// No saved preferences — return all-enabled defaults sourced from the admin account.
+	defaults := billing.PaymentNotificationPreferences{
+		TenantID:        userID,
+		EmailEnabled:    true,
+		SMSEnabled:      true,
+		WhatsAppEnabled: true,
+	}
+	if h.authRepo != nil {
+		if admin, err := h.authRepo.GetUserByID(c.Context(), userID); err == nil && admin != nil {
+			defaults.EmailAddress = admin.Email
+			defaults.PhoneNumber = admin.Phone
+			defaults.WhatsAppNumber = admin.Phone
+		}
+	}
+	return c.JSON(defaults)
+}
+
+// UpdateNotificationPreferences handles PUT /v1/billing/notification-preferences
+func (h *PaymentHandler) UpdateNotificationPreferences(c *fiber.Ctx) error {
+	userID := c.Locals("user_id").(string)
+
+	if h.prefsRepo == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "notification preferences are not available"})
+	}
+
+	var req notificationPreferencesRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	prefs := &billing.PaymentNotificationPreferences{
+		TenantID:        userID,
+		EmailEnabled:    req.EmailEnabled,
+		EmailAddress:    req.EmailAddress,
+		SMSEnabled:      req.SMSEnabled,
+		PhoneNumber:     req.PhoneNumber,
+		WhatsAppEnabled: req.WhatsAppEnabled,
+		WhatsAppNumber:  req.WhatsAppNumber,
+	}
+
+	if err := h.prefsRepo.Upsert(c.Context(), prefs); err != nil {
+		h.logger.Error("failed to update notification preferences", zap.String("user_id", userID), zap.Error(err))
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update notification preferences"})
+	}
+
+	return c.JSON(prefs)
 }

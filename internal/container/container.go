@@ -504,6 +504,19 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 
+	// Payment success notifications + durable token-allocation ledger entries.
+	paymentNotifPrefsRepo := billingrepo.NewESNotificationPreferencesRepo(dbManager.Client.GetClient(), logger)
+	paymentLedgerRepo := billingrepo.NewESCreditLedgerRepo(dbManager.Client.GetClient(), logger)
+	paymentSMSSender := services.NewTwilioSMSSender(logger)
+	paymentNotifier := services.NewPaymentNotificationService(
+		paymentNotifPrefsRepo,
+		authRepo,
+		otpSender,
+		paymentSMSSender,
+		logger,
+	)
+	container.PaymentHandler.SetPaymentNotificationDeps(authRepo, paymentLedgerRepo, paymentNotifPrefsRepo, paymentNotifier)
+
 	container.RenewalHandler = handlers.NewRenewalHandler(repos.Subscription, repos.Application, rateCard, logger)
 
 	container.SSEHandler = handlers.NewSSEHandler(
