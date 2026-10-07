@@ -19,8 +19,8 @@ import {
 } from './ui/sidebar';
 import { Logo } from './ui/logo';
 import { Button } from './ui/button';
-import { billingAPI } from '../services/api';
-import type { BillingUsage } from '../types';
+import { useBillingState } from '../hooks/use-billing-state';
+import { availableCredits, isCreditAmount } from '../lib/billingAvailability';
 import MainSidebarNav from './sidebar/MainSidebarNav';
 import AppDetailSidebarNav from './sidebar/AppDetailSidebarNav';
 import DocsSidebarNav from './sidebar/DocsSidebarNav';
@@ -34,13 +34,14 @@ const SidebarNav: React.FC = () => {
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
     const [verifyPhoneOpen, setVerifyPhoneOpen] = useState(false);
-    const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null);
+    const { usage: billingUsage, billingEnabled, refetch: refreshBilling } = useBillingState();
 
     const pathname = location.pathname;
     const isDocs = pathname.startsWith('/docs');
     const appMatch = pathname.match(/^\/apps\/([^/]+)/);
     const appId = appMatch?.[1] ?? null;
     const isAppDrilldown = !!appId && appId !== 'apps';
+    const creditsAvailable = availableCredits(billingUsage, billingEnabled);
 
     useEffect(() => {
         if ((isDocs || isAppDrilldown) && state === 'collapsed') {
@@ -49,31 +50,12 @@ const SidebarNav: React.FC = () => {
     }, [isDocs, isAppDrilldown, state, setOpen]);
 
     useEffect(() => {
-        let isMounted = true;
-
-        const loadUsage = async () => {
-            try {
-                const usage = await billingAPI.getUsage();
-                if (isMounted) {
-                    setBillingUsage(usage);
-                }
-            } catch {
-                if (isMounted) {
-                    setBillingUsage(null);
-                }
-            }
-        };
-
-        void loadUsage();
+        if (!user?.user_id) return;
         const timer = window.setInterval(() => {
-            void loadUsage();
+            void refreshBilling();
         }, 60_000);
-
-        return () => {
-            isMounted = false;
-            window.clearInterval(timer);
-        };
-    }, []);
+        return () => window.clearInterval(timer);
+    }, [refreshBilling, user?.user_id]);
 
     const handleLogout = async () => {
         await logout();
@@ -144,14 +126,16 @@ const SidebarNav: React.FC = () => {
                 </SidebarMenu>
 
                 <div className="mt-2 rounded-lg border border-border/70 bg-sidebar-accent/20 p-3 text-xs group-data-[collapsible=icon]:hidden">
-                    <p className="text-muted-foreground">Credits</p>
+                    <p className="text-muted-foreground">Current available credits</p>
                     <p className="mt-1 text-sm font-semibold text-sidebar-foreground">
-                        {billingUsage ? `${(billingUsage.credits_available ?? Math.max(0, billingUsage.credits_remaining - (billingUsage.credits_reserved ?? 0))).toLocaleString()} / ${billingUsage.credits_total.toLocaleString()}` : 'Unavailable'}
+                        {billingEnabled === false ? 'Billing disabled'
+                            : billingUsage?.billing_model === 'legacy' ? 'Legacy billing'
+                            : creditsAvailable !== null ? `${creditsAvailable.toLocaleString()}${isCreditAmount(billingUsage?.credits_total) ? ` / ${billingUsage.credits_total.toLocaleString()}` : ''}` : 'Unavailable'}
                     </p>
-                    {billingUsage && (
+                    {billingUsage && creditsAvailable !== null && (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                            {billingUsage.usage_percent.toFixed(1)}% used
-                            {(billingUsage.credits_reserved ?? 0) > 0 ? ` · ${billingUsage.credits_reserved!.toLocaleString()} reserved` : ''}
+                            {isCreditAmount(billingUsage.usage_percent) ? `${billingUsage.usage_percent.toFixed(1)}% used` : ''}
+                            {isCreditAmount(billingUsage.credits_reserved) && billingUsage.credits_reserved > 0 ? ` · ${billingUsage.credits_reserved.toLocaleString()} reserved` : ''}
                         </p>
                     )}
                 </div>

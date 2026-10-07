@@ -319,6 +319,19 @@ export interface Recurrence {
     current_count?: number;
 }
 
+export interface NotificationMetadata extends Record<string, any> {
+    failure_code?: string;
+    failure_stage?: string;
+    provider?: string;
+    credential_source?: string;
+    retryable?: boolean;
+    credits_required?: number;
+    credits_remaining?: number;
+    credits_reserved?: number;
+    credits_available?: number;
+    rate_card_version?: string;
+}
+
 export interface Notification {
     notification_id: string;
     app_id: string;
@@ -334,7 +347,7 @@ export interface Notification {
     };
     template_id?: string;
     category?: string;
-    metadata?: Record<string, any>;
+    metadata?: NotificationMetadata;
     scheduled_at?: string;
     sent_at?: string;
     delivered_at?: string;
@@ -1076,6 +1089,7 @@ export interface BillingSubscription {
 }
 
 export interface BillingUsage {
+    billing_model?: 'credits' | 'legacy';
     plan: string;
     status: 'trial' | 'active' | 'expired' | 'canceled' | 'none';
     messages_sent: number;

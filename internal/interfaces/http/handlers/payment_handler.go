@@ -360,17 +360,17 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"success":      true,
-		"order_id":     checkout.OrderID,
-		"amount":       checkout.AmountINR,
-		"currency":     checkout.Currency,
-		"key_id":       checkout.KeyID,
-		"tier":         plan.ID,
-		"plan_id":      plan.ID,
-		"plan_name":    plan.Name,
-		"credits":      plan.CreditsIncluded,
+		"success":       true,
+		"order_id":      checkout.OrderID,
+		"amount":        checkout.AmountINR,
+		"currency":      checkout.Currency,
+		"key_id":        checkout.KeyID,
+		"tier":          plan.ID,
+		"plan_id":       plan.ID,
+		"plan_name":     plan.Name,
+		"credits":       plan.CreditsIncluded,
 		"validity_days": plan.ValidityDays,
-		"checkout_url": checkout.URL,
+		"checkout_url":  checkout.URL,
 	})
 }
 
@@ -453,7 +453,7 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 	applyPaidCreditAllocation(sub, allocation)
 	clearPendingCheckoutMetadata(sub.Metadata)
 
-	if err := h.subRepo.Update(c.Context(), sub); err != nil {
+	if err := persistCreditAllocation(c.Context(), h.subRepo, sub); err != nil {
 		h.logger.Error("failed to activate subscription after payment",
 			zap.String("user_id", userID),
 			zap.Error(err),
@@ -533,7 +533,7 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 					zap.String("tenant_id", event.TenantID),
 					zap.Error(subErr),
 				)
-				break
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription lookup unavailable; retry captured payment"})
 			}
 			if sub == nil {
 				sub = &license.Subscription{
@@ -571,7 +571,7 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 					zap.String("tenant_id", event.TenantID),
 					zap.String("order_id", event.OrderID),
 				)
-				break
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "checkout allocation unavailable; retry captured payment"})
 			}
 			allocation.Metadata["webhook_payment_id"] = event.PaymentID
 			allocation.Metadata["last_payment_id"] = event.PaymentID
@@ -584,13 +584,14 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 			if sub.CreatedAt.IsZero() {
 				updateErr = h.subRepo.Create(c.Context(), sub)
 			} else {
-				updateErr = h.subRepo.Update(c.Context(), sub)
+				updateErr = persistCreditAllocation(c.Context(), h.subRepo, sub)
 			}
 			if updateErr != nil {
 				h.logger.Error("webhook: failed to activate subscription",
 					zap.String("tenant_id", event.TenantID),
 					zap.Error(updateErr),
 				)
+				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "credit allocation pending; retry captured payment"})
 			}
 		}
 

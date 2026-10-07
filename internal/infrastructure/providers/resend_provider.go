@@ -83,7 +83,7 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 	// still ships, it just won't render embedded in the HTML body.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "resend")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return emailAttachmentErrorResult(rErr), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
@@ -91,7 +91,7 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 		for _, ra := range resolved {
 			raw, bErr := readResolvedBytes(ra)
 			if bErr != nil {
-				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+				return emailAttachmentErrorResult(bErr), nil
 			}
 			if ra.Disposition == "inline" && ra.ContentID != "" {
 				p.logger.Warn("Resend does not support inline cid attachments; sending as regular attachment",
@@ -156,10 +156,10 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 	return res, nil
 }
 
-func (p *ResendProvider) GetName() string                                { return "resend" }
-func (p *ResendProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelEmail }
-func (p *ResendProvider) IsHealthy(_ context.Context) bool               { return p.config.APIKey != "" }
-func (p *ResendProvider) Close() error                                   { return nil }
+func (p *ResendProvider) GetName() string                           { return "resend" }
+func (p *ResendProvider) GetSupportedChannel() notification.Channel { return notification.ChannelEmail }
+func (p *ResendProvider) IsHealthy(_ context.Context) bool          { return p.config.APIKey != "" }
+func (p *ResendProvider) Close() error                              { return nil }
 
 func (p *ResendProvider) buildHTMLBody(notif *notification.Notification) string {
 	return fmt.Sprintf(`<!DOCTYPE html>

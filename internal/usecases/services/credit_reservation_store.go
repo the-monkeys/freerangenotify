@@ -16,6 +16,12 @@ type reservationStore interface {
 	ListExpired(ctx context.Context, now time.Time) []*billing.CreditReservation
 }
 
+type reservationStoreWithErrors interface {
+	GetWithError(context.Context, string) (*billing.CreditReservation, error)
+	DeleteWithError(context.Context, string) error
+	ListExpiredWithError(context.Context, time.Time) ([]*billing.CreditReservation, error)
+}
+
 type memoryReservationStore struct {
 	mu    sync.Mutex
 	items map[string]*billing.CreditReservation
@@ -71,4 +77,16 @@ func (s *memoryReservationStore) ListExpired(_ context.Context, now time.Time) [
 		}
 	}
 	return expired
+}
+
+func (s *memoryReservationStore) GetWithError(ctx context.Context, id string) (*billing.CreditReservation, error) {
+	res, _ := s.Get(ctx, id)
+	return res, nil
+}
+func (s *memoryReservationStore) DeleteWithError(ctx context.Context, id string) error {
+	s.Delete(ctx, id)
+	return nil
+}
+func (s *memoryReservationStore) ListExpiredWithError(ctx context.Context, now time.Time) ([]*billing.CreditReservation, error) {
+	return s.ListExpired(ctx, now), nil
 }

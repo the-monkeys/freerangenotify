@@ -1,6 +1,9 @@
 package license
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // SubscriptionStatus represents subscription lifecycle states.
 type SubscriptionStatus string
@@ -16,20 +19,22 @@ const (
 // Subscription represents a hosted subscription record.
 // Scope can be app-level (AppID set) or tenant-level (TenantID set).
 type Subscription struct {
-	ID                 string                 `json:"id" es:"id"`
-	TenantID           string                 `json:"tenant_id,omitempty" es:"tenant_id"`
-	AppID              string                 `json:"app_id,omitempty" es:"app_id"`
-	Plan               string                 `json:"plan" es:"plan"`
-	Status             SubscriptionStatus     `json:"status" es:"status"`
-	CurrentPeriodStart time.Time              `json:"current_period_start" es:"current_period_start"`
-	CurrentPeriodEnd   time.Time              `json:"current_period_end" es:"current_period_end"`
-	CreditsTotal       int64                  `json:"credits_total,omitempty" es:"credits_total"`
-	CreditsRemaining   int64                  `json:"credits_remaining,omitempty" es:"credits_remaining"`
-	CreditsReserved    int64                  `json:"credits_reserved,omitempty" es:"credits_reserved"`
-	CreditsExpireAt    *time.Time             `json:"credits_expire_at,omitempty" es:"credits_expire_at"`
-	Metadata           map[string]interface{} `json:"metadata,omitempty" es:"metadata"`
-	CreatedAt          time.Time              `json:"created_at" es:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at" es:"updated_at"`
+	ID                       string                     `json:"id" es:"id"`
+	TenantID                 string                     `json:"tenant_id,omitempty" es:"tenant_id"`
+	AppID                    string                     `json:"app_id,omitempty" es:"app_id"`
+	Plan                     string                     `json:"plan" es:"plan"`
+	Status                   SubscriptionStatus         `json:"status" es:"status"`
+	CurrentPeriodStart       time.Time                  `json:"current_period_start" es:"current_period_start"`
+	CurrentPeriodEnd         time.Time                  `json:"current_period_end" es:"current_period_end"`
+	CreditsTotal             int64                      `json:"credits_total,omitempty" es:"credits_total"`
+	CreditsRemaining         int64                      `json:"credits_remaining,omitempty" es:"credits_remaining"`
+	CreditsReserved          int64                      `json:"credits_reserved,omitempty" es:"credits_reserved"`
+	CreditsExpireAt          *time.Time                 `json:"credits_expire_at,omitempty" es:"credits_expire_at"`
+	CreditReservationJournal map[string]json.RawMessage `json:"credit_reservation_journal,omitempty" es:"credit_reservation_journal"`
+	CreditReservationMode    string                     `json:"credit_reservation_mode,omitempty" es:"credit_reservation_mode"`
+	Metadata                 map[string]interface{}     `json:"metadata,omitempty" es:"metadata"`
+	CreatedAt                time.Time                  `json:"created_at" es:"created_at"`
+	UpdatedAt                time.Time                  `json:"updated_at" es:"updated_at"`
 }
 
 // IsActiveAt returns true when the subscription is active for the given timestamp.

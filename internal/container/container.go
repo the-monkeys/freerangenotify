@@ -778,6 +778,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.rateCardSvcCancel = rcCancel
 		container.RateCardService = rateCardService
 
+		if mode, ok := repos.Subscription.(interface{ SetCreditJournalModeEnabled(bool) }); ok {
+			mode.SetCreditJournalModeEnabled(cfg.Billing.ReservationJournalEnabled)
+		}
 		creditBalanceRepo := billingrepo.NewSubscriptionCreditBalanceRepo(repos.Subscription, logger)
 		creditLedgerRepo := billingrepo.NewESCreditLedgerRepo(dbManager.Client.GetClient(), logger)
 		container.CreditService = services.NewCreditService(
@@ -791,6 +794,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 			cfg.Billing.EnforceCreditChecks,
 		)
+		container.CreditService.EnableReservationJournal(cfg.Billing.ReservationJournalEnabled)
+		container.CreditService.SetReservationNotificationRepository(repos.Notification)
 
 		container.BillingHandler.SetUsageRepo(usageRepo, true)
 		container.BillingHandler.SetRateCardManager(rateCardService)

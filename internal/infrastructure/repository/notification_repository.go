@@ -147,7 +147,7 @@ func (r *NotificationRepository) GetPending(ctx context.Context) ([]*notificatio
 					{"term": map[string]interface{}{"status": notification.StatusPending}},
 					{
 						"bool": map[string]interface{}{
-							"should": []map[string]interface{}{noScheduledAt, scheduledInPast},
+							"should":               []map[string]interface{}{noScheduledAt, scheduledInPast},
 							"minimum_should_match": 1,
 						},
 					},
@@ -451,4 +451,19 @@ func (r *NotificationRepository) ListSnoozedDue(ctx context.Context, now time.Ti
 		notifications = append(notifications, &n)
 	}
 	return notifications, nil
+}
+
+// ClearDeliveryFailure explicitly removes prior attempt diagnostics. Elasticsearch
+// merges partial documents, so omitting empty fields in Update cannot clear them.
+func (r *NotificationRepository) ClearDeliveryFailure(ctx context.Context, id string) error {
+	return r.BaseRepository.ScriptUpdate(ctx, id, map[string]interface{}{
+		"script": map[string]interface{}{
+			"lang":   "painless",
+			"source": "ctx._source.remove('error_message'); ctx._source.remove('failed_at'); if (ctx._source.metadata != null) { for (def key : params.keys) { ctx._source.metadata.remove(key); } }",
+			"params": map[string]interface{}{"keys": []string{
+				"failure_code", "failure_stage", "retryable",
+				"credits_required", "credits_remaining", "credits_reserved", "credits_available",
+			}},
+		},
+	})
 }

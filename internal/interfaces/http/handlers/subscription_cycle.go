@@ -9,6 +9,17 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 )
 
+// Allocation writers explicitly declare intent. Optional support preserves old
+// repositories while production atomically guards journal-backed wallets.
+func persistCreditAllocation(ctx context.Context, repo license.Repository, sub *license.Subscription) error {
+	if updater, ok := repo.(interface {
+		UpdateCreditAllocation(context.Context, *license.Subscription) error
+	}); ok {
+		return updater.UpdateCreditAllocation(ctx, sub)
+	}
+	return repo.Update(ctx, sub)
+}
+
 func resolvePlan(rateCard map[string]billing.PlanTier, planName string) billing.PlanTier {
 	if plan, ok := rateCard[planName]; ok {
 		return plan

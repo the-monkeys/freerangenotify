@@ -110,36 +110,13 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 	}
 
 	// 2. Resolve provider
-	provider, err := m.GetProvider(notif.Channel)
+	provider, err := m.resolveProvider(ctx, notif.Channel, "")
 	if err != nil {
 		m.logger.Error("Failed to get provider",
 			zap.String("channel", string(notif.Channel)),
 			zap.Error(err))
-		return NewErrorResult(err, ErrorTypeInvalid), err
-	}
-
-	// Check if a specific provider is requested in context (for email)
-	if notif.Channel == notification.ChannelEmail {
-		if cfg, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && cfg != nil && cfg.ProviderType != "" && cfg.ProviderType != "system" {
-			namedKey := fmt.Sprintf("%s-%s", cfg.ProviderType, notif.Channel)
-			m.mu.RLock()
-			if p, exists := m.namedProviders[namedKey]; exists {
-				provider = p
-			}
-			m.mu.RUnlock()
-		}
-	}
-
-	// Resolve breaker key
-	breakerKey := fmt.Sprintf("%s-%s", provider.GetName(), notif.Channel)
-
-	// Check provider health
-	if !provider.IsHealthy(ctx) {
-		err := fmt.Errorf("provider %s is unhealthy", provider.GetName())
-		m.logger.Warn("Provider unhealthy",
-			zap.String("provider", provider.GetName()),
-			zap.String("notification_id", notif.NotificationID))
-		return NewErrorResult(err, ErrorTypeProviderAPI), err
+		result, failure := deliveryFailure(nil, err, "provider", "configuration", "", ErrorTypeInvalid)
+		return result, failure
 	}
 
 	m.logger.Info("Routing notification to provider",
@@ -147,22 +124,7 @@ func (m *Manager) Send(ctx context.Context, notif *notification.Notification, us
 		zap.String("channel", string(notif.Channel)),
 		zap.String("provider", provider.GetName()))
 
-	// Send notification (wrapped in circuit breaker)
-	var result *Result
-	m.mu.RLock()
-	breaker, exists := m.breakers[breakerKey]
-	m.mu.RUnlock()
-
-	if !exists {
-		// Fallback: execute without breaker or create one on the fly
-		result, err = provider.Send(ctx, notif, usr)
-	} else {
-		err = breaker.Execute(func() error {
-			var sendErr error
-			result, sendErr = provider.Send(ctx, notif, usr)
-			return sendErr
-		})
-	}
+	result, err := m.sendProvider(ctx, provider, notif, usr)
 
 	// Record metrics
 	if m.metrics != nil {
@@ -224,40 +186,22 @@ func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Noti
 	}
 
 	var lastErr error
+	var lastResolutionErr error
 	for i, providerName := range providerNames {
-		key := fmt.Sprintf("%s-%s", providerName, notif.Channel)
-
-		m.mu.RLock()
-		provider, ok := m.namedProviders[key]
-		breaker := m.breakers[key]
-		m.mu.RUnlock()
-
-		if !ok {
+		if ctx.Err() != nil {
+			lastErr = newDeliveryError(providerName, "send", "", "", ctx.Err())
+			break
+		}
+		provider, resolveErr := m.resolveProvider(ctx, notif.Channel, providerName)
+		if resolveErr != nil {
+			lastResolutionErr = resolveErr
 			m.logger.Warn("Fallback provider not registered, skipping",
 				zap.String("provider", providerName),
 				zap.String("channel", string(notif.Channel)))
 			continue
 		}
 
-		if !provider.IsHealthy(ctx) {
-			m.logger.Warn("Fallback provider unhealthy, skipping",
-				zap.String("provider", providerName),
-				zap.Int("attempt", i+1))
-			continue
-		}
-
-		var result *Result
-		var err error
-
-		if breaker != nil {
-			err = breaker.Execute(func() error {
-				var sendErr error
-				result, sendErr = provider.Send(ctx, notif, usr)
-				return sendErr
-			})
-		} else {
-			result, err = provider.Send(ctx, notif, usr)
-		}
+		result, err := m.sendProvider(ctx, provider, notif, usr)
 
 		// Record metrics
 		if m.metrics != nil {
@@ -292,7 +236,170 @@ func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Noti
 			zap.Error(lastErr))
 	}
 
-	return NewErrorResult(fmt.Errorf("all %d fallback providers failed: %w", len(providerNames), lastErr), ErrorTypeProviderAPI), fmt.Errorf("all fallback providers failed: %w", lastErr)
+	if lastErr == nil {
+		// Missing adapters were skipped, so their configuration errors must
+		// not erase a failure from a provider whose delivery was attempted.
+		lastErr = lastResolutionErr
+	}
+	if lastErr == nil {
+		lastErr = newDeliveryError("provider", "configuration", "", ErrorTypeConfiguration, fmt.Errorf("no fallback providers configured"))
+	}
+	err := fmt.Errorf("all fallback providers failed: %w", lastErr)
+	result, _ := deliveryFailure(nil, err, "provider", "send", "", ErrorTypeProviderAPI)
+	// Preserve the fallback wrapper and its typed cause on both surfaces.
+	result.Error = err
+	return result, err
+}
+
+// resolveProvider handles explicit application SMTP before asking for a channel
+// default. Request-created adapters never enter the manager's shared maps.
+func (m *Manager) resolveProvider(ctx context.Context, channel notification.Channel, requested string) (Provider, error) {
+	app, _ := ctx.Value(EmailConfigKey).(*application.EmailConfig)
+	name := requested
+	if name == "" && channel == notification.ChannelEmail && app != nil && app.ProviderType != "system" {
+		name = app.ProviderType
+	}
+	m.mu.RLock()
+	named := m.namedProviders[fmt.Sprintf("%s-%s", name, channel)]
+	m.mu.RUnlock()
+	if named != nil {
+		return named, nil
+	}
+	if name == "smtp" && channel == notification.ChannelEmail && app != nil && app.ProviderType == "smtp" && app.SMTP != nil {
+		cfg := app.SMTP
+		factory := GetFactory("smtp")
+		if factory == nil {
+			return nil, newDeliveryError("smtp", "configuration", CredSourceBYOC, ErrorTypeConfiguration, fmt.Errorf("SMTP factory unavailable"))
+		}
+		provider, err := factory(map[string]interface{}{"host": cfg.Host, "port": cfg.Port, "username": cfg.Username, "password": cfg.Password, "from_email": cfg.FromEmail, "from_name": cfg.FromName}, m.logger)
+		if err != nil {
+			return nil, newDeliveryError("smtp", "configuration", CredSourceBYOC, ErrorTypeConfiguration, err)
+		}
+		return provider, nil
+	}
+	// A configured explicit choice must never silently become the channel
+	// default. Legacy empty/incomplete SMTP and SendGrid choices keep their
+	// previous default-provider behavior.
+	if channel == notification.ChannelEmail && app != nil && name == app.ProviderType && name != "" && name != "system" {
+		configured := true
+		switch name {
+		case "smtp":
+			configured = app.SMTP != nil
+		case "sendgrid":
+			configured = app.SendGrid != nil
+		}
+		if configured {
+			return nil, newDeliveryError(name, "configuration", CredSourceBYOC, ErrorTypeConfiguration, fmt.Errorf("explicit email provider is not available"))
+		}
+	}
+	if requested != "" {
+		return nil, newDeliveryError(requested, "configuration", "", ErrorTypeConfiguration, fmt.Errorf("fallback provider is not registered"))
+	}
+	return m.GetProvider(channel)
+}
+
+func credentialSource(ctx context.Context, provider Provider) string {
+	// Custom adapters have tenant-supplied names rather than a fixed "custom"
+	// provider name. Their requests must also stay outside shared breakers.
+	if _, ok := provider.(*CustomProvider); ok {
+		return CredSourceBYOC
+	}
+	name := provider.GetName()
+	if provider.GetSupportedChannel() == notification.ChannelEmail {
+		if app, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && app != nil {
+			if name == "smtp" && app.ProviderType == "smtp" && app.SMTP != nil {
+				return CredSourceBYOC
+			}
+			if name == "sendgrid" && app.ProviderType == "sendgrid" && app.SendGrid != nil {
+				return CredSourceBYOC
+			}
+		}
+	}
+	if provider.GetSupportedChannel() == notification.ChannelSMS && name == "twilio" {
+		if app, ok := ctx.Value(SMSConfigKey).(*application.SMSAppConfig); ok && app != nil && app.AccountSID != "" && app.AuthToken != "" {
+			return CredSourceBYOC
+		}
+	}
+	if provider.GetSupportedChannel() == notification.ChannelWhatsApp {
+		if app, ok := ctx.Value(WhatsAppConfigKey).(*application.WhatsAppAppConfig); ok && app != nil {
+			if name == "meta_whatsapp" && app.Provider == "meta" && app.MetaPhoneNumberID != "" && app.MetaAccessToken != "" {
+				return CredSourceBYOC
+			}
+			if name == "whatsapp" && app.AccountSID != "" && app.AuthToken != "" {
+				return CredSourceBYOC
+			}
+		}
+	}
+	switch name {
+	case "webhook", "slack", "discord", "teams", "whatsapp_self_hosted", "custom":
+		return CredSourceBYOC
+	case "inapp", "sse", "fcm", "apns":
+		return CredSourcePlatform
+	}
+	return CredSourceSystem
+}
+
+func deliveryFailure(result *Result, cause error, provider, stage, source, category string) (*Result, error) {
+	if cause == nil {
+		cause = fmt.Errorf("provider returned an unsuccessful result without a cause")
+	}
+	failure := newDeliveryError(provider, stage, source, category, cause)
+	if result == nil {
+		result = NewErrorResult(failure, failure.ErrorType)
+	}
+	result.Success, result.Error, result.ErrorType = false, failure, failure.ErrorType
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]interface{})
+	}
+	for key, value := range DeliveryErrorMetadata(failure) {
+		result.Metadata[key] = value
+	}
+	return result, failure
+}
+
+func (m *Manager) sendProvider(ctx context.Context, provider Provider, notif *notification.Notification, usr *user.User) (*Result, error) {
+	source := credentialSource(ctx, provider)
+	if err := ctx.Err(); err != nil {
+		return deliveryFailure(nil, err, provider.GetName(), "send", source, "")
+	}
+	var healthErr error
+	if checker, ok := provider.(HealthChecker); ok {
+		healthErr = checker.CheckHealth(ctx)
+	} else if !provider.IsHealthy(ctx) {
+		healthErr = fmt.Errorf("provider is unhealthy")
+	}
+	if healthErr != nil {
+		return deliveryFailure(nil, healthErr, provider.GetName(), "health", source, ErrorTypeProviderAPI)
+	}
+	var result *Result
+	send := func() error {
+		var err error
+		result, err = provider.Send(ctx, notif, usr)
+		if err != nil || result == nil || !result.Success {
+			category := ErrorTypeUnknown
+			if result != nil {
+				category = result.ErrorType
+				if err == nil {
+					err = result.Error
+				}
+			}
+			result, err = deliveryFailure(result, err, provider.GetName(), "send", source, category)
+		}
+		return err
+	}
+	m.mu.RLock()
+	breaker := m.breakers[fmt.Sprintf("%s-%s", provider.GetName(), notif.Channel)]
+	m.mu.RUnlock()
+	var err error
+	if breaker == nil || source == CredSourceBYOC {
+		err = send()
+	} else {
+		err = breaker.Execute(send)
+	}
+	if err != nil && result == nil {
+		return deliveryFailure(nil, err, provider.GetName(), "breaker", source, ErrorTypeProviderAPI)
+	}
+	return result, err
 }
 
 // Close closes all registered providers

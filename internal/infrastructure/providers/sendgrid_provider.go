@@ -110,14 +110,14 @@ func (p *SendGridProvider) Send(ctx context.Context, notif *notification.Notific
 	// Resolve and attach binary attachments via the shared helper.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "sendgrid")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return emailAttachmentErrorResult(rErr), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
 		for _, ra := range resolved {
 			bytes, bErr := readResolvedBytes(ra)
 			if bErr != nil {
-				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+				return emailAttachmentErrorResult(bErr), nil
 			}
 			att := mail.NewAttachment()
 			att.SetContent(base64.StdEncoding.EncodeToString(bytes))

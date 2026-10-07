@@ -27,6 +27,12 @@ type Provider interface {
 	Close() error
 }
 
+// HealthChecker optionally retains health failure causes without changing the
+// backwards-compatible Provider.IsHealthy boolean interface.
+type HealthChecker interface {
+	CheckHealth(ctx context.Context) error
+}
+
 // Result represents the result of sending a notification
 type Result struct {
 	// Success indicates if the notification was sent successfully

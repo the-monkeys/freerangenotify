@@ -5,6 +5,7 @@ import (
 
 	filedomain "github.com/the-monkeys/freerangenotify/internal/domain/file"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 )
 
@@ -30,6 +31,10 @@ func isNonRetryableError(err error) bool {
 		errors.Is(err, services.ErrFileSourceUnavailable),
 		errors.Is(err, services.ErrAttachmentURLOversize):
 		return true
+	}
+	var delivery *providers.DeliveryError
+	if errors.As(err, &delivery) && delivery != nil {
+		return !delivery.Retryable
 	}
 	return false
 }

@@ -2,13 +2,16 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	"go.uber.org/zap"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
+	filedomain "github.com/the-monkeys/freerangenotify/internal/domain/file"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 )
 
 // resolveEmailAttachments materialises any binary attachments declared on the
@@ -22,7 +25,8 @@ import (
 //     loudly and proceed without the attachments rather than failing the
 //     whole send — symmetric with the SMTP provider behaviour.
 //   - err: a real resolver error (URL fetch failed, file_id missing,
-//     oversize, etc.). Providers MUST propagate this as an Invalid result.
+//     oversize, etc.). Providers must preserve this cause and distinguish
+//     permanent validation failures from retryable remote-fetch failures.
 //
 // This helper exists to keep the 6 email providers (SMTP + SES, SendGrid,
 // Mailgun, Postmark, Resend) byte-identical on the resolver path so a bug
@@ -54,6 +58,20 @@ func resolveEmailAttachments(
 		return nil, false, rErr
 	}
 	return r, false, nil
+}
+
+// Attachment failures can happen before any provider API call. Only known
+// validation/source sentinels are permanent; remote fetch/read failures retain
+// their timeout/network category or the legacy retryable unknown policy.
+func emailAttachmentErrorType(err error) string {
+	if notification.IsValidationError(err) || errors.Is(err, filedomain.ErrFileNotFound) || errors.Is(err, services.ErrFileSourceUnavailable) || errors.Is(err, services.ErrAttachmentURLOversize) {
+		return ErrorTypeInvalid
+	}
+	return classifyDeliveryCause("", err)
+}
+
+func emailAttachmentErrorResult(err error) *Result {
+	return NewErrorResult(err, emailAttachmentErrorType(err))
 }
 
 // readResolvedBytes returns the raw bytes for a Resolved attachment, draining

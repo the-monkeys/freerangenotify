@@ -242,7 +242,7 @@ func attachmentBody(a *attachment.Resolved) ([]byte, error) {
 	}
 	body, err := io.ReadAll(a.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrSMTPAttachmentReadFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrSMTPAttachmentReadFailed, err)
 	}
 	return body, nil
 }

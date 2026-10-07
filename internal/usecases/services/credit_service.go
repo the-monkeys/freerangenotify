@@ -13,6 +13,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"go.uber.org/zap"
 )
 
@@ -35,15 +36,18 @@ type CreditUsageSnapshot struct {
 }
 
 type CreditService struct {
-	balanceRepo         billing.CreditBalanceRepository
-	ledgerRepo          billing.CreditLedgerRepository
-	subRepo             license.Repository
-	usageRepo           billing.UsageRepository
-	appRepo             application.Repository
-	rateCardSvc         billing.RateCardManager
-	redisClient         *redis.Client
-	logger              *zap.Logger
-	enforceCreditChecks bool
+	balanceRepo                 billing.CreditBalanceRepository
+	ledgerRepo                  billing.CreditLedgerRepository
+	subRepo                     license.Repository
+	usageRepo                   billing.UsageRepository
+	appRepo                     application.Repository
+	rateCardSvc                 billing.RateCardManager
+	redisClient                 *redis.Client
+	logger                      *zap.Logger
+	enforceCreditChecks         bool
+	reservationJournalEnabled   bool
+	reservationNotificationRepo notification.Repository
+	lifecycleMu                 sync.Mutex // compatibility path only; durable path uses ES receipts
 
 	reservationsMu             sync.Mutex
 	reservations               map[string]*billing.CreditReservation
@@ -65,20 +69,30 @@ func NewCreditService(
 	enforceCreditChecks bool,
 ) *CreditService {
 	return &CreditService{
-		balanceRepo:         balanceRepo,
-		ledgerRepo:          ledgerRepo,
-		subRepo:             subRepo,
-		usageRepo:           usageRepo,
-		appRepo:             appRepo,
-		rateCardSvc:         rateCardSvc,
-		redisClient:         redisClient,
-		logger:              logger,
-		enforceCreditChecks: enforceCreditChecks,
+		balanceRepo:                balanceRepo,
+		ledgerRepo:                 ledgerRepo,
+		subRepo:                    subRepo,
+		usageRepo:                  usageRepo,
+		appRepo:                    appRepo,
+		rateCardSvc:                rateCardSvc,
+		redisClient:                redisClient,
+		logger:                     logger,
+		enforceCreditChecks:        enforceCreditChecks,
 		reservations:               make(map[string]*billing.CreditReservation),
 		reservationStore:           newReservationStore(redisClient),
 		legacyPending:              make(map[string]int64),
 		legacyHoldKeyByReservation: make(map[string]string),
 	}
+}
+
+// EnableReservationJournal controls new admissions only. Journal IDs always
+// remain recoverable when this flag is disabled during a drain/rollback.
+func (s *CreditService) EnableReservationJournal(enabled bool) { s.reservationJournalEnabled = enabled }
+
+// SetReservationNotificationRepository lets recovery reconcile sent delivery
+// after an accounting outage instead of expiring its still-pending hold.
+func (s *CreditService) SetReservationNotificationRepository(repo notification.Repository) {
+	s.reservationNotificationRepo = repo
 }
 
 func (s *CreditService) ReserveForNotification(
@@ -113,60 +127,68 @@ func (s *CreditService) reserveCredits(
 	notificationID string,
 	channel string,
 ) (*billing.CreditReservation, error) {
-	creditsNeeded := int64(1)
-	if s.rateCardSvc != nil {
-		creditsNeeded = s.rateCardSvc.GetChannelCreditCost(channel)
-	}
-	if creditsNeeded <= 0 {
-		creditsNeeded = 1
-	}
-
 	normalizedChannel := normalizeCreditChannel(channel)
-	if err := s.enforceDailyCaps(ctx, tenantID, normalizedChannel); err != nil {
+	creditsNeeded, version := s.creditCostSnapshot(normalizedChannel)
+	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
+	if err != nil {
 		return nil, err
 	}
 
 	balance, err := s.getOrBootstrapBalance(ctx, tenantID)
 	if err != nil {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		s.undoDailyCapKey(ctx, capKey)
 		return nil, err
 	}
 	if balance == nil {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		s.undoDailyCapKey(ctx, capKey)
 		return nil, ErrInsufficientCredits
 	}
 
-	snapshot := balance
+	if s.reservationJournalEnabled {
+		return s.reserveJournal(ctx, balance, tenantID, appID, notificationID, normalizedChannel, creditsNeeded, version, capKey)
+	}
+	if balance.JournalBacked {
+		s.undoDailyCapKey(ctx, capKey)
+		return nil, billing.ErrCreditJournalAdmissionsDisabled
+	}
 	balance, err = s.balanceRepo.ReserveCredits(ctx, tenantID, creditsNeeded)
 	if err != nil {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
-		if errors.Is(err, ErrInsufficientCredits) && s.logger != nil {
+		s.undoDailyCapKey(ctx, capKey)
+		var unavailable *billing.CreditUnavailableError
+		if errors.As(err, &unavailable) {
+			unavailable.RateCardVersion = version
+		}
+		if unavailable != nil && s.logger != nil {
 			s.logger.Warn("insufficient credits",
 				zap.String("tenant_id", tenantID),
 				zap.String("app_id", appID),
 				zap.String("notification_id", notificationID),
 				zap.String("channel", normalizedChannel),
 				zap.Int64("credits_needed", creditsNeeded),
-				zap.Int64("credits_remaining", snapshot.CreditsRemaining),
-				zap.Int64("credits_reserved", snapshot.CreditsReserved),
-				zap.Int64("credits_available", snapshot.Available()),
+				zap.String("reason", unavailable.Reason),
+				zap.String("rate_card_version", unavailable.RateCardVersion),
+				zap.Int64("credits_remaining", unavailable.CreditsRemaining),
+				zap.Int64("credits_reserved", unavailable.CreditsReserved),
+				zap.Int64("credits_available", unavailable.CreditsAvailable),
 			)
 		}
 		return nil, err
 	}
 	if balance == nil {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
-		return nil, ErrInsufficientCredits
+		s.undoDailyCapKey(ctx, capKey)
+		return nil, fmt.Errorf("credit: missing atomic reserve result")
 	}
 
 	reservation := &billing.CreditReservation{
 		ID:              uuid.NewString(),
+		SubscriptionID:  balance.ID,
+		DailyCapKey:     capKey,
 		TenantID:        tenantID,
 		AppID:           appID,
 		NotificationID:  notificationID,
 		Channel:         normalizedChannel,
 		CreditsReserved: creditsNeeded,
-		RateCardVersion: s.currentRateCardVersion(),
+		RateCardVersion: version,
 		Status:          billing.CreditReservationReserved,
 		ExpiresAt:       time.Now().UTC().Add(15 * time.Minute),
 		CreatedAt:       time.Now().UTC(),
@@ -179,7 +201,7 @@ func (s *CreditService) reserveCredits(
 				zap.String("tenant_id", tenantID),
 				zap.Error(releaseErr))
 		}
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		s.undoDailyCapKey(ctx, capKey)
 		return nil, err
 	}
 
@@ -195,7 +217,8 @@ func (s *CreditService) reserveLegacyQuota(
 	sub *license.Subscription,
 ) (*billing.CreditReservation, error) {
 	normalizedChannel := normalizeCreditChannel(channel)
-	if err := s.enforceDailyCaps(ctx, tenantID, normalizedChannel); err != nil {
+	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
+	if err != nil {
 		return nil, err
 	}
 
@@ -205,12 +228,12 @@ func (s *CreditService) reserveLegacyQuota(
 	}
 	credSource := billing.InferCredentialSource(app, channel)
 	if credSource == billing.CredSourceBYOC || credSource == billing.CredSourcePlatform {
-		return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, ""), nil
+		return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, "", capKey), nil
 	}
 
 	plan, ok := billing.ResolveLegacyPlan(sub.Plan)
 	if !ok {
-		s.undoDailyCap(ctx, tenantID, normalizedChannel)
+		s.undoDailyCapKey(ctx, capKey)
 		return nil, ErrInsufficientCredits
 	}
 
@@ -223,12 +246,12 @@ func (s *CreditService) reserveLegacyQuota(
 			holdKey = legacyHoldKey(tenantID, "unified")
 			used, err := s.legacySystemMessageCount(ctx, tenantID, sub)
 			if err != nil {
-				s.undoDailyCap(ctx, tenantID, normalizedChannel)
+				s.undoDailyCapKey(ctx, capKey)
 				return nil, err
 			}
 			pending := s.legacyPendingCount(holdKey)
 			if used+pending >= unifiedLimit {
-				s.undoDailyCap(ctx, tenantID, normalizedChannel)
+				s.undoDailyCapKey(ctx, capKey)
 				return nil, ErrInsufficientCredits
 			}
 		}
@@ -238,28 +261,29 @@ func (s *CreditService) reserveLegacyQuota(
 		quota := plan.IncludedQuotas[legacyChannel]
 		if quota <= 0 {
 			// Unknown channel with no quota — allow (e.g. future channels).
-			return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, ""), nil
+			return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, "", capKey), nil
 		}
 		holdKey = legacyHoldKey(tenantID, legacyChannel)
 		used, err := s.legacyChannelSystemUsage(ctx, tenantID, sub, legacyChannel)
 		if err != nil {
-			s.undoDailyCap(ctx, tenantID, normalizedChannel)
+			s.undoDailyCapKey(ctx, capKey)
 			return nil, err
 		}
 		pending := s.legacyPendingCount(holdKey)
 		if used+pending >= quota {
-			s.undoDailyCap(ctx, tenantID, normalizedChannel)
+			s.undoDailyCapKey(ctx, capKey)
 			return nil, ErrInsufficientCredits
 		}
 	}
 
 	s.incLegacyPending(holdKey)
-	return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, holdKey), nil
+	return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, holdKey, capKey), nil
 }
 
-func (s *CreditService) newLegacyReservation(tenantID, appID, notificationID, channel, holdKey string) *billing.CreditReservation {
+func (s *CreditService) newLegacyReservation(tenantID, appID, notificationID, channel, holdKey, capKey string) *billing.CreditReservation {
 	reservation := &billing.CreditReservation{
 		ID:              uuid.NewString(),
+		DailyCapKey:     capKey,
 		TenantID:        tenantID,
 		AppID:           appID,
 		NotificationID:  notificationID,
@@ -281,104 +305,101 @@ func (s *CreditService) newLegacyReservation(tenantID, appID, notificationID, ch
 }
 
 func (s *CreditService) CommitOnSuccess(ctx context.Context, reservationID string) (*billing.CreditReservation, error) {
-	reservation, ok := s.loadReservation(ctx, reservationID)
-	if !ok {
-		return nil, nil
+	if _, durable := billing.JournalSubscriptionID(reservationID); durable {
+		return s.transitionJournal(ctx, reservationID, billing.CreditReservationCommitted, "")
 	}
-	if reservation.Status != billing.CreditReservationReserved {
-		return reservation, nil
-	}
-	if reservation.RateCardVersion == billing.RateCardVersionLegacy {
-		s.releaseLegacyHold(reservationID)
-		reservation.Status = billing.CreditReservationCommitted
-		reservation.UpdatedAt = time.Now().UTC()
-		s.deleteReservation(ctx, reservationID)
-		return reservation, nil
-	}
-
-	balance, err := s.balanceRepo.CommitReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	reservation, err := s.loadReservationWithError(ctx, reservationID)
 	if err != nil {
 		return nil, err
 	}
-	if balance == nil {
-		return nil, fmt.Errorf("credit: balance not found during commit")
+	if reservation == nil {
+		return nil, nil
 	}
-
-	entry := &billing.CreditLedgerEntry{
-		ID:              uuid.NewString(),
-		TenantID:        reservation.TenantID,
-		AppID:           reservation.AppID,
-		ReservationID:   reservation.ID,
-		NotificationID:  reservation.NotificationID,
-		Channel:         reservation.Channel,
-		EntryType:       billing.CreditLedgerBurn,
-		CreditsDelta:    -reservation.CreditsReserved,
-		BalanceAfter:    balance.CreditsRemaining,
-		RateCardVersion: reservation.RateCardVersion,
-		CreatedAt:       time.Now().UTC(),
+	if reservation.RateCardVersion == billing.RateCardVersionLegacy {
+		if reservation.Status != billing.CreditReservationReserved {
+			return reservation, nil
+		}
+		s.releaseLegacyHold(reservationID)
+		reservation.Status = billing.CreditReservationCommitted
+		reservation.UpdatedAt = time.Now().UTC()
+		return reservation, s.saveReservation(ctx, reservation)
 	}
-	if err := s.ledgerRepo.Append(ctx, entry); err != nil {
-		return nil, err
+	if reservation.Status == billing.CreditReservationReleased {
+		return reservation, nil
 	}
-
-	reservation.Status = billing.CreditReservationCommitted
-	reservation.UpdatedAt = time.Now().UTC()
-	s.deleteReservation(ctx, reservationID)
+	if reservation.Status == billing.CreditReservationReserved {
+		balance, err := s.balanceRepo.CommitReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
+		if err != nil {
+			return nil, err
+		}
+		if balance == nil {
+			return nil, fmt.Errorf("credit: balance not found during commit")
+		}
+		reservation.Status = billing.CreditReservationCommitted
+		reservation.BalanceAfter = balance
+		reservation.UpdatedAt = time.Now().UTC()
+		if err := s.saveReservation(ctx, reservation); err != nil {
+			return reservation, err
+		}
+	}
+	if err := s.appendTransitionLedger(ctx, reservation, reservation.BalanceAfter, ""); err != nil {
+		return reservation, err
+	}
 	return reservation, nil
 }
 
 func (s *CreditService) ReleaseOnFailure(ctx context.Context, reservationID string, reason string) error {
-	reservation, ok := s.loadReservation(ctx, reservationID)
-	if !ok {
-		return nil
+	if _, durable := billing.JournalSubscriptionID(reservationID); durable {
+		_, err := s.transitionJournal(ctx, reservationID, billing.CreditReservationReleased, reason)
+		return err
 	}
-	if reservation.Status != billing.CreditReservationReserved {
-		s.deleteReservation(ctx, reservationID)
-		return nil
-	}
-
-	if reservation.RateCardVersion == billing.RateCardVersionLegacy {
-		s.releaseLegacyHold(reservationID)
-		reservation.Status = billing.CreditReservationReleased
-		reservation.UpdatedAt = time.Now().UTC()
-		s.deleteReservation(ctx, reservationID)
-		s.undoDailyCap(ctx, reservation.TenantID, reservation.Channel)
-		return nil
-	}
-
-	balance, err := s.balanceRepo.ReleaseReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	reservation, err := s.loadReservationWithError(ctx, reservationID)
 	if err != nil {
 		return err
 	}
-
-	entry := &billing.CreditLedgerEntry{
-		ID:              uuid.NewString(),
-		TenantID:        reservation.TenantID,
-		AppID:           reservation.AppID,
-		ReservationID:   reservation.ID,
-		NotificationID:  reservation.NotificationID,
-		Channel:         reservation.Channel,
-		EntryType:       billing.CreditLedgerRelease,
-		CreditsDelta:    0,
-		BalanceAfter:    0,
-		RateCardVersion: reservation.RateCardVersion,
-		Metadata:        map[string]interface{}{"reason": reason},
-		CreatedAt:       time.Now().UTC(),
+	if reservation == nil {
+		return nil
 	}
-	if balance != nil {
-		entry.BalanceAfter = balance.CreditsRemaining
+	if reservation.Status == billing.CreditReservationCommitted {
+		return nil
 	}
-	if err := s.ledgerRepo.Append(ctx, entry); err != nil {
-		return err
+	if reservation.RateCardVersion == billing.RateCardVersionLegacy {
+		if reservation.Status != billing.CreditReservationReserved {
+			return nil
+		}
+		s.releaseLegacyHold(reservationID)
+		reservation.Status = billing.CreditReservationReleased
+		reservation.ReleaseReason = reason
+		reservation.UpdatedAt = time.Now().UTC()
+		if err := s.saveReservation(ctx, reservation); err != nil {
+			return err
+		}
+		s.undoDailyCapKey(ctx, reservation.DailyCapKey)
+		return nil
 	}
-
-	reservation.Status = billing.CreditReservationReleased
-	reservation.UpdatedAt = time.Now().UTC()
-	s.deleteReservation(ctx, reservationID)
-	s.undoDailyCap(ctx, reservation.TenantID, reservation.Channel)
-	return nil
+	if reservation.Status == billing.CreditReservationReserved {
+		balance, err := s.balanceRepo.ReleaseReservedCredits(ctx, reservation.TenantID, reservation.CreditsReserved)
+		if err != nil {
+			return err
+		}
+		if balance == nil {
+			return fmt.Errorf("credit: balance not found during release")
+		}
+		reservation.Status = billing.CreditReservationReleased
+		reservation.ReleaseReason = reason
+		reservation.BalanceAfter = balance
+		reservation.UpdatedAt = time.Now().UTC()
+		if err := s.saveReservation(ctx, reservation); err != nil {
+			return err
+		}
+		s.undoDailyCapKey(ctx, reservation.DailyCapKey)
+	}
+	return s.appendTransitionLedger(ctx, reservation, reservation.BalanceAfter, reservation.ReleaseReason)
 }
-
 func (s *CreditService) GetUsageSnapshot(ctx context.Context, tenantID string) (*CreditUsageSnapshot, error) {
 	balance, err := s.balanceRepo.GetByTenantID(ctx, tenantID)
 	if err != nil {
@@ -397,16 +418,38 @@ func (s *CreditService) GetUsageSnapshot(ctx context.Context, tenantID string) (
 }
 
 func (s *CreditService) ReapExpiredReservations(ctx context.Context) (int, error) {
-	if s.reservationStore == nil {
-		return 0, nil
-	}
-	expired := s.reservationStore.ListExpired(ctx, time.Now().UTC())
+	now := time.Now().UTC()
 	released := 0
+	var failures []error
+	if _, ok := s.balanceRepo.(billing.CreditReservationJournal); ok {
+		n, err := s.reapJournal(ctx, now)
+		released += n
+		if err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if s.reservationStore == nil {
+		return released, errors.Join(failures...)
+	}
+	var expired []*billing.CreditReservation
+	if store, ok := s.reservationStore.(reservationStoreWithErrors); ok {
+		var err error
+		expired, err = store.ListExpiredWithError(ctx, now)
+		if err != nil {
+			failures = append(failures, err)
+		}
+	} else {
+		expired = s.reservationStore.ListExpired(ctx, now)
+	}
 	for _, res := range expired {
 		if res == nil {
 			continue
 		}
+		if _, durable := billing.JournalSubscriptionID(res.ID); durable {
+			continue
+		}
 		if err := s.ReleaseOnFailure(ctx, res.ID, "reservation_expired"); err != nil {
+			failures = append(failures, err)
 			if s.logger != nil {
 				s.logger.Error("credit: failed to reap expired reservation",
 					zap.String("reservation_id", res.ID),
@@ -420,7 +463,7 @@ func (s *CreditService) ReapExpiredReservations(ctx context.Context) (int, error
 	if released > 0 && s.logger != nil {
 		s.logger.Warn("credit: reaped expired reservations", zap.Int("count", released))
 	}
-	return released, nil
+	return released, errors.Join(failures...)
 }
 
 func (s *CreditService) ResetReservedCredits(ctx context.Context, tenantID, reason string) (*CreditUsageSnapshot, error) {
@@ -526,11 +569,20 @@ func (s *CreditService) GrantCredits(ctx context.Context, tenantID string, amoun
 		}
 	}
 
-	balance.CreditsTotal += amount
-	balance.CreditsRemaining += amount
-
-	if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
-		return nil, err
+	if allocator, ok := s.balanceRepo.(billing.AtomicCreditAllocator); ok {
+		balance, err = allocator.GrantCreditBalance(ctx, tenantID, amount)
+		if err != nil {
+			return nil, err
+		}
+		if balance == nil {
+			return nil, fmt.Errorf("credit: missing atomic grant result")
+		}
+	} else {
+		balance.CreditsTotal += amount
+		balance.CreditsRemaining += amount
+		if err := s.balanceRepo.Upsert(ctx, balance); err != nil {
+			return nil, err
+		}
 	}
 
 	entryMeta := map[string]interface{}{
@@ -587,7 +639,7 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 		return nil, nil
 	}
 
-	if sub.CreditsTotal > 0 || sub.CreditsRemaining > 0 {
+	if balance.CreditsTotal != 0 || balance.CreditsRemaining != 0 || balance.CreditsReserved != 0 {
 		return balance, nil
 	}
 
@@ -600,6 +652,9 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 	if sub.CreditsExpireAt != nil && !sub.CreditsExpireAt.IsZero() {
 		expiry = *sub.CreditsExpireAt
 	}
+	if allocator, ok := s.balanceRepo.(billing.AtomicCreditAllocator); ok {
+		return allocator.BootstrapCreditBalance(ctx, tenantID, creditsTotal, expiry)
+	}
 	balance.CreditsTotal = creditsTotal
 	balance.CreditsRemaining = creditsTotal
 	balance.CreditsReserved = 0
@@ -610,17 +665,20 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 	return balance, nil
 }
 
-func (s *CreditService) enforceDailyCaps(ctx context.Context, tenantID, channel string) error {
+func (s *CreditService) acquireDailyCap(ctx context.Context, tenantID, channel string) (string, error) {
 	if s.redisClient == nil {
-		return nil
+		return "", nil
 	}
 	now := time.Now().UTC()
 	sub, err := s.subRepo.GetActiveSubscription(ctx, tenantID, "", now)
-	if err != nil || sub == nil {
-		return nil
+	if err != nil {
+		return "", err
+	}
+	if sub == nil {
+		return "", nil
 	}
 	if !billing.IsFreeTierPlan(sub.Plan) {
-		return nil
+		return "", nil
 	}
 
 	limit := int64(0)
@@ -630,13 +688,13 @@ func (s *CreditService) enforceDailyCaps(ctx context.Context, tenantID, channel 
 	case "sms":
 		limit = 3
 	default:
-		return nil
+		return "", nil
 	}
 
 	key := dailyCapKey(tenantID, channel, now)
 	current, err := s.redisClient.Incr(ctx, key).Result()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if current == 1 {
 		endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, time.UTC)
@@ -644,19 +702,17 @@ func (s *CreditService) enforceDailyCaps(ctx context.Context, tenantID, channel 
 	}
 	if current > limit {
 		_ = s.redisClient.Decr(ctx, key).Err()
-		return ErrDailyCapExceeded
+		return "", ErrDailyCapExceeded
 	}
-	return nil
+	return key, nil
 }
 
-func (s *CreditService) undoDailyCap(ctx context.Context, tenantID, channel string) {
-	if s.redisClient == nil {
+func (s *CreditService) undoDailyCapKey(ctx context.Context, key string) {
+	if s.redisClient == nil || key == "" {
 		return
 	}
-	if channel != "whatsapp" && channel != "sms" {
-		return
-	}
-	_ = s.redisClient.Decr(ctx, dailyCapKey(tenantID, channel, time.Now().UTC())).Err()
+	// Preserve the admission day, and never create a negative counter after TTL.
+	_ = s.redisClient.Eval(ctx, `local n = tonumber(redis.call('GET', KEYS[1]) or '0'); if n > 0 then return redis.call('DECR', KEYS[1]); end; return 0;`, []string{key}).Err()
 }
 
 func dailyCapKey(tenantID, channel string, t time.Time) string {
@@ -789,24 +845,46 @@ func (s *CreditService) currentRateCardVersion() string {
 }
 
 func (s *CreditService) loadReservation(ctx context.Context, reservationID string) (*billing.CreditReservation, bool) {
+	res, err := s.loadReservationWithError(ctx, reservationID)
+	return res, err == nil && res != nil
+}
+
+func (s *CreditService) loadReservationWithError(ctx context.Context, reservationID string) (*billing.CreditReservation, error) {
+	// Consult the shared store before a local copy, which may predate another
+	// worker's terminal transition. Durable IDs bypass both in lifecycle APIs.
+	if s.reservationStore != nil {
+		if store, ok := s.reservationStore.(reservationStoreWithErrors); ok {
+			res, err := store.GetWithError(ctx, reservationID)
+			if err != nil || res != nil {
+				return res, err
+			}
+		} else if res, ok := s.reservationStore.Get(ctx, reservationID); ok {
+			return res, nil
+		}
+	}
 	s.reservationsMu.Lock()
 	res, ok := s.reservations[reservationID]
-	s.reservationsMu.Unlock()
+	defer s.reservationsMu.Unlock()
 	if ok {
-		return res, true
+		copy := *res
+		return &copy, nil
 	}
-	if s.reservationStore == nil {
-		return nil, false
-	}
-	return s.reservationStore.Get(ctx, reservationID)
+	return nil, nil
 }
 
 func (s *CreditService) saveReservation(ctx context.Context, reservation *billing.CreditReservation) error {
 	if reservation == nil {
 		return nil
 	}
+	if _, durable := billing.JournalSubscriptionID(reservation.ID); durable {
+		if s.redisClient == nil {
+			return nil
+		}
+		return s.reservationStore.Save(ctx, reservation)
+	}
 	s.reservationsMu.Lock()
-	s.reservations[reservation.ID] = reservation
+	copy := *reservation
+	s.reservations[reservation.ID] = &copy
 	s.reservationsMu.Unlock()
 	if s.reservationStore == nil {
 		return nil
@@ -825,6 +903,7 @@ func (s *CreditService) deleteReservation(ctx context.Context, reservationID str
 }
 
 func normalizeCreditChannel(channel string) string {
+	channel = strings.ToLower(strings.TrimSpace(channel))
 	switch channel {
 	case "in_app", "inapp", "push":
 		return "inapp"

@@ -82,7 +82,7 @@ func (p *PostmarkProvider) Send(ctx context.Context, notif *notification.Notific
 	// is set, the attachment is inline (cid:Name@host) for HTML embedding.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "postmark")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return emailAttachmentErrorResult(rErr), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
@@ -90,7 +90,7 @@ func (p *PostmarkProvider) Send(ctx context.Context, notif *notification.Notific
 		for _, ra := range resolved {
 			raw, bErr := readResolvedBytes(ra)
 			if bErr != nil {
-				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+				return emailAttachmentErrorResult(bErr), nil
 			}
 			entry := map[string]interface{}{
 				"Name":        coalesceFilename(ra.Filename),
@@ -157,10 +157,12 @@ func (p *PostmarkProvider) Send(ctx context.Context, notif *notification.Notific
 	return res, nil
 }
 
-func (p *PostmarkProvider) GetName() string                                { return "postmark" }
-func (p *PostmarkProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelEmail }
-func (p *PostmarkProvider) IsHealthy(_ context.Context) bool               { return p.config.ServerToken != "" }
-func (p *PostmarkProvider) Close() error                                   { return nil }
+func (p *PostmarkProvider) GetName() string { return "postmark" }
+func (p *PostmarkProvider) GetSupportedChannel() notification.Channel {
+	return notification.ChannelEmail
+}
+func (p *PostmarkProvider) IsHealthy(_ context.Context) bool { return p.config.ServerToken != "" }
+func (p *PostmarkProvider) Close() error                     { return nil }
 
 func (p *PostmarkProvider) buildHTMLBody(notif *notification.Notification) string {
 	return fmt.Sprintf(`<!DOCTYPE html>

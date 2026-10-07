@@ -1074,6 +1074,13 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 				"credits_reserved": map[string]interface{}{
 					"type": "long",
 				},
+				"credit_reservation_mode": map[string]interface{}{"type": "keyword"},
+				"credit_reservation_journal": map[string]interface{}{
+					"type": "object", "enabled": false,
+				},
+				"credit_allocation_journal": map[string]interface{}{
+					"type": "object", "enabled": false,
+				},
 				"credits_expire_at": map[string]interface{}{
 					"type": "date",
 				},
@@ -1200,12 +1207,12 @@ func (it *IndexTemplates) GetWhatsAppMessagesTemplate() map[string]interface{} {
 				// fields by the inbound webhook handler (instead of buried in
 				// raw_payload). Enables faceting + workflow triggers on
 				// reply_id, button_payload, etc.
-				"interactive_type":   map[string]interface{}{"type": "keyword"},
-				"reply_id":           map[string]interface{}{"type": "keyword"},
-				"reply_title":        map[string]interface{}{"type": "text"},
-				"reply_description":  map[string]interface{}{"type": "text"},
-				"button_payload":     map[string]interface{}{"type": "keyword"},
-				"reaction_emoji":     map[string]interface{}{"type": "keyword"},
+				"interactive_type":  map[string]interface{}{"type": "keyword"},
+				"reply_id":          map[string]interface{}{"type": "keyword"},
+				"reply_title":       map[string]interface{}{"type": "text"},
+				"reply_description": map[string]interface{}{"type": "text"},
+				"button_payload":    map[string]interface{}{"type": "keyword"},
+				"reaction_emoji":    map[string]interface{}{"type": "keyword"},
 				"raw_payload": map[string]interface{}{
 					"type":    "object",
 					"enabled": false,

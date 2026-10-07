@@ -2,11 +2,49 @@ package billing
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"strings"
 	"time"
 )
 
 var ErrInsufficientCredits = errors.New("insufficient credits")
+
+const (
+	CreditReservationModeJournal               = "journal"
+	CreditDeliveryReservationMetadataKey       = "delivery_reservation_id"
+	CreditUnavailableReasonInsufficientCredits = "insufficient_credits"
+	CreditUnavailableReasonTemporarilyReserved = "credits_temporarily_reserved"
+	CreditUnavailableReasonDailyCapExceeded    = "daily_cap_exceeded"
+)
+
+// CreditUnavailableError describes the snapshot returned by the rejecting
+// atomic operation. Never populate it from a preceding balance read.
+type CreditUnavailableError struct {
+	Reason           string
+	CreditsRequired  int64
+	CreditsRemaining int64
+	CreditsReserved  int64
+	CreditsAvailable int64
+	RateCardVersion  string
+}
+
+func (e *CreditUnavailableError) Error() string { return "insufficient credits" }
+func (e *CreditUnavailableError) Unwrap() error { return ErrInsufficientCredits }
+func NewCreditUnavailableError(b *CreditBalance, cost int64, version string) *CreditUnavailableError {
+	reason := CreditUnavailableReasonInsufficientCredits
+	if b.CreditsRemaining >= cost && b.Available() < cost {
+		reason = CreditUnavailableReasonTemporarilyReserved
+	}
+	return &CreditUnavailableError{Reason: reason, CreditsRequired: cost, CreditsRemaining: b.CreditsRemaining, CreditsReserved: b.CreditsReserved, CreditsAvailable: b.Available(), RateCardVersion: version}
+}
+
+var (
+	ErrCreditReservationNotFound       = errors.New("credit reservation not found")
+	ErrCreditJournalInvariant          = errors.New("credit journal invariant violation")
+	ErrCreditJournalAdmissionsDisabled = errors.New("credit journal admissions disabled; recovery remains enabled")
+	ErrCreditReservationOutcomeUnknown = errors.New("credit reservation delivery outcome unknown; held for reconciliation")
+)
 
 type CreditReservationStatus string
 
@@ -28,6 +66,7 @@ const (
 
 // CreditBalance represents the shared credit wallet for a workspace/tenant.
 type CreditBalance struct {
+	JournalBacked    bool      `json:"-"`
 	ID               string    `json:"id"`
 	TenantID         string    `json:"tenant_id"`
 	CreditsTotal     int64     `json:"credits_total"`
@@ -57,6 +96,10 @@ type CreditLedgerEntry struct {
 // CreditReservation is a temporary hold on credits before final delivery outcome.
 type CreditReservation struct {
 	ID              string                  `json:"id"`
+	SubscriptionID  string                  `json:"subscription_id,omitempty"`
+	DailyCapKey     string                  `json:"daily_cap_key,omitempty"`
+	BalanceAfter    *CreditBalance          `json:"balance_after,omitempty"` // legacy retry compatibility; journal stores its own snapshot
+	ReleaseReason   string                  `json:"release_reason,omitempty"`
 	TenantID        string                  `json:"tenant_id"`
 	AppID           string                  `json:"app_id,omitempty"`
 	NotificationID  string                  `json:"notification_id,omitempty"`
@@ -67,6 +110,61 @@ type CreditReservation struct {
 	ExpiresAt       time.Time               `json:"expires_at"`
 	CreatedAt       time.Time               `json:"created_at"`
 	UpdatedAt       time.Time               `json:"updated_at"`
+}
+
+// Journal receipts are retained in subscription _source. Balance captures the
+// exact operation result, so a delayed ledger repair never observes later work.
+type CreditReservationReceipt struct {
+	Reservation     CreditReservation `json:"reservation"`
+	Balance         CreditBalance     `json:"balance"`
+	LedgerRecorded  bool              `json:"ledger_recorded"`
+	Reason          string            `json:"reason,omitempty"`
+	DeliveryOutcome string            `json:"delivery_outcome,omitempty"`
+}
+type CreditTransitionOutcome struct {
+	Receipt CreditReservationReceipt
+	Applied bool
+}
+type CreditReceiptPage struct {
+	Receipts       []CreditReservationReceipt
+	NextCursor     string
+	JournalEntries int     // document-growth observation, including retained terminals
+	Errors         []error // quarantined source errors; independent pages still recover
+}
+
+// Optional interfaces preserve legacy repositories and lifecycle callers.
+type CreditReservationJournal interface {
+	ReserveReservation(context.Context, *CreditReservation) (*CreditTransitionOutcome, error)
+	TransitionReservation(context.Context, string, CreditReservationStatus, string) (*CreditTransitionOutcome, error)
+	GetReservationReceipt(context.Context, string) (*CreditReservationReceipt, error)
+	MarkReservationLedgerRecorded(context.Context, string, CreditReservationStatus) error
+	ListReservationReceipts(context.Context, string, int) (*CreditReceiptPage, error)
+}
+type AtomicCreditAllocator interface {
+	GrantCreditBalance(context.Context, string, int64) (*CreditBalance, error)
+	BootstrapCreditBalance(context.Context, string, int64, time.Time) (*CreditBalance, error)
+}
+
+// Optional: definitive provider failure evidence, retained across retries.
+type CreditReservationFailureRecorder interface {
+	RecordReservationDeliveryFailure(context.Context, string) error
+}
+
+// The opaque ID routes recovery to the originating subscription after renewal
+// and without Redis. IDs supplied to workers must be persisted unchanged.
+func NewJournalReservationID(subscriptionID, uniqueID string) string {
+	return "cr1." + base64.RawURLEncoding.EncodeToString([]byte(subscriptionID)) + "." + uniqueID
+}
+func JournalSubscriptionID(id string) (string, bool) {
+	p := strings.Split(id, ".")
+	if len(p) != 3 || p[0] != "cr1" || p[2] == "" {
+		return "", false
+	}
+	b, err := base64.RawURLEncoding.DecodeString(p[1])
+	return string(b), err == nil && len(b) > 0
+}
+func CreditTransitionLedgerID(id string, status CreditReservationStatus) string {
+	return "credit:" + string(status) + ":" + id
 }
 
 // CreditReservationManager defines reservation lifecycle contracts.

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
-import { notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI, whatsappTemplatesAPI } from '../services/api';
+import { useBillingState } from '../hooks/use-billing-state';
+import { billingAPI, notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI, whatsappTemplatesAPI } from '../services/api';
 import type { TwilioContentTemplate } from '../types';
 import { applyUserAutoFillVars } from '../lib/templateAutofill';
 import type { Notification, NotificationRequest, Template, BroadcastNotificationRequest } from '../types';
@@ -37,6 +38,8 @@ import RichContentEditor, { emptyRichContent, isRichContentEmpty, richContentToP
 import ChannelPreview from './channels/ChannelPreview';
 import UserSearchSelect from './UserSearchSelect';
 import UserMultiSelect from './UserMultiSelect';
+import CostEstimate from './notifications/CostEstimate';
+import FailureContext from './notifications/FailureContext';
 
 interface AppNotificationsProps {
     apiKey: string;
@@ -225,6 +228,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
         );
     }
     const [showSendForm, setShowSendForm] = useState(false);
+    const { data: billingRates, loading: ratesLoading, error: ratesError } = useApiQuery(
+        () => billingAPI.getRates(), [apiKey], { enabled: showSendForm }
+    );
+    const { usage: billingUsage, billingEnabled, loading: billingLoading } = useBillingState(showSendForm);
 
     // Notification tab is a send-management view, not an inbox — no unread badge needed.
     useEffect(() => {
@@ -2048,6 +2055,11 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                         {quickSending ? 'Sending...' : quickScheduledAt ? 'Schedule Notification' : 'Send Notification'}
                                     </Button>
                                 </div>
+                                <CostEstimate
+                                    rates={ratesError ? null : billingRates} usage={billingUsage} billingEnabled={billingEnabled} loading={ratesLoading || billingLoading}
+                                    channel={quickSelectedTemplate?.channel || (quickSelectedTwilioTemplate || quickSelectedMetaTemplate || isFreeformWhatsApp ? 'whatsapp' : undefined)}
+                                    recipientCount={isQuickWebhookLike ? 1 : quickTo.trim() ? 1 : 0}
+                                />
                             </div>
                         </TabsContent>
 
@@ -2055,6 +2067,13 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                         <TabsContent value="advanced">
                             <form onSubmit={handleSendNotification} className={SEND_FORM_SHELL_CLASS}>
                                 <p className={`${SEND_FORM_INFO_CLASS} mb-2`}>Send the <strong>same notification</strong> to multiple users at once. Select 2+ recipients to trigger a bulk send.</p>
+                                <CostEstimate
+                                    rates={ratesError ? null : billingRates} usage={billingUsage} billingEnabled={billingEnabled} loading={ratesLoading || billingLoading}
+                                    channel={formData.channel}
+                                    recipientCount={WEBHOOK_LIKE_CHANNELS.includes(formData.channel)
+                                        ? selectedTargets.length || (formSelectedTemplate?.webhook_target ? 1 : 0)
+                                        : selectedUsers.length || (formData.user_id ? 1 : 0)}
+                                />
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="recipient">
@@ -3142,6 +3161,10 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         )}
 
+                                        <CostEstimate
+                                            rates={ratesError ? null : billingRates} usage={billingUsage} billingEnabled={billingEnabled} loading={ratesLoading || billingLoading}
+                                            channel={formData.channel} workflow={!!broadcastWorkflowTriggerId}
+                                        />
                                         <div className="flex justify-end pt-2">
                                             <div className="flex gap-2">
                                                 <Button
@@ -3390,7 +3413,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                                     )}
                                                 </TableCell>
                                                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                                                    {n.created_at ? new Date(n.created_at).toLocaleString() : '-'}
+                                                    {n.sent_at ? new Date(n.sent_at).toLocaleString() : '-'}
                                                 </TableCell>
                                                 <TableCell onClick={e => e.stopPropagation()} className="space-x-1">
                                                     {(n.status === 'pending' || n.status === 'queued') && (
@@ -3482,7 +3505,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     )}
                                 </div>
                                 <div>
-                                    <Label className="text-xs text-muted-foreground">Created</Label>
+                                    <Label className="text-xs text-muted-foreground">Created At</Label>
                                     <p className="text-sm">{detailNotif.created_at ? new Date(detailNotif.created_at).toLocaleString() : '-'}</p>
                                 </div>
                                 {detailNotif.sent_at && (
@@ -3522,6 +3545,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                     <p className="text-sm text-red-600 bg-red-50 dark:bg-red-950/30 p-2 rounded font-mono">{detailNotif.error_message}</p>
                                 </div>
                             )}
+                            {(detailNotif.status === 'failed' || detailNotif.error_message || detailNotif.metadata?.failure_code) && <FailureContext metadata={detailNotif.metadata} />}
                             {detailNotif.status === 'snoozed' && detailNotif.snoozed_until && (
                                 <div>
                                     <Label className="text-xs text-muted-foreground">Snoozed Until</Label>

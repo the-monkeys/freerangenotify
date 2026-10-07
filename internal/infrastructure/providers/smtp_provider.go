@@ -3,7 +3,9 @@ package providers
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
 	"net/smtp"
 	"time"
 
@@ -32,7 +34,8 @@ type SMTPProvider struct {
 	maxRetries int
 
 	// sender is the function used to send emails (replaceable for testing)
-	sender EmailSender
+	sender    EmailSender
+	tlsConfig *tls.Config
 }
 
 // SMTPConfig holds SMTP-specific configuration
@@ -45,6 +48,9 @@ type SMTPConfig struct {
 	Password  string
 	FromEmail string
 	FromName  string
+	// TLSConfig allows deployments using a private CA to provide trust roots.
+	// The resolved SMTP host is always used for certificate verification.
+	TLSConfig *tls.Config
 }
 
 // NewSMTPProvider creates a new SMTP provider
@@ -66,13 +72,22 @@ func NewSMTPProvider(config SMTPConfig, logger *zap.Logger) (Provider, error) {
 		fromEmail:  config.FromEmail,
 		fromName:   config.FromName,
 		maxRetries: config.MaxRetries,
-		sender:     smtp.SendMail,
+		tlsConfig:  config.TLSConfig,
 	}, nil
 }
 
 // Send sends an email via SMTP
 func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notification, usr *user.User) (*Result, error) {
 	startTime := time.Now()
+	cfg, credSource := p.resolveConfig(ctx)
+	ctx, cancel := context.WithTimeout(ctx, p.operationTimeout())
+	defer cancel()
+	if err := validateSMTPConfig(cfg); err != nil {
+		return smtpFailure(newDeliveryError("smtp", "configuration", credSource, ErrorTypeConfiguration, err)), nil
+	}
+	if err := ctx.Err(); err != nil {
+		return smtpFailure(newDeliveryError("smtp", "send", credSource, "", err)), nil
+	}
 
 	p.logger.Info("Sending SMTP email",
 		zap.String("notification_id", notif.NotificationID),
@@ -80,38 +95,12 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 		zap.String("to_email", usr.Email))
 
 	if usr.Email == "" {
-		return NewErrorResult(
-			fmt.Errorf("no email address for user %s", usr.UserID),
-			ErrorTypeInvalid,
-		), nil
+		return smtpFailure(newDeliveryError("smtp", "send", credSource, ErrorTypeInvalid, fmt.Errorf("no email address for user %s", usr.UserID))), nil
 	}
-
-	host := p.host
-	port := p.port
-	username := p.username
-	password := p.password
-	fromEmail := p.fromEmail
-	fromName := p.fromName
-	credSource := CredSourceSystem
-
-	// Check for dynamic config override in context
-	if cfg, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && cfg != nil {
-		if cfg.ProviderType == "smtp" && cfg.SMTP != nil {
-			host = cfg.SMTP.Host
-			port = cfg.SMTP.Port
-			username = cfg.SMTP.Username
-			password = cfg.SMTP.Password
-			fromEmail = cfg.SMTP.FromEmail
-			fromName = cfg.SMTP.FromName
-			credSource = CredSourceBYOC
-			p.logger.Debug("Using dynamic SMTP configuration", zap.String("notification_id", notif.NotificationID))
-		}
-	}
-
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(cfg.Host, fmt.Sprint(cfg.Port))
 	var auth smtp.Auth
-	if username != "" && password != "" {
-		auth = smtp.PlainAuth("", username, password, host)
+	if cfg.Username != "" && cfg.Password != "" {
+		auth = smtp.PlainAuth("", cfg.Username, cfg.Password, cfg.Host)
 	}
 
 	// Resolve attachments (URL / inline base64 / file_id) via the
@@ -119,7 +108,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 	// byte-identical across all six email providers.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "smtp")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return smtpFailure(newDeliveryError("smtp", "send", credSource, emailAttachmentErrorType(rErr), rErr)), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
@@ -128,8 +117,8 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 	// Construct message
 	to := []string{usr.Email}
 	msg, mErr := buildSMTPMessage(smtpMessageOptions{
-		From:        fromEmail,
-		FromName:    fromName,
+		From:        cfg.FromEmail,
+		FromName:    cfg.FromName,
 		To:          usr.Email,
 		Subject:     notif.Content.Title,
 		HTMLBody:    notif.Content.Body,
@@ -139,26 +128,57 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 		p.logger.Error("Failed to build SMTP message",
 			zap.String("notification_id", notif.NotificationID),
 			zap.Error(mErr))
-		return NewErrorResult(mErr, ErrorTypeInvalid), nil
+		category := ErrorTypeInvalid
+		if errors.Is(mErr, ErrSMTPAttachmentReadFailed) {
+			category = emailAttachmentErrorType(mErr)
+		}
+		return smtpFailure(newDeliveryError("smtp", "send", credSource, category, mErr)), nil
 	}
 
 	// Send email with retries
 	var err error
 	for i := 0; i <= p.maxRetries; i++ {
-		if i > 0 {
-			time.Sleep(p.config.RetryDelay)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			err = ctxErr
+			break
 		}
-
-		err = p.sender(addr, auth, fromEmail, to, msg)
+		if i > 0 {
+			timer := time.NewTimer(p.config.RetryDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				err = ctx.Err()
+			case <-timer.C:
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				err = ctxErr
+				break
+			}
+		}
+		if p.sender != nil {
+			err = p.sender(addr, auth, cfg.FromEmail, to, msg)
+		} else {
+			err = p.sendSMTP(ctx, cfg, credSource, auth, to, msg)
+		}
 		if err == nil {
 			break
 		}
-		p.logger.Warn("SMTP send failed, retrying", zap.Int("attempt", i+1), zap.Error(err))
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			break
+		}
+		failure := newDeliveryError("smtp", "send", credSource, "", err)
+		if !failure.Retryable {
+			err = failure
+			break
+		}
+		p.logger.Warn("SMTP send failed", zap.Int("attempt", i+1), zap.Error(failure))
 	}
 
 	if err != nil {
-		p.logger.Error("Failed to send SMTP email", zap.Error(err))
-		return NewErrorResult(err, ErrorTypeProviderAPI), nil
+		failure := newDeliveryError("smtp", "send", credSource, "", err)
+		p.logger.Error("Failed to send SMTP email", zap.Error(failure))
+		return smtpFailure(failure), nil
 	}
 
 	deliveryTime := time.Since(startTime)
@@ -171,7 +191,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 	result.Metadata["credential_source"] = credSource
 	result.Metadata["billing_channel"] = "email"
 	result.Metadata["to_email"] = usr.Email
-	result.Metadata["from_email"] = p.fromEmail
+	result.Metadata["from_email"] = cfg.FromEmail
 
 	return result, nil
 }
@@ -188,21 +208,61 @@ func (p *SMTPProvider) GetSupportedChannel() notification.Channel {
 
 // IsHealthy checks if SMTP server is reachable
 func (p *SMTPProvider) IsHealthy(ctx context.Context) bool {
-	// Try to connect to the server
-	addr := fmt.Sprintf("%s:%d", p.host, p.port)
-	conn, err := tls.Dial("tcp", addr, &tls.Config{InsecureSkipVerify: true})
-	if err != nil {
-		// Try non-TLS if TLS fails (fallback check)
-		c, err := smtp.Dial(addr)
-		if err != nil {
-			p.logger.Error("SMTP health check failed", zap.Error(err))
-			return false
-		}
-		c.Close()
-		return true
+	return p.CheckHealth(ctx) == nil
+}
+
+func (p *SMTPProvider) CheckHealth(ctx context.Context) error {
+	cfg, source := p.resolveConfig(ctx)
+	if err := validateSMTPConfig(cfg); err != nil {
+		return newDeliveryError("smtp", "configuration", source, ErrorTypeConfiguration, err)
 	}
-	conn.Close()
-	return true
+	ctx, cancel := context.WithTimeout(ctx, p.operationTimeout())
+	defer cancel()
+	_, closeConn, err := p.openSMTP(ctx, cfg, source)
+	if err != nil {
+		return err
+	}
+	closeConn()
+	return nil
+}
+
+func (p *SMTPProvider) resolveConfig(ctx context.Context) (SMTPConfig, string) {
+	cfg := SMTPConfig{Config: p.config, Host: p.host, Port: p.port, Username: p.username, Password: p.password, FromEmail: p.fromEmail, FromName: p.fromName, TLSConfig: p.tlsConfig}
+	source := CredSourceSystem
+	if app, ok := ctx.Value(EmailConfigKey).(*application.EmailConfig); ok && app != nil && app.ProviderType == "smtp" && app.SMTP != nil {
+		custom := app.SMTP
+		cfg.Host, cfg.Port, cfg.Username, cfg.Password = custom.Host, custom.Port, custom.Username, custom.Password
+		cfg.FromEmail, cfg.FromName = custom.FromEmail, custom.FromName
+		source = CredSourceBYOC
+	}
+	if cfg.Port == 0 {
+		cfg.Port = 587
+	}
+	return cfg, source
+}
+
+func (p *SMTPProvider) operationTimeout() time.Duration {
+	if p.config.Timeout > 0 {
+		return p.config.Timeout
+	}
+	return 30 * time.Second
+}
+func validateSMTPConfig(cfg SMTPConfig) error {
+	if cfg.Host == "" {
+		return fmt.Errorf("SMTP host is required")
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return fmt.Errorf("SMTP port is invalid")
+	}
+	if (cfg.Username == "") != (cfg.Password == "") {
+		return fmt.Errorf("SMTP username and password must both be configured")
+	}
+	return nil
+}
+func smtpFailure(err *DeliveryError) *Result {
+	result := NewErrorResult(err, err.ErrorType)
+	result.Metadata = DeliveryErrorMetadata(err)
+	return result
 }
 
 // Close closes the provider
