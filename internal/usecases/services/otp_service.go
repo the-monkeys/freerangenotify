@@ -453,6 +453,7 @@ func (s *OTPService) dispatchNotification(
 		Data:       data,
 		Metadata: map[string]interface{}{
 			"otp_request_id": req.RequestID,
+			"otp_expires_at": req.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		},
 	}
 	notif, err := s.notificationSvc.Send(ctx, sendReq)

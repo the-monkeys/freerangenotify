@@ -3,13 +3,21 @@ services:
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.130.0
     container_name: freerange-otel-collector
+    restart: unless-stopped
+    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 160MiB
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
-      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      # Optional: expose OTLP for debugging from host; internal use is enough.
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - type: bind
+        source: ${FREERANGE_OTEL_CONFIG_DIR:-./config}/otel-collector.yaml
+        target: /etc/otelcol/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    # OTLP is reachable only on the Compose network; no host publication.
+    depends_on:
+      - tempo
     networks:
       - freerange-network
 
@@ -17,12 +25,18 @@ services:
   tempo:
     image: grafana/tempo:2.8.2
     container_name: freerange-tempo
+    restart: unless-stopped
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
-      - ./config/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - type: bind
+        source: ${FREERANGE_OTEL_CONFIG_DIR:-./config}/tempo.yaml
+        target: /etc/tempo/tempo.yaml
+        read_only: true
+        bind:
+          create_host_path: false
       - tempo_data:/var/tempo
     ports:
-      - "3200:3200" # Tempo HTTP API (Grafana data source)
+      - "127.0.0.1:${FREERANGE_TEMPO_PORT:-3200}:3200"
     networks:
       - freerange-network
 
@@ -30,17 +44,24 @@ services:
   grafana:
     image: grafana/grafana:12.0.0
     container_name: freerange-grafana
+    restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${FREERANGE_GRAFANA_ADMIN_USER:-admin}
+      # Preserve legacy provisioning; password rotation is an explicit operator action.
       - GF_SECURITY_ADMIN_PASSWORD=${FREERANGE_GRAFANA_ADMIN_PASSWORD:-admin}
       # disable anonymous by default; keep this behind your firewall anyway
       - GF_AUTH_ANONYMOUS_ENABLED=false
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
-      - ./config/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - type: bind
+        source: ${FREERANGE_OTEL_CONFIG_DIR:-./config}/grafana-datasources.yaml
+        target: /etc/grafana/provisioning/datasources/datasources.yaml
+        read_only: true
+        bind:
+          create_host_path: false
       - grafana_data:/var/lib/grafana
     ports:
-      - "3001:3000"
+      - "127.0.0.1:${FREERANGE_GRAFANA_PORT:-3002}:3000"
     depends_on:
       - tempo
     networks:
@@ -51,7 +72,9 @@ volumes:
   grafana_data:
 
 networks:
+  # Match base declarations when merged, or create a NEW standalone network.
+  # Standalone attachment to any existing app network (even the same project)
+  # uses the runbook's external override, which clears this driver declaration.
   freerange-network:
-    external: true
-    name: freerangenotify_freerange-network
+    driver: bridge
 

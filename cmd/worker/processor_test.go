@@ -98,6 +98,7 @@ func (s *stubNotifRepo) GetByID(_ context.Context, id string) (*notification.Not
 }
 func (s *stubNotifRepo) Update(_ context.Context, n *notification.Notification) error {
 	s.notifications[n.NotificationID] = n
+	s.statusUpdates[n.NotificationID] = n.Status
 	return nil
 }
 func (s *stubNotifRepo) List(_ context.Context, f *notification.NotificationFilter) ([]*notification.Notification, error) {

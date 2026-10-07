@@ -7,22 +7,37 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  # First in the pipeline: refuse telemetry under pressure before batching.
+  # Leave headroom within the collector's 256 MiB container limit.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+    spike_limit_mib: 40
   batch:
     timeout: 1s
-    send_batch_size: 1024
+    send_batch_size: 512
+    send_batch_max_size: 512
 
 exporters:
   otlp/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
-  debug:
-    verbosity: detailed
+    timeout: 5s
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 128
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 60s
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp/tempo, debug]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo]
 

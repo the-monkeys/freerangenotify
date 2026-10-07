@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -68,6 +69,10 @@ func (h *RenewalHandler) AdminRenew(c *fiber.Ctx) error {
 	}
 
 	now := time.Now().UTC()
+	intent := strings.TrimSpace(c.Get("Idempotency-Key"))
+	if len(intent) > 200 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Idempotency-Key exceeds 200 characters"})
+	}
 	planName := sub.Plan
 	if req.Plan != "" {
 		planName = req.Plan
@@ -94,8 +99,12 @@ func (h *RenewalHandler) AdminRenew(c *fiber.Ctx) error {
 			"renewed_at":     now.Format(time.RFC3339),
 		},
 	)
+	delete(sub.Metadata, "credit_allocation_id")
+	if intent != "" {
+		sub.Metadata["credit_allocation_id"] = "admin:" + intent
+	}
 
-	if err := h.subRepo.Update(c.Context(), sub); err != nil {
+	if err := persistCreditAllocation(c.Context(), h.subRepo, sub); err != nil {
 		h.logger.Error("admin renewal failed",
 			zap.String("subscription_id", subID),
 			zap.Error(err),

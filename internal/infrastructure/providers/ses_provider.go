@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -94,7 +95,7 @@ func (p *SESProvider) Send(ctx context.Context, notif *notification.Notification
 	// MIME), since SESv2's Simple mode cannot carry binary parts.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "ses")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return emailAttachmentErrorResult(rErr), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
@@ -118,6 +119,9 @@ func (p *SESProvider) Send(ctx context.Context, notif *notification.Notification
 			Attachments: resolved,
 		})
 		if mErr != nil {
+			if errors.Is(mErr, ErrSMTPAttachmentReadFailed) {
+				return emailAttachmentErrorResult(fmt.Errorf("ses: build raw MIME: %w", mErr)), nil
+			}
 			return NewErrorResult(fmt.Errorf("ses: build raw MIME: %w", mErr), ErrorTypeInvalid), nil
 		}
 		input.Content = &types.EmailContent{
@@ -163,7 +167,7 @@ func (p *SESProvider) Send(ctx context.Context, notif *notification.Notification
 func (p *SESProvider) GetName() string                           { return "ses" }
 func (p *SESProvider) GetSupportedChannel() notification.Channel { return notification.ChannelEmail }
 func (p *SESProvider) IsHealthy(_ context.Context) bool          { return p.config.FromEmail != "" }
-func (p *SESProvider) Close() error                               { return nil }
+func (p *SESProvider) Close() error                              { return nil }
 
 func (p *SESProvider) buildHTMLBody(notif *notification.Notification) string {
 	return fmt.Sprintf(`<!DOCTYPE html>

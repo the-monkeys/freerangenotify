@@ -274,3 +274,65 @@ func TestCreditService_concurrent_reserve_commit_does_not_leak_reserved(t *testi
 		t.Fatalf("credits_remaining = %d want %d", snap.CreditsRemaining, 1000-n)
 	}
 }
+
+type investigationFailOnceLedger struct {
+	stubLedgerRepo
+	failed bool
+}
+
+func (r *investigationFailOnceLedger) Append(ctx context.Context, entry *billing.CreditLedgerEntry) error {
+	if !r.failed {
+		r.failed = true
+		return fmt.Errorf("simulated ledger write failure")
+	}
+	return nil
+}
+
+func TestInvestigation_LedgerFailureDoesNotDoubleBurn(t *testing.T) {
+	svc := newReservationCreditService(&billing.CreditBalance{ID: "sub-1", TenantID: "tenant-1", CreditsTotal: 100, CreditsRemaining: 100})
+	svc.ledgerRepo = &investigationFailOnceLedger{}
+	res, err := svc.ReserveForNotification(context.Background(), "tenant-1", "app-1", "n-1", "inapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CommitOnSuccess(context.Background(), res.ID); err == nil {
+		t.Fatal("expected ledger failure")
+	}
+	if _, err := svc.CommitOnSuccess(context.Background(), res.ID); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.GetUsageSnapshot(context.Background(), "tenant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.CreditsRemaining != 99 {
+		t.Fatalf("balance after retry = %d; want 99 (one burn)", snap.CreditsRemaining)
+	}
+}
+
+func TestInvestigation_ReleaseFromTwoWorkersDoesNotEraseAnotherHold(t *testing.T) {
+	repo := &racyBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: "tenant-1", CreditsTotal: 100, CreditsRemaining: 100}}
+	store := newMemoryReservationStore()
+	svc1 := newReservationCreditServiceWith(repo, store)
+	svc2 := newReservationCreditServiceWith(repo, store)
+	first, err := svc1.ReserveForNotification(context.Background(), "tenant-1", "app-1", "n-1", "inapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc1.ReserveForNotification(context.Background(), "tenant-1", "app-1", "n-2", "inapp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc2.ReleaseOnFailure(context.Background(), first.ID, "expired"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc1.ReleaseOnFailure(context.Background(), first.ID, "delivery failed"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc1.GetUsageSnapshot(context.Background(), "tenant-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.CreditsReserved != 1 {
+		t.Fatalf("other notification's reserved credits = %d; want 1", snap.CreditsReserved)
+	}
+}

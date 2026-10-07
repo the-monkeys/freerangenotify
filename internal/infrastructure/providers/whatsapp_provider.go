@@ -194,7 +194,15 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 			zap.Int("http_status", resp.StatusCode),
 			zap.String("error_message", errMsg),
 			zap.String("raw_body", string(bodyBytes)))
-		return NewErrorResult(fmt.Errorf("%s", errMsg), ErrorTypeProviderAPI), nil
+		category := ErrorTypeProviderAPI
+		if resp.StatusCode == http.StatusTooManyRequests {
+			category = ErrorTypeRateLimit
+		} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden || twilioResp.Code == 20003 || twilioResp.ErrorCode == 20003 {
+			category = ErrorTypeAuth
+		}
+		// Preserve the upstream cause for inspection. The manager wraps it
+		// with categorical safe text and the request's credential source.
+		return NewErrorResult(fmt.Errorf("%s", errMsg), category), nil
 	}
 
 	providerMsgID := twilioResp.SID

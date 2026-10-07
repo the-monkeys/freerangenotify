@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -47,21 +48,56 @@ func (r *ESCreditLedgerRepo) Append(ctx context.Context, entry *billing.CreditLe
 		creditLedgerIndex,
 		strings.NewReader(string(body)),
 		r.es.Index.WithDocumentID(entry.ID),
+		r.es.Index.WithOpType("create"),
 		r.es.Index.WithContext(ctx),
 	)
 	if err != nil {
 		return fmt.Errorf("billingrepo: append credit ledger entry: %w", err)
 	}
 	defer res.Body.Close()
+	if res.StatusCode == 409 {
+		// A deterministic repair may repeat only the identical immutable row.
+		existing, err := r.es.Get(creditLedgerIndex, entry.ID, r.es.Get.WithContext(ctx))
+		if err != nil {
+			return err
+		}
+		defer existing.Body.Close()
+		if existing.IsError() {
+			return fmt.Errorf("billingrepo: read existing ledger repair: %s", existing.String())
+		}
+		var raw struct {
+			Source json.RawMessage `json:"_source"`
+		}
+		if err := json.NewDecoder(existing.Body).Decode(&raw); err != nil {
+			return err
+		}
+		var want, got interface{}
+		decoder := json.NewDecoder(strings.NewReader(string(body)))
+		decoder.UseNumber()
+		if err := decoder.Decode(&want); err != nil {
+			return err
+		}
+		decoder = json.NewDecoder(strings.NewReader(string(raw.Source)))
+		decoder.UseNumber()
+		if err := decoder.Decode(&got); err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(want, got) {
+			return fmt.Errorf("billingrepo: conflicting immutable credit ledger row %s", entry.ID)
+		}
+		return nil
+	}
 
 	if res.IsError() {
 		return fmt.Errorf("billingrepo: append credit ledger entry error: %s", res.String())
 	}
 
-	r.logger.Debug("Appended credit ledger entry",
-		zap.String("tenant_id", entry.TenantID),
-		zap.String("entry_type", string(entry.EntryType)),
-		zap.Int64("credits_delta", entry.CreditsDelta))
+	if r.logger != nil {
+		r.logger.Debug("Appended credit ledger entry",
+			zap.String("tenant_id", entry.TenantID),
+			zap.String("entry_type", string(entry.EntryType)),
+			zap.Int64("credits_delta", entry.CreditsDelta))
+	}
 
 	return nil
 }

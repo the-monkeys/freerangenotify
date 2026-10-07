@@ -297,9 +297,15 @@ func (p *NotificationProcessor) worker(ctx context.Context, workerID int) {
 
 // processNotification processes a single notification
 func (p *NotificationProcessor) processNotification(ctx context.Context, item *queue.NotificationQueueItem, logger *zap.Logger) {
+	processing := &notificationProcessingState{acknowledge: true}
+	ctx = context.WithValue(ctx, notificationProcessingStateKey{}, processing)
 	defer func() {
-		if rq, ok := p.queue.(*queue.RedisQueue); ok {
-			rq.Acknowledge(ctx, *item)
+		if processing.acknowledge {
+			ackCtx, cancelAck := notificationAccountingContext(ctx)
+			defer cancelAck()
+			if ackErr := p.queue.Acknowledge(ackCtx, *item); ackErr != nil {
+				logger.Error("Failed to acknowledge processed notification", zap.Error(ackErr))
+			}
 		}
 	}()
 
@@ -345,6 +351,21 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// A recovered duplicate must not change successful delivery history.
+	switch notif.Status {
+	case notification.StatusSent, notification.StatusDelivered, notification.StatusRead:
+		return
+	}
+	if deadline, ok := notificationDeliveryDeadline(notif); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
+
 	// Skip snoozed — re-enqueue for snoozed_until so it will be processed when due
 	if notif.Status == notification.StatusSnoozed && notif.SnoozedUntil != nil {
 		if time.Now().Before(*notif.SnoozedUntil) {
@@ -384,7 +405,21 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	// Remove stored failure fields before attempting another delivery. A failed
+	// removal must recover from the processing queue, rather than leave false
+	// failure history on a later successful delivery.
+	if cleaner, ok := p.notifRepo.(interface {
+		ClearDeliveryFailure(context.Context, string) error
+	}); ok {
+		if clearErr := cleaner.ClearDeliveryFailure(ctx, notif.NotificationID); clearErr != nil {
+			logger.Warn("Failed to clear previous delivery diagnostics", zap.Error(clearErr))
+			retainNotificationProcessingItem(ctx)
+			return
+		}
+	}
+	clearNotificationFailure(notif)
 	// Update status to processing
+	notif.Status = notification.StatusProcessing
 	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusProcessing); err != nil {
 		logger.Error("Failed to update status to processing", zap.Error(err))
 	}
@@ -678,6 +713,11 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
+
 	var reservation *billing.CreditReservation
 	if p.creditService != nil {
 		tenantID := notif.AppID
@@ -686,25 +726,56 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 		reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
 		if err != nil {
-			if errors.Is(err, services.ErrInsufficientCredits) || errors.Is(err, services.ErrDailyCapExceeded) {
-				p.handleCreditBlocked(ctx, notif, err.Error())
+			message := annotateNotificationFailure(notif, err, err.Error())
+			var unavailable *billing.CreditUnavailableError
+			if errors.As(err, &unavailable) && unavailable.Reason == billing.CreditUnavailableReasonTemporarilyReserved {
+				p.handleFailure(ctx, notif, item, err, message)
 				return
 			}
-			p.handleFailure(ctx, notif, item, err, fmt.Sprintf("credit reservation failed: %s", err.Error()))
+			if errors.Is(err, services.ErrInsufficientCredits) || errors.Is(err, services.ErrDailyCapExceeded) {
+				p.handleCreditBlocked(ctx, notif, message)
+				return
+			}
+			p.handleFailure(ctx, notif, item, err, fmt.Sprintf("credit reservation failed: %s", message))
 			return
 		}
-		if notif.Metadata == nil {
-			notif.Metadata = make(map[string]interface{})
+		if reservation != nil {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["credits_used"] = reservation.CreditsReserved
+			notif.Metadata["rate_card_version"] = reservation.RateCardVersion
+			notif.Metadata["reservation_id"] = reservation.ID
 		}
-		notif.Metadata["credits_used"] = reservation.CreditsReserved
-		notif.Metadata["rate_card_version"] = reservation.RateCardVersion
-		notif.Metadata["reservation_id"] = reservation.ID
+	}
+
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		accountingCtx, cancelAccounting := notificationAccountingContext(ctx)
+		defer cancelAccounting()
+		if reservation != nil {
+			if recordErr := p.creditService.RecordReservationDeliveryFailure(accountingCtx, reservation.ID); recordErr != nil {
+				logger.Error("Failed to record pre-dispatch expiry", zap.Error(recordErr))
+			}
+			if releaseErr := p.creditService.ReleaseOnFailure(accountingCtx, reservation.ID, "notification expired"); releaseErr != nil {
+				logger.Error("Failed to release expired notification hold", zap.Error(releaseErr))
+			}
+		}
+		p.handleExpiredNotification(ctx, notif)
+		return
 	}
 
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
+		message := annotateNotificationFailure(notif, err, err.Error())
+		accountingCtx, cancelAccounting := notificationAccountingContext(ctx)
+		defer cancelAccounting()
 		if reservation != nil {
-			if releaseErr := p.creditService.ReleaseOnFailure(ctx, reservation.ID, err.Error()); releaseErr != nil {
+			if notificationDeliveryDefinitelyFailed(err) {
+				if recordErr := p.creditService.RecordReservationDeliveryFailure(accountingCtx, reservation.ID); recordErr != nil {
+					logger.Error("Failed to record rejected delivery attempt", zap.Error(recordErr))
+				}
+			}
+			if releaseErr := p.creditService.ReleaseOnFailure(accountingCtx, reservation.ID, message); releaseErr != nil {
 				logger.Error("Failed to release reserved credits", zap.Error(releaseErr))
 			}
 		}
@@ -715,29 +786,41 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		if p.metrics != nil {
 			p.metrics.RecordDeliveryFailure(string(notif.Channel), "default", "send_error")
 		}
-		p.handleFailure(ctx, notif, item, err, err.Error())
+		if errors.Is(err, errNotificationDeliveryExpired) {
+			p.handleExpiredNotification(ctx, notif)
+		} else {
+			p.handleFailure(ctx, notif, item, err, message)
+		}
 		return
 	}
 
 	if reservation != nil {
-		if _, commitErr := p.creditService.CommitOnSuccess(ctx, reservation.ID); commitErr != nil {
+		accountingCtx, cancelAccounting := notificationAccountingContext(ctx)
+		defer cancelAccounting()
+		if _, commitErr := p.creditService.CommitOnSuccess(accountingCtx, reservation.ID); commitErr != nil {
 			logger.Error("Failed to commit reserved credits",
 				zap.String("notification_id", notif.NotificationID),
 				zap.Error(commitErr))
 		}
 	}
 
+	ctx, cancelPersistence := notificationAccountingContext(ctx)
+	defer cancelPersistence()
+
 	// Update in-memory status BEFORE persisting the full object,
 	// otherwise the subsequent Update() overwrites "sent" back to "queued".
 	notif.Status = notification.StatusSent
+	clearNotificationFailure(notif)
 	now := time.Now()
 	notif.SentAt = &now
 
-	// Update status to sent
-	if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusSent); err != nil {
-		logger.Error("Failed to update status to sent", zap.Error(err))
+	if reservation != nil {
+		// Bind the proven successful delivery to its own attempt. Recovery must
+		// never infer success for earlier holds from a notification-wide status.
+		notif.Metadata["delivery_reservation_id"] = reservation.ID
 	}
-	// Persist rendered content (title/body) so Notification History displays resolved text, not {{.var}}
+	// Persist success, time, reservation binding, and rendered content together.
+	// A separate sent-only write can expose a prior attempt's reservation ID.
 	if err := p.notifRepo.Update(ctx, notif); err != nil {
 		logger.Warn("Failed to persist rendered content after send", zap.Error(err))
 	}
@@ -783,7 +866,9 @@ func (p *NotificationProcessor) handleLicenseBlocked(ctx context.Context, notif 
 }
 
 func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *notification.Notification, reason string) {
-	p.logger.Warn("Notification rejected: insufficient credits",
+	ctx, cancelPersistence := notificationAccountingContext(ctx)
+	defer cancelPersistence()
+	p.logger.Warn("Notification rejected by billing",
 		zap.String("notification_id", notif.NotificationID),
 		zap.String("app_id", notif.AppID),
 		zap.String("channel", string(notif.Channel)),
@@ -977,6 +1062,10 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 		}
 	}
 
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		return errNotificationDeliveryExpired
+	}
+
 	if err == nil && app != nil && len(app.Settings.ProviderFallbacks) > 0 {
 		for _, fb := range app.Settings.ProviderFallbacks {
 			if fb.Channel == string(notif.Channel) && len(fb.Providers) > 0 {
@@ -1105,72 +1194,71 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 // classified as non-retryable, the notification is moved directly to the
 // dead-letter queue without consuming further retry attempts.
 func (p *NotificationProcessor) handleFailure(ctx context.Context, notif *notification.Notification, item *queue.NotificationQueueItem, err error, errorMsg string) {
-	// Record retry metric
+	ctx, cancelPersistence := notificationAccountingContext(ctx)
+	defer cancelPersistence()
+	errorMsg = annotateNotificationFailure(notif, err, errorMsg)
+	notif.ErrorMessage = errorMsg
 	if p.metrics != nil {
 		p.metrics.RecordRetry(string(notif.Channel), errorMsg)
 	}
-
-	// Increment retry count
 	if incErr := p.notifRepo.IncrementRetryCount(ctx, notif.NotificationID, errorMsg); incErr != nil {
 		p.logger.Error("Failed to increment retry count", zap.Error(incErr))
 	}
-
-	// Check if can retry
+	// Keep the full notification write consistent with the atomic increment.
+	notif.RetryCount++
 	maxRetries := p.config.MaxRetries
-	// Attempt to fetch app-specific retry limit
 	app, appErr := p.appRepo.GetByID(ctx, notif.AppID)
-	if appErr == nil && app.Settings.RetryAttempts > 0 {
+	if appErr == nil && app != nil && app.Settings.RetryAttempts > 0 {
 		maxRetries = app.Settings.RetryAttempts
 	}
-
-	// Permanent-failure short-circuit: certain errors (bad attachment shape,
-	// missing file blob, oversize remote URL) cannot improve on retry. Fail
-	// immediately to free queue slots and surface the problem to operators
-	// without three identical retries cluttering logs.
 	terminal := isNonRetryableError(err)
-	if terminal {
-		p.logger.Warn("Notification non-retryable, skipping retries",
-			zap.String("notification_id", notif.NotificationID),
-			zap.String("channel", string(notif.Channel)),
-			zap.Error(err))
-	}
-
-	if terminal || notif.RetryCount >= maxRetries {
-		// Move to dead letter queue
-		redisQueue, ok := p.queue.(*queue.RedisQueue)
-		if ok {
+	if terminal || notif.RetryCount > maxRetries {
+		if redisQueue, ok := p.queue.(*queue.RedisQueue); ok {
 			reason := fmt.Sprintf("max retries exceeded: %s", errorMsg)
 			if terminal {
 				reason = fmt.Sprintf("non-retryable: %s", errorMsg)
 			}
-			if err := redisQueue.EnqueueDeadLetter(ctx, *item, reason); err != nil {
-				p.logger.Error("Failed to move to dead letter queue", zap.Error(err))
+			if dlqErr := redisQueue.EnqueueDeadLetter(ctx, *item, reason); dlqErr != nil {
+				p.logger.Error("Failed to move to dead letter queue", zap.Error(dlqErr))
 			}
 		}
-
-		// Update status to failed
 		notif.Status = notification.StatusFailed
-		p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
+		now := time.Now().UTC()
+		notif.FailedAt = &now
+		if updateErr := p.notifRepo.Update(ctx, notif); updateErr != nil {
+			p.logger.Error("Failed to persist terminal notification failure", zap.Error(updateErr))
+		}
 		p.publishActivity(ctx, notif.NotificationID, notif.AppID, string(notif.Channel), "failed")
-		// Update error message separately
-		notif.ErrorMessage = errorMsg
-		p.notifRepo.Update(ctx, notif)
 		return
 	}
 
-	// Schedule retry with exponential backoff and jitter
-	delay := utils.CalculateBackoff(p.config.RetryDelay, notif.RetryCount, p.config.MaxRetryDelay)
-	redisQueue, ok := p.queue.(*queue.RedisQueue)
-	if ok {
-		if err := redisQueue.EnqueueRetry(ctx, *item, delay); err != nil {
-			p.logger.Error("Failed to enqueue retry", zap.Error(err))
-		} else {
-			// Update status to queued to reflect it's waiting for retry (and not stuck in processing)
-			// This allows visibility that it's active but pending attempt.
-			if err := p.notifRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusQueued); err != nil {
-				p.logger.Error("Failed to update status to queued after scheduling retry", zap.Error(err))
-			}
-		}
+	delay := utils.CalculateBackoff(p.config.RetryDelay, notif.RetryCount-1, p.config.MaxRetryDelay)
+	if notificationDeliveryExpired(notif, time.Now().Add(delay)) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
+
+	// Redis has a dedicated retry queue; other Queue implementations support
+	// delayed delivery through the existing scheduling contract.
+	retryItem := *item
+	retryItem.RetryCount = notif.RetryCount
+	var retryErr error
+	if retryQueue, ok := p.queue.(interface {
+		EnqueueRetry(context.Context, queue.NotificationQueueItem, time.Duration) error
+	}); ok {
+		retryErr = retryQueue.EnqueueRetry(ctx, retryItem, delay)
+	} else {
+		retryErr = p.queue.EnqueueScheduled(ctx, retryItem, time.Now().Add(delay))
+	}
+	if retryErr != nil {
+		retainNotificationProcessingItem(ctx)
+		p.logger.Error("Failed to enqueue retry", zap.Error(retryErr))
+		_ = p.notifRepo.Update(ctx, notif)
+		return
+	}
+	notif.Status = notification.StatusQueued
+	if updateErr := p.notifRepo.Update(ctx, notif); updateErr != nil {
+		p.logger.Error("Failed to persist notification retry state", zap.Error(updateErr))
 	}
 }
 

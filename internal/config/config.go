@@ -74,10 +74,11 @@ type SelfHostedLicenseConfig struct {
 }
 
 type BillingConfig struct {
-	RateCardRefreshSeconds  int    `mapstructure:"rate_card_refresh_seconds" yaml:"rate_card_refresh_seconds"`
-	RateCardPubSubChannel   string `mapstructure:"rate_card_pubsub_channel" yaml:"rate_card_pubsub_channel"`
-	EnforceCreditChecks     bool   `mapstructure:"enforce_credit_checks" yaml:"enforce_credit_checks"`
-	EnforceFreeTierDailyCap bool   `mapstructure:"enforce_free_tier_daily_cap" yaml:"enforce_free_tier_daily_cap"`
+	ReservationJournalEnabled bool   `mapstructure:"reservation_journal_enabled" yaml:"reservation_journal_enabled"`
+	RateCardRefreshSeconds    int    `mapstructure:"rate_card_refresh_seconds" yaml:"rate_card_refresh_seconds"`
+	RateCardPubSubChannel     string `mapstructure:"rate_card_pubsub_channel" yaml:"rate_card_pubsub_channel"`
+	EnforceCreditChecks       bool   `mapstructure:"enforce_credit_checks" yaml:"enforce_credit_checks"`
+	EnforceFreeTierDailyCap   bool   `mapstructure:"enforce_free_tier_daily_cap" yaml:"enforce_free_tier_daily_cap"`
 }
 
 // PaymentConfig selects the payment gateway and holds provider-specific credentials.
@@ -473,6 +474,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("billing.rate_card_refresh_seconds", 45)
 	viper.SetDefault("billing.rate_card_pubsub_channel", "billing:ratecard:updated")
 	viper.SetDefault("billing.enforce_credit_checks", true)
+	viper.SetDefault("billing.reservation_journal_enabled", false)
 	viper.SetDefault("billing.enforce_free_tier_daily_cap", true)
 
 	viper.SetDefault("biz_billing.default_currency", "INR")

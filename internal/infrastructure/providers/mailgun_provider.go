@@ -79,7 +79,7 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 	// the historical x-www-form-urlencoded fast path for byte-stable behaviour.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "mailgun")
 	if rErr != nil {
-		return NewErrorResult(rErr, ErrorTypeInvalid), nil
+		return emailAttachmentErrorResult(rErr), nil
 	}
 	if resolved != nil {
 		defer attachment.CloseAll(resolved)
@@ -113,7 +113,7 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 			raw, bErr := readResolvedBytes(ra)
 			if bErr != nil {
 				_ = mw.Close()
-				return NewErrorResult(bErr, ErrorTypeInvalid), nil
+				return emailAttachmentErrorResult(bErr), nil
 			}
 			// Mailgun: `attachment` field for regular, `inline` field for
 			// HTML-embedded parts (the cid: reference is just the filename).
@@ -178,10 +178,14 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 	return res, nil
 }
 
-func (p *MailgunProvider) GetName() string                                { return "mailgun" }
-func (p *MailgunProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelEmail }
-func (p *MailgunProvider) IsHealthy(_ context.Context) bool               { return p.config.APIKey != "" && p.config.Domain != "" }
-func (p *MailgunProvider) Close() error                                   { return nil }
+func (p *MailgunProvider) GetName() string { return "mailgun" }
+func (p *MailgunProvider) GetSupportedChannel() notification.Channel {
+	return notification.ChannelEmail
+}
+func (p *MailgunProvider) IsHealthy(_ context.Context) bool {
+	return p.config.APIKey != "" && p.config.Domain != ""
+}
+func (p *MailgunProvider) Close() error { return nil }
 
 func (p *MailgunProvider) buildHTMLBody(notif *notification.Notification) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
