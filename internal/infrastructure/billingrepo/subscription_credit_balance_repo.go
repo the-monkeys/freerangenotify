@@ -14,6 +14,10 @@ type creditScriptUpdater interface {
 	ScriptUpdate(ctx context.Context, id string, script map[string]interface{}) error
 }
 
+type creditFastSourceUpdater interface {
+	ScriptUpdateCreditSource(context.Context, string, map[string]interface{}) (*license.Subscription, string, error)
+}
+
 type creditSourceUpdater interface {
 	ScriptUpdateWithSource(context.Context, string, map[string]interface{}) (*license.Subscription, string, error)
 }
@@ -176,7 +180,13 @@ func (r *SubscriptionCreditBalanceRepo) applyCreditScript(ctx context.Context, t
 			"params": params,
 		},
 	}
-	updated, result, err := updater.ScriptUpdateWithSource(ctx, sub.ID, script)
+	var updated *license.Subscription
+	var result string
+	if fast, ok := r.subRepo.(creditFastSourceUpdater); ok {
+		updated, result, err = fast.ScriptUpdateCreditSource(ctx, sub.ID, script)
+	} else {
+		updated, result, err = updater.ScriptUpdateWithSource(ctx, sub.ID, script)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("billingrepo: atomic credit update: %w", err)
 	}

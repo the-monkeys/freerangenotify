@@ -750,8 +750,8 @@ func TestNotificationService_SendBulk(t *testing.T) {
 		assert.Len(t, results, 2)
 		assert.Len(t, nrepo.created, 2)
 		assert.Len(t, q.batch, 2)
-		assert.Equal(t, notification.StatusQueued, nrepo.bulkStatusTarget)
-		assert.Len(t, nrepo.bulkStatusIDs, 2)
+		assert.Equal(t, notification.StatusQueued, nrepo.created[0].Status)
+		assert.Empty(t, nrepo.bulkStatusIDs, "producer does not write status after publication")
 	})
 
 	t.Run("validation error — empty AppID", func(t *testing.T) {

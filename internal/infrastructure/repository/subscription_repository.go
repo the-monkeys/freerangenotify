@@ -286,6 +286,14 @@ for (def e : d.entrySet()) {
 // The source belongs to this update (including a rejecting noop), never a GET
 // performed after a concurrent writer. Conflicts stay storage errors.
 func (r *SubscriptionRepository) ScriptUpdateWithSource(ctx context.Context, id string, script map[string]interface{}) (*license.Subscription, string, error) {
+	return r.scriptUpdateWithSource(ctx, id, script, r.base.defaultRefresh)
+}
+
+// Credit updates return their own atomic source; per-send refresh barriers are unnecessary.
+func (r *SubscriptionRepository) ScriptUpdateCreditSource(ctx context.Context, id string, script map[string]interface{}) (*license.Subscription, string, error) {
+	return r.scriptUpdateWithSource(ctx, id, script, RefreshFalse)
+}
+func (r *SubscriptionRepository) scriptUpdateWithSource(ctx context.Context, id string, script map[string]interface{}, refresh RefreshPolicy) (*license.Subscription, string, error) {
 	request := make(map[string]interface{}, len(script)+1)
 	for k, v := range script {
 		request[k] = v
@@ -296,7 +304,7 @@ func (r *SubscriptionRepository) ScriptUpdateWithSource(ctx context.Context, id 
 		return nil, "", err
 	}
 	retry := 5
-	req := esapi.UpdateRequest{Index: r.base.indexName, DocumentID: id, Body: strings.NewReader(string(data)), RetryOnConflict: &retry, Refresh: string(r.base.defaultRefresh)}
+	req := esapi.UpdateRequest{Index: r.base.indexName, DocumentID: id, Body: strings.NewReader(string(data)), RetryOnConflict: &retry, Refresh: string(refresh)}
 	res, err := req.Do(ctx, r.base.client)
 	if err != nil {
 		return nil, "", fmt.Errorf("subscription atomic update: %w", err)
@@ -399,7 +407,14 @@ func (r *SubscriptionRepository) ListCreditJournalSubscriptions(ctx context.Cont
 		if sub.ID == "" || (cursor != "" && sub.ID <= cursor) {
 			return nil, "", fmt.Errorf("invalid journal pagination id")
 		}
-		subs = append(subs, &sub)
+		current, err := r.GetByID(ctx, sub.ID)
+		if err != nil {
+			return nil, "", err
+		}
+		if current == nil || current.ID != sub.ID {
+			return nil, "", fmt.Errorf("journal subscription unavailable")
+		}
+		subs = append(subs, current)
 	}
 	next := ""
 	if len(subs) == limit {
@@ -512,8 +527,8 @@ func (r *SubscriptionRepository) getActiveByField(ctx context.Context, field, va
 				"must": []map[string]interface{}{
 					{"term": map[string]interface{}{field: value}},
 					{"terms": map[string]interface{}{"status": []string{string(license.SubscriptionStatusActive), string(license.SubscriptionStatusTrial)}}},
-					{"range": map[string]interface{}{"current_period_start": map[string]interface{}{"lte": now.Format(time.RFC3339)}}},
-					{"range": map[string]interface{}{"current_period_end": map[string]interface{}{"gte": now.Format(time.RFC3339)}}},
+					{"range": map[string]interface{}{"current_period_start": map[string]interface{}{"lte": now.Format(time.RFC3339Nano)}}},
+					{"range": map[string]interface{}{"current_period_end": map[string]interface{}{"gte": now.Format(time.RFC3339Nano)}}},
 				},
 			},
 		},
@@ -537,5 +552,13 @@ func (r *SubscriptionRepository) getActiveByField(ctx context.Context, field, va
 		return nil, fmt.Errorf("failed to map document to subscription: %w", err)
 	}
 
-	return &sub, nil
+	// Search selects the subscription ID; counters and journal reads are realtime.
+	current, err := r.GetByID(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil || (current.Status != license.SubscriptionStatusActive && current.Status != license.SubscriptionStatusTrial) || current.CurrentPeriodStart.After(now) || current.CurrentPeriodEnd.Before(now) {
+		return nil, nil
+	}
+	return current, nil
 }

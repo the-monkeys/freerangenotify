@@ -176,7 +176,7 @@ type RedisConfig struct {
 type QueueConfig struct {
 	Type          string `mapstructure:"type"` // redis or kafka
 	Workers       int    `mapstructure:"workers"`
-	Concurrency   int    `mapstructure:"concurrency"`
+	Concurrency   int    `mapstructure:"concurrency"` // legacy setting; worker parallelism is controlled by workers
 	MaxRetries    int    `mapstructure:"max_retries"`
 	RetryDelay    int    `mapstructure:"retry_delay"`
 	MaxRetryDelay int    `mapstructure:"max_retry_delay"`
@@ -432,7 +432,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("redis.min_idle_conn", 10)
 
 	viper.SetDefault("queue.type", "redis")
-	viper.SetDefault("queue.workers", 10)
+	viper.SetDefault("queue.workers", 20)
 	viper.SetDefault("queue.concurrency", 5)
 	viper.SetDefault("queue.max_retries", 3)
 	viper.SetDefault("queue.retry_delay", 5)

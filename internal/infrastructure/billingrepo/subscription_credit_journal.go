@@ -151,7 +151,14 @@ func (r *SubscriptionCreditBalanceRepo) applyJournal(ctx context.Context, id, te
 		return nil, err
 	}
 	params := map[string]interface{}{"id": id, "subscription": subID, "tenant": tenant, "action": action, "status": status, "reason": reason, "now": time.Now().UTC().Format(time.RFC3339Nano), "reservation": reservation}
-	sub, result, err := repo.ScriptUpdateWithSource(ctx, subID, map[string]interface{}{"script": map[string]interface{}{"source": creditJournalScript, "lang": "painless", "params": params}})
+	script := map[string]interface{}{"script": map[string]interface{}{"source": creditJournalScript, "lang": "painless", "params": params}}
+	var sub *license.Subscription
+	var result string
+	if fast, ok := r.subRepo.(creditFastSourceUpdater); ok {
+		sub, result, err = fast.ScriptUpdateCreditSource(ctx, subID, script)
+	} else {
+		sub, result, err = repo.ScriptUpdateWithSource(ctx, subID, script)
+	}
 	if err != nil {
 		return nil, err
 	}

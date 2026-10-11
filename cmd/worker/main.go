@@ -231,7 +231,7 @@ func main() {
 	// Create notification processor
 	workerCount := cfg.Queue.Workers
 	if workerCount == 0 {
-		workerCount = 5 // Default
+		workerCount = 20 // Bounded default; queue.workers explicitly overrides this
 	}
 
 	processor := NewNotificationProcessor(

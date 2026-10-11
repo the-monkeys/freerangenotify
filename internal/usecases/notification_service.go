@@ -469,25 +469,54 @@ func (s *NotificationService) sendToTopic(ctx context.Context, req notification.
 
 // SendBulk sends notifications to multiple users
 func (s *NotificationService) SendBulk(ctx context.Context, req notification.BulkSendRequest) ([]*notification.Notification, error) {
+	return s.sendBulk(ctx, req, nil)
+}
+func (s *NotificationService) sendBulk(ctx context.Context, req notification.BulkSendRequest, profiles map[string]*user.User) ([]*notification.Notification, error) {
 	// Validate request
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}
 
 	var notifications []*notification.Notification
-	var queueItems []queue.NotificationQueueItem
+	if profiles == nil {
+		if reader, ok := s.userRepo.(interface {
+			GetByIDs(context.Context, []string) (map[string]*user.User, error)
+		}); ok {
+			var err error
+			profiles, err = reader.GetByIDs(ctx, req.UserIDs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load bulk recipients: %w", err)
+			}
+		}
+	}
+	app, err := s.getCachedApp(ctx, req.AppID)
+	if err != nil {
+		return nil, err
+	}
 	seenContacts := make(map[string]struct{})
 
 	// Create notifications for each user
 	for _, userID := range req.UserIDs {
 		// Check if user exists
-		u, err := s.userRepo.GetByID(ctx, userID)
-		if err != nil {
+		var u *user.User
+		var err error
+		if profiles != nil {
+			u = profiles[userID]
+			if u == nil {
+				continue
+			}
+		} else {
+			u, err = s.userRepo.GetByID(ctx, userID)
+		}
+		if err != nil || u == nil {
 			s.logger.Warn("User not found in bulk send, skipping",
 				zap.String("user_id", userID), zap.Error(err))
 			continue
 		}
 
+		if u.AppID != req.AppID || (req.EnvironmentID != "" && req.EnvironmentID != "default" && u.EnvironmentID != req.EnvironmentID) {
+			continue
+		}
 		// Normalize contact for channel and skip if missing
 		var contactKey string
 		switch req.Channel {
@@ -550,10 +579,21 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			}
 		}
 
+		if req.Channel == notification.ChannelEmail && app.Settings.DailyEmailLimit > 0 {
+			allowed, err := s.limiter.IncrementAndCheckDailyLimit(ctx, fmt.Sprintf("app_email_limit:%s", req.AppID), app.Settings.DailyEmailLimit)
+			if err != nil {
+				return nil, fmt.Errorf("application daily email limiter unavailable: %w", err)
+			}
+			if !allowed && req.Priority != notification.PriorityCritical {
+				continue
+			}
+		}
+
 		// Create notification
 		notif := &notification.Notification{
 			NotificationID: uuid.New().String(),
 			AppID:          req.AppID,
+			EnvironmentID:  req.EnvironmentID,
 			UserID:         userID,
 			Channel:        req.Channel,
 			Priority:       req.Priority,
@@ -591,59 +631,68 @@ func (s *NotificationService) SendBulk(ctx context.Context, req notification.Bul
 			}
 		}
 
+		if !notif.IsScheduled() {
+			notif.Status = notification.StatusQueued
+		}
 		if err := notif.Validate(); err != nil {
 			s.logger.Warn("Invalid notification in bulk send, skipping",
 				zap.String("user_id", userID), zap.Error(err))
 			continue
 		}
 
-		if err := s.notificationRepo.Create(ctx, notif); err != nil {
-			s.logger.Error("Failed to create notification in bulk send",
-				zap.String("user_id", userID), zap.Error(err))
-			continue
-		}
-
 		notifications = append(notifications, notif)
-
-		// Queue or schedule
-		queueItem := queue.NotificationQueueItem{
-			NotificationID: notif.NotificationID,
-			AppID:          notif.AppID,
-			Priority:       notif.Priority,
-			EnqueuedAt:     time.Now(),
+	}
+	confirmed := make([]*notification.Notification, 0, len(notifications))
+	for start := 0; start < len(notifications); start += 500 {
+		end := start + 500
+		if end > len(notifications) {
+			end = len(notifications)
 		}
-
-		if notif.IsScheduled() {
-			if err := s.queue.EnqueueScheduled(ctx, queueItem, *notif.ScheduledAt); err != nil {
-				s.logger.Error("Failed to enqueue scheduled notification in bulk", zap.Error(err))
+		batch := notifications[start:end]
+		var outcomes []error
+		if writer, ok := s.notificationRepo.(interface {
+			BulkCreateResults(context.Context, []*notification.Notification) ([]error, error)
+		}); ok {
+			var err error
+			outcomes, err = writer.BulkCreateResults(ctx, batch)
+			if err != nil {
+				return confirmed, fmt.Errorf("notification storage write outcome unknown: %w", err)
+			}
+			if len(outcomes) != len(batch) {
+				return confirmed, fmt.Errorf("notification storage outcomes incomplete")
 			}
 		} else {
-			queueItems = append(queueItems, queueItem)
+			outcomes = make([]error, len(batch))
+			for i, n := range batch {
+				outcomes[i] = s.notificationRepo.Create(ctx, n)
+			}
+		}
+		items := make([]queue.NotificationQueueItem, 0, len(batch))
+		for i, n := range batch {
+			if outcomes[i] != nil {
+				s.logger.Warn("Bulk notification storage rejected", zap.String("notification_id", n.NotificationID), zap.Error(outcomes[i]))
+				continue
+			}
+			confirmed = append(confirmed, n)
+			item := queue.NotificationQueueItem{NotificationID: n.NotificationID, AppID: n.AppID, Priority: n.Priority, EnqueuedAt: time.Now()}
+			if n.IsScheduled() {
+				if err := s.queue.EnqueueScheduled(ctx, item, *n.ScheduledAt); err != nil {
+					s.logger.Error("Scheduled publication failed; persisted pending fallback retained", zap.String("notification_id", n.NotificationID), zap.Error(err))
+				}
+			} else {
+				items = append(items, item)
+			}
+		}
+		if len(items) > 0 {
+			if err := s.queue.EnqueueBatch(ctx, items); err != nil {
+				// Publication may have succeeded despite a lost response. Leave persisted
+				// states intact; changing them here can race a worker or cause resends.
+				return confirmed, fmt.Errorf("failed to bulk enqueue (publication outcome unknown): %w", err)
+			}
 		}
 	}
-
-	// Bulk enqueue
-	if len(queueItems) > 0 {
-		if err := s.queue.EnqueueBatch(ctx, queueItems); err != nil {
-			s.logger.Error("Failed to bulk enqueue notifications", zap.Error(err))
-			return notifications, fmt.Errorf("failed to bulk enqueue: %w", err)
-		}
-
-		// Bulk update status to queued
-		var notifIDs []string
-		for _, item := range queueItems {
-			notifIDs = append(notifIDs, item.NotificationID)
-		}
-		if err := s.notificationRepo.BulkUpdateStatus(ctx, notifIDs, notification.StatusQueued); err != nil {
-			s.logger.Error("Failed to bulk update notification status", zap.Error(err))
-		}
-	}
-
-	s.logger.Info("Bulk notifications sent",
-		zap.Int("total", len(req.UserIDs)),
-		zap.Int("sent", len(notifications)))
-
-	return notifications, nil
+	s.logger.Info("Bulk notifications prepared", zap.Int("requested", len(req.UserIDs)), zap.Int("persisted", len(confirmed)))
+	return confirmed, nil
 }
 
 // Broadcast sends a notification to all users of an application (or triggers workflows when WorkflowTriggerID is set).
@@ -654,6 +703,7 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 	}
 
 	var allUserIDs []string
+	var profiles map[string]*user.User
 
 	if req.TopicKey != "" {
 		// Resolve recipients from topic subscribers
@@ -677,13 +727,15 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 			zap.Int("user_count", len(allUserIDs)))
 	} else {
 		// Fetch all users for the application
-		limit := 100
+		profiles = make(map[string]*user.User)
+		limit := 1000
 		offset := 0
 		for {
 			users, err := s.userRepo.List(ctx, user.UserFilter{
-				AppID:  req.AppID,
-				Limit:  limit,
-				Offset: offset,
+				AppID:         req.AppID,
+				EnvironmentID: req.EnvironmentID,
+				Limit:         limit,
+				Offset:        offset,
 			})
 			if err != nil {
 				s.logger.Error("Failed to list users for broadcast", zap.Error(err))
@@ -694,6 +746,7 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 			}
 			for _, u := range users {
 				allUserIDs = append(allUserIDs, u.UserID)
+				profiles[u.UserID] = u
 			}
 			if len(users) < limit {
 				break
@@ -726,25 +779,26 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 
 	// Standard notification broadcast
 	bulkReq := notification.BulkSendRequest{
-		AppID:       req.AppID,
-		UserIDs:     allUserIDs,
-		Channel:     req.Channel,
-		Priority:    req.Priority,
-		Title:       req.Title,
-		Body:        req.Body,
-		Data:        req.Data,
-		TemplateID:  req.TemplateID,
-		Category:    req.Category,
-		ScheduledAt: req.ScheduledAt,
-		Metadata:    req.Metadata,
-		Attachments: req.Attachments,
-		Actions:     req.Actions,
-		Fields:      req.Fields,
-		Mentions:    req.Mentions,
-		Poll:        req.Poll,
-		Style:       req.Style,
+		AppID:         req.AppID,
+		EnvironmentID: req.EnvironmentID,
+		UserIDs:       allUserIDs,
+		Channel:       req.Channel,
+		Priority:      req.Priority,
+		Title:         req.Title,
+		Body:          req.Body,
+		Data:          req.Data,
+		TemplateID:    req.TemplateID,
+		Category:      req.Category,
+		ScheduledAt:   req.ScheduledAt,
+		Metadata:      req.Metadata,
+		Attachments:   req.Attachments,
+		Actions:       req.Actions,
+		Fields:        req.Fields,
+		Mentions:      req.Mentions,
+		Poll:          req.Poll,
+		Style:         req.Style,
 	}
-	notifications, err := s.SendBulk(ctx, bulkReq)
+	notifications, err := s.sendBulk(ctx, bulkReq, profiles)
 	if err != nil {
 		return nil, err
 	}

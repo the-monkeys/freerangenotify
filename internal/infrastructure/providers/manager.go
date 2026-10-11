@@ -362,14 +362,19 @@ func (m *Manager) sendProvider(ctx context.Context, provider Provider, notif *no
 	if err := ctx.Err(); err != nil {
 		return deliveryFailure(nil, err, provider.GetName(), "send", source, "")
 	}
-	var healthErr error
-	if checker, ok := provider.(HealthChecker); ok {
-		healthErr = checker.CheckHealth(ctx)
-	} else if !provider.IsHealthy(ctx) {
-		healthErr = fmt.Errorf("provider is unhealthy")
-	}
-	if healthErr != nil {
-		return deliveryFailure(nil, healthErr, provider.GetName(), "health", source, ErrorTypeProviderAPI)
+	// SMTP authenticates and connects during Send. A separate preflight opens a
+	// second connection and cannot guarantee the send connection will succeed.
+	if _, smtp := provider.(*SMTPProvider); !smtp {
+		var healthErr error
+		if checker, ok := provider.(HealthChecker); ok {
+			healthErr = checker.CheckHealth(ctx)
+		} else if !provider.IsHealthy(ctx) {
+			healthErr = fmt.Errorf("provider is unhealthy")
+		}
+		if healthErr != nil {
+			return deliveryFailure(nil, healthErr, provider.GetName(), "health", source, ErrorTypeProviderAPI)
+		}
+
 	}
 	var result *Result
 	send := func() error {

@@ -10,6 +10,7 @@ import (
 	"net/smtp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,12 +22,17 @@ import (
 
 // A real SMTP fixture: health connections and full unauthenticated deliveries.
 func smtpFixture(t *testing.T) (int, <-chan string) {
+	port, messages, _ := smtpCountingFixture(t)
+	return port, messages
+}
+func smtpCountingFixture(t *testing.T) (int, <-chan string, *atomic.Int64) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	messages := make(chan string, 16)
+	connections := &atomic.Int64{}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	t.Cleanup(func() { ln.Close(); wg.Wait() })
@@ -37,6 +43,7 @@ func smtpFixture(t *testing.T) (int, <-chan string) {
 			if err != nil {
 				return
 			}
+			connections.Add(1)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -77,7 +84,7 @@ func smtpFixture(t *testing.T) (int, <-chan string) {
 			}()
 		}
 	}()
-	return ln.Addr().(*net.TCPAddr).Port, messages
+	return ln.Addr().(*net.TCPAddr).Port, messages, connections
 }
 
 func closedSMTPPort(t *testing.T) int {
@@ -369,5 +376,22 @@ func TestManagerSMTPHealthRetainsNetworkCause(t *testing.T) {
 	var op *net.OpError
 	if !errors.As(err, &de) || !errors.As(err, &op) || de.ErrorType != ErrorTypeNetwork || !de.Retryable || result.Metadata["failure_stage"] != "connect" {
 		t.Fatalf("%+v %v", result, err)
+	}
+}
+
+func TestManagerSMTPDispatchUsesOneConnection(t *testing.T) {
+	port, messages, connections := smtpCountingFixture(t)
+	m := NewManager(nil, nil, zap.NewNop())
+	result, err := m.Send(appSMTPContext(port), &notification.Notification{NotificationID: "fixture", Channel: notification.ChannelEmail, Content: notification.Content{Title: "Hello", Body: "World"}}, &user.User{Email: "fixture@example.test"})
+	if err != nil || result == nil || !result.Success {
+		t.Fatalf("delivery failed: %v", err)
+	}
+	select {
+	case <-messages:
+	case <-time.After(time.Second):
+		t.Fatal("no message")
+	}
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("SMTP connections per dispatch = %d, want 1", got)
 	}
 }

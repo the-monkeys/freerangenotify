@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,54 @@ import (
 	apperrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
+
+// GetByIDs uses realtime mget in bounded batches rather than one HTTP call per recipient.
+func (r *UserRepository) GetByIDs(ctx context.Context, ids []string) (map[string]*user.User, error) {
+	users := make(map[string]*user.User, len(ids))
+	for start := 0; start < len(ids); start += 500 {
+		end := start + 500
+		if end > len(ids) {
+			end = len(ids)
+		}
+		body, err := json.Marshal(map[string]any{"ids": ids[start:end]})
+		if err != nil {
+			return nil, err
+		}
+		res, err := r.client.Mget(strings.NewReader(string(body)), r.client.Mget.WithContext(ctx), r.client.Mget.WithIndex(r.indexName))
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Docs []struct {
+				ID     string          `json:"_id"`
+				Found  bool            `json:"found"`
+				Source user.User       `json:"_source"`
+				Error  json.RawMessage `json:"error"`
+			} `json:"docs"`
+		}
+		decodeErr := json.NewDecoder(res.Body).Decode(&result)
+		res.Body.Close()
+		if res.IsError() || decodeErr != nil {
+			return nil, fmt.Errorf("failed to load recipient batch")
+		}
+		if len(result.Docs) != end-start {
+			return nil, fmt.Errorf("incomplete recipient batch")
+		}
+		for i, doc := range result.Docs {
+			if doc.ID != ids[start+i] || len(doc.Error) > 0 {
+				return nil, fmt.Errorf("recipient lookup failed")
+			}
+			if doc.Found {
+				if doc.Source.UserID != doc.ID {
+					return nil, fmt.Errorf("recipient identity mismatch")
+				}
+				u := doc.Source
+				users[u.UserID] = &u
+			}
+		}
+	}
+	return users, nil
+}
 
 // UserRepository implements the user domain repository interface
 type UserRepository struct {
