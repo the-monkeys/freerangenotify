@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -117,9 +118,6 @@ func (h *PaymentHandler) pendingCheckoutAllocation(sub *license.Subscription, me
 	if planID == "" {
 		planID = metaString(sub.Metadata, "pending_checkout_tier", "")
 	}
-	if planID == "" && sub.Plan != "" && !billing.IsFreeTierPlan(sub.Plan) {
-		planID = sub.Plan
-	}
 	if planID == "" {
 		return paidCreditAllocation{}, false
 	}
@@ -194,6 +192,79 @@ func clearPendingCheckoutMetadata(meta map[string]interface{}) {
 	delete(meta, "pending_checkout_provider")
 }
 
+func checkoutOrders(meta map[string]interface{}) map[string]interface{} {
+	orders, _ := meta["checkout_orders"].(map[string]interface{})
+	if orders == nil {
+		orders = make(map[string]interface{})
+	}
+	return orders
+}
+
+func archiveCheckout(sub *license.Subscription, orderID, paymentID string) {
+	orders := checkoutOrders(sub.Metadata)
+	snapshot := make(map[string]interface{})
+	if stored, ok := orders[orderID].(map[string]interface{}); ok {
+		for key, value := range stored {
+			snapshot[key] = value
+		}
+	}
+	if metaString(sub.Metadata, "pending_checkout_order_id", "") == orderID {
+		for key, value := range sub.Metadata {
+			if strings.HasPrefix(key, "pending_checkout_") {
+				snapshot[key] = value
+			}
+		}
+	}
+	if paymentID != "" {
+		snapshot["paid_payment_id"] = paymentID
+	}
+	orders[orderID] = snapshot
+	sub.Metadata["checkout_orders"] = orders
+}
+
+// Lookup is by the gateway order, so a second checkout cannot change the price
+// or credits promised by an earlier checkout which completes later.
+func storedCheckout(sub *license.Subscription, orderID string) (*license.Subscription, bool) {
+	if orderID == "" || sub == nil {
+		return nil, false
+	}
+	if metaString(sub.Metadata, "pending_checkout_order_id", "") == orderID {
+		return sub, true
+	}
+	snapshot, ok := checkoutOrders(sub.Metadata)[orderID].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	copySub := *sub
+	copySub.Metadata = make(map[string]interface{}, len(sub.Metadata)+len(snapshot))
+	for key, value := range sub.Metadata {
+		copySub.Metadata[key] = value
+	}
+	clearPendingCheckoutMetadata(copySub.Metadata)
+	for key, value := range snapshot {
+		copySub.Metadata[key] = value
+	}
+	return &copySub, true
+}
+
+func checkoutAlreadyPaid(sub *license.Subscription, orderID, paymentID string) bool {
+	if metaString(sub.Metadata, "last_order_id", "") == orderID && metaString(sub.Metadata, "last_payment_id", "") == paymentID {
+		return true
+	}
+	snapshot, _ := checkoutOrders(sub.Metadata)[orderID].(map[string]interface{})
+	return metaString(snapshot, "paid_payment_id", "") == paymentID && paymentID != ""
+}
+
+func (h *PaymentHandler) paymentSuccess(c *fiber.Ctx, sub *license.Subscription) error {
+	return c.JSON(fiber.Map{
+		"success": true, "message": "payment verified, subscription activated", "plan": sub.Plan,
+		"status": string(sub.Status), "billing_model": billing.BillingModelCredits,
+		"message_limit": currentMessageLimit(sub, h.rateCard), "credits_total": sub.CreditsTotal,
+		"credits_remaining": sub.CreditsRemaining, "credits_expire_at": sub.CreditsExpireAt,
+		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339), "current_period_end": sub.CurrentPeriodEnd.Format(time.RFC3339),
+	})
+}
+
 func metaInt64(meta map[string]interface{}, key string, defaultVal int64) int64 {
 	if meta == nil {
 		return defaultVal
@@ -256,16 +327,8 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 		})
 	}
 
-	// Prevent double payment for already-paid plans while still allowing the
-	// active Free credit subscription from the backfill to upgrade via checkout.
+	// Paid customers can recharge the same wallet without replacing its balance.
 	now := time.Now().UTC()
-	existingSub, _ := h.subRepo.GetActiveSubscription(c.Context(), userID, "", now)
-	if isPaidActiveSubscription(existingSub, now) {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error":              "active subscription already exists",
-			"current_period_end": existingSub.CurrentPeriodEnd.Format(time.RFC3339),
-		})
-	}
 
 	// Create payment order
 	checkout, err := h.paymentProvider.CreateOrder(c.Context(), userID, plan.ID, plan.AmountPaisa)
@@ -334,6 +397,7 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	sub.Metadata["pending_checkout_rate_card_version"] = h.rateCardVersion()
 	sub.Metadata["pending_checkout_created_at"] = now.Format(time.RFC3339)
 	sub.Metadata["pending_checkout_provider"] = "gateway"
+	archiveCheckout(sub, checkout.OrderID, "")
 
 	if sub.CreatedAt.IsZero() {
 		if err := h.subRepo.Create(c.Context(), sub); err != nil {
@@ -347,7 +411,15 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 			})
 		}
 	} else {
-		if err := h.subRepo.Update(c.Context(), sub); err != nil {
+		var saveErr error
+		if saver, ok := h.subRepo.(interface {
+			UpdateCheckout(context.Context, *license.Subscription) error
+		}); ok {
+			saveErr = saver.UpdateCheckout(c.Context(), sub)
+		} else {
+			saveErr = h.subRepo.Update(c.Context(), sub)
+		}
+		if err := saveErr; err != nil {
 			h.logger.Error("failed to persist pending checkout metadata",
 				zap.String("user_id", userID),
 				zap.String("order_id", checkout.OrderID),
@@ -434,24 +506,38 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		})
 	}
 
-	expectedOrderID := metaString(sub.Metadata, "pending_checkout_order_id", "")
-	if expectedOrderID != "" && expectedOrderID != req.OrderID {
+	if checkoutAlreadyPaid(sub, req.OrderID, req.PaymentID) {
+		return h.paymentSuccess(c, sub)
+	}
+	checkoutSub, matched := storedCheckout(sub, req.OrderID)
+	if !matched {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": "payment order does not match the pending checkout",
 		})
 	}
 
-	allocation, ok := h.pendingCheckoutAllocation(sub, "razorpay")
+	allocation, ok := h.pendingCheckoutAllocation(checkoutSub, "razorpay")
 	if !ok {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": "pending checkout tier is missing; create a new checkout session and try again",
 		})
 	}
 	allocation.Metadata["last_payment_id"] = req.PaymentID
+	if verifier, ok := h.paymentProvider.(interface {
+		VerifyCapturedPayment(context.Context, billing.PaymentVerification, int64, string) error
+	}); ok {
+		if err := verifier.VerifyCapturedPayment(c.Context(), req, metaInt64(allocation.Metadata, "last_paid_amount_paisa", 0), metaString(allocation.Metadata, "last_paid_currency", "")); err != nil {
+			h.logger.Warn("payment capture could not be confirmed", zap.String("order_id", req.OrderID), zap.Error(err))
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "payment capture could not be confirmed; retry verification"})
+		}
+	}
 	allocation.Metadata["last_order_id"] = req.OrderID
 	allocation.Metadata["last_payment_at"] = now.Format(time.RFC3339)
 	applyPaidCreditAllocation(sub, allocation)
-	clearPendingCheckoutMetadata(sub.Metadata)
+	archiveCheckout(sub, req.OrderID, req.PaymentID)
+	if metaString(sub.Metadata, "pending_checkout_order_id", "") == req.OrderID {
+		clearPendingCheckoutMetadata(sub.Metadata)
+	}
 
 	if err := persistCreditAllocation(c.Context(), h.subRepo, sub); err != nil {
 		h.logger.Error("failed to activate subscription after payment",
@@ -469,19 +555,7 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 		zap.String("order_id", req.OrderID),
 	)
 
-	return c.JSON(fiber.Map{
-		"success":              true,
-		"message":              "payment verified, subscription activated",
-		"plan":                 sub.Plan,
-		"status":               string(sub.Status),
-		"billing_model":        billing.BillingModelCredits,
-		"message_limit":        currentMessageLimit(sub, h.rateCard),
-		"credits_total":        sub.CreditsTotal,
-		"credits_remaining":    sub.CreditsRemaining,
-		"credits_expire_at":    sub.CreditsExpireAt,
-		"current_period_start": sub.CurrentPeriodStart.Format(time.RFC3339),
-		"current_period_end":   sub.CurrentPeriodEnd.Format(time.RFC3339),
-	})
+	return h.paymentSuccess(c, sub)
 }
 
 // HandleWebhook handles POST /v1/billing/webhook
@@ -545,27 +619,15 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 					Metadata:           make(map[string]interface{}),
 				}
 			}
-			if metaString(sub.Metadata, "last_payment_id", "") == event.PaymentID {
+			if checkoutAlreadyPaid(sub, event.OrderID, event.PaymentID) {
 				break
 			}
-
-			allocation, ok := h.pendingCheckoutAllocation(sub, "razorpay_webhook")
-			if !ok && event.Tier != "" {
-				if plan, planOK := h.resolveCheckoutPlan(event.Tier); planOK {
-					allocation = paidCreditAllocation{
-						PlanID:        plan.ID,
-						PlanName:      plan.Name,
-						Credits:       plan.CreditsIncluded,
-						ValidityDays:  plan.ValidityDays,
-						RenewalMethod: "razorpay_webhook",
-						Metadata: map[string]interface{}{
-							"last_paid_amount_paisa": plan.AmountPaisa,
-							"last_paid_currency":     plan.Currency,
-						},
-					}
-					ok = true
-				}
+			checkoutSub, matched := storedCheckout(sub, event.OrderID)
+			if !matched {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "payment order does not match a stored checkout"})
 			}
+
+			allocation, ok := h.pendingCheckoutAllocation(checkoutSub, "razorpay_webhook")
 			if !ok {
 				h.logger.Warn("webhook: no checkout snapshot found",
 					zap.String("tenant_id", event.TenantID),
@@ -574,11 +636,17 @@ func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 				return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "checkout allocation unavailable; retry captured payment"})
 			}
 			allocation.Metadata["webhook_payment_id"] = event.PaymentID
+			if event.CaptureVerified && (event.AmountPaisa != metaInt64(allocation.Metadata, "last_paid_amount_paisa", 0) || event.Currency != metaString(allocation.Metadata, "last_paid_currency", "")) {
+				return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": "captured amount or currency does not match checkout"})
+			}
 			allocation.Metadata["last_payment_id"] = event.PaymentID
 			allocation.Metadata["last_order_id"] = event.OrderID
 			allocation.Metadata["last_payment_at"] = now.Format(time.RFC3339)
 			applyPaidCreditAllocation(sub, allocation)
-			clearPendingCheckoutMetadata(sub.Metadata)
+			archiveCheckout(sub, event.OrderID, event.PaymentID)
+			if metaString(sub.Metadata, "pending_checkout_order_id", "") == event.OrderID {
+				clearPendingCheckoutMetadata(sub.Metadata)
+			}
 
 			var updateErr error
 			if sub.CreatedAt.IsZero() {

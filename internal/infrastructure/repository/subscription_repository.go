@@ -81,6 +81,41 @@ func (r *SubscriptionRepository) UpdateCreditAllocation(ctx context.Context, sub
 	return r.updateSubscription(ctx, sub, true)
 }
 
+// Checkout saves only checkout metadata. Concurrent sends must never have their
+// counters overwritten by the wallet snapshot used to prepare an order.
+func (r *SubscriptionRepository) UpdateCheckout(ctx context.Context, sub *license.Subscription) error {
+	if sub == nil || sub.Metadata == nil {
+		return fmt.Errorf("missing checkout subscription")
+	}
+	orderID, _ := sub.Metadata["pending_checkout_order_id"].(string)
+	if orderID == "" {
+		return fmt.Errorf("missing checkout order")
+	}
+	return r.ScriptUpdate(ctx, sub.ID, map[string]interface{}{"script": map[string]interface{}{
+		"lang": "painless", "source": subscriptionCheckoutScript,
+		"params": map[string]interface{}{"metadata": sub.Metadata, "updated_at": time.Now().UTC().Format(time.RFC3339Nano)},
+	}})
+}
+
+const subscriptionCheckoutScript = `
+if (ctx._source.metadata == null) { ctx._source.metadata = [:]; }
+def m = ctx._source.metadata;
+if (m.checkout_orders == null) { m.checkout_orders = [:]; }
+// Preserve the pre-archive pending snapshot when an older client created it.
+if (m.pending_checkout_order_id != null && !m.checkout_orders.containsKey(m.pending_checkout_order_id)) {
+ def snapshot = [:];
+ for (def e : m.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { snapshot[e.getKey()] = e.getValue(); } }
+ m.checkout_orders[m.pending_checkout_order_id] = snapshot;
+}
+if (params.metadata.checkout_orders != null) {
+ for (def e : params.metadata.checkout_orders.entrySet()) {
+  if (!m.checkout_orders.containsKey(e.getKey())) { m.checkout_orders[e.getKey()] = e.getValue(); }
+ }
+}
+for (def e : params.metadata.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { m[e.getKey()] = e.getValue(); } }
+ctx._source.updated_at = params.updated_at;
+`
+
 func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *license.Subscription, allocate bool) error {
 	if sub == nil {
 		return fmt.Errorf("nil subscription")
@@ -117,8 +152,24 @@ func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *li
 		}
 	}
 	if allocate {
+		var delta int64
+		if sub.Metadata != nil {
+			switch value := sub.Metadata["credit_allocation_delta"].(type) {
+			case int64:
+				delta = value
+			case float64:
+				delta = int64(value)
+			}
+		}
+		if delta < 0 {
+			return fmt.Errorf("negative credit allocation")
+		}
+		paymentOrderID := ""
+		if strings.HasPrefix(allocationID, "payment:") {
+			paymentOrderID, _ = sub.Metadata["last_order_id"].(string)
+		}
 		source, _, err := r.ScriptUpdateWithSource(ctx, sub.ID, map[string]interface{}{"script": map[string]interface{}{
-			"lang": "painless", "source": subscriptionProtectedUpdateScript, "params": map[string]interface{}{"doc": doc, "allocate": true, "allocation_id": allocationID},
+			"lang": "painless", "source": subscriptionProtectedUpdateScript, "params": map[string]interface{}{"doc": doc, "allocate": true, "allocation_id": allocationID, "grant_delta": delta, "allocation_at": sub.UpdatedAt.UTC().Format(time.RFC3339Nano), "payment_order_id": paymentOrderID},
 		}})
 		if err == nil {
 			*sub = *source
@@ -137,11 +188,67 @@ boolean allocation = params.allocate;
 if (allocation && ctx._source.credit_allocation_journal != null && ctx._source.credit_allocation_journal[params.allocation_id] == true) {
  ctx.op = 'noop'; return;
 }
+// Recharge adds to the current source, never a caller's stale snapshot. Holds
+// and their delivery receipts remain valid across recharge and renewal.
+if (allocation && params.grant_delta > 0) {
+ def orderID = params.payment_order_id;
+ def m = ctx._source.metadata != null ? ctx._source.metadata : [:];
+ def orders = m.checkout_orders != null ? m.checkout_orders : [:];
+ if (orderID != '') {
+  if (ctx._source.credit_allocation_journal != null && ctx._source.credit_allocation_journal['order:' + orderID] == true) { throw new IllegalArgumentException('checkout order already allocated'); }
+  def snapshot = orders[orderID];
+  if (snapshot == null && m.pending_checkout_order_id == orderID) {
+   snapshot = [:];
+   for (def e : m.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { snapshot[e.getKey()] = e.getValue(); } }
+   orders[orderID] = snapshot;
+  }
+  if (snapshot == null) { throw new IllegalArgumentException('payment order has no checkout snapshot'); }
+  if (snapshot.pending_checkout_credits != null && (long)snapshot.pending_checkout_credits != (long)params.grant_delta) { throw new IllegalArgumentException('credit allocation differs from checkout'); }
+ }
+ def oldExpiry = ctx._source.credits_expire_at != null ? ctx._source.credits_expire_at : ctx._source.current_period_end;
+ boolean expired = oldExpiry != null && ZonedDateTime.parse(oldExpiry).isBefore(ZonedDateTime.parse(params.allocation_at));
+ long held = ctx._source.credits_reserved != null ? ctx._source.credits_reserved : 0;
+ long remaining = ctx._source.credits_remaining != null ? ctx._source.credits_remaining : 0;
+ long total = ctx._source.credits_total != null ? ctx._source.credits_total : 0;
+ if (expired) { remaining = held; total = held; }
+ if (remaining < held || total < 0 || held < 0) { throw new IllegalArgumentException('invalid wallet counters'); }
+ long newRemaining = remaining + (long)params.grant_delta;
+ long newTotal = total + (long)params.grant_delta;
+ if (newRemaining < remaining || newTotal < total) { throw new IllegalArgumentException('credit allocation overflow'); }
+ ctx._source.credits_remaining = newRemaining;
+ ctx._source.credits_total = newTotal;
+ ctx._source.credits_reserved = held;
+ def expiry = d.credits_expire_at;
+ if (oldExpiry != null && (expiry == null || ZonedDateTime.parse(oldExpiry).isAfter(ZonedDateTime.parse(expiry)))) { expiry = oldExpiry; }
+ for (def e : d.entrySet()) {
+  if (e.getKey() != 'metadata' && !e.getKey().startsWith('credits_') && !e.getKey().startsWith('credit_')) { ctx._source[e.getKey()] = e.getValue(); }
+ }
+ if (d.metadata != null) {
+  for (def e : d.metadata.entrySet()) {
+   if (e.getKey() != 'checkout_orders' && (orderID == '' || !e.getKey().startsWith('pending_checkout_'))) { m[e.getKey()] = e.getValue(); }
+  }
+ }
+ if (orderID != '') {
+  orders[orderID].paid_payment_id = d.metadata.last_payment_id;
+  if (m.pending_checkout_order_id == orderID) {
+   def keys = [];
+   for (def key : m.keySet()) { if (key.startsWith('pending_checkout_')) { keys.add(key); } }
+   for (def key : keys) { m.remove(key); }
+  }
+ }
+ m.checkout_orders = orders;
+ ctx._source.metadata = m;
+ if (expiry != null) { ctx._source.credits_expire_at = expiry; ctx._source.current_period_end = expiry; }
+ if (ctx._source.credit_allocation_journal == null) { ctx._source.credit_allocation_journal = [:]; }
+ ctx._source.credit_allocation_journal[params.allocation_id] = true;
+ if (orderID != '') { ctx._source.credit_allocation_journal['order:' + orderID] = true; }
+ return;
+}
 // Preserve pre-cutover full Update only for unmarked subscriptions. The durable
 // marker protects counters even before the first receipt and during rollback.
 if (ctx._source.credit_reservation_mode != 'journal' && (ctx._source.credit_reservation_journal == null || ctx._source.credit_reservation_journal.isEmpty())) {
  for (def e : d.entrySet()) { if (!e.getKey().startsWith('credit_reservation_') && e.getKey() != 'credit_allocation_journal') { ctx._source[e.getKey()] = e.getValue(); } }
- if (allocation && params.allocation_id.startsWith('intent:admin:')) {
+ if (allocation) {
   if (ctx._source.credit_allocation_journal == null) { ctx._source.credit_allocation_journal = [:]; }
   ctx._source.credit_allocation_journal[params.allocation_id] = true;
  }
