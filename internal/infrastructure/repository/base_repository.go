@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -371,45 +372,24 @@ func (r *BaseRepository) BulkUpdate(ctx context.Context, documents map[string]in
 
 // BulkCreate creates multiple documents in a single request
 func (r *BaseRepository) BulkCreate(ctx context.Context, documents map[string]interface{}) error {
-	var body strings.Builder
-
-	for id, document := range documents {
-		// Add index action
-		action := map[string]interface{}{
-			"index": map[string]interface{}{
-				"_index": r.indexName,
-				"_id":    id,
-			},
-		}
-		actionData, _ := json.Marshal(action)
-		body.Write(actionData)
-		body.WriteString("\n")
-
-		// Add document
-		docData, _ := json.Marshal(document)
-		body.Write(docData)
-		body.WriteString("\n")
+	ordered := make([]BulkDocument, 0, len(documents))
+	ids := make([]string, 0, len(documents))
+	for id := range documents {
+		ids = append(ids, id)
 	}
-
-	req := esapi.BulkRequest{
-		Body:    strings.NewReader(body.String()),
-		Refresh: string(r.defaultRefresh),
+	sort.Strings(ids)
+	for _, id := range ids {
+		ordered = append(ordered, BulkDocument{ID: id, Document: documents[id]})
 	}
-
-	res, err := req.Do(ctx, r.client)
+	outcomes, err := r.BulkCreateResults(ctx, ordered)
 	if err != nil {
-		return fmt.Errorf("failed to execute bulk request: %w", err)
+		return err
 	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("elasticsearch error: %s", res.String())
+	for _, itemErr := range outcomes {
+		if itemErr != nil {
+			return itemErr
+		}
 	}
-
-	r.logger.Debug("Bulk create completed",
-		zap.String("index", r.indexName),
-		zap.Int("count", len(documents)))
-
 	return nil
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
+	apperrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -72,7 +73,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, appID, email string) (*
 	}
 
 	if result.Total == 0 {
-		return nil, fmt.Errorf("user not found")
+		return nil, apperrors.NotFound("User", "lookup")
 	}
 
 	var u user.User
@@ -110,7 +111,7 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, appID, externalID 
 	}
 
 	if result.Total == 0 {
-		return nil, fmt.Errorf("user not found")
+		return nil, apperrors.NotFound("User", "lookup")
 	}
 
 	var u user.User
@@ -166,11 +167,57 @@ func (r *UserRepository) Count(ctx context.Context, filter user.UserFilter) (int
 
 // BulkCreate creates multiple users at once
 func (r *UserRepository) BulkCreate(ctx context.Context, users []*user.User) error {
-	docs := make(map[string]interface{})
-	for _, u := range users {
-		docs[u.UserID] = u
+	outcomes, err := r.BulkCreateResults(ctx, users)
+	if err != nil {
+		return err
 	}
-	return r.BaseRepository.BulkCreate(ctx, docs)
+	for _, itemErr := range outcomes {
+		if itemErr != nil {
+			return itemErr
+		}
+	}
+	return nil
+}
+func (r *UserRepository) BulkCreateResults(ctx context.Context, users []*user.User) ([]error, error) {
+	docs := make([]BulkDocument, len(users))
+	for i, u := range users {
+		docs[i] = BulkDocument{ID: u.UserID, Document: u}
+	}
+	return r.BaseRepository.BulkCreateResults(ctx, docs)
+}
+
+// LookupEmails batches exact, app-scoped identities without changing email case policy.
+func (r *UserRepository) LookupEmails(ctx context.Context, appID, environmentID string, emails []string) (map[string]*user.User, error) {
+	found := make(map[string]*user.User)
+	if len(emails) == 0 {
+		return found, nil
+	}
+	filters := []map[string]any{{"term": map[string]any{"app_id": appID}}, {"terms": map[string]any{"email": emails}}}
+	if environmentID != "" && environmentID != "default" {
+		filters = append(filters, map[string]any{"term": map[string]any{"environment_id": environmentID}})
+	}
+	for offset := 0; ; {
+		result, err := r.Search(ctx, map[string]any{"query": map[string]any{"bool": map[string]any{"filter": filters}}, "size": 1000, "from": offset, "sort": []any{map[string]any{"user_id": "asc"}}})
+		if err != nil {
+			return nil, err
+		}
+		for _, hit := range result.Hits {
+			var u user.User
+			if err := mapToStruct(hit, &u); err != nil {
+				return nil, err
+			}
+			if found[u.Email] == nil {
+				found[u.Email] = &u
+			}
+		}
+		offset += len(result.Hits)
+		if int64(offset) >= result.Total {
+			return found, nil
+		}
+		if len(result.Hits) == 0 || offset >= 10000 {
+			return nil, fmt.Errorf("email lookup incomplete; no users written")
+		}
+	}
 }
 
 // GetUsersByApp retrieves all users for a specific application
