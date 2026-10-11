@@ -1,13 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function importPage(page: Page, submit: (body: {users: Record<string,string>[]}) => unknown) {
+async function importPage(page: Page, submit: (body: {users: Record<string,string>[]}) => unknown, enforced=false) {
  page.on('pageerror',error=>console.error(error.message));
  await page.addInitScript(() => localStorage.setItem('access_token', 'ui-fixture'));
  await page.route('**/v1/**', async route => {
   const path = new URL(route.request().url()).pathname.replace(/^\/v1/, '').replace(/\/$/, '');
   let data: unknown = {data: [],success: true};
   if (path === '/admin/me') data = {user_id:'admin',full_name:'Import test',email:'ui@example.test',phone_verified:true};
-  else if (path === '/apps/import') data = {data:{app_id:'import',app_name:'Import test',api_key:'fixture-key',settings:{}}};
+  else if (path === '/apps/import') data = {data:{app_id:'import',app_name:'Import test',api_key:'fixture-key',rate_limit_enforced:enforced,settings:{rate_limit:1000}}};
   else if (path === '/users') data = {data:{users:[],total_count:0,page:1,page_size:20}};
   else if (path === '/billing/usage') data = {plan:'pro',status:'active',billing_model:'credits',credits_total:1500,credits_remaining:1500,credits_available:1500,credits_reserved:0,usage_percent:0,messages_sent:0,days_remaining:20,current_period_start:'2026-10-01T00:00:00Z',current_period_end:'2026-11-01T00:00:00Z'};
   else if (path === '/billing/rates') data = {currency:'INR',active_version:'fixture',channel_credit_cost:{email:5},free_tier_daily_caps:{},overage_per_message:{}};
@@ -19,6 +19,12 @@ async function importPage(page: Page, submit: (body: {users: Record<string,strin
 }
 
 test.describe('Delivery reliability UI subscriber imports',()=>{
+ for (const enforced of [false,true]) test(`settings show quota rollout ${enforced}`,async({page})=>{
+  await importPage(page,()=>({}),enforced);
+  await page.goto('/apps/import?tab=settings');
+  await page.getByRole('button',{name:'Core Settings',exact:true}).click();
+  await expect(page.getByText(enforced?'Application quota enforcement is enabled.':'Application quota enforcement is disabled on this deployment.',{exact:false})).toBeVisible();
+ });
  test('a transport failure stops subsequent chunks without retrying unknown writes',async({page})=>{
   let calls=0;
   await importPage(page,body=>({created:body.users.length,updated:0,skipped:0,total:body.users.length}));

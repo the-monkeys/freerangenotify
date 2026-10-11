@@ -16,3 +16,16 @@ type Limiter interface {
 	// ResetDailyLimit manually resets the daily counter for a key
 	ResetDailyLimit(ctx context.Context, key string) error
 }
+
+// Admission describes this request's atomic quota decision.
+type Admission struct {
+	Allowed    bool
+	Limit      int
+	Remaining  int
+	ResetAt    time.Time
+	RetryAfter time.Duration
+}
+
+type AdmissionLimiter interface {
+	Admit(context.Context, string, int, time.Duration) (Admission, error)
+}

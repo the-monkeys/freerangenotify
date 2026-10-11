@@ -59,7 +59,7 @@ func (s *ApplicationServiceImpl) Create(ctx context.Context, app *application.Ap
 
 	// Set default settings if not provided
 	if app.Settings.RateLimit == 0 {
-		app.Settings.RateLimit = 1000 // Default: 1000 requests per minute
+		app.Settings.RateLimit = 1000 // Default: 1000 requests per hour
 	}
 	if app.Settings.RetryAttempts == 0 {
 		app.Settings.RetryAttempts = 3 // Default: 3 retry attempts

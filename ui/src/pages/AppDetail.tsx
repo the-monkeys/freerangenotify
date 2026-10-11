@@ -404,6 +404,13 @@ const AppDetail: React.FC = () => {
                                                         onChange={(e) => setSettings({ ...settings, rate_limit: parseInt(e.target.value) || 0 })}
                                                         placeholder="e.g. 1000"
                                                     />
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {app.rate_limit_enforced === true
+                                                            ? 'Application quota enforcement is enabled. All API keys and environments share this hourly limit. A broadcast counts as one request.'
+                                                            : app.rate_limit_enforced === false
+                                                                ? 'Application quota enforcement is disabled on this deployment. This value is saved but does not restrict requests yet.'
+                                                                : 'Application quota enforcement status is unavailable. Reload after the server is updated.'}
+                                                    </p>
                                                 </div>
 
                                                 <div className="space-y-2">

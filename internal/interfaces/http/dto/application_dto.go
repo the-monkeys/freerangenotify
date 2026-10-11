@@ -50,6 +50,7 @@ type DefaultPreferencesDTO struct {
 // ApplicationResponse represents an application response
 type ApplicationResponse struct {
 	AppID             string               `json:"app_id"`
+	RateLimitEnforced *bool                `json:"rate_limit_enforced,omitempty"`
 	AppName           string               `json:"app_name"`
 	Description       string               `json:"description"`
 	APIKey            string               `json:"api_key"`

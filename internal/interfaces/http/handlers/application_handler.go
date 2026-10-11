@@ -19,12 +19,13 @@ import (
 
 // ApplicationHandler handles application-related HTTP requests
 type ApplicationHandler struct {
-	service        usecases.ApplicationService
-	membershipRepo auth.MembershipRepository
-	tenantService  tenant.Service
-	appRepo        application.Repository
-	validator      *validator.Validator
-	logger         *zap.Logger
+	service          usecases.ApplicationService
+	membershipRepo   auth.MembershipRepository
+	tenantService    tenant.Service
+	appRepo          application.Repository
+	validator        *validator.Validator
+	logger           *zap.Logger
+	rateLimitEnabled bool
 }
 
 // NewApplicationHandler creates a new ApplicationHandler
@@ -37,6 +38,30 @@ func NewApplicationHandler(service usecases.ApplicationService, membershipRepo a
 		validator:      v,
 		logger:         logger,
 	}
+}
+
+// SetRateLimitEnabled records the deployment's rollout state for quota middleware and UI.
+func (h *ApplicationHandler) SetRateLimitEnabled(enabled bool) { h.rateLimitEnabled = enabled }
+
+// AuthorizeQuotaRequest runs before the JWT app quota so outsiders cannot consume it.
+func (h *ApplicationHandler) AuthorizeQuotaRequest(c *fiber.Ctx) error {
+	if !h.rateLimitEnabled {
+		return c.Next()
+	}
+	userID, _ := c.Locals("user_id").(string)
+	if userID == "" {
+		return errors.Unauthorized("User not authenticated")
+	}
+	app, role, err := h.authorizeAppAccess(c, c.Params("id"), userID)
+	if err != nil {
+		return err
+	}
+	if role == auth.RoleViewer && c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead && c.Method() != fiber.MethodOptions {
+		return errors.Forbidden("Viewer access is read-only")
+	}
+	c.Locals("app", app)
+	c.Locals("app_id", app.AppID)
+	return c.Next()
 }
 
 // authorizeAppAccess checks whether the authenticated user has access to the
@@ -173,6 +198,7 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	}
 
 	response := dto.ToApplicationResponse(app)
+	response.RateLimitEnforced = &h.rateLimitEnabled
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -865,8 +891,8 @@ import java.net.http.HttpResponse;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        String apiKey = "` + apiKey + `";
-        String url = "` + baseURL + `/notifications";
+        String apiKey = "`+apiKey+`";
+        String url = "`+baseURL+`/notifications";
 
         String jsonPayload = "{"
             + "\"user_id\": \"USER_ID_HERE\","
@@ -894,8 +920,8 @@ public class Main {
 int main() {
     CURL* curl = curl_easy_init();
     if(curl) {
-        std::string url = "` + baseURL + `/notifications";
-        std::string apiKey = "` + apiKey + `";
+        std::string url = "`+baseURL+`/notifications";
+        std::string apiKey = "`+apiKey+`";
         std::string jsonPayload = "{"
             "\"user_id\": \"USER_ID_HERE\","
             "\"template_id\": \"YOUR_TEMPLATE_ID\","
@@ -927,8 +953,8 @@ use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let api_key = "` + apiKey + `";
-    let url = "` + baseURL + `/notifications";
+    let api_key = "`+apiKey+`";
+    let url = "`+baseURL+`/notifications";
 
     let mut headers = HeaderMap::new();
     headers.insert("X-API-Key", HeaderValue::from_str(api_key)?);
@@ -957,8 +983,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 require 'uri'
 require 'json'
 
-api_key = "` + apiKey + `"
-uri = URI.parse("` + baseURL + `/notifications")
+api_key = "`+apiKey+`"
+uri = URI.parse("`+baseURL+`/notifications")
 
 header = {
   'X-API-Key' => api_key,
