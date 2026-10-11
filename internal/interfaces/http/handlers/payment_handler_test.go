@@ -17,6 +17,24 @@ import (
 
 type paymentTestProvider struct{ event billing.WebhookEvent }
 
+type disabledCheckoutCard struct{ billing.RateCardManager }
+
+func (*disabledCheckoutCard) GetCheckoutPlan(string) (billing.PlanBundle, bool) {
+	return billing.PlanBundle{}, false
+}
+func (*disabledCheckoutCard) GetRateCardVersion() string { return "disabled-plan-version" }
+
+func TestCreateOrderRespectsDisabledRuntimePlan(t *testing.T) {
+	repo := &paymentTestSubRepo{}
+	h := NewPaymentHandler(&paymentTestProvider{}, repo, nil, billing.DefaultRates(), true, zap.NewNop())
+	h.SetRateCardManager(&disabledCheckoutCard{})
+	resp := postCheckout(t, newPaymentTestApp(h), "starter")
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusBadRequest || repo.createCalls != 0 {
+		t.Fatalf("disabled plan resurrected by fallback: status=%d writes=%d", resp.StatusCode, repo.createCalls)
+	}
+}
+
 func (p *paymentTestProvider) CreateOrder(ctx context.Context, tenantID, tier string, amountPaisa int64) (billing.CheckoutResponse, error) {
 	return billing.CheckoutResponse{
 		OrderID:   "order_test",

@@ -448,6 +448,22 @@ func (s *CreditService) ReapExpiredReservations(ctx context.Context) (int, error
 		if _, durable := billing.JournalSubscriptionID(res.ID); durable {
 			continue
 		}
+		if res.DeliveryOutcome != "failed" && s.reservationNotificationRepo != nil {
+			notif, lookupErr := s.reservationNotificationRepo.GetByID(ctx, res.NotificationID)
+			if lookupErr != nil || notif == nil {
+				failures = append(failures, fmt.Errorf("%w: legacy reservation %s has no delivery evidence", billing.ErrCreditReservationOutcomeUnknown, res.ID))
+				continue
+			}
+			binding, _ := notif.Metadata[billing.CreditDeliveryReservationMetadataKey].(string)
+			if notif.AppID != res.AppID || binding != res.ID || (notif.SentAt == nil && notif.Status != notification.StatusSent && notif.Status != notification.StatusDelivered && notif.Status != notification.StatusRead) {
+				failures = append(failures, fmt.Errorf("%w: legacy reservation %s", billing.ErrCreditReservationOutcomeUnknown, res.ID))
+				continue
+			}
+			if _, err := s.CommitOnSuccess(ctx, res.ID); err != nil {
+				failures = append(failures, fmt.Errorf("reconcile delivered legacy reservation %s: %w", res.ID, err))
+			}
+			continue
+		}
 		if err := s.ReleaseOnFailure(ctx, res.ID, "reservation_expired"); err != nil {
 			failures = append(failures, err)
 			if s.logger != nil {

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,9 +10,48 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"go.uber.org/zap"
 )
+
+type breakdownAppFixture struct{ application.Repository }
+
+func (*breakdownAppFixture) List(context.Context, application.ApplicationFilter) ([]*application.Application, error) {
+	return []*application.Application{{AppID: "app-1", AdminUserID: "user-1"}}, nil
+}
+
+type breakdownUsageFixture struct{ billing.UsageRepository }
+
+func (*breakdownUsageFixture) GetSummary(context.Context, []string, time.Time, time.Time) ([]billing.UsageSummary, error) {
+	return []billing.UsageSummary{{Channel: "email", MessageCount: 20, CreditsConsumed: 100}}, nil
+}
+
+func TestUsageBreakdownCannotInventAnExhaustedWallet(t *testing.T) {
+	now := time.Now().UTC()
+	h := NewBillingHandler(&paymentTestSubRepo{sub: &license.Subscription{ID: "sub-1", TenantID: "user-1", Plan: "free",
+		Status: license.SubscriptionStatusActive, CurrentPeriodStart: now.Add(-time.Hour), CurrentPeriodEnd: now.Add(time.Hour),
+		CreditsTotal: 1500, CreditsRemaining: 0, Metadata: map[string]interface{}{"billing_model": "credits"}}}, &breakdownAppFixture{}, billing.DefaultRates(), zap.NewNop())
+	h.SetUsageRepo(&breakdownUsageFixture{}, true)
+	app := fiber.New()
+	app.Get("/breakdown", func(c *fiber.Ctx) error { c.Locals("user_id", "user-1"); return h.GetUsageBreakdown(c) })
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/breakdown", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 || body["credits_remaining"] != float64(0) || body["credits_available"] != float64(0) || body["credits_consumed"] != float64(1500) {
+		t.Fatalf("incomplete metering invented wallet credits: %+v", body)
+	}
+	if body["metered_credits_consumed"] != float64(100) {
+		t.Fatalf("delivery breakdown lost its metered total: %+v", body)
+	}
+}
 
 func TestBillingHandler_GetUsage_exposes_available_and_reserved_credits(t *testing.T) {
 	now := time.Now().UTC()
@@ -20,7 +60,7 @@ func TestBillingHandler_GetUsage_exposes_available_and_reserved_credits(t *testi
 		TenantID:           "user-1",
 		Plan:               "free",
 		Status:             license.SubscriptionStatusActive,
-		CreditsTotal:      1500,
+		CreditsTotal:       1500,
 		CreditsRemaining:   445,
 		CreditsReserved:    445,
 		CurrentPeriodStart: now.AddDate(0, -1, 0),

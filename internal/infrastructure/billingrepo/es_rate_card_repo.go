@@ -50,6 +50,7 @@ func (r *ESRateCardRepo) CreateVersion(ctx context.Context, card *billing.RateCa
 		rateCardIndex,
 		strings.NewReader(string(body)),
 		r.es.Index.WithDocumentID(card.Version),
+		r.es.Index.WithOpType("create"),
 		r.es.Index.WithContext(ctx),
 		r.es.Index.WithRefresh("wait_for"),
 	)
@@ -98,7 +99,11 @@ func (r *ESRateCardRepo) GetActive(ctx context.Context) (*billing.RateCard, erro
 		return nil, err
 	}
 	if version != "" {
-		return r.GetByVersion(ctx, version)
+		card, err := r.GetByVersion(ctx, version)
+		if card != nil {
+			card.Active = true
+		} // runtime pointer is authoritative
+		return card, err
 	}
 
 	query := `{
@@ -181,6 +186,49 @@ func (r *ESRateCardRepo) SetActiveVersion(ctx context.Context, version string) e
 	}
 
 	r.logger.Info("Activated billing rate card version", zap.String("version", version))
+	return nil
+}
+
+// Edits use compare-and-set so two servers cannot silently discard each other's
+// changes. Explicit operator activation retains SetActiveVersion's interface.
+func (r *ESRateCardRepo) SetActiveVersionIfCurrent(ctx context.Context, expected, version string) error {
+	card, err := r.GetByVersion(ctx, version)
+	if err != nil {
+		return err
+	}
+	if expected == "" || card == nil {
+		return fmt.Errorf("billingrepo: invalid conditional activation")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	body, err := json.Marshal(map[string]interface{}{
+		"scripted_upsert": true,
+		"upsert":          map[string]interface{}{"id": activeRateCardDocID, "active_version": expected},
+		"script": map[string]interface{}{"lang": "painless", "source": `if (ctx._source.active_version != params.expected) { ctx.op = 'noop'; return; } ctx._source.active_version = params.version; ctx._source.updated_at = params.now;`,
+			"params": map[string]interface{}{"expected": expected, "version": version, "now": now}},
+	})
+	if err != nil {
+		return err
+	}
+	res, err := r.es.Update(billingRuntimeIndex, activeRateCardDocID, strings.NewReader(string(body)), r.es.Update.WithContext(ctx), r.es.Update.WithRetryOnConflict(5), r.es.Update.WithRefresh("wait_for"))
+	if err != nil {
+		return fmt.Errorf("billingrepo: conditional activation unavailable: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("billingrepo: conditional activation status %d", res.StatusCode)
+	}
+	var outcome struct {
+		Result string `json:"result"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&outcome); err != nil {
+		return err
+	}
+	if outcome.Result == "noop" {
+		return billing.ErrRateCardConflict
+	}
+	if outcome.Result != "updated" && outcome.Result != "created" {
+		return fmt.Errorf("billingrepo: invalid activation result")
+	}
 	return nil
 }
 

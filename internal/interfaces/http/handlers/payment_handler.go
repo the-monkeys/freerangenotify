@@ -78,9 +78,7 @@ func isPaidActiveSubscription(sub *license.Subscription, now time.Time) bool {
 
 func (h *PaymentHandler) resolveCheckoutPlan(planID string) (billing.PlanBundle, bool) {
 	if h.rateCardMgr != nil {
-		if plan, ok := h.rateCardMgr.GetCheckoutPlan(planID); ok {
-			return plan, true
-		}
+		return h.rateCardMgr.GetCheckoutPlan(planID)
 	}
 	id := planID
 	if id == "" {

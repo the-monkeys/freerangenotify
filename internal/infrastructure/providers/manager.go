@@ -533,9 +533,14 @@ func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Resul
 	if credSource == "" || billingChannel == "" {
 		return
 	}
+	tenantID, _ := notif.Metadata["tenant_id"].(string)
+	if tenantID == "" {
+		m.logger.Warn("billing: tenant identity missing from delivery snapshot", zap.String("app_id", notif.AppID), zap.String("notification_id", notif.NotificationID))
+		return
+	}
 
 	event := &billing.UsageEvent{
-		TenantID:         notif.AppID,
+		TenantID:         tenantID,
 		AppID:            notif.AppID,
 		NotificationID:   notif.NotificationID,
 		Channel:          billingChannel,

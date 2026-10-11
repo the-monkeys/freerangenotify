@@ -49,7 +49,7 @@ type creditFixtureTransport struct{ prefix string }
 func (s *creditFixtureTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	req := request.Clone(request.Context())
 	pieces := strings.Split(strings.TrimPrefix(req.URL.Path, "/"), "/")
-	indices := map[string]bool{"subscriptions": true, "credit_ledger": true, "notifications": true}
+	indices := map[string]bool{"subscriptions": true, "credit_ledger": true, "notifications": true, "billing_rate_cards": true, "billing_runtime": true}
 	if len(pieces) > 0 && indices[pieces[0]] {
 		pieces[0] = s.prefix + pieces[0]
 		req.URL.Path = "/" + strings.Join(pieces, "/")
@@ -126,7 +126,7 @@ func newCreditFixture(t *testing.T) *creditFixture {
 				}
 			}
 		}
-		for _, index := range []string{"subscriptions", "credit_ledger", "notifications"} {
+		for _, index := range []string{"subscriptions", "credit_ledger", "notifications", "billing_rate_cards", "billing_runtime"} {
 			resp, err := es.Indices.Delete([]string{index})
 			if err == nil {
 				resp.Body.Close()
@@ -343,6 +343,54 @@ func TestCreditJournalRealESRestartAndCacheOutage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestRateCardRealESConcurrentActivationRejectsStaleEditor(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := billingrepo.NewESRateCardRepo(f.es, zap.NewNop())
+	for _, version := range []string{"base", "edit-a", "edit-b"} {
+		if err := repo.CreateVersion(ctx, &billing.RateCard{Version: version, ChannelCreditCost: map[string]int64{"email": 5}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.SetActiveVersion(ctx, "base"); err != nil {
+		t.Fatal(err)
+	}
+	updater, ok := interface{}(repo).(interface {
+		SetActiveVersionIfCurrent(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("price edits have no concurrency guard")
+	}
+	if err := updater.SetActiveVersionIfCurrent(ctx, "base", "edit-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := updater.SetActiveVersionIfCurrent(ctx, "base", "edit-b"); err == nil {
+		t.Fatal("stale price edit replaced a newer active card")
+	}
+	active, err := repo.GetActive(ctx)
+	if err != nil || active.Version != "edit-a" || !active.Active {
+		t.Fatalf("active runtime card is inconsistent: %+v / %v", active, err)
+	}
+}
+
+func TestRateCardRealESVersionCannotBeRepriced(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := billingrepo.NewESRateCardRepo(f.es, zap.NewNop())
+	first := &billing.RateCard{Version: "purchase-version", ChannelCreditCost: map[string]int64{"email": 5}, Plans: billing.DefaultPlanBundles()}
+	if err := repo.CreateVersion(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	changed := &billing.RateCard{Version: "purchase-version", ChannelCreditCost: map[string]int64{"email": 7}}
+	if err := repo.CreateVersion(ctx, changed); err == nil {
+		t.Fatal("duplicate version silently overwrote purchase prices")
+	}
+	stored, err := repo.GetByVersion(ctx, "purchase-version")
+	if err != nil || stored.ChannelCreditCost["email"] != 5 {
+		t.Fatalf("historical price changed: %+v / %v", stored, err)
+	}
+}
+
 func TestCreditCheckoutRealESConcurrentSnapshotsPreserveWallet(t *testing.T) {
 	f := newCreditFixture(t)
 	ctx := context.Background()

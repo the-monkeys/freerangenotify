@@ -744,6 +744,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				notif.Metadata = make(map[string]interface{})
 			}
 			notif.Metadata["credits_used"] = reservation.CreditsReserved
+			notif.Metadata["tenant_id"] = reservation.TenantID
 			notif.Metadata["rate_card_version"] = reservation.RateCardVersion
 			notif.Metadata["reservation_id"] = reservation.ID
 		}
@@ -1010,6 +1011,17 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 
 	// Check for provider fallback chains
 	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+	if err == nil && app != nil {
+		// Checkout and usage APIs fund the owner's personal wallet;
+		// organization tenancy is a separate authorization scope.
+		tenantID := app.AdminUserID
+		if tenantID != "" {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["tenant_id"] = tenantID
+		}
+	}
 
 	// Short-circuit: webhook channel notifications whose target was resolved
 	// to a registered custom provider must dispatch directly through that

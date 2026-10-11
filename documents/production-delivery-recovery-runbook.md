@@ -418,8 +418,9 @@ classification; one terminal delta under duplicate/competing outcomes; repair of
 lost ES/Redis/ledger responses; old/new purchase, payment, and admin-renewal HTTP
 contracts; original-subscription binding; pagination beyond 100 subscription
 documents; recovery after more than 24 hours without Redis; and successful send
-plus accounting outage with no provider resend. Explicit purchase/renewal
-allocation on a journal-backed wallet requires draining active holds first.
+plus accounting outage with no provider resend. Purchase and admin-renewal grants
+add to the current unexpired wallet atomically and preserve active holds.
+Replacement allocations from older internal adapters still require draining holds.
 Generic metadata updates cannot overwrite journal counters. Atomic grant/bootstrap
 is the credit-writer API; uncertain manual grants still require operator
 reconciliation before retrying because they lack a durable grant operation ID.
@@ -432,17 +433,22 @@ old holds. Verify the marker on the canary before admitting work. Protection is
 active even when the reservation map is empty. An absent marker retains old-mode
 full-update behavior; disabling admissions never removes an existing marker.
 
-Captured-payment allocation blocked by active holds returns HTTP 503. Preserve
-the checkout snapshot and payment identity, drain known holds, and allow the
-provider to retry the same capture. Do not acknowledge capture until allocation
-is durable. Allocation replay receipts keyed by payment ID prevent a duplicate
-capture from replenishing credits consumed since that payment.
+Captured payments use the stored order snapshot, including credits, amount,
+currency and price version. Paid customers can recharge without replacing their
+remaining credits: 35,000 purchased plus 400 unexpired credits leaves 35,400.
+Active reservations survive recharge, and recharge never shortens expiry. Retain
+each checkout order snapshot so a newer checkout does not change an older order.
+Razorpay callback verification checks capture status, amount and currency against
+the gateway; signed capture webhooks are checked against the stored snapshot.
+Do not acknowledge capture until allocation is durable. Replay receipts keyed by
+payment and order prevent a repeated capture from granting credits again.
 
 Admin renewal accepts the existing request without a header. An optional
 `Idempotency-Key` (maximum 200 characters) supplies a stable renewal identity:
 reuse it for retries of the same intent, and use a new key for a new renewal.
 A keyed lost response can be retried after an intervening burn without refilling
-again in either old or journal mode. Old-mode keyed allocation receipts survive
+again in either old or journal mode. Renewal adds credits to the usable wallet.
+Old-mode keyed allocation receipts survive
 later journal adoption and do not by themselves mark the wallet journal-backed.
 Unkeyed requests retain the old renewal semantics and have no guarantee
 against an ambiguous rebuilt retry; inspect allocation/cycle state before a
@@ -454,7 +460,12 @@ and the new recovery-capable binary/wiring. Durable `cr1.` IDs are still committ
 released, and repaired with admission off. A journal-backed wallet rejects old
 lifecycle admissions/writes, rather than silently mixing them. The authoritative
 reaper scans subscription source, including expired subscriptions; Redis TTL is
-only cache retention. Terminal ledger failures are repaired without a second
+only terminal cache retention: pending records have no Redis TTL, and terminal
+records expire after 24 hours and leave the expiry index. Missing legacy records
+are reported for audited reconciliation; absence does not authorize a refund.
+Legacy recovery with notification storage wired commits a bound successful
+delivery, releases a definitively failed attempt, and retains unknown outcomes.
+Terminal ledger failures are repaired without a second
 balance delta. Sent/delivered/read evidence can commit an expired pending hold
 only when `metadata.delivery_reservation_id` equals that exact reservation ID.
 The worker writes successful status, timestamp and this binding together in one

@@ -117,9 +117,11 @@ type deliveryTestBalanceRepo struct {
 	releaseContextErr error
 	commits           int
 	releases          int
+	lookupTenant      string
 }
 
-func (r *deliveryTestBalanceRepo) GetByTenantID(context.Context, string) (*billing.CreditBalance, error) {
+func (r *deliveryTestBalanceRepo) GetByTenantID(_ context.Context, tenant string) (*billing.CreditBalance, error) {
+	r.lookupTenant = tenant
 	copy := *r.balance
 	return &copy, nil
 }
@@ -448,6 +450,29 @@ func TestProcessNotification_OTPDeadlineDoesNotCancelReleaseOrAcknowledgement(t 
 }
 
 type successfulDeliveryProvider struct{ deliveryTestProvider }
+
+func TestDeliveryPreservesBillingOwnerForOrganizationAndLegacyApps(t *testing.T) {
+	for _, tc := range []struct{ declared, want string }{{"organization-1", "owner-1"}, {"", "owner-1"}} {
+		t.Run("organization="+tc.declared, func(t *testing.T) {
+			repo := newStubNotifRepo()
+			notif := &notification.Notification{NotificationID: "tenant-delivery", AppID: "app-1", UserID: "user-1", Channel: notification.ChannelEmail,
+				Status: notification.StatusQueued, Content: notification.Content{Body: "Hello"}, Metadata: map[string]interface{}{"tenant_id": "untrusted-input"}}
+			repo.notifications[notif.NotificationID] = notif
+			app := makeApp()
+			app.AdminUserID = "owner-1"
+			app.TenantID = tc.declared
+			proc := newProcessorForTest(repo, &stubQueue{}, map[string]*user.User{"user-1": makeUser()}, map[string]*application.Application{"app-1": app}, nil, nil)
+			balance := &deliveryTestBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: tc.want, CreditsTotal: 1500, CreditsRemaining: 1500}}
+			withDeliveryTestCredits(proc, balance)
+			proc.providerManager = providers.NewManager(nil, nil, zap.NewNop())
+			require.NoError(t, proc.providerManager.RegisterProvider(&successfulDeliveryProvider{}))
+			proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
+			require.Equal(t, notification.StatusSent, notif.Status)
+			require.Equal(t, tc.want, balance.lookupTenant)
+			require.Equal(t, tc.want, notif.Metadata["tenant_id"])
+		})
+	}
+}
 
 func (p *successfulDeliveryProvider) Send(context.Context, *notification.Notification, *user.User) (*providers.Result, error) {
 	p.sends++
