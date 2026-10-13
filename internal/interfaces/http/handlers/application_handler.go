@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
@@ -76,35 +78,12 @@ func (h *ApplicationHandler) authorizeAppAccess(c *fiber.Ctx, appID, userID stri
 		return nil, "", err
 	}
 
-	if app.AdminUserID == userID {
-		c.Locals("role", auth.RoleOwner)
-		return app, auth.RoleOwner, nil
+	role, accessErr := channelAccess(c.Context(), app, userID, h.membershipRepo, h.tenantService, false)
+	if accessErr != nil {
+		return nil, "", accessErr
 	}
-
-	if h.membershipRepo != nil {
-		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
-		if mErr == nil && membership != nil {
-			c.Locals("role", membership.Role)
-			return app, membership.Role, nil
-		}
-	}
-
-	// C1: Tenant members get access to apps in their tenant
-	if app.TenantID != "" && h.tenantService != nil {
-		hasAccess, role, tErr := h.tenantService.HasAccess(c.Context(), app.TenantID, userID)
-		if tErr == nil && hasAccess {
-			// Map tenant role to app role:
-			// owner/admin can manage tenant apps; members are read-only.
-			appRole := auth.RoleViewer
-			if role == "owner" || role == "admin" {
-				appRole = auth.RoleAdmin
-			}
-			c.Locals("role", appRole)
-			return app, appRole, nil
-		}
-	}
-
-	return nil, "", errors.Forbidden("You do not have access to this application")
+	c.Locals("role", role)
+	return app, role, nil
 }
 
 // Create handles POST /v1/apps
@@ -156,16 +135,22 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 	}
 
 	if req.Settings != nil {
-		app.Settings = *req.Settings
+		merged, mergeErr := dto.PreserveSettingsSecrets(app.Settings, *req.Settings, nil)
+		if mergeErr != nil {
+			return errors.BadRequest("Invalid settings")
+		}
+		app.Settings = merged
 	}
 
 	if err := h.service.Create(c.Context(), app); err != nil {
 		return err
 	}
+	createdResponse := dto.ToApplicationResponse(app)
+	createdResponse.APIKey = app.APIKey // owner-only one-time creation response
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"success": true,
-		"data":    dto.ToApplicationResponse(app),
+		"data":    createdResponse,
 		"message": "Application created successfully. Save the API key securely - it won't be shown again in full.",
 	})
 }
@@ -283,7 +268,11 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 		app.Webhooks = req.Webhooks
 	}
 	if req.Settings != nil {
-		app.Settings = *req.Settings
+		merged, mergeErr := dto.PreserveSettingsSecrets(app.Settings, *req.Settings, nil)
+		if mergeErr != nil {
+			return errors.BadRequest("Invalid settings")
+		}
+		app.Settings = merged
 	}
 
 	if err := h.service.Update(c.Context(), app); err != nil {
@@ -548,6 +537,15 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		return err
 	}
 
+	if req.SettingsRevision != "" {
+		currentApp, loadErr := h.service.GetByID(c.Context(), appID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if currentApp.UpdatedAt.Format(time.RFC3339Nano) != req.SettingsRevision {
+			return errors.Conflict("Settings changed; reload before saving")
+		}
+	}
 	settings := *currentSettings
 
 	if req.RateLimit != nil {
@@ -610,8 +608,20 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 		settings.InboundWebhookConfig = req.InboundWebhookConfig
 	}
 
-	if err := h.service.UpdateSettings(c.Context(), appID, settings); err != nil {
-		return err
+	settings, err = dto.PreserveSettingsSecrets(*currentSettings, settings, req.ClearSecrets)
+	if err != nil {
+		return errors.BadRequest("Invalid secret clear operation")
+	}
+	var writeErr error
+	if writer, ok := h.appRepo.(interface {
+		UpdateSettingsIfRevision(context.Context, string, application.Settings, string) error
+	}); ok && req.SettingsRevision != "" {
+		writeErr = writer.UpdateSettingsIfRevision(c.Context(), appID, settings, req.SettingsRevision)
+	} else {
+		writeErr = h.service.UpdateSettings(c.Context(), appID, settings)
+	}
+	if writeErr != nil {
+		return writeErr
 	}
 
 	return c.JSON(fiber.Map{
@@ -654,7 +664,7 @@ func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    settings,
+		"data":    dto.ToSafeApplicationSettings(*settings),
 	})
 }
 
@@ -679,12 +689,12 @@ func (h *ApplicationHandler) GetCodeSamples(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	app, _, err := h.authorizeAppAccess(c, appID, userID)
+	_, _, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
 
-	apiKey := app.APIKey
+	apiKey := "YOUR_API_KEY"
 	// TODO: Make this dynamic - Get it from the config or environment
 	baseURL := "https://freerangenotify.monkeys.support/v1"
 
@@ -751,6 +761,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 	"net/http"
 	"strings"
 )

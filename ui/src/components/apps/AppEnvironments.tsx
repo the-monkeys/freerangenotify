@@ -49,7 +49,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
     const [promoteTarget, setPromoteTarget] = useState('');
     const [promoteResources, setPromoteResources] = useState<string[]>(['templates']);
     const [promoting, setPromoting] = useState(false);
-    const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+    const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
 
     const fetcher = useCallback(() => environmentsAPI.list(appId), [appId]);
     const { data: environments, loading, refetch } = useApiQuery<Environment[]>(fetcher, [appId], { cacheKey: `app-environments-${appId}` });
@@ -124,11 +124,6 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
         navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-    };
-
-    const maskKey = (key: string) => {
-        if (!key || key.length < 12) return '••••••••';
-        return key.slice(0, 8) + '••••••••' + key.slice(-4);
     };
 
     return (
@@ -210,13 +205,13 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
                                 <div className="flex items-center gap-2 text-xs">
                                     <Key className="h-3.5 w-3.5 text-muted-foreground" />
                                     <code className="font-mono text-muted-foreground select-all">
-                                        {revealedKeys[env.id] ? env.api_key : maskKey(env.api_key)}
+                                        {revealedKeys[env.id] || "Stored securely — owner access required"}
                                     </code>
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         className="h-6 w-6 p-0"
-                                        onClick={() => setRevealedKeys(prev => ({ ...prev, [env.id]: !prev[env.id] }))}
+                                        onClick={async () => { if(revealedKeys[env.id]) {setRevealedKeys(prev=>({...prev,[env.id]:""}));return;} try{const key=await environmentsAPI.revealKey(appId,env.id);setRevealedKeys(prev=>({...prev,[env.id]:key}));}catch{toast.error("Only the application owner can reveal this key");} }}
                                         aria-label={revealedKeys[env.id] ? 'Hide API key' : 'Reveal API key'}
                                     >
                                         {revealedKeys[env.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -225,7 +220,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
                                         variant="ghost"
                                         size="sm"
                                         className="h-6 w-6 p-0"
-                                        onClick={() => copyToClipboard(env.api_key)}
+                                        onClick={async () => {try{copyToClipboard(revealedKeys[env.id] || await environmentsAPI.revealKey(appId,env.id));}catch{toast.error("Only the application owner can copy this key");}}}
                                         aria-label="Copy API key"
                                     >
                                         <Copy className="h-3.5 w-3.5" />

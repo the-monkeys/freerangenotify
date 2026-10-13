@@ -12,7 +12,9 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -20,6 +22,7 @@ import (
 
 // CustomProviderHandler handles CRUD for custom delivery providers (Phase 3).
 type CustomProviderHandler struct {
+	tenantService  tenant.Service
 	service        usecases.ApplicationService
 	membershipRepo auth.MembershipRepository
 	logger         *zap.Logger
@@ -45,18 +48,8 @@ func (h *CustomProviderHandler) authorizeProviderAccess(c *fiber.Ctx, appID, use
 		return nil, "", err
 	}
 
-	if app.AdminUserID == userID {
-		return app, auth.RoleOwner, nil
-	}
-
-	if h.membershipRepo != nil {
-		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
-		if mErr == nil && membership != nil {
-			return app, membership.Role, nil
-		}
-	}
-
-	return nil, "", errors.Forbidden("You do not have access to this application")
+	role, accessErr := channelAccess(c.Context(), app, userID, h.membershipRepo, h.tenantService, false)
+	return app, role, accessErr
 }
 
 // registerCustomProviderRequest is the request body for registering a custom provider.
@@ -211,11 +204,8 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 		}
 	}
 
-	for i := range providers {
-		if len(providers[i].SigningKey) > 4 {
-			providers[i].SigningKey = "****" + providers[i].SigningKey[len(providers[i].SigningKey)-4:]
-		}
-	}
+	safe := dto.ToSafeApplicationSettings(application.Settings{CustomProviders: providers})
+	providers = safe.CustomProviders
 
 	return c.JSON(fiber.Map{
 		"success": true,
@@ -479,10 +469,9 @@ func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 }
 
 func findCustomProviderIndex(providers []application.CustomProviderConfig, providerID string) int {
-	for i := range providers {
-		if providers[i].ProviderID == providerID {
-			return i
-		}
-	}
+	safe := dto.ToSafeApplicationSettings(application.Settings{CustomProviders: providers})
+	providers = safe.CustomProviders
 	return -1
 }
+
+func (h *CustomProviderHandler) SetTenantService(service tenant.Service) { h.tenantService = service }

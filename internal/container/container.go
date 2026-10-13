@@ -651,6 +651,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 
+	container.CustomProviderHandler.SetTenantService(container.TenantService)
 	// ── Phase 1: Workflow Engine (feature-gated) ──
 	if cfg.Features.WorkflowEnabled {
 		wfQueue, ok := container.Queue.(queue.WorkflowQueue)
@@ -932,6 +933,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			webhookURL,
 			logger,
 		)
+		container.WhatsAppAdminHandler.SetTenantService(container.TenantService)
 		container.WhatsAppTemplateHandler = handlers.NewWhatsAppTemplateHandler(
 			repos.Application,
 			container.SSEBroadcaster,
@@ -1056,6 +1058,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.TopicHandler.SetLinkRepo(container.ResourceLinkRepo)
 		container.TopicHandler.SetTopicRepo(repository.NewTopicRepository(dbManager.Client.GetClient(), logger))
 	}
+	container.CustomProviderHandler.SetTenantService(container.TenantService)
 	container.CustomProviderHandler.SetLinkRepo(container.ResourceLinkRepo)
 	container.ImportHandler = handlers.NewImportHandler(
 		container.ResourceLinkRepo,

@@ -144,6 +144,7 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Create common middleware — with optional auth service for dashboard JWT extraction
 	var authOpts []middleware.APIKeyAuthOption
+	authOpts = append(authOpts, middleware.WithDashboardAccess(c.MembershipRepo, c.TenantService))
 	if c.EnvironmentService != nil {
 		authOpts = append(authOpts, middleware.WithEnvironmentService(c.EnvironmentService))
 	}
@@ -612,6 +613,7 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Put("/:id", c.ApplicationHandler.Update)
 	apps.Delete("/:id", c.ApplicationHandler.Delete)
 	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
+	apps.Post("/:id/reveal-key", c.ApplicationHandler.RevealAPIKey)
 	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
 	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
 	apps.Get("/:id/code-samples", c.ApplicationHandler.GetCodeSamples)
@@ -636,10 +638,12 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Phase 6: Multi-Environment Management (feature-gated)
 	if c.EnvironmentHandler != nil {
+		c.EnvironmentHandler.SetAppHandler(c.ApplicationHandler)
 		apps.Post("/:id/environments", c.EnvironmentHandler.Create)
 		apps.Get("/:id/environments", c.EnvironmentHandler.List)
 		apps.Post("/:id/environments/promote", c.EnvironmentHandler.Promote)
 		apps.Get("/:id/environments/:envId", c.EnvironmentHandler.Get)
+		apps.Post("/:id/environments/:envId/reveal-key", c.EnvironmentHandler.RevealKey)
 		apps.Delete("/:id/environments/:envId", c.EnvironmentHandler.Delete)
 	}
 

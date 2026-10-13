@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -19,6 +20,7 @@ import (
 
 // WhatsAppAdminHandler handles WhatsApp Embedded Signup and connection management.
 type WhatsAppAdminHandler struct {
+	tenantService  tenant.Service
 	appService     usecases.ApplicationService
 	membershipRepo auth.MembershipRepository
 	appRepo        application.Repository
@@ -76,15 +78,15 @@ func (h *WhatsAppAdminHandler) GetStatus(c *fiber.Ctx) error {
 	}
 
 	result := fiber.Map{
-		"connected":          wa.ConnectionStatus == "connected",
-		"provider":           "meta",
-		"connection_status":  wa.ConnectionStatus,
-		"connected_at":       wa.ConnectedAt,
-		"phone_number_id":    wa.MetaPhoneNumberID,
-		"waba_id":            wa.MetaWABAID,
-		"display_phone":      wa.DisplayPhoneNumber,
-		"quality_rating":     wa.QualityRating,
-		"business_id":        wa.MetaBusinessID,
+		"connected":         wa.ConnectionStatus == "connected",
+		"provider":          "meta",
+		"connection_status": wa.ConnectionStatus,
+		"connected_at":      wa.ConnectedAt,
+		"phone_number_id":   wa.MetaPhoneNumberID,
+		"waba_id":           wa.MetaWABAID,
+		"display_phone":     wa.DisplayPhoneNumber,
+		"quality_rating":    wa.QualityRating,
+		"business_id":       wa.MetaBusinessID,
 	}
 
 	return c.JSON(fiber.Map{"success": true, "data": result})
@@ -125,22 +127,22 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	// Step 1: Exchange code for access token
 	accessToken, err := h.exchangeCodeForToken(req.Code)
 	if err != nil {
-		h.logger.Error("Failed to exchange OAuth code for token", zap.Error(err))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to exchange code with Meta: "+err.Error())
+		h.logger.Error("Failed to exchange OAuth code for token", zap.String("error_category", "meta_request_failed"))
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to exchange code with Meta")
 	}
 
 	// Step 2: Get shared WABA ID from the debug token / business integration response
 	wabaID, bizID, err := h.getSharedWABAInfo(accessToken)
 	if err != nil {
-		h.logger.Error("Failed to get shared WABA info", zap.Error(err))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve WABA info: "+err.Error())
+		h.logger.Error("Failed to get shared WABA info", zap.String("error_category", "meta_request_failed"))
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve WABA info")
 	}
 
 	// Step 3: Get phone number(s) registered under this WABA
 	phoneInfo, err := h.getPhoneNumbers(wabaID, accessToken)
 	if err != nil {
-		h.logger.Error("Failed to get phone numbers", zap.String("waba_id", wabaID), zap.Error(err))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve phone numbers: "+err.Error())
+		h.logger.Error("Failed to get phone numbers", zap.String("waba_id", wabaID), zap.String("error_category", "meta_request_failed"))
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve phone numbers")
 	}
 
 	// Step 4: Store credentials in app settings
@@ -165,7 +167,7 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	app.UpdatedAt = time.Now().UTC()
 
 	if err := h.appRepo.Update(c.Context(), app); err != nil {
-		h.logger.Error("Failed to save WhatsApp connection", zap.String("app_id", req.AppID), zap.Error(err))
+		h.logger.Error("Failed to save WhatsApp connection", zap.String("app_id", req.AppID), zap.String("error_category", "meta_request_failed"))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to save connection")
 	}
 
@@ -177,9 +179,9 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data": fiber.Map{
-			"waba_id":          wabaID,
-			"phone_number_id":  waCfg.MetaPhoneNumberID,
-			"display_phone":    waCfg.DisplayPhoneNumber,
+			"waba_id":           wabaID,
+			"phone_number_id":   waCfg.MetaPhoneNumberID,
+			"display_phone":     waCfg.DisplayPhoneNumber,
 			"connection_status": "connected",
 		},
 	})
@@ -235,8 +237,8 @@ func (h *WhatsAppAdminHandler) SubscribeWebhooks(c *fiber.Ctx) error {
 
 	resp, err := http.Post(apiURL, "application/x-www-form-urlencoded", strings.NewReader(reqBody.Encode()))
 	if err != nil {
-		h.logger.Error("Failed to subscribe WABA webhooks", zap.Error(err))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to subscribe webhooks: "+err.Error())
+		h.logger.Error("Failed to subscribe WABA webhooks", zap.String("error_category", "meta_request_failed"))
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to subscribe webhooks")
 	}
 	defer resp.Body.Close()
 
@@ -286,8 +288,8 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	// Fetch phone numbers from the WABA to validate the token and get phone info
 	phoneInfo, err := h.getPhoneNumbers(req.WABAID, req.AccessToken)
 	if err != nil {
-		h.logger.Error("Failed to validate token by fetching phone numbers", zap.Error(err))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to validate access token with Meta: "+err.Error())
+		h.logger.Error("Failed to validate token by fetching phone numbers", zap.String("error_category", "meta_request_failed"))
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to validate access token with Meta")
 	}
 
 	// If a specific phone number ID was provided, try to match it
@@ -321,7 +323,7 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	app.UpdatedAt = time.Now().UTC()
 
 	if err := h.appRepo.Update(c.Context(), app); err != nil {
-		h.logger.Error("Failed to save manual WhatsApp connection", zap.String("app_id", req.AppID), zap.Error(err))
+		h.logger.Error("Failed to save manual WhatsApp connection", zap.String("app_id", req.AppID), zap.String("error_category", "meta_request_failed"))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to save connection")
 	}
 
@@ -395,7 +397,7 @@ func (h *WhatsAppAdminHandler) getSharedWABAInfo(accessToken string) (wabaID, bu
 	var debugResult struct {
 		Data struct {
 			GranularScopes []struct {
-				Scope    string   `json:"scope"`
+				Scope     string   `json:"scope"`
 				TargetIDs []string `json:"target_ids"`
 			} `json:"granular_scopes"`
 		} `json:"data"`
@@ -493,17 +495,8 @@ func (h *WhatsAppAdminHandler) authorizeByID(c *fiber.Ctx, appID, userID string)
 		return nil, "", err
 	}
 
-	if app.AdminUserID == userID {
-		return app, auth.RoleOwner, nil
-	}
-
-	if h.membershipRepo != nil {
-		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
-		if mErr == nil && membership != nil && (membership.Role == auth.RoleAdmin || membership.Role == auth.RoleOwner) {
-			return app, membership.Role, nil
-		}
-	}
-
-	return nil, "", pkgerrors.Forbidden("You do not have access to manage WhatsApp for this application")
+	role, accessErr := channelAccess(c.Context(), app, userID, h.membershipRepo, h.tenantService, true)
+	return app, role, accessErr
 }
 
+func (h *WhatsAppAdminHandler) SetTenantService(service tenant.Service) { h.tenantService = service }

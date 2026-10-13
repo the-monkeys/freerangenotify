@@ -61,6 +61,7 @@ export interface ChangePasswordRequest {
 }
 
 export interface ApplicationSettings {
+  secret_configured?: Record<string, boolean>;
     rate_limit?: number;
     retry_attempts?: number;
     default_template?: string;

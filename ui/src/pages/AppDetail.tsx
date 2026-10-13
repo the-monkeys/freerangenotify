@@ -1,3 +1,4 @@
+import { channelSettingsPatch } from "../lib/channelSettingsPatch";
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI } from '../services/api';
@@ -81,6 +82,7 @@ const AppDetail: React.FC = () => {
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [eventMappingText, setEventMappingText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
+    const [revealedApiKey, setRevealedApiKey] = useState("");
     const [copied, setCopied] = useState(false);
     const [, setUnreadCountLocal] = useState(0);
     const [confirmAction, setConfirmAction] = useState<'regenerate-key' | 'delete-app' | null>(null);
@@ -211,6 +213,7 @@ const AppDetail: React.FC = () => {
         setConfirmLoading(true);
         try {
             await applicationsAPI.regenerateKey(id);
+            setRevealedApiKey(""); setShowApiKey(false);
             fetchAppDetails();
             toast.success('API Key regenerated successfully!');
             setConfirmAction(null);
@@ -381,7 +384,8 @@ const AppDetail: React.FC = () => {
                                                 return;
                                             }
                                         }
-                                        await applicationsAPI.updateSettings(id!, settings);
+                                        await applicationsAPI.updateSettings(id!, { ...channelSettingsPatch(app.settings || {}, settings), settings_revision: app.updated_at });
+                                        await fetchAppDetails();
                                         setEventMappingText(JSON.stringify(settings.inbound_webhook_config?.event_mapping || {}, null, 2));
                                         toast.success('Settings saved successfully!');
                                     } catch (err: any) {
@@ -930,6 +934,7 @@ const AppDetail: React.FC = () => {
                                                             type="password"
                                                             className="text-sm"
                                                             value={settings.whatsapp_config?.auth_token || ''}
+                                                            placeholder={settings.secret_configured?.["whatsapp_config.auth_token"] ? "Configured — leave blank to keep" : "Enter auth token"}
                                                             onChange={(e) => setSettings({
                                                                 ...settings,
                                                                 whatsapp_config: {
@@ -995,6 +1000,7 @@ const AppDetail: React.FC = () => {
                                                             type="password"
                                                             className="text-sm"
                                                             value={settings.sms_config?.auth_token || ''}
+                                                            placeholder={settings.secret_configured?.["sms_config.auth_token"] ? "Configured — leave blank to keep" : "Enter auth token"}
                                                             onChange={(e) => setSettings({
                                                                 ...settings,
                                                                 sms_config: {
@@ -1206,7 +1212,7 @@ const AppDetail: React.FC = () => {
                                             <Input
                                                 id="apiKey"
                                                 type={showApiKey ? "text" : "password"}
-                                                value={app.api_key}
+                                                value={revealedApiKey || "Stored securely — owner access required"}
                                                 readOnly
                                                 className="bg-muted border-border text-muted-foreground pr-24"
                                             />
@@ -1217,7 +1223,9 @@ const AppDetail: React.FC = () => {
                                                     size="sm"
                                                     onClick={async () => {
                                                         try {
-                                                            await navigator.clipboard.writeText(app.api_key);
+                                                            const key = revealedApiKey || await applicationsAPI.revealKey(app.app_id);
+                                                            setRevealedApiKey(key);
+                                                            await navigator.clipboard.writeText(key);
                                                             setCopied(true);
                                                             toast.success('API key copied to clipboard!');
                                                             setTimeout(() => setCopied(false), 2000);
@@ -1235,7 +1243,7 @@ const AppDetail: React.FC = () => {
                                                 </Button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowApiKey(!showApiKey)}
+                                                    onClick={async () => { if (showApiKey) { setShowApiKey(false); setRevealedApiKey(""); return; } try { setRevealedApiKey(await applicationsAPI.revealKey(app.app_id)); setShowApiKey(true); } catch { toast.error("Only the application owner can reveal the API key"); } }}
                                                     className="text-foreground text-xs font-semibold hover:underline px-2"
                                                 >
                                                     {showApiKey ? 'Hide' : 'Show'}
@@ -1251,7 +1259,7 @@ const AppDetail: React.FC = () => {
                                         </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
+                                        Only the application owner can reveal or copy this key. Dashboard access does not require it.
                                     </p>
                                 </div>
                             </CardContent>

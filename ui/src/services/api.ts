@@ -281,6 +281,10 @@ export const applicationsAPI = {
     await api.delete(`/apps/${id}`);
   },
 
+  revealKey: async (id: string): Promise<string> => {
+    const {data} = await api.post<ApiResponse<{api_key:string}>>(`/apps/${id}/reveal-key`, {});
+    return data.data.api_key;
+  },
   regenerateKey: async (id: string) => {
     const { data } = await api.post<ApiResponse<Application>>(`/apps/${id}/regenerate-key`, {});
     return data.data;
@@ -1100,6 +1104,9 @@ export const auditAPI = {
 
 // ============= Environment APIs =============
 export const environmentsAPI = {
+  revealKey: async (appId:string, envId:string):Promise<string> => {
+    const {data}=await api.post<ApiResponse<{api_key:string}>>(`/apps/${appId}/environments/${envId}/reveal-key`,{}); return data.data.api_key;
+  },
   create: async (appId: string, payload: CreateEnvironmentRequest) => {
     const { data } = await api.post<ApiResponse<Environment>>(`/apps/${appId}/environments`, payload);
     return data.data;
