@@ -35,17 +35,48 @@ func (r *broadcastUsers) List(_ context.Context, f user.UserFilter) ([]*user.Use
 
 type batchNotifications struct {
 	mockNotificationRepo
-	writes int
-	errors []error
+	writes      int
+	failOnWrite int
+	errors      []error
 }
 
 func (r *batchNotifications) BulkCreateResults(_ context.Context, rows []*notification.Notification) ([]error, error) {
 	r.writes++
+	if r.writes == r.failOnWrite {
+		return nil, fmt.Errorf("storage response lost")
+	}
 	r.created = append(r.created, rows...)
 	if r.errors != nil {
 		return r.errors, nil
 	}
 	return make([]error, len(rows)), nil
+}
+
+func TestBroadcastPreservesConfirmedRecipientsWhenLaterBatchIsUnknown(t *testing.T) {
+	svc, _, nr, q := throughputFixture(6001)
+	nr.failOnWrite = 2
+	out, err := svc.Broadcast(context.Background(), notification.BroadcastRequest{AppID: "app-1", Channel: notification.ChannelEmail, Priority: notification.PriorityNormal, TemplateID: "fixture", Title: "Hello", Body: "World"})
+	require.Error(t, err)
+	require.NotNil(t, out, "partial broadcast outcomes must survive the service boundary")
+	require.Len(t, out.Notifications, 500)
+	require.Len(t, q.batch, 500)
+	require.Equal(t, 6001, out.Total)
+	require.Equal(t, 500, out.Accepted)
+	require.Equal(t, 500, out.Unknown)
+	require.Equal(t, 5001, out.NotAttempted)
+	require.True(t, out.Partial)
+}
+
+func TestBroadcastReportsKnownStorageRejections(t *testing.T) {
+	svc, _, nr, _ := throughputFixture(2)
+	nr.errors = []error{nil, fmt.Errorf("mapping rejected")}
+	out, err := svc.Broadcast(context.Background(), notification.BroadcastRequest{AppID: "app-1", Channel: notification.ChannelEmail, Priority: notification.PriorityNormal, TemplateID: "fixture", Title: "Hello", Body: "World"})
+	require.NoError(t, err)
+	require.Equal(t, 2, out.Total)
+	require.Equal(t, 1, out.Accepted)
+	require.Equal(t, 1, out.Rejected)
+	require.True(t, out.Partial)
+	require.Zero(t, out.Unknown)
 }
 func (r *batchNotifications) BulkUpdateStatus(_ context.Context, ids []string, status notification.Status) error {
 	for _, n := range r.created {

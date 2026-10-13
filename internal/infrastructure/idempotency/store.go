@@ -13,19 +13,60 @@ import (
 )
 
 const (
-	keyPrefix   = "frn:idemp:"
-	defaultTTL  = 24 * time.Hour
-	maxKeyLen   = 256
-	idempHeader = "Idempotency-Key"
-	idempHeaderX  = "X-Idempotency-Key"
+	keyPrefix    = "frn:idemp:"
+	defaultTTL   = 24 * time.Hour
+	maxKeyLen    = 256
+	idempHeader  = "Idempotency-Key"
+	idempHeaderX = "X-Idempotency-Key"
 )
 
 var keySanitize = regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
 
 // CachedResponse holds a stored idempotent response
 type CachedResponse struct {
-	Status int             `json:"status"`
-	Body   json.RawMessage `json:"body"`
+	Status      int             `json:"status"`
+	Body        json.RawMessage `json:"body"`
+	RequestHash string          `json:"request_hash,omitempty"`
+	Pending     bool            `json:"pending,omitempty"`
+}
+
+// BeginOperation claims before side effects. Pending operations never expire:
+// an interrupted broadcast needs reconciliation, not an automatic second send.
+func (s *Store) BeginOperation(ctx context.Context, appID, key, requestHash string) (*CachedResponse, bool, error) {
+	pending := CachedResponse{Status: 409, Body: json.RawMessage(`{"error":"broadcast outcome pending; reconcile before retrying","retryable":false}`), RequestHash: requestHash, Pending: true}
+	data, err := json.Marshal(pending)
+	if err != nil {
+		return nil, false, err
+	}
+	claimed, err := s.client.SetNX(ctx, keyPrefix+appID+":"+key, data, 0).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("idempotency claim unavailable: %w", err)
+	}
+	if claimed {
+		return nil, true, nil
+	}
+	existing, err := s.Get(ctx, appID, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if existing == nil {
+		return nil, false, fmt.Errorf("idempotency claim disappeared")
+	}
+	return existing, false, nil
+}
+
+func (s *Store) CompleteOperation(ctx context.Context, appID, key, requestHash string, status int, body []byte) error {
+	data, err := json.Marshal(CachedResponse{Status: status, Body: body, RequestHash: requestHash})
+	if err != nil {
+		return err
+	}
+	return s.client.Eval(ctx, `
+local old=redis.call('GET',KEYS[1])
+if not old then return redis.error_reply('operation receipt missing') end
+local receipt=cjson.decode(old)
+if receipt.request_hash~=ARGV[1] then return redis.error_reply('operation identity mismatch') end
+redis.call('SET',KEYS[1],ARGV[2],'PX',ARGV[3])
+return 1`, []string{keyPrefix + appID + ":" + key}, requestHash, data, s.ttl.Milliseconds()).Err()
 }
 
 // Store provides idempotency key storage (Redis-backed)

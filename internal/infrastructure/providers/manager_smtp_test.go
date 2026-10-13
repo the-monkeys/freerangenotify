@@ -25,7 +25,7 @@ func smtpFixture(t *testing.T) (int, <-chan string) {
 	port, messages, _ := smtpCountingFixture(t)
 	return port, messages
 }
-func smtpCountingFixture(t *testing.T) (int, <-chan string, *atomic.Int64) {
+func smtpCountingFixture(t *testing.T, dropFinal ...bool) (int, <-chan string, *atomic.Int64) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -73,6 +73,9 @@ func smtpCountingFixture(t *testing.T) (int, <-chan string, *atomic.Int64) {
 							msg.WriteString(line)
 						}
 						messages <- msg.String()
+						if len(dropFinal) > 0 && dropFinal[0] {
+							return
+						}
 						fmt.Fprint(c, "250 accepted\r\n")
 					case strings.HasPrefix(line, "QUIT"):
 						fmt.Fprint(c, "221 bye\r\n")
@@ -85,6 +88,51 @@ func smtpCountingFixture(t *testing.T) (int, <-chan string, *atomic.Int64) {
 		}
 	}()
 	return ln.Addr().(*net.TCPAddr).Port, messages, connections
+}
+
+type acceptingBackupProvider struct {
+	Provider
+	sends atomic.Int64
+}
+
+func (*acceptingBackupProvider) GetName() string { return "backup" }
+func (*acceptingBackupProvider) GetSupportedChannel() notification.Channel {
+	return notification.ChannelEmail
+}
+func (*acceptingBackupProvider) IsHealthy(context.Context) bool { return true }
+func (p *acceptingBackupProvider) Send(context.Context, *notification.Notification, *user.User) (*Result, error) {
+	p.sends.Add(1)
+	return NewResult("accepted-backup", time.Millisecond), nil
+}
+func TestSMTPAcceptedDATAWithoutReplyIsNotRetriedOrSentThroughFallback(t *testing.T) {
+	port, messages, connections := smtpCountingFixture(t, true)
+	smtp, err := NewSMTPProvider(SMTPConfig{Host: "127.0.0.1", Port: port, FromEmail: "sender@example.test", Config: Config{MaxRetries: 2, RetryDelay: time.Millisecond, Timeout: time.Second}}, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := &acceptingBackupProvider{}
+	m := NewManager(nil, nil, zap.NewNop())
+	if err := m.RegisterProvider(smtp); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterProvider(backup); err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.SendWithFallback(context.Background(), &notification.Notification{NotificationID: "lost-data-reply", Channel: notification.ChannelEmail, Content: notification.Content{Title: "Hello", Body: "World"}}, &user.User{Email: "recipient@example.test"}, []string{"smtp", "backup"})
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("DATA was accepted but SMTP retried %d connections", got)
+	}
+	if backup.sends.Load() != 0 {
+		t.Fatal("unknown DATA acceptance was sent again through fallback")
+	}
+	if err == nil {
+		t.Fatal("lost provider acknowledgement must remain an unknown outcome")
+	}
+	select {
+	case <-messages:
+	default:
+		t.Fatal("fixture never accepted DATA")
+	}
 }
 
 func closedSMTPPort(t *testing.T) int {

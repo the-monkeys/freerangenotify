@@ -69,13 +69,6 @@ func (h *PaymentHandler) SetRateCardManager(manager billing.RateCardManager) {
 	h.rateCardMgr = manager
 }
 
-func isPaidActiveSubscription(sub *license.Subscription, now time.Time) bool {
-	if sub == nil || !sub.IsActiveAt(now) {
-		return false
-	}
-	return !billing.IsFreeTierPlan(sub.Plan)
-}
-
 func (h *PaymentHandler) resolveCheckoutPlan(planID string) (billing.PlanBundle, bool) {
 	if h.rateCardMgr != nil {
 		return h.rateCardMgr.GetCheckoutPlan(planID)

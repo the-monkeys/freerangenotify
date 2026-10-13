@@ -62,13 +62,6 @@ func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.
 	return planMessageLimit(resolvePlan(rateCard, sub.Plan))
 }
 
-func currentRolloverMessages(sub *license.Subscription) int {
-	if sub == nil {
-		return 0
-	}
-	return metaInt(sub.Metadata, "rollover_messages", 0)
-}
-
 func latestSubscription(ctx context.Context, subRepo license.Repository, tenantID string) (*license.Subscription, error) {
 	subs, err := subRepo.List(ctx, license.SubscriptionFilter{
 		TenantID: tenantID,

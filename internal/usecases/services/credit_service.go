@@ -326,6 +326,9 @@ func (s *CreditService) CommitOnSuccess(ctx context.Context, reservationID strin
 		reservation.UpdatedAt = time.Now().UTC()
 		return reservation, s.saveReservation(ctx, reservation)
 	}
+	if settled, supported, err := s.settleLegacyReservation(ctx, reservation, billing.CreditReservationCommitted, ""); supported {
+		return settled, err
+	}
 	if reservation.Status == billing.CreditReservationReleased {
 		return reservation, nil
 	}
@@ -363,6 +366,11 @@ func (s *CreditService) ReleaseOnFailure(ctx context.Context, reservationID stri
 	}
 	if reservation == nil {
 		return nil
+	}
+	if reservation.RateCardVersion != billing.RateCardVersionLegacy {
+		if _, supported, err := s.settleLegacyReservation(ctx, reservation, billing.CreditReservationReleased, reason); supported {
+			return err
+		}
 	}
 	if reservation.Status == billing.CreditReservationCommitted {
 		return nil
@@ -851,13 +859,6 @@ func legacyMessagesSentFromMeta(sub *license.Subscription) int64 {
 	default:
 		return 0
 	}
-}
-
-func (s *CreditService) currentRateCardVersion() string {
-	if s.rateCardSvc == nil {
-		return "default"
-	}
-	return s.rateCardSvc.GetRateCardVersion()
 }
 
 func (s *CreditService) loadReservation(ctx context.Context, reservationID string) (*billing.CreditReservation, bool) {

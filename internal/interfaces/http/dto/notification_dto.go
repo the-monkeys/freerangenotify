@@ -219,9 +219,18 @@ type NotificationListResponse struct {
 
 // BulkSendResponse represents the API response for bulk send operation
 type BulkSendResponse struct {
-	Sent  int                     `json:"sent"`
-	Total int                     `json:"total"`
-	Items []*NotificationResponse `json:"items"`
+	Sent              int                                      `json:"sent"`
+	Total             int                                      `json:"total"`
+	Items             []*NotificationResponse                  `json:"items"`
+	Rejected          int                                      `json:"rejected,omitempty"`
+	Skipped           int                                      `json:"skipped,omitempty"`
+	Unknown           int                                      `json:"unknown,omitempty"`
+	NotAttempted      int                                      `json:"not_attempted,omitempty"`
+	Partial           bool                                     `json:"partial,omitempty"`
+	Retryable         *bool                                    `json:"retryable,omitempty"`
+	OperationID       string                                   `json:"operation_id,omitempty"`
+	Outcomes          []notification.BroadcastRecipientOutcome `json:"outcomes,omitempty"`
+	OutcomesTruncated bool                                     `json:"outcomes_truncated,omitempty"`
 }
 
 // RecurrenceRequest represents recurrence rules in API requests

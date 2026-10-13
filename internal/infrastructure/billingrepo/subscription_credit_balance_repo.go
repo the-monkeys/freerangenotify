@@ -10,10 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type creditScriptUpdater interface {
-	ScriptUpdate(ctx context.Context, id string, script map[string]interface{}) error
-}
-
 type creditFastSourceUpdater interface {
 	ScriptUpdateCreditSource(context.Context, string, map[string]interface{}) (*license.Subscription, string, error)
 }

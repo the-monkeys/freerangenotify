@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
@@ -58,6 +57,9 @@ func (h *ApplicationHandler) AuthorizeQuotaRequest(c *fiber.Ctx) error {
 	}
 	if role == auth.RoleViewer && c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead && c.Method() != fiber.MethodOptions {
 		return errors.Forbidden("Viewer access is read-only")
+	}
+	if err := h.authorizeAppQuotaOperation(c, app, role, userID); err != nil {
+		return err
 	}
 	c.Locals("app", app)
 	c.Locals("app_id", app.AppID)
@@ -416,16 +418,6 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	if h.membershipRepo != nil && h.appRepo != nil {
 		memberships, mErr := h.membershipRepo.ListByUser(c.Context(), userID)
 		if mErr == nil && len(memberships) > 0 {
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H5-app-list-memberships",
-				"internal/interfaces/http/handlers/application_handler.go:List",
-				"resolved memberships for app list",
-				map[string]any{
-					"user_id":          userID,
-					"membership_count": len(memberships),
-				},
-			)
 
 			for _, m := range memberships {
 				if _, exists := ownedIDs[m.AppID]; exists {
@@ -439,17 +431,6 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 				apps = append(apps, memberApp)
 				total++
 			}
-		} else if mErr != nil {
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H5-app-list-memberships",
-				"internal/interfaces/http/handlers/application_handler.go:List",
-				"failed to resolve memberships for app list",
-				map[string]any{
-					"user_id": userID,
-					"error":   mErr.Error(),
-				},
-			)
 		}
 	}
 

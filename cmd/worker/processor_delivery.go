@@ -125,26 +125,5 @@ func notificationAccountingContext(ctx context.Context) (context.Context, contex
 // Unknown send/network outcomes remain available for reconciliation rather than
 // becoming a fabricated successful burn or an automatically proven refund.
 func notificationDeliveryDefinitelyFailed(err error) bool {
-	if errors.Is(err, errNotificationDeliveryExpired) {
-		return true
-	}
-	var delivery *providers.DeliveryError
-	if !errors.As(err, &delivery) {
-		return false
-	}
-	if delivery.Stage == "health" || delivery.Stage == "resolve" {
-		return true
-	}
-	if delivery.Provider == "smtp" {
-		switch delivery.Stage {
-		case "connect", "tls", "auth", "mail", "rcpt":
-			// All of these SMTP stages precede DATA acceptance.
-			return true
-		}
-	}
-	switch delivery.ErrorType {
-	case providers.ErrorTypeAuth, providers.ErrorTypeConfiguration, providers.ErrorTypeInvalid, providers.ErrorTypeRateLimit:
-		return true
-	}
-	return false
+	return errors.Is(err, errNotificationDeliveryExpired) || providers.IsDefinitiveDeliveryFailure(err)
 }

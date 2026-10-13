@@ -471,7 +471,11 @@ func (s *NotificationService) sendToTopic(ctx context.Context, req notification.
 func (s *NotificationService) SendBulk(ctx context.Context, req notification.BulkSendRequest) ([]*notification.Notification, error) {
 	return s.sendBulk(ctx, req, nil)
 }
-func (s *NotificationService) sendBulk(ctx context.Context, req notification.BulkSendRequest, profiles map[string]*user.User) ([]*notification.Notification, error) {
+func (s *NotificationService) sendBulk(ctx context.Context, req notification.BulkSendRequest, profiles map[string]*user.User, reports ...*notification.BroadcastResult) ([]*notification.Notification, error) {
+	var report *notification.BroadcastResult
+	if len(reports) > 0 {
+		report = reports[0]
+	}
 	// Validate request
 	if err := req.Validate(); err != nil {
 		return nil, err
@@ -643,6 +647,9 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 		notifications = append(notifications, notif)
 	}
 	confirmed := make([]*notification.Notification, 0, len(notifications))
+	if report != nil {
+		report.Skipped = len(req.UserIDs) - len(notifications)
+	}
 	for start := 0; start < len(notifications); start += 500 {
 		end := start + 500
 		if end > len(notifications) {
@@ -656,9 +663,11 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 			var err error
 			outcomes, err = writer.BulkCreateResults(ctx, batch)
 			if err != nil {
+				recordUnknownBroadcastBatch(report, confirmed, batch, notifications[end:], "storage_unknown")
 				return confirmed, fmt.Errorf("notification storage write outcome unknown: %w", err)
 			}
 			if len(outcomes) != len(batch) {
+				recordUnknownBroadcastBatch(report, confirmed, batch, notifications[end:], "storage_unknown")
 				return confirmed, fmt.Errorf("notification storage outcomes incomplete")
 			}
 		} else {
@@ -670,6 +679,10 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 		items := make([]queue.NotificationQueueItem, 0, len(batch))
 		for i, n := range batch {
 			if outcomes[i] != nil {
+				if report != nil {
+					report.Rejected++
+					appendBroadcastOutcome(report, n, "storage_rejected")
+				}
 				s.logger.Warn("Bulk notification storage rejected", zap.String("notification_id", n.NotificationID), zap.Error(outcomes[i]))
 				continue
 			}
@@ -685,9 +698,35 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 		}
 		if len(items) > 0 {
 			if err := s.queue.EnqueueBatch(ctx, items); err != nil {
+				if report != nil {
+					report.Accepted = len(confirmed) - len(items)
+					report.Unknown = len(items)
+					report.NotAttempted = len(notifications) - end
+					report.Partial = true
+					for _, n := range confirmed {
+						outcome := "accepted"
+						if n.IsScheduled() || !containsQueueNotification(items, n.NotificationID) {
+							appendBroadcastOutcome(report, n, outcome)
+						} else {
+							appendBroadcastOutcome(report, n, "publication_unknown")
+						}
+					}
+					for _, n := range notifications[end:] {
+						appendBroadcastOutcome(report, n, "not_attempted")
+					}
+				}
 				// Publication may have succeeded despite a lost response. Leave persisted
 				// states intact; changing them here can race a worker or cause resends.
 				return confirmed, fmt.Errorf("failed to bulk enqueue (publication outcome unknown): %w", err)
+			}
+		}
+	}
+	if report != nil {
+		report.Accepted = len(confirmed)
+		report.Partial = report.Rejected > 0
+		if report.Partial {
+			for _, n := range confirmed {
+				appendBroadcastOutcome(report, n, "accepted")
 			}
 		}
 	}
@@ -798,11 +837,13 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 		Poll:          req.Poll,
 		Style:         req.Style,
 	}
-	notifications, err := s.sendBulk(ctx, bulkReq, profiles)
-	if err != nil {
-		return nil, err
+	report := &notification.BroadcastResult{Total: len(allUserIDs)}
+	notifications, err := s.sendBulk(ctx, bulkReq, profiles, report)
+	report.Notifications = notifications
+	if err != nil && len(notifications) == 0 && report.Unknown == 0 {
+		report.NotAttempted = report.Total - report.Skipped - report.Rejected
 	}
-	return &notification.BroadcastResult{Notifications: notifications}, nil
+	return report, err
 }
 
 // SendBatch sends multiple distinct notifications

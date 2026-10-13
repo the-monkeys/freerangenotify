@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,169 @@ import (
 	"go.uber.org/zap"
 	"net/http/httptest"
 )
+
+type failTerminalReservationSave struct{ fail atomic.Bool }
+
+func (*failTerminalReservationSave) BeforeProcess(ctx context.Context, _ redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (*failTerminalReservationSave) AfterProcess(context.Context, redis.Cmder) error { return nil }
+func (h *failTerminalReservationSave) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	for _, cmd := range cmds {
+		if cmd.Name() != "set" || len(cmd.Args()) < 3 {
+			continue
+		}
+		payload := fmt.Sprint(cmd.Args()[2])
+		if raw, ok := cmd.Args()[2].([]byte); ok {
+			payload = string(raw)
+		}
+		if strings.Contains(payload, `"status":"committed"`) && h.fail.Swap(false) {
+			return ctx, errors.New("terminal Redis write unavailable")
+		}
+	}
+	return ctx, nil
+}
+func (*failTerminalReservationSave) AfterProcessPipeline(context.Context, []redis.Cmder) error {
+	return nil
+}
+
+func TestCreditLegacyRealESSettlementSurvivesRedisFailureAndRestart(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	sub := f.sub(t, 1500)
+	hook := &failTerminalReservationSave{}
+	f.redis.AddHook(hook)
+	makeService := func() *services.CreditService {
+		return services.NewCreditService(f.balances, f.ledger, f.subs, nil, nil, nil, f.redis, zap.NewNop(), true)
+	}
+	svc := makeService()
+	first, err := svc.ReserveForNotification(ctx, f.tenant, "fixture-app", "first", "in_app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sibling, err := svc.ReserveForNotification(ctx, f.tenant, "fixture-app", "sibling", "in_app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, id := range []string{first.ID, sibling.ID} {
+			f.redis.Del(ctx, "frn:credit:res:"+id)
+			f.redis.ZRem(ctx, "frn:credit:res:expiry", id)
+		}
+	})
+	hook.fail.Store(true)
+	_, commitErr := svc.CommitOnSuccess(ctx, first.ID)
+	if commitErr == nil {
+		t.Fatal("fixture did not fail the terminal Redis save")
+	}
+	now := time.Now().UTC()
+	notifs := repository.NewNotificationRepository(f.es, zap.NewNop())
+	if err := notifs.Create(ctx, &notification.Notification{NotificationID: "first", AppID: "fixture-app", Status: notification.StatusSent, SentAt: &now, Metadata: map[string]interface{}{"delivery_reservation_id": first.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := f.redis.Get(ctx, "frn:credit:res:"+first.ID).Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pending billing.CreditReservation
+	if err := json.Unmarshal(payload, &pending); err != nil {
+		t.Fatal(err)
+	}
+	pending.ExpiresAt = now.Add(-time.Hour)
+	payload, _ = json.Marshal(pending)
+	if err := f.redis.Set(ctx, "frn:credit:res:"+first.ID, payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.redis.ZAdd(ctx, "frn:credit:res:expiry", &redis.Z{Member: first.ID, Score: float64(pending.ExpiresAt.Unix())}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	restarted := makeService()
+	restarted.SetReservationNotificationRepository(notifs)
+	if _, err := restarted.ReapExpiredReservations(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.subs.GetByID(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CreditsRemaining != 1499 || got.CreditsReserved != 1 {
+		t.Fatalf("settlement replay debited twice or consumed sibling hold: remaining=%d reserved=%d", got.CreditsRemaining, got.CreditsReserved)
+	}
+	// Stale generic metadata updates must preserve terminal identities/counters.
+	if err := f.subs.Update(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var failures atomic.Int64
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := makeService().CommitOnSuccess(ctx, first.ID); err != nil {
+				failures.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if failures.Load() != 0 {
+		t.Fatalf("concurrent settlement replays failed: %d", failures.Load())
+	}
+	got, err = f.subs.GetByID(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CreditsRemaining != 1499 || got.CreditsReserved != 1 {
+		t.Fatal("stale update or concurrent replay changed wallet")
+	}
+}
+
+func TestNotificationScheduleRealESAtomicClaimPreservesDelivery(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := repository.NewNotificationRepository(f.es, zap.NewNop())
+	claim, ok := repo.(interface {
+		ClaimScheduledNotification(context.Context, string) (bool, error)
+	})
+	if !ok {
+		t.Fatal("production repository must claim atomically")
+	}
+	due := time.Now().UTC().Add(-time.Minute)
+	if err := repo.Create(ctx, &notification.Notification{NotificationID: "schedule-claim", AppID: "fixture-app", Status: notification.StatusPending, ScheduledAt: &due}); err != nil {
+		t.Fatal(err)
+	}
+	var accepted, failures atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			won, err := claim.ClaimScheduledNotification(ctx, "schedule-claim")
+			if err != nil {
+				failures.Add(1)
+			}
+			if won {
+				accepted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if accepted.Load() != 1 || failures.Load() != 0 {
+		t.Fatalf("claims=%d failures=%d", accepted.Load(), failures.Load())
+	}
+	if err := repo.UpdateStatus(ctx, "schedule-claim", notification.StatusSent); err != nil {
+		t.Fatal(err)
+	}
+	if won, err := claim.ClaimScheduledNotification(ctx, "schedule-claim"); err != nil || won {
+		t.Fatalf("successful notification was reclaimed: %v %v", won, err)
+	}
+	future := time.Now().UTC().Add(time.Hour)
+	if err := repo.Create(ctx, &notification.Notification{NotificationID: "future-claim", AppID: "fixture-app", Status: notification.StatusPending, ScheduledAt: &future}); err != nil {
+		t.Fatal(err)
+	}
+	if won, err := claim.ClaimScheduledNotification(ctx, "future-claim"); err != nil || won {
+		t.Fatalf("future notification was claimed: %v %v", won, err)
+	}
+}
 
 // Opt-in only: point these variables at disposable ES/Redis services, never a
 // production cluster. Cleanup is limited to this fixture's generated IDs.

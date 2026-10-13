@@ -141,6 +141,7 @@ func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *li
 	doc["credits_remaining"] = sub.CreditsRemaining
 	doc["credits_reserved"] = sub.CreditsReserved
 	delete(doc, "credit_reservation_journal")
+	delete(doc, "credit_legacy_settlement_journal")
 	allocationID := "cycle:" + sub.CurrentPeriodStart.UTC().Format(time.RFC3339Nano)
 	if sub.Metadata != nil {
 		if intent, _ := sub.Metadata["credit_allocation_id"].(string); intent != "" {
@@ -247,7 +248,12 @@ if (allocation && params.grant_delta > 0) {
 // Preserve pre-cutover full Update only for unmarked subscriptions. The durable
 // marker protects counters even before the first receipt and during rollback.
 if (ctx._source.credit_reservation_mode != 'journal' && (ctx._source.credit_reservation_journal == null || ctx._source.credit_reservation_journal.isEmpty())) {
- for (def e : d.entrySet()) { if (!e.getKey().startsWith('credit_reservation_') && e.getKey() != 'credit_allocation_journal') { ctx._source[e.getKey()] = e.getValue(); } }
+ boolean settled = ctx._source.credit_legacy_settlement_journal != null && !ctx._source.credit_legacy_settlement_journal.isEmpty();
+ if (settled && allocation && ctx._source.credits_reserved > 0) { throw new IllegalArgumentException('cannot replace allocated credits with active holds'); }
+ for (def e : d.entrySet()) {
+  if (settled && !allocation && e.getKey().startsWith('credits_')) { continue; }
+  if (!e.getKey().startsWith('credit_reservation_') && e.getKey() != 'credit_allocation_journal' && e.getKey() != 'credit_legacy_settlement_journal') { ctx._source[e.getKey()] = e.getValue(); }
+ }
  if (allocation) {
   if (ctx._source.credit_allocation_journal == null) { ctx._source.credit_allocation_journal = [:]; }
   ctx._source.credit_allocation_journal[params.allocation_id] = true;
@@ -363,7 +369,7 @@ func (r *SubscriptionRepository) EnsureCreditJournalMapping(ctx context.Context)
 	if r.journalMappingReady {
 		return nil
 	}
-	res, err := r.base.client.Indices.PutMapping([]string{r.base.indexName}, strings.NewReader(`{"properties":{"credit_reservation_mode":{"type":"keyword"},"credit_reservation_journal":{"type":"object","enabled":false},"credit_allocation_journal":{"type":"object","enabled":false}}}`), r.base.client.Indices.PutMapping.WithContext(ctx))
+	res, err := r.base.client.Indices.PutMapping([]string{r.base.indexName}, strings.NewReader(`{"properties":{"credit_reservation_mode":{"type":"keyword"},"credit_reservation_journal":{"type":"object","enabled":false},"credit_allocation_journal":{"type":"object","enabled":false},"credit_legacy_settlement_journal":{"type":"object","enabled":false}}}`), r.base.client.Indices.PutMapping.WithContext(ctx))
 	if err != nil {
 		return err
 	}

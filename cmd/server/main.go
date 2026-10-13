@@ -112,7 +112,7 @@ func main() {
 	}))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:  "*",
-		AllowHeaders:  "Origin, Content-Type, Accept, Authorization, X-API-Key",
+		AllowHeaders:  "Origin, Content-Type, Accept, Authorization, X-API-Key, Idempotency-Key, X-Idempotency-Key",
 		AllowMethods:  "GET,POST,PUT,DELETE,OPTIONS,PATCH",
 		ExposeHeaders: strings.Join(append(append([]string{}, cfg.Security.CORS.ExposedHeaders...), "Content-Length", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"), ","),
 		MaxAge:        86400,

@@ -189,6 +189,29 @@ browserTest.describe('Delivery reliability UI', () => {
         await expect(estimate).not.toContainText('Estimated total:');
     });
 
+    browserTest('partial broadcast keeps its retry identity and explains unknown recipients', async ({ page }) => {
+        await reliabilityPage(page);
+        const keys: string[] = [];
+        await page.route('**/v1/notifications/broadcast', async route => {
+            keys.push(route.request().headers()['idempotency-key'] ?? '');
+            await route.fulfill({ status: 202, json: { sent: 500, total: 6001, partial: true, unknown: 500, not_attempted: 5001, retryable: false, operation_id: 'partial-operation' } });
+        });
+        await openTab(page, 'Broadcast');
+        await selectReliabilityTemplate(page, 'EMAIL fixture');
+        await page.getByRole('button', { name: 'Send Broadcast', exact: true }).click();
+        await page.getByRole('button', { name: 'Yes, Broadcast', exact: true }).click();
+        const outcome = page.getByRole('status', { name: 'Broadcast outcome' });
+        await expect(outcome).toContainText('partially accepted');
+        await expect(outcome).toContainText('500 unknown');
+        await expect(outcome).toContainText('5,001 not attempted');
+        await expect(outcome).toContainText('Review operation');
+        await page.getByRole('button', { name: 'Send Broadcast', exact: true }).click();
+        await page.getByRole('button', { name: 'Yes, Broadcast', exact: true }).click();
+        await expect.poll(() => keys.length).toBe(2);
+        expect(keys[0]).toBeTruthy();
+        expect(keys[1]).toBe(keys[0]);
+    });
+
     browserTest('in-app channel uses its active zero-cost rate alias', async ({ page }) => {
         await reliabilityPage(page);
         await openTab(page, 'Bulk Send');

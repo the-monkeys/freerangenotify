@@ -3,12 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"go.uber.org/zap"
 	"net/smtp"
 	"os"
 	"strconv"
-	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
-	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
-	"go.uber.org/zap"
 )
 
 type teamService struct {
@@ -59,20 +58,6 @@ func (s *teamService) InviteMember(ctx context.Context, appID string, req *auth.
 		zap.String("app_id", appID),
 		zap.String("email", req.Email),
 		zap.String("role", string(req.Role)))
-
-	agentdebug.Log(
-		"pre-fix-rbac",
-		"H1-membership-invite",
-		"internal/usecases/services/team_service_impl.go:InviteMember",
-		"created membership invite",
-		map[string]any{
-			"app_id":       appID,
-			"inviter_id":   inviterID,
-			"member_user":  memberUserID,
-			"member_email": req.Email,
-			"role":         req.Role,
-		},
-	)
 
 	// Send invitation email (best-effort — don't fail the invite if email fails)
 	if err := s.sendInvitationEmail(req.Email, appName, req.Role, userExists); err != nil {

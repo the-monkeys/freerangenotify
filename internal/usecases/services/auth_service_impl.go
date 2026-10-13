@@ -18,7 +18,6 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/google/uuid"
-	"github.com/the-monkeys/freerangenotify/internal/agentdebug"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/dashboard_notification"
@@ -199,16 +198,6 @@ func (s *authService) Login(ctx context.Context, req *auth.LoginRequest) (*auth.
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
 			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H3-claim-on-login",
-				"internal/usecases/services/auth_service_impl.go:Login",
-				"claimed pending memberships on login",
-				map[string]any{
-					"user_id": user.UserID,
-					"email":   user.Email,
-				},
-			)
 		}
 	}
 
@@ -1000,16 +989,6 @@ func (s *authService) VerifyRegistrationOTP(ctx context.Context, req *auth.Verif
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
 			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H2-claim-on-register",
-				"internal/usecases/services/auth_service_impl.go:VerifyRegistrationOTP",
-				"claimed pending memberships on register",
-				map[string]any{
-					"user_id": user.UserID,
-					"email":   user.Email,
-				},
-			)
 		}
 	}
 
@@ -1168,16 +1147,6 @@ func (s *authService) SSOLogin(ctx context.Context, email, name string) (*auth.A
 				zap.String("email", user.Email), zap.Error(err))
 		} else {
 			s.notifyInviteAcceptedToInviters(ctx, user, claimedMemberships)
-			agentdebug.Log(
-				"pre-fix-rbac",
-				"H4-claim-on-sso",
-				"internal/usecases/services/auth_service_impl.go:SSOLogin",
-				"claimed pending memberships on SSO login",
-				map[string]any{
-					"user_id": user.UserID,
-					"email":   user.Email,
-				},
-			)
 		}
 	}
 

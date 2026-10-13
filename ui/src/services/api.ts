@@ -513,9 +513,9 @@ export const notificationsAPI = {
     return data;
   },
 
-  broadcast: async (apiKey: string, payload: BroadcastNotificationRequest) => {
+  broadcast: async (apiKey: string, payload: BroadcastNotificationRequest, idempotencyKey?: string) => {
     const { data } = await api.post('/notifications/broadcast', payload, {
-      headers: getAuthHeaders(apiKey)
+      headers: { ...getAuthHeaders(apiKey), ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) }
     });
     return data;
   },

@@ -106,6 +106,53 @@ func (*quotaAuthService) ValidateToken(context.Context, string) (*auth.AdminUser
 
 type quotaMembers struct{ auth.MembershipRepository }
 
+type quotaRoleMembers struct {
+	auth.MembershipRepository
+	role auth.Role
+}
+
+func (m *quotaRoleMembers) GetByAppAndUser(context.Context, string, string) (*auth.AppMembership, error) {
+	return &auth.AppMembership{Role: m.role}, nil
+}
+func TestAppEndpointPermissionsRunBeforeSharedQuota(t *testing.T) {
+	for _, tc := range []struct {
+		role         auth.Role
+		method, path string
+		allowed      bool
+	}{
+		{auth.RoleEditor, "PUT", "/v1/apps/app-1/settings", false},
+		{auth.RoleEditor, "PUT", "/v1/apps/app-1", false},
+		{auth.RoleAdmin, "DELETE", "/v1/apps/app-1", false},
+		{auth.RoleAdmin, "POST", "/v1/apps/app-1/regenerate-key", false},
+		{auth.RoleEditor, "POST", "/v1/apps/app-1/providers", false},
+		{auth.RoleAdmin, "PUT", "/v1/apps/app-1/settings", true},
+		{auth.RoleEditor, "GET", "/v1/apps/app-1", true},
+	} {
+		t.Run(string(tc.role)+tc.method+tc.path, func(t *testing.T) {
+			l := &quotaDeny{}
+			cfg := &config.Config{}
+			cfg.Security.AppRateLimitEnabled = true
+			svc := &quotaAppService{}
+			members := &quotaRoleMembers{role: tc.role}
+			c := &container.Container{Config: cfg, Logger: zap.NewNop(), ApplicationService: svc, AuthService: &quotaTokenAuth{}, Limiter: l, ApplicationHandler: handlers.NewApplicationHandler(svc, members, nil, nil, nil, zap.NewNop())}
+			app := fiber.New(fiber.Config{ErrorHandler: middleware.ErrorHandler(zap.NewNop())})
+			setupAdminRoutes(app.Group("/v1"), c)
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer team-user")
+			res, err := app.Test(req)
+			require.NoError(t, err)
+			defer res.Body.Close()
+			if tc.allowed {
+				require.Equal(t, 429, res.StatusCode)
+				require.Equal(t, 1, l.calls)
+			} else {
+				require.Equal(t, 403, res.StatusCode)
+				require.Zero(t, l.calls)
+			}
+		})
+	}
+}
+
 func (*quotaMembers) GetByAppAndUser(context.Context, string, string) (*auth.AppMembership, error) {
 	return &auth.AppMembership{Role: auth.RoleViewer}, nil
 }

@@ -168,7 +168,7 @@ func (p *SMTPProvider) Send(ctx context.Context, notif *notification.Notificatio
 			break
 		}
 		failure := newDeliveryError("smtp", "send", credSource, "", err)
-		if !failure.Retryable {
+		if !failure.Retryable || !IsDefinitiveDeliveryFailure(failure) {
 			err = failure
 			break
 		}

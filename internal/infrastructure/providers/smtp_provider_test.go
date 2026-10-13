@@ -2,8 +2,8 @@ package providers
 
 import (
 	"context"
-	"errors"
 	"net/smtp"
+	"net/textproto"
 	"testing"
 	"time"
 
@@ -76,7 +76,7 @@ func TestSMTPProvider_Send(t *testing.T) {
 		smtpProvider.sender = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
 			attempts++
 			if attempts < 2 {
-				return errors.New("temporary error")
+				return &textproto.Error{Code: 451, Msg: "temporary error"}
 			}
 			return nil
 		}

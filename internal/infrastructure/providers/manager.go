@@ -229,6 +229,10 @@ func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Noti
 		if result != nil && result.Error != nil {
 			lastErr = result.Error
 		}
+		if !IsDefinitiveDeliveryFailure(lastErr) {
+			m.logger.Warn("Provider outcome unknown; fallback withheld", zap.String("notification_id", notif.NotificationID), zap.String("provider", providerName))
+			return result, lastErr
+		}
 		m.logger.Warn("Fallback provider failed, trying next",
 			zap.String("notification_id", notif.NotificationID),
 			zap.String("provider", providerName),

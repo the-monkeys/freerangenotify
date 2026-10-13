@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"text/template"
 	"time"
@@ -367,69 +370,99 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 // @Router /v1/notifications/broadcast [post]
 func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
-
-	// Idempotency
-	if h.idemp != nil {
-		key := idempotency.GetIdempotencyKey(c)
-		if key != "" {
-			cached, err := h.idemp.Get(c.Context(), appID, key)
-			if err == nil && cached != nil {
-				return c.Status(cached.Status).Send(cached.Body)
-			}
+	key := idempotency.GetIdempotencyKey(c)
+	// Preserve responses cached by older binaries before adopting operation claims.
+	if h.idemp != nil && key != "" {
+		cached, err := h.idemp.Get(c.Context(), appID, key)
+		if err != nil {
+			return c.Status(503).JSON(fiber.Map{"error": "idempotency store unavailable"})
+		}
+		if cached != nil && cached.RequestHash == "" {
+			return c.Status(cached.Status).Send(cached.Body)
 		}
 	}
-
 	var req dto.BroadcastNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
-		h.logger.Error("Failed to parse broadcast request", zap.Error(err))
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "invalid request body",
-		})
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
 	}
-
-	// Convert to domain request
 	broadcastReq := req.ToBroadcastRequest(appID)
 	if envID, ok := c.Locals("environment_id").(string); ok {
 		broadcastReq.EnvironmentID = envID
 	}
-
-	// Send broadcast notifications (or trigger workflows)
+	if err := broadcastReq.Validate(); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	envID := broadcastReq.EnvironmentID
+	if envID == "" {
+		envID = "default"
+	}
+	// Keep the existing app/key namespace visible to older API binaries. The
+	// request fingerprint supplies endpoint/environment conflict detection.
+	operationKey := key
+	requestBytes, _ := json.Marshal(broadcastReq)
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(requestBytes))
+	operationID := uuid.NewString()
+	if h.idemp != nil && key != "" {
+		operationID = fmt.Sprintf("%x", sha256.Sum256([]byte(appID+":broadcast:"+envID+":"+operationKey)))
+		cached, claimed, err := h.idemp.BeginOperation(c.Context(), appID, operationKey, fingerprint)
+		if err != nil {
+			return c.Status(503).JSON(fiber.Map{"error": "idempotency claim unavailable; broadcast not started"})
+		}
+		if !claimed {
+			if cached.RequestHash != "" && cached.RequestHash != fingerprint {
+				return c.Status(409).JSON(fiber.Map{"error": "idempotency key already used for another broadcast"})
+			}
+			return c.Status(cached.Status).Type("json").Send(cached.Body)
+		}
+	}
+	if broadcastReq.Metadata == nil {
+		broadcastReq.Metadata = make(map[string]interface{})
+	}
+	broadcastReq.Metadata["broadcast_operation_id"] = operationID
 	result, err := h.service.Broadcast(c.Context(), broadcastReq)
-	if err != nil {
+	status := fiber.StatusAccepted
+	var response interface{}
+	if err != nil && (result == nil || (len(result.Notifications) == 0 && result.Unknown == 0)) {
+		status = 500
 		if notification.IsValidationError(err) {
-			h.logger.Warn("Broadcast request validation failed", zap.String("app_id", appID), zap.Error(err))
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": err.Error(),
-			})
+			status = 400
 		}
-		h.logger.Error("Failed to broadcast notifications", zap.String("app_id", appID), zap.Error(err))
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	// Convert to response
-	var sent, total int
-	if result.Triggered > 0 {
-		sent, total = result.Triggered, result.Triggered
+		response = fiber.Map{"error": "broadcast was not accepted", "operation_id": operationID}
+		h.logger.Error("Broadcast preparation failed", zap.String("app_id", appID), zap.String("operation_id", operationID), zap.Error(err))
 	} else {
-		sent = len(result.Notifications)
-		total = sent
-	}
-	response := dto.BulkSendResponse{
-		Sent:  sent,
-		Total: total,
-	}
-
-	if h.idemp != nil {
-		key := idempotency.GetIdempotencyKey(c)
-		if key != "" {
-			bodyBytes, _ := json.Marshal(response)
-			_ = h.idemp.Set(c.Context(), appID, key, fiber.StatusAccepted, bodyBytes)
+		if result == nil {
+			return c.Status(500).JSON(fiber.Map{"error": "missing broadcast result"})
+		}
+		sent, total := len(result.Notifications), len(result.Notifications)
+		if result.Triggered > 0 {
+			sent, total = result.Triggered, result.Triggered
+		} else if result.Total > 0 {
+			sent, total = result.Accepted, result.Total
+		}
+		partial := result.Partial || err != nil
+		out := dto.BulkSendResponse{Sent: sent, Total: total, Rejected: result.Rejected, Skipped: result.Skipped, Unknown: result.Unknown, NotAttempted: result.NotAttempted, Partial: partial, OperationID: operationID, Outcomes: result.Outcomes, OutcomesTruncated: result.OutcomesTruncated}
+		if partial {
+			retryable := false
+			out.Retryable = &retryable
+		}
+		response = out
+		if err != nil {
+			h.logger.Warn("Broadcast partially accepted; automatic replay prohibited", zap.String("app_id", appID), zap.String("operation_id", operationID), zap.Error(err))
 		}
 	}
-
-	return c.Status(fiber.StatusAccepted).JSON(response)
+	body, marshalErr := json.Marshal(response)
+	if marshalErr != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "broadcast response unavailable; reconcile operation", "operation_id": operationID})
+	}
+	if h.idemp != nil && key != "" {
+		// Finish using a bounded detached context even when the HTTP client disconnects.
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Context()), 5*time.Second)
+		defer cancel()
+		if persistErr := h.idemp.CompleteOperation(persistCtx, appID, operationKey, fingerprint, status, body); persistErr != nil {
+			h.logger.Error("Broadcast receipt incomplete; pending claim blocks replay", zap.String("operation_id", operationID), zap.Error(persistErr))
+		}
+	}
+	return c.Status(status).Type("json").Send(body)
 }
 
 // List handles GET /v1/notifications
