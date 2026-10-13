@@ -31,36 +31,15 @@ func DashboardRBAC(membershipRepo auth.MembershipRepository, appRepo application
 			return c.Next()
 		}
 
-		// Resolve role: app owner → RoleOwner, otherwise check membership
-		var role auth.Role
 		var app *application.Application
 		if appRepo != nil {
-			var err error
-			app, err = appRepo.GetByID(c.Context(), appID)
-			if err == nil && app != nil && app.AdminUserID == userID {
-				role = auth.RoleOwner
-			}
-			if err != nil {
-				app = nil
-			}
+			app, _ = appRepo.GetByID(c.Context(), appID)
 		}
-		if role == "" && app != nil && app.TenantID != "" && len(tenantServices) > 0 && tenantServices[0] != nil {
-			allowed, tenantRole, err := tenantServices[0].HasAccess(c.Context(), app.TenantID, userID)
-			if err == nil && allowed {
-				role = auth.RoleViewer
-				if tenantRole == "owner" || tenantRole == "admin" {
-					role = auth.RoleAdmin
-				}
-			}
+		var tenants tenant.Service
+		if len(tenantServices) > 0 {
+			tenants = tenantServices[0]
 		}
-
-		if role == "" && membershipRepo != nil {
-			membership, err := membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
-			if err == nil && membership != nil {
-				role = membership.Role
-			}
-		}
-
+		role := auth.ApplicationRole(c.Context(), app, userID, membershipRepo, tenants)
 		if role == "" {
 			return errors.Forbidden("You do not have access to this application")
 		}

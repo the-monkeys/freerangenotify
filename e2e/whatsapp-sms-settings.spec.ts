@@ -1,6 +1,25 @@
 import {test,expect} from '@playwright/test';
 
 test.describe('Delivery reliability UI channel settings',()=>{
+ for (const owner of [false,true]) test(`key reveal remains explicit and ${owner?'owner-only in memory':'denied for viewer'}`,async({page})=>{
+  let reveals=0;
+  await page.addInitScript(()=>localStorage.setItem('access_token','fixture-jwt'));
+  await page.route('**/v1/**',async route=>{
+   const path=new URL(route.request().url()).pathname.replace(/^\/v1/,'').replace(/\/$/,'');
+   let data:unknown={success:true,data:[]};let status=200;
+   if(path==='/admin/me')data={user_id:owner?'owner':'viewer',full_name:'Channel test',email:'test@example.test',phone_verified:true};
+   else if(path==='/apps/channel')data={data:{app_id:'channel',app_name:'Channel test',api_key:'dashboard:channel',settings:{}}};
+   else if(path==='/apps/channel/reveal-key'){reveals++;status=owner?200:403;data=owner?{success:true,data:{api_key:'fixture-owner-secret'}}:{error:{message:'Owner required'}};}
+   await route.fulfill({status,json:data});
+  });
+  await page.goto('/apps/channel?tab=integration');
+  expect(reveals).toBe(0);
+  await page.getByRole('button',{name:'Show',exact:true}).click();
+  await expect.poll(()=>reveals).toBe(1);
+  if(owner){await expect(page.locator('input[value="fixture-owner-secret"]')).toHaveCount(1);await page.getByRole('button',{name:'Hide',exact:true}).click();await expect(page.locator('input[value="fixture-owner-secret"]')).toHaveCount(0);}
+  else {await expect(page.getByText('Only the application owner can reveal the API key',{exact:true})).toBeVisible();expect(await page.locator('input[value="fixture-owner-secret"]').count()).toBe(0);}
+  expect(await page.evaluate(()=>JSON.stringify(localStorage))).not.toContain('fixture-owner-secret');
+ });
  test('unrelated setting saves omit credential blocks and bind the settings revision',async({page})=>{
   let saved:Record<string,unknown>|undefined;
   await page.addInitScript(()=>localStorage.setItem('access_token','fixture-jwt'));

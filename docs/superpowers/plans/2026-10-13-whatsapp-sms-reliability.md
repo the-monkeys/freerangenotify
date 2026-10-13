@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Fiber, Elasticsearch CAS, Redis, React/TypeScript, existing Meta/Twilio/Vonage clients, proposed Exotel HTTP adapter, Go mock HTTP servers and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (proposed; review before implementation).
+**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phase 1 approved for local implementation).
 
 ## Global Constraints
 
@@ -29,6 +29,10 @@
 5. An unchanged secret in a stale browser form must not overwrite a newly connected account: Tasks 1 and 5.
 
 ## Phase 1 — Security and customer isolation
+
+**Local status:** Tasks 1–3 implemented; independent phase review and final evidence recorded below. Phases 2–5 remain pending. No production changes or push.
+
+**Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
 ### Task 1: Safe configuration responses and consistent authorization
 

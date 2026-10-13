@@ -11,7 +11,8 @@ import (
 // SafeApplicationSettings preserves the public shape without serializing credentials.
 type SafeApplicationSettings struct {
 	application.Settings
-	SecretConfigured map[string]bool `json:"secret_configured,omitempty"`
+	SecretConfigured           map[string]bool `json:"secret_configured,omitempty"`
+	WhatsAppAutoReplyAvailable bool            `json:"whatsapp_auto_reply_available"`
 }
 
 func ToSafeApplicationSettings(settings application.Settings) SafeApplicationSettings {

@@ -100,6 +100,7 @@ const AppDetail: React.FC = () => {
 
 
     useEffect(() => {
+        setRevealedApiKey("");
         setNavAppId(id ?? null);
         return () => {
             setNavAppId(null);
@@ -355,6 +356,7 @@ const AppDetail: React.FC = () => {
                         <WhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
                         <WhatsAppRichTemplates apiKey={app.api_key} appId={app.app_id} />
                         <WhatsAppConversations apiKey={app.api_key} appId={app.app_id} />
+						<p className="text-sm text-muted-foreground">Automatic WhatsApp replies are currently unavailable. Configure an inbound workflow or use the inbox to reply.</p>
                     </div>
                 )}
 

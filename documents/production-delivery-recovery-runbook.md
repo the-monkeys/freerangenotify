@@ -1,5 +1,64 @@
 # Production delivery recovery — Task 6
 
+## WhatsApp/SMS Phase 1 — October 2026
+
+Ordinary application, settings, provider-list and environment reads redact
+credentials. The `api_key` field in dashboard reads is a public `dashboard:<app>`
+or `dashboard:<app>:<environment>` reference requiring a valid dashboard JWT and
+current app permissions. Existing API-key-only SDK authentication remains valid.
+Creation and explicit owner-only reveal return a real key; reveal uses
+`Cache-Control: no-store`. Code samples use placeholders. Previously copied keys
+remain valid until separately authorized rotation. Release the matching frontend
+and API together. Do not roll back to secret-bearing ordinary responses.
+
+Settings responses include `secret_configured`. Empty, masked and omitted secrets
+preserve stored credentials; explicit `clear_secrets` paths remove them. Dashboard
+patches carry `settings_revision`; stale saves return 409 and require reload.
+Legacy request shapes remain accepted. Unchanged browser settings cannot replace
+a newly connected account. Automatic replies are explicitly unavailable until
+shared dispatch/accounting is implemented.
+
+Configure `server.public_url` to the real public callback origin (including any
+mount prefix); provider callback URLs must match exactly. Forwarded host/protocol
+headers cannot select signing identity. Meta requires the owning application's
+signing secret; Twilio uses the owning account's token. Missing signing credentials
+fail closed. Verify sender/WABA ownership and remove ambiguous legacy assignments
+before a separately authorized canary. Unresolved senders are rejected for vendor
+retry instead of storing an unauthenticated payload or assigning it arbitrarily;
+operators must repair mappings before vendor retries expire.
+
+Elasticsearch needs read/create/update/search access to `channel_sender_bindings`
+and `channel_events`, plus existing app/message/notification indices. Claims are
+immutable; a sender transfer requires audited migration rather than a settings
+change. Encrypted connection migration is Phase 2.
+
+Callback acknowledgements follow durable acceptance. Recovery runs in compatible
+API/worker processes with CAS leases. Pending/expired processing receipts retry
+with bounded delays; five failures produce `dead_letter`. `unknown` means a
+workflow or forwarded webhook might have run, and is never automatically replayed.
+Inspect the receiver using the stable `channel-event:<receipt-id>` transaction/
+idempotency key before an explicitly authorized resolution. Receiver idempotency
+is necessary for exactly-once external effects. SSE refresh signals can repeat;
+consumers refresh stored state instead of performing business actions from them.
+
+Monitor receipt counts by state, pending age and attempts without dumping customer
+payloads. Keep recovery readers running during an admissions rollback. Do not
+delete claims/receipts, reset unknown events blindly, replay production messages,
+or alter balances as part of deploying these code changes.
+
+Inbox rows deduplicate provider message identities; read markers reduce unread
+counts. Conditional delivery transitions protect app ownership and prevent late
+failure from overwriting delivered/read. Meta service windows expire from validated
+provider time. Twilio's default incoming webhook omits creation timestamps
+([Twilio documentation](https://help.twilio.com/articles/46569585455003)); receipt
+time cannot open a window. Phase 3 needs an account-bound timestamp resolver before
+admitting free-form Twilio replies through shared dispatch. Legacy ingestion
+continues. Tests use mock providers and disposable local ES/Redis; no production
+rollout, live sends, credential changes or balance repair have been performed.
+
+Later phases still cover encrypted connections, onboarding, outbound dispatch,
+pricing, OTP, domestic SMS and environment simplification.
+
 This is an operator procedure, not evidence of live recovery. Implementing Task 6
 does not authorize production deployment, credential/account changes, messages,
 balance adjustments, migration, or replay. Obtain incident-specific authorization

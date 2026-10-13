@@ -12,6 +12,12 @@ const (
 
 // InboundMessage represents a WhatsApp message stored in Elasticsearch.
 type InboundMessage struct {
+	ConnectionID  string           `json:"connection_id,omitempty"`
+	EnvironmentID string           `json:"environment_id,omitempty"`
+	Provider      string           `json:"provider,omitempty"`
+	AccountID     string           `json:"account_id,omitempty"`
+	SenderID      string           `json:"sender_id,omitempty"`
+	ReadAt        *time.Time       `json:"read_at,omitempty"`
 	ID            string           `json:"id" es:"id"`
 	AppID         string           `json:"app_id" es:"app_id"`
 	WABAID        string           `json:"waba_id" es:"waba_id"`
@@ -52,6 +58,12 @@ type InboundMessage struct {
 
 // DeliveryStatus represents a status webhook event from Meta.
 type DeliveryStatus struct {
+	ConnectionID       string    `json:"connection_id,omitempty"`
+	AppID              string    `json:"app_id,omitempty"`
+	EnvironmentID      string    `json:"environment_id,omitempty"`
+	Provider           string    `json:"provider,omitempty"`
+	AccountID          string    `json:"account_id,omitempty"`
+	SenderID           string    `json:"sender_id,omitempty"`
 	MetaMessageID      string    `json:"meta_message_id"`
 	NotificationID     string    `json:"notification_id,omitempty"`
 	Status             string    `json:"status"` // sent, delivered, read, failed

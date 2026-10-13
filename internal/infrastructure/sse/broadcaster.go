@@ -17,10 +17,12 @@ import (
 // SSEMessage is the internal Redis pub/sub envelope. It carries routing
 // information (UserID) and the notification payload.
 type SSEMessage struct {
-	Type         string                     `json:"type"`
-	UserID       string                     `json:"user_id,omitempty"`
-	Notification *notification.Notification `json:"notification,omitempty"`
-	Data         interface{}                `json:"data,omitempty"`
+	AppID         string                     `json:"app_id,omitempty"`
+	EnvironmentID string                     `json:"environment_id,omitempty"`
+	Type          string                     `json:"type"`
+	UserID        string                     `json:"user_id,omitempty"`
+	Notification  *notification.Notification `json:"notification,omitempty"`
+	Data          interface{}                `json:"data,omitempty"`
 }
 
 // ClientPayload is the clean structure delivered to browser clients.
@@ -45,12 +47,13 @@ type Client struct {
 
 // Broadcaster manages SSE connections and broadcasts messages via Redis pub/sub.
 type Broadcaster struct {
-	repo     notification.Repository
-	clients  map[string][]*Client
-	mu       sync.RWMutex
-	logger   *zap.Logger
-	redis    *redis.Client
-	stopChan chan struct{}
+	inboxAuthorize func(context.Context, string, string) bool
+	repo           notification.Repository
+	clients        map[string][]*Client
+	mu             sync.RWMutex
+	logger         *zap.Logger
+	redis          *redis.Client
+	stopChan       chan struct{}
 }
 
 // NewBroadcaster creates a new SSE broadcaster.
@@ -103,17 +106,7 @@ func (b *Broadcaster) listenForMessages() {
 						continue
 					}
 
-					// Build a clean client payload from the notification.
-					clientData := b.buildClientPayload(&sseMsg)
-
-					if sseMsg.UserID != "" {
-						b.logger.Debug("Broadcasting to user",
-							zap.String("user_id", sseMsg.UserID))
-						b.Broadcast(sseMsg.UserID, clientData)
-					} else {
-						b.logger.Debug("Broadcasting to all users")
-						b.BroadcastToAll(clientData)
-					}
+					b.routeMessage(&sseMsg)
 
 				case <-b.stopChan:
 					pubsub.Close()
@@ -345,4 +338,34 @@ func (b *Broadcaster) handleDeliveryFailure(ctx context.Context, message string)
 // Close stops the broadcaster and releases resources.
 func (b *Broadcaster) Close() {
 	close(b.stopChan)
+}
+
+func (b *Broadcaster) routeMessage(msg *SSEMessage) {
+	if msg.Type == "whatsapp_inbound" || msg.Type == "delivery_status" || msg.Type == "template_status" {
+		if msg.AppID == "" || b.inboxAuthorize == nil {
+			return
+		}
+		b.mu.RLock()
+		users := make([]string, 0, len(b.clients))
+		for id := range b.clients {
+			users = append(users, id)
+		}
+		b.mu.RUnlock()
+		for _, id := range users {
+			if b.inboxAuthorize(context.Background(), msg.AppID, id) {
+				b.Broadcast(id, b.buildClientPayload(msg))
+			}
+		}
+		return
+	}
+	data := b.buildClientPayload(msg)
+	if msg.UserID != "" {
+		b.Broadcast(msg.UserID, data)
+	} else {
+		b.BroadcastToAll(data)
+	}
+}
+
+func (b *Broadcaster) SetInboxAuthorizer(authorize func(context.Context, string, string) bool) {
+	b.inboxAuthorize = authorize
 }

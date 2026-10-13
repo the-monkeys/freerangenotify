@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { environmentsAPI } from '../../services/api';
 import type { Environment, EnvironmentName } from '../../types';
 import { useApiQuery } from '../../hooks/use-api-query';
@@ -50,6 +50,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
     const [promoteResources, setPromoteResources] = useState<string[]>(['templates']);
     const [promoting, setPromoting] = useState(false);
     const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
+    useEffect(() => { setRevealedKeys({}); setApiKeyDialog(null); }, [appId]);
 
     const fetcher = useCallback(() => environmentsAPI.list(appId), [appId]);
     const { data: environments, loading, refetch } = useApiQuery<Environment[]>(fetcher, [appId], { cacheKey: `app-environments-${appId}` });

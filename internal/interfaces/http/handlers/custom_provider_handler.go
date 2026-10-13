@@ -469,8 +469,11 @@ func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 }
 
 func findCustomProviderIndex(providers []application.CustomProviderConfig, providerID string) int {
-	safe := dto.ToSafeApplicationSettings(application.Settings{CustomProviders: providers})
-	providers = safe.CustomProviders
+	for i := range providers {
+		if providers[i].ProviderID == providerID {
+			return i
+		}
+	}
 	return -1
 }
 

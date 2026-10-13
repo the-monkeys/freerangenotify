@@ -261,7 +261,7 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	if req.TenantID != nil {
 		app.TenantID = *req.TenantID
 	}
-	if req.WebhookURL != "" {
+	if req.WebhookURL != "" && req.WebhookURL != dto.SafeEndpoint(app.WebhookURL) {
 		app.WebhookURL = req.WebhookURL
 	}
 	if req.Webhooks != nil {
@@ -427,9 +427,6 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	for i, app := range apps {
 		response := dto.ToApplicationResponse(app)
 		// Mask API keys in list view
-		if len(response.APIKey) > 8 {
-			response.APIKey = "***" + response.APIKey[len(response.APIKey)-8:]
-		}
 		appResponses[i] = response
 	}
 
@@ -761,7 +758,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"time"
 	"net/http"
 	"strings"
 )

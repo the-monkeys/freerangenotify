@@ -15,6 +15,7 @@ import (
 
 // WhatsAppRepository implements whatsapp.Repository using Elasticsearch.
 type WhatsAppRepository struct {
+	whatsapp.EventRepository
 	messages *BaseRepository
 	client   *elasticsearch.Client
 	logger   *zap.Logger
@@ -23,14 +24,28 @@ type WhatsAppRepository struct {
 // NewWhatsAppRepository creates a new WhatsApp message repository.
 func NewWhatsAppRepository(client *elasticsearch.Client, logger *zap.Logger) whatsapp.Repository {
 	return &WhatsAppRepository{
-		messages: NewBaseRepository(client, "whatsapp_messages", logger, RefreshWaitFor),
-		client:   client,
-		logger:   logger,
+		messages:        NewBaseRepository(client, "whatsapp_messages", logger, RefreshWaitFor),
+		EventRepository: NewChannelEventRepository(client),
+		client:          client,
+		logger:          logger,
 	}
 }
 
 func (r *WhatsAppRepository) StoreMessage(ctx context.Context, msg *whatsapp.InboundMessage) error {
-	return r.messages.Create(ctx, msg.ID, msg)
+	raw, _ := json.Marshal(msg)
+	req := esapi.CreateRequest{Index: "whatsapp_messages", DocumentID: msg.ID, Body: strings.NewReader(string(raw)), Refresh: "wait_for"}
+	res, err := req.Do(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == 409 {
+		return nil
+	}
+	if res.IsError() {
+		return fmt.Errorf("inbox persistence unavailable")
+	}
+	return nil
 }
 
 func (r *WhatsAppRepository) GetByMetaMessageID(ctx context.Context, metaMessageID string) (*whatsapp.InboundMessage, error) {
@@ -131,6 +146,7 @@ func (r *WhatsAppRepository) ListConversations(ctx context.Context, appID string
 					"order": map[string]interface{}{"latest_msg": "desc"},
 				},
 				"aggs": map[string]interface{}{
+					"unread": map[string]interface{}{"filter": map[string]interface{}{"bool": map[string]interface{}{"must": []interface{}{map[string]interface{}{"term": map[string]interface{}{"direction": "inbound"}}}, "must_not": []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": "read_at"}}}}}},
 					"latest_msg": map[string]interface{}{
 						"max": map[string]interface{}{"field": "timestamp"},
 					},
@@ -193,7 +209,8 @@ func (r *WhatsAppRepository) ListConversations(ctx context.Context, appID string
 		conv := &whatsapp.Conversation{
 			ContactWAID: fmt.Sprintf("%v", bucket["key"]),
 		}
-		if dc, ok := bucket["doc_count"].(float64); ok {
+		unread, _ := bucket["unread"].(map[string]interface{})
+		if dc, ok := unread["doc_count"].(float64); ok {
 			conv.UnreadCount = int64(dc)
 		}
 
@@ -219,4 +236,26 @@ func (r *WhatsAppRepository) ListConversations(ctx context.Context, appID string
 	}
 
 	return conversations, total, nil
+}
+
+func (r *WhatsAppRepository) MarkContactRead(ctx context.Context, appID, contact string, at time.Time) error {
+	body, _ := json.Marshal(map[string]interface{}{"query": map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{map[string]interface{}{"term": map[string]interface{}{"app_id": appID}}, map[string]interface{}{"term": map[string]interface{}{"contact_wa_id": contact}}, map[string]interface{}{"term": map[string]interface{}{"direction": "inbound"}}}, "must_not": []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": "read_at"}}}}}, "script": map[string]interface{}{"source": "ctx._source.read_at=params.at", "params": map[string]interface{}{"at": at.UTC().Format(time.RFC3339Nano)}}})
+	res, err := r.client.UpdateByQuery([]string{"whatsapp_messages"}, r.client.UpdateByQuery.WithContext(ctx), r.client.UpdateByQuery.WithBody(strings.NewReader(string(body))), r.client.UpdateByQuery.WithRefresh(true))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("inbox read state update unavailable")
+	}
+	var out struct {
+		Failures []interface{} `json:"failures"`
+	}
+	if err = json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return err
+	}
+	if len(out.Failures) > 0 {
+		return fmt.Errorf("inbox read state update incomplete")
+	}
+	return nil
 }

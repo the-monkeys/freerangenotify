@@ -323,11 +323,21 @@ func (s *whatsappRichTemplateService) Preview(ctx context.Context, appID, id str
 // transitions land in the index without polling. Locates the template by
 // (WABA → app_id → name).
 func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaID, templateName, status, reason string) error {
+	appID, _ := ctx.Value(whatsapp.CallbackAppKey).(string)
+	if appID != "" {
+		app, err := s.appRepo.GetByID(ctx, appID)
+		if err != nil {
+			return err
+		}
+		if app == nil || app.Settings.WhatsApp == nil || app.Settings.WhatsApp.MetaWABAID != wabaID {
+			return fmt.Errorf("template callback account mismatch")
+		}
+		return s.applyMetaStatusForApp(ctx, appID, templateName, status, reason)
+	}
 	apps, err := s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
 	if err != nil {
 		return err
 	}
-	var appID string
 	for _, app := range apps {
 		wa := app.Settings.WhatsApp
 		if wa != nil && wa.Provider == "meta" && wa.MetaWABAID == wabaID {
@@ -344,6 +354,9 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 
 	// Find by Meta-side template_name (the name we submitted, which mirrors
 	// tpl.Name today but may diverge in future for collision avoidance).
+	return s.applyMetaStatusForApp(ctx, appID, templateName, status, reason)
+}
+func (s *whatsappRichTemplateService) applyMetaStatusForApp(ctx context.Context, appID, templateName, status, reason string) error {
 	tpl, err := s.repo.GetByName(ctx, appID, templateName)
 	if err != nil {
 		return err
@@ -367,15 +380,46 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 // Looks up by Twilio ContentSid (which we stored at submission time) and
 // updates the binding + aggregate state.
 func (s *whatsappRichTemplateService) ApplyTwilioStatus(ctx context.Context, contentSid, status, reason string) error {
+	if finder, ok := s.repo.(interface {
+		FindByTwilioContentSID(context.Context, string) (*whatsapp.RichTemplate, error)
+	}); ok {
+		tpl, err := finder.FindByTwilioContentSID(ctx, contentSid)
+		if err != nil {
+			return err
+		}
+		if tpl == nil {
+			return fmt.Errorf("content binding unavailable")
+		}
+		if appID, _ := ctx.Value(whatsapp.CallbackAppKey).(string); appID != "" && appID != tpl.AppID {
+			return fmt.Errorf("content binding application mismatch")
+		}
+		tpl.Providers.Twilio.Status = strings.ToLower(status)
+		tpl.Providers.Twilio.Reason = reason
+		tpl.Providers.Twilio.UpdatedAt = s.now()
+		tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+		tpl.UpdatedAt = s.now()
+		return s.repo.Update(ctx, tpl)
+	}
 	// We don't have a "GetByTwilioSid" repo method, so do a small scan with
 	// a high cap. Twilio webhook volume is low (one per approval transition
 	// per template); the simpler implementation is fine here.
 	const scanCap = 1000
-	apps, err := s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	var apps []*application.Application
+	var err error
+	if appID, ok := ctx.Value(whatsapp.CallbackAppKey).(string); ok && appID != "" {
+		app, e := s.appRepo.GetByID(ctx, appID)
+		err = e
+		apps = []*application.Application{app}
+	} else {
+		apps, err = s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	}
 	if err != nil {
 		return err
 	}
 	for _, app := range apps {
+		if app == nil {
+			return fmt.Errorf("content application unavailable")
+		}
 		tpls, _, err := s.repo.List(ctx, whatsapp.RichTemplateFilter{AppID: app.AppID, Limit: scanCap})
 		if err != nil {
 			s.logger.Warn("Twilio status webhook: list templates failed", zap.String("app_id", app.AppID), zap.Error(err))

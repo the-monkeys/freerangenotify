@@ -49,6 +49,7 @@ import (
 
 // Container holds all dependencies for the application
 type Container struct {
+	channelEventCancel context.CancelFunc
 	// Configuration
 	Config *config.Config
 	Logger *zap.Logger
@@ -294,7 +295,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Initialize SSE broadcaster
 	container.SSEBroadcaster = sse.NewBroadcaster(repos.Notification, logger)
-	container.SSEBroadcaster.SetRedis(redisClient)
+	// Inbox authorizer is installed after tenant/membership services initialize.
 
 	// Initialize services
 	container.AppRepo = repos.Application
@@ -899,8 +900,17 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.OpsHandler.SetRateCardManager(container.RateCardService)
 	}
 
+	container.SSEBroadcaster.SetInboxAuthorizer(func(ctx context.Context, appID, userID string) bool {
+		app, err := repos.Application.GetByID(ctx, appID)
+		return err == nil && auth.ApplicationRole(ctx, app, userID, container.MembershipRepo, container.TenantService) != ""
+	})
+	container.SSEBroadcaster.SetRedis(redisClient)
 	// ── WhatsApp Meta Tech Provider (feature-gated) ──
 	if cfg.Features.WhatsAppMetaEnabled {
+		senderResolver := services.NewChannelSenderResolver(repos.Application, repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient()))
+		senderResolver.MetaSecret = cfg.Providers.MetaWhatsApp.AppSecret
+		senderResolver.TwilioAccount = cfg.Providers.WhatsApp.AccountSID
+		senderResolver.TwilioSecret = cfg.Providers.WhatsApp.AuthToken
 		waRepo := repository.NewWhatsAppRepository(dbManager.Client.GetClient(), logger)
 		container.WhatsAppService = services.NewWhatsAppService(
 			waRepo,
@@ -923,6 +933,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		if cfg.Server.PublicURL != "" {
 			webhookURL = cfg.Server.PublicURL + "/v1/webhooks/meta/whatsapp"
 		}
+		container.MetaWebhookHandler.SetSenderResolver(senderResolver)
 		container.WhatsAppAdminHandler = handlers.NewWhatsAppAdminHandler(
 			container.ApplicationService,
 			container.MembershipRepo,
@@ -980,6 +991,48 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 				cfg.Providers.WhatsApp.AuthToken,
 				logger,
 			)
+		}
+		container.TwilioInboundWebhookHandler.SetSenderResolver(senderResolver, cfg.Server.PublicURL)
+		if finder, ok := richTplRepo.(interface {
+			FindByTwilioContentSID(context.Context, string) (*whatsapp.RichTemplate, error)
+		}); ok {
+			container.TwilioContentStatusHandler.SetVerifier(repos.Application, finder, cfg.Providers.WhatsApp.AccountSID, cfg.Providers.WhatsApp.AuthToken, cfg.Server.PublicURL)
+		}
+		if processor, ok := container.WhatsAppService.(whatsapp.EventProcessor); ok {
+			container.TwilioContentStatusHandler.SetEventProcessor(processor)
+			if configurer, ok := container.WhatsAppService.(whatsapp.TemplateEventConfigurer); ok {
+				configurer.SetTemplateStatusApplier(func(ctx context.Context, b *whatsapp.InboundSenderBinding, e *whatsapp.TemplateStatusEvent) error {
+					ctx = context.WithValue(ctx, whatsapp.CallbackAppKey, b.AppID)
+					var err error
+					if b.Provider == "twilio" {
+						err = container.WhatsAppRichTemplateService.ApplyTwilioStatus(ctx, e.TemplateID, e.Status, e.Reason)
+					} else {
+						err = container.WhatsAppRichTemplateService.ApplyMetaStatus(ctx, b.AccountID, e.TemplateID, e.Status, e.Reason)
+					}
+					if err != nil {
+						return err
+					}
+					return container.SSEBroadcaster.PublishMessage(&sse.SSEMessage{AppID: b.AppID, EnvironmentID: b.EnvironmentID, Type: "template_status", Data: map[string]interface{}{"app_id": b.AppID, "name": e.TemplateID, "status": e.Status, "reason": e.Reason}})
+				})
+			}
+			eventCtx, cancel := context.WithCancel(context.Background())
+			container.channelEventCancel = cancel
+			go func() {
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-eventCtx.Done():
+						return
+					case <-ticker.C:
+						runCtx, finish := context.WithTimeout(eventCtx, 30*time.Second)
+						if err := processor.RecoverChannelEvents(runCtx); err != nil {
+							logger.Warn("Callback recovery scan deferred")
+						}
+						finish()
+					}
+				}
+			}()
 		}
 		// Click attribution signer + redirect handler (Phase 3). Falls back
 		// to JWTSecret if no dedicated click-signing key is configured.
@@ -1084,6 +1137,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 // Close cleans up all resources
 func (c *Container) Close() error {
+	if c.channelEventCancel != nil {
+		c.channelEventCancel()
+	}
 	if c.bizSchedulerCancel != nil {
 		c.bizSchedulerCancel()
 	}

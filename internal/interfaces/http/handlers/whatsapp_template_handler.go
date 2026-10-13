@@ -337,6 +337,10 @@ func (h *WhatsAppTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 // HandleTemplateStatusWebhook processes template status update webhooks from Meta.
 // Called from MetaWebhookHandler when a message_template_status_update event arrives.
 func (h *WhatsAppTemplateHandler) HandleTemplateStatusWebhook(event map[string]interface{}) {
+	appID, _ := event["app_id"].(string)
+	if appID == "" {
+		return
+	}
 	name, _ := event["message_template_name"].(string)
 	status, _ := event["event"].(string)
 	reason, _ := event["reason"].(string)
@@ -348,7 +352,8 @@ func (h *WhatsAppTemplateHandler) HandleTemplateStatusWebhook(event map[string]i
 
 	if h.sseBroadcaster != nil {
 		_ = h.sseBroadcaster.PublishMessage(&sse.SSEMessage{
-			Type: "template_status",
+			AppID: appID,
+			Type:  "template_status",
 			Data: map[string]interface{}{
 				"name":   name,
 				"status": status,

@@ -55,6 +55,21 @@ func (r *WhatsAppRichTemplateRepository) GetByID(ctx context.Context, id string)
 	return &tpl, nil
 }
 
+func (r *WhatsAppRichTemplateRepository) FindByTwilioContentSID(ctx context.Context, sid string) (*whatsapp.RichTemplate, error) {
+	result, err := r.base.Search(ctx, map[string]interface{}{"size": 2, "query": map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{map[string]interface{}{"term": map[string]interface{}{"providers.twilio.content_sid": sid}}, map[string]interface{}{"term": map[string]interface{}{"providers.twilio.content_sid.keyword": sid}}}, "minimum_should_match": 1}}})
+	if err != nil {
+		return nil, err
+	}
+	if result.Total != 1 {
+		return nil, fmt.Errorf("template binding is missing or ambiguous")
+	}
+	var tpl whatsapp.RichTemplate
+	if err = mapToStruct(result.Hits[0], &tpl); err != nil {
+		return nil, err
+	}
+	return &tpl, nil
+}
+
 // GetByName fetches a template by (app_id, name). Returns nil + nil when the
 // document is missing so callers can use this to enforce idempotent create
 // without distinguishing a real ES error from a not-found result.
