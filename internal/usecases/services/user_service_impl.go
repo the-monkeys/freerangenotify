@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -341,15 +342,27 @@ func (s *UserServiceImpl) GetPreferences(ctx context.Context, userID string) (*u
 
 // BulkCreate creates multiple users
 func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) error {
+	outcomes, err := s.BulkCreateResults(ctx, users)
+	if err != nil {
+		return err
+	}
+	for _, itemErr := range outcomes {
+		if itemErr != nil {
+			return errors.DatabaseError("bulk create user row", itemErr)
+		}
+	}
+	return nil
+}
+func (s *UserServiceImpl) BulkCreateResults(ctx context.Context, users []*user.User) ([]error, error) {
 	if len(users) == 0 {
-		return errors.BadRequest("users array is empty")
+		return nil, errors.BadRequest("users array is empty")
 	}
 
 	// Validate and set IDs for all users
 	now := time.Now()
 	for _, u := range users {
 		if u.AppID == "" {
-			return errors.BadRequest("app_id is required for all users")
+			return nil, errors.BadRequest("app_id is required for all users")
 		}
 		if u.UserID == "" {
 			u.UserID = uuid.New().String()
@@ -365,18 +378,48 @@ func (s *UserServiceImpl) BulkCreate(ctx context.Context, users []*user.User) er
 		}
 	}
 
-	if err := s.repo.BulkCreate(ctx, users); err != nil {
-		s.logger.Error("Failed to bulk create users", zap.Int("count", len(users)), zap.Error(err))
-		return errors.DatabaseError("bulk create users", err)
+	var outcomes []error
+	var err error
+	if writer, ok := s.repo.(interface {
+		BulkCreateResults(context.Context, []*user.User) ([]error, error)
+	}); ok {
+		outcomes, err = writer.BulkCreateResults(ctx, users)
+	} else {
+		err = s.repo.BulkCreate(ctx, users)
+		outcomes = make([]error, len(users))
 	}
-
-	// Phase 5: On-user-created workflow trigger for each new user
-	for _, u := range users {
-		s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+	if err != nil {
+		return nil, errors.DatabaseError("bulk create users; write outcome unknown", err)
 	}
+	if len(outcomes) != len(users) {
+		return nil, errors.DatabaseError("bulk create users", fmt.Errorf("incomplete bulk response"))
+	}
+	for i, u := range users {
+		if outcomes[i] == nil {
+			s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+		}
+	}
+	return outcomes, nil
+}
 
-	s.logger.Info("Users created successfully", zap.Int("count", len(users)))
-	return nil
+// LookupEmails keeps environment scoping on the production batch path.
+func (s *UserServiceImpl) LookupEmails(ctx context.Context, appID, environmentID string, emails []string) (map[string]*user.User, error) {
+	if lookup, ok := s.repo.(interface {
+		LookupEmails(context.Context, string, string, []string) (map[string]*user.User, error)
+	}); ok {
+		return lookup.LookupEmails(ctx, appID, environmentID, emails)
+	}
+	found := make(map[string]*user.User)
+	for _, email := range emails {
+		u, err := s.GetByEmail(ctx, appID, email)
+		if err != nil && !errors.IsNotFound(err) {
+			return nil, err
+		}
+		if u != nil && (environmentID == "" || environmentID == "default" || u.EnvironmentID == environmentID) {
+			found[email] = u
+		}
+	}
+	return found, nil
 }
 
 // triggerOnUserCreated fires workflow if app settings have OnUserCreatedTriggerID (fire-and-forget)

@@ -4,6 +4,7 @@ import SearchInputWithClear from './SearchInput';
 import { useApiQuery } from '../hooks/use-api-query';
 import { usersAPI } from '../services/api';
 import type { User, CreateUserRequest } from '../types';
+import { parseSubscriberCSV, SUBSCRIBER_CSV_MAX_BYTES } from '../lib/subscriber-csv';
 import { extractErrorMessage } from '../lib/utils';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -65,6 +66,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadingCSV, setUploadingCSV] = useState(false);
+    const [importProgress, setImportProgress] = useState('');
 
     const {
         data: usersData,
@@ -202,71 +204,42 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
 
     const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file) return;
-
+        if (!file || uploadingCSV) return;
         setUploadingCSV(true);
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const text = e.target?.result as string;
-                if (!text) throw new Error("File empty");
-
-                const lines = text.split('\n').filter(l => l.trim().length > 0);
-                if (lines.length < 2) throw new Error("CSV must contain a header row and at least one data row.");
-
-                const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-                const emailIdx = headers.indexOf('email');
-                const nameIdx = headers.indexOf('full_name') !== -1 ? headers.indexOf('full_name') : headers.indexOf('name');
-                const phoneIdx = headers.indexOf('phone');
-                const extIdIdx = headers.indexOf('external_id');
-
-                if (emailIdx === -1) {
-                    throw new Error("CSV header must contain 'email'");
+        let completed = 0, created = 0, updated = 0, skipped = 0, failed = 0, total = 0;
+        const errors: string[] = [];
+        const summary = () => `${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed`;
+        try {
+            if (file.size > SUBSCRIBER_CSV_MAX_BYTES) throw new Error('CSV must be 10 MB or smaller.');
+            const chunks = parseSubscriberCSV(await file.text(), getBrowserTimezone());
+            total = chunks.reduce((count, chunk) => count + chunk.length, 0);
+            for (const chunk of chunks) {
+                setImportProgress(`Importing ${completed} / ${total} rows: ${summary()}.`);
+                const res = await usersAPI.bulkCreate(apiKey, { upsert: false, skip_existing: true, users: chunk.map(r => r.user) });
+                const rowErrors = res.errors ?? [];
+                if (![res.created, res.updated, res.skipped].every(n => Number.isInteger(n) && n >= 0) ||
+                    res.total !== chunk.length || res.created + res.updated + res.skipped + rowErrors.length !== chunk.length ||
+                    rowErrors.some(e => !Number.isInteger(e.index) || e.index < 0 || e.index >= chunk.length)) {
+                    throw new Error('Server returned incomplete import results. Check this batch before retrying.');
                 }
-
-                const usersToCreate: CreateUserRequest[] = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const columns = lines[i].split(',').map(c => c.trim());
-                    if (columns.length < headers.length) continue;
-
-                    if (!columns[emailIdx]) continue; // Skip empty emails
-
-                    usersToCreate.push({
-                        email: columns[emailIdx],
-                        full_name: nameIdx !== -1 ? columns[nameIdx] : undefined,
-                        phone: phoneIdx !== -1 ? columns[phoneIdx] : undefined,
-                        external_id: extIdIdx !== -1 ? columns[extIdIdx] : undefined,
-                        timezone: getBrowserTimezone(),
-                        language: 'en',
-                    });
-                }
-
-                if (usersToCreate.length === 0) {
-                    throw new Error("No valid valid user data rows found.");
-                }
-
-                const res = await usersAPI.bulkCreate(apiKey, {
-                    upsert: false,
-                    skip_existing: true,
-                    users: usersToCreate
-                });
-
-                toast.success(`Import successful: ${res.created} created, ${res.skipped} skipped.`);
-                fetchUsers();
-            } catch (err) {
-                console.error("CSV import error", err);
-                toast.error(extractErrorMessage(err, "Failed to parse or upload CSV"));
-            } finally {
-                setUploadingCSV(false);
-                if (fileInputRef.current) fileInputRef.current.value = '';
+                created += res.created; updated += res.updated; skipped += res.skipped; failed += rowErrors.length;
+                for (const error of rowErrors) if (errors.length < 50) errors.push(`Row ${chunk[error.index].row}: ${error.message}`);
+                completed += chunk.length;
             }
-        };
-        reader.onerror = () => {
-            toast.error("Failed to read file.");
+            setImportProgress(`Import complete (${completed} / ${total} rows): ${summary()}.${errors.length ? '\n' + errors.join('\n') : ''}`);
+            if (failed) toast.warning(`Import completed with ${failed} failed rows. See import results.`);
+            else toast.success(`Import successful: ${summary()}.`);
+        } catch (err) {
+            const message = extractErrorMessage(err, 'Failed to parse or upload CSV');
+            setImportProgress(total
+                ? `Import stopped after ${completed} / ${total} confirmed rows: ${summary()}. The current batch may have been written; check subscribers before retrying. ${message}${errors.length ? '\n' + errors.join('\n') : ''}`
+                : message);
+            toast.error(message);
+        } finally {
+            if (completed || total) fetchUsers();
             setUploadingCSV(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
-        };
-        reader.readAsText(file);
+        }
     };
 
     const handleDownloadCSVTemplate = () => {
@@ -346,6 +319,7 @@ const AppUsers: React.FC<AppUsersProps> = ({ apiKey }) => {
                 </div>
             </CardHeader>
             <CardContent>
+                {importProgress && <p role="status" aria-label="CSV import progress" className="mb-4 whitespace-pre-wrap text-sm">{importProgress}</p>}
                 <SearchInputWithClear
                     className="mb-4 max-w-md"
                     type="search"

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"go.uber.org/zap"
 )
@@ -28,6 +29,7 @@ type RateCardService struct {
 	pubSubChannel   string
 
 	mu         sync.RWMutex
+	editMu     sync.Mutex
 	activeCard *billing.RateCard
 
 	cancel context.CancelFunc
@@ -133,6 +135,9 @@ func (s *RateCardService) GetCheckoutPlan(planID string) (billing.PlanBundle, bo
 	}
 
 	card := s.GetActiveRateCard()
+	if card == nil {
+		return billing.PlanBundle{}, false
+	}
 	plans := plansForCard(card)
 	plan, ok := plans[id]
 	if !ok || !plan.Active {
@@ -197,6 +202,8 @@ func (s *RateCardService) ActivateVersion(ctx context.Context, version string) e
 }
 
 func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel string, credits int64) (*billing.RateCard, error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	if credits <= 0 {
 		return nil, fmt.Errorf("ratecard: credits must be > 0")
 	}
@@ -213,15 +220,8 @@ func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel stri
 		return nil, fmt.Errorf("ratecard: no active card available")
 	}
 
-	var nextVersion string
-	var createdAt time.Time
-	if current.Version != "v1" && !current.CreatedAt.IsZero() && time.Now().UTC().Sub(current.CreatedAt) < 5*time.Minute {
-		nextVersion = current.Version
-		createdAt = current.CreatedAt
-	} else {
-		nextVersion = fmt.Sprintf("v%d", time.Now().UTC().UnixNano())
-		createdAt = time.Now().UTC()
-	}
+	nextVersion := "v" + uuid.NewString()
+	createdAt := time.Now().UTC()
 
 	next := &billing.RateCard{
 		Version:           nextVersion,
@@ -238,13 +238,15 @@ func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel stri
 	if err := s.repo.CreateVersion(ctx, next); err != nil {
 		return nil, err
 	}
-	if err := s.ActivateVersion(ctx, next.Version); err != nil {
+	if err := s.activateEditedVersion(ctx, current.Version, next.Version); err != nil {
 		return nil, err
 	}
 	return s.GetActiveRateCard(), nil
 }
 
 func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.PlanBundle) (*billing.RateCard, error) {
+	s.editMu.Lock()
+	defer s.editMu.Unlock()
 	id := strings.ToLower(strings.TrimSpace(plan.ID))
 	if id == "" {
 		return nil, fmt.Errorf("ratecard: plan id is required")
@@ -274,15 +276,8 @@ func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.Pla
 		return nil, fmt.Errorf("ratecard: no active card available")
 	}
 
-	var nextVersion string
-	var createdAt time.Time
-	if current.Version != "v1" && !current.CreatedAt.IsZero() && time.Now().UTC().Sub(current.CreatedAt) < 5*time.Minute {
-		nextVersion = current.Version
-		createdAt = current.CreatedAt
-	} else {
-		nextVersion = fmt.Sprintf("v%d", time.Now().UTC().UnixNano())
-		createdAt = time.Now().UTC()
-	}
+	nextVersion := "v" + uuid.NewString()
+	createdAt := time.Now().UTC()
 
 	next := &billing.RateCard{
 		Version:           nextVersion,
@@ -299,10 +294,26 @@ func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.Pla
 	if err := s.repo.CreateVersion(ctx, next); err != nil {
 		return nil, err
 	}
-	if err := s.ActivateVersion(ctx, next.Version); err != nil {
+	if err := s.activateEditedVersion(ctx, current.Version, next.Version); err != nil {
 		return nil, err
 	}
 	return s.GetActiveRateCard(), nil
+}
+
+func (s *RateCardService) activateEditedVersion(ctx context.Context, expected, version string) error {
+	if updater, ok := s.repo.(interface {
+		SetActiveVersionIfCurrent(context.Context, string, string) error
+	}); ok {
+		if err := updater.SetActiveVersionIfCurrent(ctx, expected, version); err != nil {
+			_ = s.RefreshActiveRateCard(ctx)
+			return err
+		}
+		if err := s.publishInvalidation(ctx, version); err != nil {
+			s.logger.Warn("ratecard: edit invalidation failed", zap.Error(err))
+		}
+		return s.RefreshActiveRateCard(ctx)
+	}
+	return s.ActivateVersion(ctx, version)
 }
 
 func (s *RateCardService) refreshLoop(ctx context.Context) {

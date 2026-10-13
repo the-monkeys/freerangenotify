@@ -9,6 +9,7 @@ import (
 )
 
 var ErrInsufficientCredits = errors.New("insufficient credits")
+var ErrRateCardConflict = errors.New("active pricing changed; reload and retry the edit")
 
 const (
 	CreditReservationModeJournal               = "journal"
@@ -100,6 +101,7 @@ type CreditReservation struct {
 	DailyCapKey     string                  `json:"daily_cap_key,omitempty"`
 	BalanceAfter    *CreditBalance          `json:"balance_after,omitempty"` // legacy retry compatibility; journal stores its own snapshot
 	ReleaseReason   string                  `json:"release_reason,omitempty"`
+	DeliveryOutcome string                  `json:"delivery_outcome,omitempty"`
 	TenantID        string                  `json:"tenant_id"`
 	AppID           string                  `json:"app_id,omitempty"`
 	NotificationID  string                  `json:"notification_id,omitempty"`

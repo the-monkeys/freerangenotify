@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -103,17 +104,17 @@ func main() {
 	})
 
 	// Add global middleware
-	app.Use(recover.New())   // Panic recovery
-	app.Use(requestid.New()) // Request ID
+	app.Use(recover.New())          // Panic recovery
+	app.Use(requestid.New())        // Request ID
 	app.Use(otelfiber.Middleware()) // OTel HTTP spans (opt-in via env)
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:  "*",
-		AllowHeaders:  "Origin, Content-Type, Accept, Authorization, X-API-Key",
+		AllowHeaders:  "Origin, Content-Type, Accept, Authorization, X-API-Key, Idempotency-Key, X-Idempotency-Key",
 		AllowMethods:  "GET,POST,PUT,DELETE,OPTIONS,PATCH",
-		ExposeHeaders: "Content-Length",
+		ExposeHeaders: strings.Join(append(append([]string{}, cfg.Security.CORS.ExposedHeaders...), "Content-Length", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"), ","),
 		MaxAge:        86400,
 	}))
 

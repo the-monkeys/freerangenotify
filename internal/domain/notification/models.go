@@ -513,8 +513,23 @@ type BroadcastRequest struct {
 
 // BroadcastResult holds the result of a broadcast operation
 type BroadcastResult struct {
-	Notifications []*Notification // when sending notifications
-	Triggered     int             // when triggering workflows
+	Notifications     []*Notification             // when sending notifications
+	Triggered         int                         // when triggering workflows
+	Total             int                         `json:"total"`
+	Accepted          int                         `json:"accepted"`
+	Rejected          int                         `json:"rejected"`
+	Skipped           int                         `json:"skipped"`
+	Unknown           int                         `json:"unknown"`
+	NotAttempted      int                         `json:"not_attempted"`
+	Partial           bool                        `json:"partial"`
+	Outcomes          []BroadcastRecipientOutcome `json:"outcomes,omitempty"`
+	OutcomesTruncated bool                        `json:"outcomes_truncated,omitempty"`
+}
+
+type BroadcastRecipientOutcome struct {
+	UserID         string `json:"user_id"`
+	NotificationID string `json:"notification_id,omitempty"`
+	Outcome        string `json:"outcome"`
 }
 
 // Validate validates the broadcast request

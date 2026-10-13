@@ -9,6 +9,7 @@ export interface Application {
     webhook_url?: string;
     webhooks?: Record<string, string>;
     settings?: ApplicationSettings;
+    rate_limit_enforced?: boolean;
     created_at?: string;
     updated_at?: string;
     // status is not in the DTO response shown, but was used in my AppDetail fake code. DTO has no status field.

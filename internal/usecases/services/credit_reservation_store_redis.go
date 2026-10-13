@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -38,11 +39,15 @@ func (s *redisReservationStore) Save(ctx context.Context, reservation *billing.C
 		return err
 	}
 	pipe := s.client.TxPipeline()
-	pipe.Set(ctx, creditReservationKey(reservation.ID), payload, creditReservationTTL)
-	pipe.ZAdd(ctx, creditReservationExpiryZSet, &redis.Z{
-		Score:  float64(reservation.ExpiresAt.UTC().Unix()),
-		Member: reservation.ID,
-	})
+	if reservation.Status == billing.CreditReservationReserved {
+		// The hold outlives Redis TTLs. Keep its recovery evidence until an
+		// explicit terminal transition, including across a long worker outage.
+		pipe.Set(ctx, creditReservationKey(reservation.ID), payload, 0)
+		pipe.ZAdd(ctx, creditReservationExpiryZSet, &redis.Z{Score: float64(reservation.ExpiresAt.UTC().Unix()), Member: reservation.ID})
+	} else {
+		pipe.Set(ctx, creditReservationKey(reservation.ID), payload, creditReservationTTL)
+		pipe.ZRem(ctx, creditReservationExpiryZSet, reservation.ID)
+	}
 	_, err = pipe.Exec(ctx)
 	return err
 }
@@ -100,15 +105,26 @@ func (s *redisReservationStore) ListExpiredWithError(ctx context.Context, now ti
 		return nil, err
 	}
 	expired := make([]*billing.CreditReservation, 0, len(ids))
+	var failures []error
 	for _, id := range ids {
 		res, err := s.GetWithError(ctx, id)
 		if err != nil {
-			return nil, err
+			failures = append(failures, fmt.Errorf("credit reservation %s: %w", id, err))
+			continue
 		}
-		if res == nil || res.Status != billing.CreditReservationReserved {
+		if res == nil {
+			// A missing payload cannot establish whether delivery happened; keep
+			// the index evidence and report it for audited reconciliation.
+			failures = append(failures, fmt.Errorf("credit reservation %s has an expiry entry but no recovery record", id))
+			continue
+		}
+		if res.Status != billing.CreditReservationReserved {
+			if err := s.client.ZRem(ctx, creditReservationExpiryZSet, id).Err(); err != nil {
+				failures = append(failures, err)
+			}
 			continue
 		}
 		expired = append(expired, res)
 	}
-	return expired, nil
+	return expired, errors.Join(failures...)
 }

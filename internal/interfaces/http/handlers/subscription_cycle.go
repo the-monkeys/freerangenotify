@@ -62,13 +62,6 @@ func currentMessageLimit(sub *license.Subscription, rateCard map[string]billing.
 	return planMessageLimit(resolvePlan(rateCard, sub.Plan))
 }
 
-func currentRolloverMessages(sub *license.Subscription) int {
-	if sub == nil {
-		return 0
-	}
-	return metaInt(sub.Metadata, "rollover_messages", 0)
-}
-
 func latestSubscription(ctx context.Context, subRepo license.Repository, tenantID string) (*license.Subscription, error) {
 	subs, err := subRepo.List(ctx, license.SubscriptionFilter{
 		TenantID: tenantID,
@@ -144,6 +137,7 @@ func applySubscriptionRenewal(
 		months = 1
 	}
 	creditExpiry := now.AddDate(1, 0, 0)
+	addCreditAllocation(sub, plan.CreditsIncluded, now, &creditExpiry)
 
 	if plan.Name == "free" {
 		sub.Status = license.SubscriptionStatusTrial
@@ -152,10 +146,7 @@ func applySubscriptionRenewal(
 	}
 	sub.Plan = plan.Name
 	sub.CurrentPeriodStart = now
-	sub.CurrentPeriodEnd = now.AddDate(0, months, 0)
-	sub.CreditsTotal = plan.CreditsIncluded
-	sub.CreditsRemaining = plan.CreditsIncluded
-	sub.CreditsReserved = 0
+	sub.CurrentPeriodEnd = creditExpiry
 	sub.CreditsExpireAt = &creditExpiry
 	sub.UpdatedAt = now
 	if sub.Metadata == nil {
@@ -196,14 +187,12 @@ func applyPaidCreditAllocation(sub *license.Subscription, allocation paidCreditA
 
 	now := time.Now().UTC()
 	creditExpiry := now.AddDate(0, 0, allocation.ValidityDays)
+	addCreditAllocation(sub, allocation.Credits, now, &creditExpiry)
 
 	sub.Status = license.SubscriptionStatusActive
 	sub.Plan = allocation.PlanID
 	sub.CurrentPeriodStart = now
 	sub.CurrentPeriodEnd = creditExpiry
-	sub.CreditsTotal = allocation.Credits
-	sub.CreditsRemaining = allocation.Credits
-	sub.CreditsReserved = 0
 	sub.CreditsExpireAt = &creditExpiry
 	sub.UpdatedAt = now
 	if sub.Metadata == nil {
@@ -223,4 +212,30 @@ func applyPaidCreditAllocation(sub *license.Subscription, allocation paidCreditA
 	for key, value := range allocation.Metadata {
 		sub.Metadata[key] = value
 	}
+}
+
+// The returned wallet is useful to legacy adapters. Production applies the
+// explicit grant to its current source atomically, rather than trusting these
+// read-time counters when sends and recharges run concurrently.
+func addCreditAllocation(sub *license.Subscription, credits int64, now time.Time, expiry *time.Time) {
+	oldExpiry := sub.CurrentPeriodEnd
+	if sub.CreditsExpireAt != nil {
+		oldExpiry = *sub.CreditsExpireAt
+	}
+	if billing.BillingModel(sub) != billing.BillingModelCredits || (!oldExpiry.IsZero() && oldExpiry.Before(now)) {
+		// Expired spendable credits are not carried, but outstanding holds remain
+		// funded until their original delivery outcome is settled.
+		sub.CreditsRemaining = sub.CreditsReserved
+		sub.CreditsTotal = sub.CreditsReserved
+	}
+	if oldExpiry.After(*expiry) {
+		*expiry = oldExpiry
+	}
+	sub.CreditsRemaining += credits
+	sub.CreditsTotal += credits
+	if sub.Metadata == nil {
+		sub.Metadata = make(map[string]interface{})
+	}
+	sub.Metadata["credit_allocation_delta"] = credits
+	sub.Metadata["credit_allocation_at"] = now.Format(time.RFC3339Nano)
 }

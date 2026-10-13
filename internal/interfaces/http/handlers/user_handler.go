@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -788,6 +789,43 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
 	}
 
+	environmentID, _ := c.Locals("environment_id").(string)
+	cached := make(map[string]*user.User)
+	if req.SkipExisting || req.Upsert {
+		if lookup, ok := h.service.(interface {
+			LookupEmails(context.Context, string, string, []string) (map[string]*user.User, error)
+		}); ok {
+			emails := make([]string, 0, len(req.Users))
+			seen := make(map[string]bool)
+			for _, row := range req.Users {
+				if row.Email != "" && !seen[row.Email] {
+					emails = append(emails, row.Email)
+					seen[row.Email] = true
+				}
+			}
+			var err error
+			cached, err = lookup.LookupEmails(c.Context(), appID, environmentID, emails)
+			if err != nil {
+				return errors.DatabaseError("lookup import users", err)
+			}
+		} else {
+			for _, row := range req.Users {
+				if row.Email == "" {
+					continue
+				}
+				existing, err := h.service.GetByEmail(c.Context(), appID, row.Email)
+				if err != nil && !errors.IsNotFound(err) {
+					return errors.DatabaseError("lookup import user", err)
+				}
+				if existing != nil && (environmentID == "" || environmentID == "default" || existing.EnvironmentID == environmentID) {
+					cached[row.Email] = existing
+				}
+			}
+		}
+	}
+	pending := make(map[*user.User]bool)
+	pendingUpdates := make(map[*user.User][]int)
+	originalIndices := make([]int, 0, len(req.Users))
 	var users []*user.User
 	var updatedUsers []*user.User
 	var bulkErrors []dto.BulkUserError
@@ -797,6 +835,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 		u := &user.User{
 			UserID:         ur.UserID,
 			AppID:          appID,
+			EnvironmentID:  environmentID,
 			ExternalID:     ur.ExternalID,
 			FullName:       ur.FullName,
 			Email:          ur.Email,
@@ -825,7 +864,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 
 		// Skip mode: if email exists, skip without error
 		if req.SkipExisting && u.Email != "" {
-			existing, _ := h.service.GetByEmail(c.Context(), appID, u.Email)
+			existing := cached[u.Email]
 			if existing != nil {
 				skippedUsers++
 				continue
@@ -834,7 +873,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 
 		// Upsert mode: if user with this email exists, update instead of failing
 		if req.Upsert && !req.SkipExisting && u.Email != "" {
-			existing, _ := h.service.GetByEmail(c.Context(), appID, u.Email)
+			existing := cached[u.Email]
 			if existing != nil {
 				if u.ExternalID != "" {
 					existing.ExternalID = u.ExternalID
@@ -866,31 +905,71 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 				if u.BillingMeta != nil {
 					existing.BillingMeta = u.BillingMeta
 				}
-				if err := h.service.Update(c.Context(), existing); err != nil {
+				if err := func() error {
+					if pending[existing] {
+						return nil
+					}
+					return h.service.Update(c.Context(), existing)
+				}(); err != nil {
 					bulkErrors = append(bulkErrors, dto.BulkUserError{
 						Index:   i,
 						Email:   ur.Email,
 						Message: "upsert update failed: " + err.Error(),
 					})
 				} else {
-					updatedUsers = append(updatedUsers, existing)
+					if pending[existing] {
+						pendingUpdates[existing] = append(pendingUpdates[existing], i)
+					} else {
+						updatedUsers = append(updatedUsers, existing)
+					}
 				}
 				continue
 			}
 		}
 
 		users = append(users, u)
+		originalIndices = append(originalIndices, i)
+		pending[u] = true
+		if u.Email != "" {
+			cached[u.Email] = u
+		}
 	}
 
+	created := 0
 	if len(users) > 0 {
-		if err := h.service.BulkCreate(c.Context(), users); err != nil {
-			h.logger.Error("Bulk user creation failed", zap.Error(err))
+		var outcomes []error
+		var err error
+		if writer, ok := h.service.(interface {
+			BulkCreateResults(context.Context, []*user.User) ([]error, error)
+		}); ok {
+			outcomes, err = writer.BulkCreateResults(c.Context(), users)
+		} else {
+			err = h.service.BulkCreate(c.Context(), users)
+			outcomes = make([]error, len(users))
+		}
+		if err != nil {
 			return err
+		}
+		if len(outcomes) != len(users) {
+			return errors.Internal("Import write outcomes are incomplete", nil)
+		}
+		for i, itemErr := range outcomes {
+			if itemErr == nil {
+				created++
+				for range pendingUpdates[users[i]] {
+					updatedUsers = append(updatedUsers, users[i])
+				}
+			} else {
+				bulkErrors = append(bulkErrors, dto.BulkUserError{Index: originalIndices[i], Email: users[i].Email, Message: "storage write failed; check this row before retrying"})
+				for _, index := range pendingUpdates[users[i]] {
+					bulkErrors = append(bulkErrors, dto.BulkUserError{Index: index, Email: users[i].Email, Message: "storage write failed; check this row before retrying"})
+				}
+			}
 		}
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(dto.BulkCreateUserResponse{
-		Created: len(users),
+		Created: created,
 		Updated: len(updatedUsers),
 		Skipped: skippedUsers,
 		Total:   len(req.Users),

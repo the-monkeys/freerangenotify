@@ -81,6 +81,41 @@ func (r *SubscriptionRepository) UpdateCreditAllocation(ctx context.Context, sub
 	return r.updateSubscription(ctx, sub, true)
 }
 
+// Checkout saves only checkout metadata. Concurrent sends must never have their
+// counters overwritten by the wallet snapshot used to prepare an order.
+func (r *SubscriptionRepository) UpdateCheckout(ctx context.Context, sub *license.Subscription) error {
+	if sub == nil || sub.Metadata == nil {
+		return fmt.Errorf("missing checkout subscription")
+	}
+	orderID, _ := sub.Metadata["pending_checkout_order_id"].(string)
+	if orderID == "" {
+		return fmt.Errorf("missing checkout order")
+	}
+	return r.ScriptUpdate(ctx, sub.ID, map[string]interface{}{"script": map[string]interface{}{
+		"lang": "painless", "source": subscriptionCheckoutScript,
+		"params": map[string]interface{}{"metadata": sub.Metadata, "updated_at": time.Now().UTC().Format(time.RFC3339Nano)},
+	}})
+}
+
+const subscriptionCheckoutScript = `
+if (ctx._source.metadata == null) { ctx._source.metadata = [:]; }
+def m = ctx._source.metadata;
+if (m.checkout_orders == null) { m.checkout_orders = [:]; }
+// Preserve the pre-archive pending snapshot when an older client created it.
+if (m.pending_checkout_order_id != null && !m.checkout_orders.containsKey(m.pending_checkout_order_id)) {
+ def snapshot = [:];
+ for (def e : m.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { snapshot[e.getKey()] = e.getValue(); } }
+ m.checkout_orders[m.pending_checkout_order_id] = snapshot;
+}
+if (params.metadata.checkout_orders != null) {
+ for (def e : params.metadata.checkout_orders.entrySet()) {
+  if (!m.checkout_orders.containsKey(e.getKey())) { m.checkout_orders[e.getKey()] = e.getValue(); }
+ }
+}
+for (def e : params.metadata.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { m[e.getKey()] = e.getValue(); } }
+ctx._source.updated_at = params.updated_at;
+`
+
 func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *license.Subscription, allocate bool) error {
 	if sub == nil {
 		return fmt.Errorf("nil subscription")
@@ -106,6 +141,7 @@ func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *li
 	doc["credits_remaining"] = sub.CreditsRemaining
 	doc["credits_reserved"] = sub.CreditsReserved
 	delete(doc, "credit_reservation_journal")
+	delete(doc, "credit_legacy_settlement_journal")
 	allocationID := "cycle:" + sub.CurrentPeriodStart.UTC().Format(time.RFC3339Nano)
 	if sub.Metadata != nil {
 		if intent, _ := sub.Metadata["credit_allocation_id"].(string); intent != "" {
@@ -117,8 +153,24 @@ func (r *SubscriptionRepository) updateSubscription(ctx context.Context, sub *li
 		}
 	}
 	if allocate {
+		var delta int64
+		if sub.Metadata != nil {
+			switch value := sub.Metadata["credit_allocation_delta"].(type) {
+			case int64:
+				delta = value
+			case float64:
+				delta = int64(value)
+			}
+		}
+		if delta < 0 {
+			return fmt.Errorf("negative credit allocation")
+		}
+		paymentOrderID := ""
+		if strings.HasPrefix(allocationID, "payment:") {
+			paymentOrderID, _ = sub.Metadata["last_order_id"].(string)
+		}
 		source, _, err := r.ScriptUpdateWithSource(ctx, sub.ID, map[string]interface{}{"script": map[string]interface{}{
-			"lang": "painless", "source": subscriptionProtectedUpdateScript, "params": map[string]interface{}{"doc": doc, "allocate": true, "allocation_id": allocationID},
+			"lang": "painless", "source": subscriptionProtectedUpdateScript, "params": map[string]interface{}{"doc": doc, "allocate": true, "allocation_id": allocationID, "grant_delta": delta, "allocation_at": sub.UpdatedAt.UTC().Format(time.RFC3339Nano), "payment_order_id": paymentOrderID},
 		}})
 		if err == nil {
 			*sub = *source
@@ -137,11 +189,72 @@ boolean allocation = params.allocate;
 if (allocation && ctx._source.credit_allocation_journal != null && ctx._source.credit_allocation_journal[params.allocation_id] == true) {
  ctx.op = 'noop'; return;
 }
+// Recharge adds to the current source, never a caller's stale snapshot. Holds
+// and their delivery receipts remain valid across recharge and renewal.
+if (allocation && params.grant_delta > 0) {
+ def orderID = params.payment_order_id;
+ def m = ctx._source.metadata != null ? ctx._source.metadata : [:];
+ def orders = m.checkout_orders != null ? m.checkout_orders : [:];
+ if (orderID != '') {
+  if (ctx._source.credit_allocation_journal != null && ctx._source.credit_allocation_journal['order:' + orderID] == true) { throw new IllegalArgumentException('checkout order already allocated'); }
+  def snapshot = orders[orderID];
+  if (snapshot == null && m.pending_checkout_order_id == orderID) {
+   snapshot = [:];
+   for (def e : m.entrySet()) { if (e.getKey().startsWith('pending_checkout_')) { snapshot[e.getKey()] = e.getValue(); } }
+   orders[orderID] = snapshot;
+  }
+  if (snapshot == null) { throw new IllegalArgumentException('payment order has no checkout snapshot'); }
+  if (snapshot.pending_checkout_credits != null && (long)snapshot.pending_checkout_credits != (long)params.grant_delta) { throw new IllegalArgumentException('credit allocation differs from checkout'); }
+ }
+ def oldExpiry = ctx._source.credits_expire_at != null ? ctx._source.credits_expire_at : ctx._source.current_period_end;
+ boolean expired = oldExpiry != null && ZonedDateTime.parse(oldExpiry).isBefore(ZonedDateTime.parse(params.allocation_at));
+ long held = ctx._source.credits_reserved != null ? ctx._source.credits_reserved : 0;
+ long remaining = ctx._source.credits_remaining != null ? ctx._source.credits_remaining : 0;
+ long total = ctx._source.credits_total != null ? ctx._source.credits_total : 0;
+ if (expired) { remaining = held; total = held; }
+ if (remaining < held || total < 0 || held < 0) { throw new IllegalArgumentException('invalid wallet counters'); }
+ long newRemaining = remaining + (long)params.grant_delta;
+ long newTotal = total + (long)params.grant_delta;
+ if (newRemaining < remaining || newTotal < total) { throw new IllegalArgumentException('credit allocation overflow'); }
+ ctx._source.credits_remaining = newRemaining;
+ ctx._source.credits_total = newTotal;
+ ctx._source.credits_reserved = held;
+ def expiry = d.credits_expire_at;
+ if (oldExpiry != null && (expiry == null || ZonedDateTime.parse(oldExpiry).isAfter(ZonedDateTime.parse(expiry)))) { expiry = oldExpiry; }
+ for (def e : d.entrySet()) {
+  if (e.getKey() != 'metadata' && !e.getKey().startsWith('credits_') && !e.getKey().startsWith('credit_')) { ctx._source[e.getKey()] = e.getValue(); }
+ }
+ if (d.metadata != null) {
+  for (def e : d.metadata.entrySet()) {
+   if (e.getKey() != 'checkout_orders' && (orderID == '' || !e.getKey().startsWith('pending_checkout_'))) { m[e.getKey()] = e.getValue(); }
+  }
+ }
+ if (orderID != '') {
+  orders[orderID].paid_payment_id = d.metadata.last_payment_id;
+  if (m.pending_checkout_order_id == orderID) {
+   def keys = [];
+   for (def key : m.keySet()) { if (key.startsWith('pending_checkout_')) { keys.add(key); } }
+   for (def key : keys) { m.remove(key); }
+  }
+ }
+ m.checkout_orders = orders;
+ ctx._source.metadata = m;
+ if (expiry != null) { ctx._source.credits_expire_at = expiry; ctx._source.current_period_end = expiry; }
+ if (ctx._source.credit_allocation_journal == null) { ctx._source.credit_allocation_journal = [:]; }
+ ctx._source.credit_allocation_journal[params.allocation_id] = true;
+ if (orderID != '') { ctx._source.credit_allocation_journal['order:' + orderID] = true; }
+ return;
+}
 // Preserve pre-cutover full Update only for unmarked subscriptions. The durable
 // marker protects counters even before the first receipt and during rollback.
 if (ctx._source.credit_reservation_mode != 'journal' && (ctx._source.credit_reservation_journal == null || ctx._source.credit_reservation_journal.isEmpty())) {
- for (def e : d.entrySet()) { if (!e.getKey().startsWith('credit_reservation_') && e.getKey() != 'credit_allocation_journal') { ctx._source[e.getKey()] = e.getValue(); } }
- if (allocation && params.allocation_id.startsWith('intent:admin:')) {
+ boolean settled = ctx._source.credit_legacy_settlement_journal != null && !ctx._source.credit_legacy_settlement_journal.isEmpty();
+ if (settled && allocation && ctx._source.credits_reserved > 0) { throw new IllegalArgumentException('cannot replace allocated credits with active holds'); }
+ for (def e : d.entrySet()) {
+  if (settled && !allocation && e.getKey().startsWith('credits_')) { continue; }
+  if (!e.getKey().startsWith('credit_reservation_') && e.getKey() != 'credit_allocation_journal' && e.getKey() != 'credit_legacy_settlement_journal') { ctx._source[e.getKey()] = e.getValue(); }
+ }
+ if (allocation) {
   if (ctx._source.credit_allocation_journal == null) { ctx._source.credit_allocation_journal = [:]; }
   ctx._source.credit_allocation_journal[params.allocation_id] = true;
  }
@@ -179,6 +292,14 @@ for (def e : d.entrySet()) {
 // The source belongs to this update (including a rejecting noop), never a GET
 // performed after a concurrent writer. Conflicts stay storage errors.
 func (r *SubscriptionRepository) ScriptUpdateWithSource(ctx context.Context, id string, script map[string]interface{}) (*license.Subscription, string, error) {
+	return r.scriptUpdateWithSource(ctx, id, script, r.base.defaultRefresh)
+}
+
+// Credit updates return their own atomic source; per-send refresh barriers are unnecessary.
+func (r *SubscriptionRepository) ScriptUpdateCreditSource(ctx context.Context, id string, script map[string]interface{}) (*license.Subscription, string, error) {
+	return r.scriptUpdateWithSource(ctx, id, script, RefreshFalse)
+}
+func (r *SubscriptionRepository) scriptUpdateWithSource(ctx context.Context, id string, script map[string]interface{}, refresh RefreshPolicy) (*license.Subscription, string, error) {
 	request := make(map[string]interface{}, len(script)+1)
 	for k, v := range script {
 		request[k] = v
@@ -189,7 +310,7 @@ func (r *SubscriptionRepository) ScriptUpdateWithSource(ctx context.Context, id 
 		return nil, "", err
 	}
 	retry := 5
-	req := esapi.UpdateRequest{Index: r.base.indexName, DocumentID: id, Body: strings.NewReader(string(data)), RetryOnConflict: &retry, Refresh: string(r.base.defaultRefresh)}
+	req := esapi.UpdateRequest{Index: r.base.indexName, DocumentID: id, Body: strings.NewReader(string(data)), RetryOnConflict: &retry, Refresh: string(refresh)}
 	res, err := req.Do(ctx, r.base.client)
 	if err != nil {
 		return nil, "", fmt.Errorf("subscription atomic update: %w", err)
@@ -248,7 +369,7 @@ func (r *SubscriptionRepository) EnsureCreditJournalMapping(ctx context.Context)
 	if r.journalMappingReady {
 		return nil
 	}
-	res, err := r.base.client.Indices.PutMapping([]string{r.base.indexName}, strings.NewReader(`{"properties":{"credit_reservation_mode":{"type":"keyword"},"credit_reservation_journal":{"type":"object","enabled":false},"credit_allocation_journal":{"type":"object","enabled":false}}}`), r.base.client.Indices.PutMapping.WithContext(ctx))
+	res, err := r.base.client.Indices.PutMapping([]string{r.base.indexName}, strings.NewReader(`{"properties":{"credit_reservation_mode":{"type":"keyword"},"credit_reservation_journal":{"type":"object","enabled":false},"credit_allocation_journal":{"type":"object","enabled":false},"credit_legacy_settlement_journal":{"type":"object","enabled":false}}}`), r.base.client.Indices.PutMapping.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -292,7 +413,14 @@ func (r *SubscriptionRepository) ListCreditJournalSubscriptions(ctx context.Cont
 		if sub.ID == "" || (cursor != "" && sub.ID <= cursor) {
 			return nil, "", fmt.Errorf("invalid journal pagination id")
 		}
-		subs = append(subs, &sub)
+		current, err := r.GetByID(ctx, sub.ID)
+		if err != nil {
+			return nil, "", err
+		}
+		if current == nil || current.ID != sub.ID {
+			return nil, "", fmt.Errorf("journal subscription unavailable")
+		}
+		subs = append(subs, current)
 	}
 	next := ""
 	if len(subs) == limit {
@@ -405,8 +533,8 @@ func (r *SubscriptionRepository) getActiveByField(ctx context.Context, field, va
 				"must": []map[string]interface{}{
 					{"term": map[string]interface{}{field: value}},
 					{"terms": map[string]interface{}{"status": []string{string(license.SubscriptionStatusActive), string(license.SubscriptionStatusTrial)}}},
-					{"range": map[string]interface{}{"current_period_start": map[string]interface{}{"lte": now.Format(time.RFC3339)}}},
-					{"range": map[string]interface{}{"current_period_end": map[string]interface{}{"gte": now.Format(time.RFC3339)}}},
+					{"range": map[string]interface{}{"current_period_start": map[string]interface{}{"lte": now.Format(time.RFC3339Nano)}}},
+					{"range": map[string]interface{}{"current_period_end": map[string]interface{}{"gte": now.Format(time.RFC3339Nano)}}},
 				},
 			},
 		},
@@ -430,5 +558,13 @@ func (r *SubscriptionRepository) getActiveByField(ctx context.Context, field, va
 		return nil, fmt.Errorf("failed to map document to subscription: %w", err)
 	}
 
-	return &sub, nil
+	// Search selects the subscription ID; counters and journal reads are realtime.
+	current, err := r.GetByID(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil || (current.Status != license.SubscriptionStatusActive && current.Status != license.SubscriptionStatusTrial) || current.CurrentPeriodStart.After(now) || current.CurrentPeriodEnd.Before(now) {
+		return nil, nil
+	}
+	return current, nil
 }

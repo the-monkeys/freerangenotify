@@ -37,6 +37,10 @@ func TestReserveAtomicObservation(t *testing.T) {
 					fmt.Fprint(w, `{"hits":{"total":{"value":1},"hits":[{"_source":{"id":"sub-1","tenant_id":"t","credits_remaining":1500,"credits_reserved":0}}]}}`)
 					return
 				}
+				if r.URL.Path == "/subscriptions/_doc/sub-1" {
+					fmt.Fprint(w, `{"_source":{"id":"sub-1","tenant_id":"t","status":"active","current_period_start":"2020-01-01T00:00:00Z","current_period_end":"2030-01-01T00:00:00Z","credits_remaining":1500,"credits_reserved":0}}`)
+					return
+				}
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
 			}))

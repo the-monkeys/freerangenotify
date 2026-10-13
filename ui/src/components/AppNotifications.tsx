@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { mutateApiQueryCache, useApiQuery } from '../hooks/use-api-query';
 import { useBillingState } from '../hooks/use-billing-state';
 import { billingAPI, notificationsAPI, usersAPI, templatesAPI, quickSendAPI, workflowsAPI, topicsAPI, digestRulesAPI, mediaAPI, twilioTemplatesAPI, whatsappTemplatesAPI } from '../services/api';
@@ -245,6 +245,8 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [broadcastWorkflowTriggerId, setBroadcastWorkflowTriggerId] = useState('');
     const [broadcastTopicKey, setBroadcastTopicKey] = useState('');
+	const broadcastAttempt = useRef<{ body: string; key: string } | null>(null);
+	const [broadcastOutcome, setBroadcastOutcome] = useState('');
     // Local blob URLs for WhatsApp media preview
     const [mediaFiles, setMediaFiles] = useState<{ url: string; previewUrl: string; type: string; name: string }[]>([]);
 
@@ -1272,7 +1274,23 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                 );
                 await Promise.all(sendPromises);
             } else {
-                await notificationsAPI.broadcast(apiKey, payload);
+                const body = JSON.stringify(payload);
+                if (!broadcastAttempt.current || broadcastAttempt.current.body !== body) {
+                    const key = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                        ? crypto.randomUUID() : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                    broadcastAttempt.current = { body, key };
+                }
+                const result = await notificationsAPI.broadcast(apiKey, payload, broadcastAttempt.current.key);
+                if (result?.partial === true || (typeof result?.unknown === 'number' && result.unknown > 0)) {
+                    const count = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString() : 'unknown';
+                    const message = `Broadcast partially accepted: ${count(result.sent)} accepted, ${count(result.rejected ?? 0)} rejected, ${count(result.unknown ?? 0)} unknown, ${count(result.not_attempted ?? 0)} not attempted. Review operation ${result.operation_id ?? 'in notification history'} before another broadcast.`;
+                    setBroadcastOutcome(message);
+                    toast.warning(message);
+                    refresh();
+                    return;
+                }
+                broadcastAttempt.current = null;
+                setBroadcastOutcome('');
             }
 
             setFormData(createEmptyForm());
@@ -1289,6 +1307,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
             toast.success(useWorkflow ? 'Workflows triggered successfully.' : 'Broadcast initiated successfully.');
         } catch (error) {
             console.error('Failed to broadcast notification:', error);
+			if (broadcastAttempt.current) setBroadcastOutcome('Broadcast response unavailable. Retry this same attempt to check its receipt; review the outcome before starting another broadcast.');
             const msg = extractErrorMessage(error, 'Failed to broadcast notification');
             if (msg.includes('phone_verification_required')) {
                 toast.error(`${formData.channel === 'whatsapp' ? 'WhatsApp' : 'SMS'} failed: Please verify your phone number in the Profile menu (top left) to use system credentials.`);
@@ -3201,6 +3220,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                                             </div>
                                         </div>
 
+                                        {broadcastOutcome && <p role="status" aria-label="Broadcast outcome" className="mt-3 text-sm text-amber-700">{broadcastOutcome}</p>}
                                         {confirmingBroadcast && (
                                             <div className="mt-4 p-4 border-2 border-orange-400 bg-card rounded-lg shadow-sm text-center animate-in fade-in zoom-in duration-200">
                                                 <h4 className="font-bold text-orange-800 mb-2">⚠️ Confirm Broadcast</h4>

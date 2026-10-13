@@ -229,6 +229,10 @@ func (m *Manager) SendWithFallback(ctx context.Context, notif *notification.Noti
 		if result != nil && result.Error != nil {
 			lastErr = result.Error
 		}
+		if !IsDefinitiveDeliveryFailure(lastErr) {
+			m.logger.Warn("Provider outcome unknown; fallback withheld", zap.String("notification_id", notif.NotificationID), zap.String("provider", providerName))
+			return result, lastErr
+		}
 		m.logger.Warn("Fallback provider failed, trying next",
 			zap.String("notification_id", notif.NotificationID),
 			zap.String("provider", providerName),
@@ -362,14 +366,19 @@ func (m *Manager) sendProvider(ctx context.Context, provider Provider, notif *no
 	if err := ctx.Err(); err != nil {
 		return deliveryFailure(nil, err, provider.GetName(), "send", source, "")
 	}
-	var healthErr error
-	if checker, ok := provider.(HealthChecker); ok {
-		healthErr = checker.CheckHealth(ctx)
-	} else if !provider.IsHealthy(ctx) {
-		healthErr = fmt.Errorf("provider is unhealthy")
-	}
-	if healthErr != nil {
-		return deliveryFailure(nil, healthErr, provider.GetName(), "health", source, ErrorTypeProviderAPI)
+	// SMTP authenticates and connects during Send. A separate preflight opens a
+	// second connection and cannot guarantee the send connection will succeed.
+	if _, smtp := provider.(*SMTPProvider); !smtp {
+		var healthErr error
+		if checker, ok := provider.(HealthChecker); ok {
+			healthErr = checker.CheckHealth(ctx)
+		} else if !provider.IsHealthy(ctx) {
+			healthErr = fmt.Errorf("provider is unhealthy")
+		}
+		if healthErr != nil {
+			return deliveryFailure(nil, healthErr, provider.GetName(), "health", source, ErrorTypeProviderAPI)
+		}
+
 	}
 	var result *Result
 	send := func() error {
@@ -533,9 +542,14 @@ func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Resul
 	if credSource == "" || billingChannel == "" {
 		return
 	}
+	tenantID, _ := notif.Metadata["tenant_id"].(string)
+	if tenantID == "" {
+		m.logger.Warn("billing: tenant identity missing from delivery snapshot", zap.String("app_id", notif.AppID), zap.String("notification_id", notif.NotificationID))
+		return
+	}
 
 	event := &billing.UsageEvent{
-		TenantID:         notif.AppID,
+		TenantID:         tenantID,
 		AppID:            notif.AppID,
 		NotificationID:   notif.NotificationID,
 		Channel:          billingChannel,

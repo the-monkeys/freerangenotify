@@ -4,6 +4,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -18,7 +19,7 @@ import (
 //
 // If no user_id is present (pure API-key call from an SDK or server),
 // the request is allowed through unchanged for backward compatibility.
-func DashboardRBAC(membershipRepo auth.MembershipRepository, appRepo application.Repository, logger *zap.Logger) fiber.Handler {
+func DashboardRBAC(membershipRepo auth.MembershipRepository, appRepo application.Repository, logger *zap.Logger, tenantServices ...tenant.Service) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		userID, _ := c.Locals("user_id").(string)
 		if userID == "" {
@@ -32,10 +33,24 @@ func DashboardRBAC(membershipRepo auth.MembershipRepository, appRepo application
 
 		// Resolve role: app owner → RoleOwner, otherwise check membership
 		var role auth.Role
+		var app *application.Application
 		if appRepo != nil {
-			app, err := appRepo.GetByID(c.Context(), appID)
-			if err == nil && app.AdminUserID == userID {
+			var err error
+			app, err = appRepo.GetByID(c.Context(), appID)
+			if err == nil && app != nil && app.AdminUserID == userID {
 				role = auth.RoleOwner
+			}
+			if err != nil {
+				app = nil
+			}
+		}
+		if role == "" && app != nil && app.TenantID != "" && len(tenantServices) > 0 && tenantServices[0] != nil {
+			allowed, tenantRole, err := tenantServices[0].HasAccess(c.Context(), app.TenantID, userID)
+			if err == nil && allowed {
+				role = auth.RoleViewer
+				if tenantRole == "owner" || tenantRole == "admin" {
+					role = auth.RoleAdmin
+				}
 			}
 		}
 

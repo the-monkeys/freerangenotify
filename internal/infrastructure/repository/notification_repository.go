@@ -29,6 +29,15 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 	return r.BaseRepository.Create(ctx, n.NotificationID, n)
 }
 
+// BulkCreateResults keeps each prepared recipient associated with its storage outcome.
+func (r *NotificationRepository) BulkCreateResults(ctx context.Context, rows []*notification.Notification) ([]error, error) {
+	docs := make([]BulkDocument, len(rows))
+	for i, row := range rows {
+		docs[i] = BulkDocument{ID: row.NotificationID, Document: row}
+	}
+	return r.BaseRepository.BulkCreateResults(ctx, docs)
+}
+
 // GetByID retrieves a notification by ID
 func (r *NotificationRepository) GetByID(ctx context.Context, notificationID string) (*notification.Notification, error) {
 	doc, err := r.BaseRepository.GetByID(ctx, notificationID)

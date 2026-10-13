@@ -134,6 +134,8 @@ security:
   jwt_access_expiration: 15  # minutes
   jwt_refresh_expiration: 10080  # 7 days in minutes
   api_key_header: "X-API-Key"
+  app_rate_limit_enabled: false  # Enable after an application quota canary
+  rate_limit_enabled: false  # Public authentication IP quota rollout
   rate_limit: 100  # requests per window
   rate_limit_window: 3600  # seconds
   cors:

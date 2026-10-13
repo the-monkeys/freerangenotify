@@ -1,6 +1,9 @@
 package freerangenotify
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // ── Notification Types ──
 
@@ -273,9 +276,47 @@ type UserListResponse struct {
 
 // BulkCreateUsersResult is the response from a bulk user creation.
 type BulkCreateUsersResult struct {
-	Created int      `json:"created"`
-	Total   int      `json:"total"`
-	Errors  []string `json:"errors,omitempty"`
+	Created   int             `json:"created"`
+	Updated   int             `json:"updated"`
+	Skipped   int             `json:"skipped"`
+	RowErrors []BulkUserError `json:"-"`
+	Total     int             `json:"total"`
+	Errors    []string        `json:"errors,omitempty"`
+}
+
+// BulkUserError preserves a server's zero-based row index.
+type BulkUserError struct {
+	Index   int    `json:"index"`
+	Email   string `json:"email,omitempty"`
+	Message string `json:"message"`
+}
+
+func (r *BulkCreateUsersResult) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Created int               `json:"created"`
+		Updated int               `json:"updated"`
+		Skipped int               `json:"skipped"`
+		Total   int               `json:"total"`
+		Errors  []json.RawMessage `json:"errors"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*r = BulkCreateUsersResult{Created: wire.Created, Updated: wire.Updated, Skipped: wire.Skipped, Total: wire.Total}
+	for _, raw := range wire.Errors {
+		var message string
+		if err := json.Unmarshal(raw, &message); err == nil {
+			r.Errors = append(r.Errors, message)
+			continue
+		}
+		var row BulkUserError
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return err
+		}
+		r.RowErrors = append(r.RowErrors, row)
+		r.Errors = append(r.Errors, row.Message)
+	}
+	return nil
 }
 
 // BulkCreateUsersParams holds parameters for a bulk user creation or upsert.

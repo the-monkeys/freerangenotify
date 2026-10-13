@@ -3,7 +3,7 @@ package limiter
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"github.com/google/uuid"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -22,42 +22,72 @@ func NewRedisLimiter(client *redis.Client, logger *zap.Logger) *RedisLimiter {
 	}
 }
 
-// Allow checks if an action is allowed based on a sliding window rate limit
+// Redis time avoids host clock skew; integer millisecond scores avoid float
+// precision loss. Only admitted requests are inserted into the sliding window.
+var admissionScript = redis.NewScript(`
+local stamp=redis.call('TIME')
+local now=tonumber(stamp[1])*1000+math.floor(tonumber(stamp[2])/1000)
+local window=tonumber(ARGV[2])
+-- Older binaries wrote Unix nanoseconds into this same bucket. Normalize those
+-- scores once, preserving admissions and their original expiry across upgrade.
+local legacy=redis.call('ZRANGEBYSCORE',KEYS[1],'1000000000000000','+inf','WITHSCORES')
+for i=1,#legacy,2 do
+ redis.call('ZADD',KEYS[1],math.floor(tonumber(legacy[i+1])/1000000),legacy[i])
+end
+redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now-window)
+local count=redis.call('ZCARD',KEYS[1])
+local allowed=0
+if count<tonumber(ARGV[1]) then
+ allowed=1
+ redis.call('ZADD',KEYS[1],now,ARGV[3])
+ redis.call('PEXPIRE',KEYS[1],window)
+ count=count+1
+end
+local first=redis.call('ZRANGE',KEYS[1],0,0,'WITHSCORES')
+local reset=now+window
+if #first>0 then reset=tonumber(first[2])+window end
+return {allowed,count,now,reset}
+`)
+
 func (l *RedisLimiter) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
-	now := time.Now().UnixNano()
-	windowStart := now - window.Nanoseconds()
-
-	redisKey := fmt.Sprintf("frn:limiter:window:%s", key)
-
-	pipe := l.client.Pipeline()
-
-	// Remove old entries outside the current window
-	pipe.ZRemRangeByScore(ctx, redisKey, "0", strconv.FormatInt(windowStart, 10))
-
-	// Add the current entry
-	pipe.ZAdd(ctx, redisKey, &redis.Z{
-		Score:  float64(now),
-		Member: now,
-	})
-
-	// Count entries in the current window
-	pipe.ZCard(ctx, redisKey)
-
-	// Set expiration on the key to ensure cleanup
-	pipe.Expire(ctx, redisKey, window)
-
-	cmds, err := pipe.Exec(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to execute rate limit pipeline: %w", err)
+	decision, err := l.Admit(ctx, key, limit, window)
+	return decision.Allowed, err
+}
+func (l *RedisLimiter) Admit(ctx context.Context, key string, limit int, window time.Duration) (Admission, error) {
+	if limit <= 0 || window <= 0 {
+		return Admission{Allowed: true, Limit: limit}, nil
 	}
-
-	countCmd := cmds[2].(*redis.IntCmd)
-	count, err := countCmd.Result()
-	if err != nil {
-		return false, fmt.Errorf("failed to get rate limit count: %w", err)
+	windowMs := window / time.Millisecond
+	if window%time.Millisecond != 0 {
+		windowMs++
 	}
-
-	return int(count) <= limit, nil
+	raw, err := admissionScript.Run(ctx, l.client, []string{"frn:limiter:window:" + key}, limit, int64(windowMs), uuid.NewString()).Slice()
+	if err != nil {
+		return Admission{}, fmt.Errorf("rate limit admission unavailable: %w", err)
+	}
+	if len(raw) != 4 {
+		return Admission{}, fmt.Errorf("invalid rate limit response")
+	}
+	values := make([]int64, 4)
+	for i, v := range raw {
+		number, ok := v.(int64)
+		if !ok {
+			return Admission{}, fmt.Errorf("invalid rate limit value")
+		}
+		values[i] = number
+	}
+	remaining := limit - int(values[1])
+	if remaining < 0 {
+		remaining = 0
+	}
+	decision := Admission{Allowed: values[0] == 1, Limit: limit, Remaining: remaining, ResetAt: time.UnixMilli(values[3])}
+	if !decision.Allowed {
+		decision.RetryAfter = time.Duration(values[3]-values[2]) * time.Millisecond
+		if decision.RetryAfter < time.Millisecond {
+			decision.RetryAfter = time.Millisecond
+		}
+	}
+	return decision, nil
 }
 
 // IncrementAndCheckDailyLimit increments the counter for a key and checks if it exceeds the daily limit

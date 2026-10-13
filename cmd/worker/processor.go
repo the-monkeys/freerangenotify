@@ -356,6 +356,10 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	case notification.StatusSent, notification.StatusDelivered, notification.StatusRead:
 		return
 	}
+	if state, _ := notif.Metadata["delivery_attempt_state"].(string); state == "dispatching" || state == "unknown" {
+		logger.Warn("Delivery attempt requires reconciliation; automatic resend blocked", zap.String("notification_id", notif.NotificationID))
+		return
+	}
 	if deadline, ok := notificationDeliveryDeadline(notif); ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithDeadline(ctx, deadline)
@@ -744,6 +748,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 				notif.Metadata = make(map[string]interface{})
 			}
 			notif.Metadata["credits_used"] = reservation.CreditsReserved
+			notif.Metadata["tenant_id"] = reservation.TenantID
 			notif.Metadata["rate_card_version"] = reservation.RateCardVersion
 			notif.Metadata["reservation_id"] = reservation.ID
 		}
@@ -764,11 +769,33 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	// Persist uncertainty before crossing the provider boundary. A crash or lost
+	// final response must not turn queue recovery into a second customer send.
+	if notif.Metadata == nil {
+		notif.Metadata = make(map[string]interface{})
+	}
+	notif.Metadata["delivery_attempt_state"] = "dispatching"
+	if persistErr := p.notifRepo.Update(ctx, notif); persistErr != nil {
+		logger.Error("Cannot persist delivery attempt before dispatch", zap.Error(persistErr))
+		retainNotificationProcessingItem(ctx)
+		return
+	}
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
 		message := annotateNotificationFailure(notif, err, err.Error())
 		accountingCtx, cancelAccounting := notificationAccountingContext(ctx)
 		defer cancelAccounting()
+		if !notificationDeliveryDefinitelyFailed(err) {
+			notif.Metadata["delivery_attempt_state"] = "unknown"
+			notif.Metadata["retryable"] = false
+			notif.ErrorMessage = message
+			logger.Error("Provider outcome unknown; hold and attempt quarantined", zap.String("notification_id", notif.NotificationID), zap.Error(err))
+			if persistErr := p.notifRepo.Update(accountingCtx, notif); persistErr != nil {
+				logger.Error("Failed to persist uncertain delivery outcome", zap.Error(persistErr))
+			}
+			return
+		}
+		notif.Metadata["delivery_attempt_state"] = "failed"
 		if reservation != nil {
 			if notificationDeliveryDefinitelyFailed(err) {
 				if recordErr := p.creditService.RecordReservationDeliveryFailure(accountingCtx, reservation.ID); recordErr != nil {
@@ -810,6 +837,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	// Update in-memory status BEFORE persisting the full object,
 	// otherwise the subsequent Update() overwrites "sent" back to "queued".
 	notif.Status = notification.StatusSent
+	notif.Metadata["delivery_attempt_state"] = "accepted"
 	clearNotificationFailure(notif)
 	now := time.Now()
 	notif.SentAt = &now
@@ -1010,6 +1038,17 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 
 	// Check for provider fallback chains
 	app, err := p.appRepo.GetByID(ctx, notif.AppID)
+	if err == nil && app != nil {
+		// Checkout and usage APIs fund the owner's personal wallet;
+		// organization tenancy is a separate authorization scope.
+		tenantID := app.AdminUserID
+		if tenantID != "" {
+			if notif.Metadata == nil {
+				notif.Metadata = make(map[string]interface{})
+			}
+			notif.Metadata["tenant_id"] = tenantID
+		}
+	}
 
 	// Short-circuit: webhook channel notifications whose target was resolved
 	// to a registered custom provider must dispatch directly through that
@@ -1349,6 +1388,7 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				p.logger.Error("Failed to get scheduled items from Redis", zap.Error(err))
 			} else if len(scheduledItems) > 0 {
 				p.logger.Info("Found ready scheduled notifications in Redis", zap.Int("count", len(scheduledItems)))
+				scheduledItems = p.claimScheduledItems(ctx, scheduledItems)
 				if err := p.queue.EnqueueBatch(ctx, scheduledItems); err != nil {
 					p.logger.Error("Failed to enqueue scheduled items from Redis", zap.Error(err))
 				}
@@ -1357,9 +1397,6 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				var ids []string
 				for _, item := range scheduledItems {
 					ids = append(ids, item.NotificationID)
-				}
-				if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
-					p.logger.Error("Failed to bulk update status for Redis items", zap.Error(err))
 				}
 
 				// Late detection (best effort)
@@ -1402,18 +1439,13 @@ func (p *NotificationProcessor) scheduler(ctx context.Context) {
 				})
 			}
 
+			items = p.claimScheduledItems(ctx, items)
+			if len(items) == 0 {
+				continue
+			}
 			if err := p.queue.EnqueueBatch(ctx, items); err != nil {
 				p.logger.Error("Failed to enqueue pending notifications from ES", zap.Error(err))
 				continue
-			}
-
-			// Update statuses
-			var ids []string
-			for _, notif := range pending {
-				ids = append(ids, notif.NotificationID)
-			}
-			if err := p.notifRepo.BulkUpdateStatus(ctx, ids, notification.StatusQueued); err != nil {
-				p.logger.Error("Failed to bulk update status from ES", zap.Error(err))
 			}
 
 			// Late detection for fallback path

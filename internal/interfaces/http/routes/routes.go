@@ -37,6 +37,9 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	// Authentication routes (public)
 	auth := v1.Group("/auth")
+	if c.Config.Security.RateLimitEnabled {
+		auth.Use(middleware.AuthIPRateLimit(c.Limiter, c.Config.Security.RateLimit, time.Duration(c.Config.Security.RateLimitWindow)*time.Second, c.Logger))
+	}
 	auth.Post("/register", c.AuthHandler.Register)
 	auth.Post("/verify-otp", c.AuthHandler.VerifyOTP)
 	auth.Post("/resend-otp", c.AuthHandler.ResendOTP)
@@ -148,6 +151,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		authOpts = append(authOpts, middleware.WithAuthService(c.AuthService))
 	}
 	apiAuth := middleware.APIKeyAuth(c.ApplicationService, c.Logger, authOpts...)
+	appQuota := middleware.ApplicationRateLimit(c.Limiter, c.Config.Security.AppRateLimitEnabled, c.Logger)
 	licenseCheck := middleware.LicenseCheck(c.LicensingChecker, c.Logger)
 
 	// DashboardRBAC restricts viewers to read-only when they access API-key
@@ -155,7 +159,13 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// only) are unaffected.
 	var rbac fiber.Handler
 	if c.MembershipRepo != nil {
-		rbac = middleware.DashboardRBAC(c.MembershipRepo, c.AppRepo, c.Logger)
+		rbac = middleware.DashboardRBAC(c.MembershipRepo, c.AppRepo, c.Logger, c.TenantService)
+	}
+	directRBAC := func(ctx *fiber.Ctx) error {
+		if rbac != nil {
+			return rbac(ctx)
+		}
+		return ctx.Next()
 	}
 
 	// applyAuth adds the API key middleware and optional RBAC to a route group
@@ -164,6 +174,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		if rbac != nil {
 			group.Use(rbac)
 		}
+		group.Use(appQuota)
 	}
 
 	// User management routes
@@ -190,32 +201,33 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	users.Get("/:id/subscriber-hash", c.UserHandler.GetSubscriberHash)
 
 	// SSE token endpoint (secure — generates short-lived tokens for SSE connections)
-	v1.Post("/sse/tokens", apiAuth, c.SSEHandler.CreateToken)
+	v1.Post("/sse/tokens", apiAuth, directRBAC, appQuota, c.SSEHandler.CreateToken)
 
 	// License status endpoint (API key protected)
-	v1.Get("/license/status", apiAuth, c.LicensingHandler.GetStatus)
+	v1.Get("/license/status", apiAuth, directRBAC, appQuota, c.LicensingHandler.GetStatus)
 
 	// Presence management
 	presence := v1.Group("/presence")
-	presence.Use(apiAuth)
+	applyAuth(presence)
 	presence.Post("/check-in", c.PresenceHandler.CheckIn)
 
 	// Quick-send (simplified notification endpoint)
-	v1.Post("/quick-send", apiAuth, licenseCheck, c.QuickSendHandler.Send)
+	v1.Post("/quick-send", apiAuth, directRBAC, appQuota, licenseCheck, c.QuickSendHandler.Send)
 
 	// OTP-as-a-service: send, verify, and resend one-time codes via SMS,
 	// WhatsApp, or email. Send/resend pass through licenseCheck because they
 	// consume credits via the underlying notification pipeline; verify is a
 	// pure Redis read and is exempt.
 	if c.OTPHandler != nil {
-		otpGrp := v1.Group("/otp", apiAuth)
+		otpGrp := v1.Group("/otp")
+		applyAuth(otpGrp)
 		otpGrp.Post("/send", licenseCheck, c.OTPHandler.Send)
 		otpGrp.Post("/verify", c.OTPHandler.Verify)
 		otpGrp.Post("/resend", licenseCheck, c.OTPHandler.Resend)
 	}
 
 	// Media upload (for WhatsApp file attachments)
-	v1.Post("/media/upload", apiAuth, c.MediaHandler.Upload)
+	v1.Post("/media/upload", apiAuth, directRBAC, appQuota, c.MediaHandler.Upload)
 
 	// File attachments (P0): authenticated CRUD + streaming download +
 	// signed-URL minting. The public verify-and-stream endpoint lives in
@@ -592,6 +604,8 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	// Application management routes (JWT protected for admin dashboard)
 	apps := v1.Group("/apps")
 	apps.Use(jwtAuth)
+	c.ApplicationHandler.SetRateLimitEnabled(c.Config.Security.AppRateLimitEnabled)
+	apps.Use("/:id", c.ApplicationHandler.AuthorizeQuotaRequest, middleware.ApplicationRateLimit(c.Limiter, c.Config.Security.AppRateLimitEnabled, c.Logger))
 	apps.Post("/", c.ApplicationHandler.Create)
 	apps.Get("/", c.ApplicationHandler.List)
 	apps.Get("/:id", c.ApplicationHandler.GetByID)

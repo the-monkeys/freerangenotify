@@ -37,6 +37,33 @@ func (e *DeliveryError) Unwrap() error {
 	return e.Err
 }
 
+// Retry/fallback is safe only with evidence that the provider did not accept a
+// delivery. A retryable transport error alone does not establish that fact.
+func IsDefinitiveDeliveryFailure(err error) bool {
+	var delivery *DeliveryError
+	if !errors.As(err, &delivery) || delivery == nil {
+		return false
+	}
+	if delivery.Stage == "health" || delivery.Stage == "resolve" {
+		return true
+	}
+	if delivery.Provider == "smtp" {
+		var rejected *textproto.Error
+		if errors.As(err, &rejected) && rejected.Code >= 400 && rejected.Code <= 599 {
+			return true
+		}
+		switch delivery.Stage {
+		case "connect", "tls", "auth", "mail", "rcpt":
+			return true
+		}
+	}
+	switch delivery.ErrorType {
+	case ErrorTypeAuth, ErrorTypeConfiguration, ErrorTypeInvalid, ErrorTypeRateLimit:
+		return true
+	}
+	return false
+}
+
 // SafeDeliveryErrorMessage finds typed causes through outer wrappers and avoids
 // copying arbitrary upstream text (including wrapper text) into persisted history.
 func SafeDeliveryErrorMessage(err error) string {

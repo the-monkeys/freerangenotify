@@ -25,7 +25,18 @@ func (s *CreditService) journal() (billing.CreditReservationJournal, error) {
 // the notification subsequently records a different successful attempt.
 func (s *CreditService) RecordReservationDeliveryFailure(ctx context.Context, id string) error {
 	if _, ok := billing.JournalSubscriptionID(id); !ok {
-		return nil
+		s.lifecycleMu.Lock()
+		defer s.lifecycleMu.Unlock()
+		res, err := s.loadReservationWithError(ctx, id)
+		if err != nil {
+			return err
+		}
+		if res == nil || res.Status != billing.CreditReservationReserved {
+			return nil
+		}
+		res.DeliveryOutcome = "failed"
+		res.UpdatedAt = time.Now().UTC()
+		return s.saveReservation(ctx, res)
 	} // legacy caller compatibility
 	recorder, ok := s.balanceRepo.(billing.CreditReservationFailureRecorder)
 	if !ok {

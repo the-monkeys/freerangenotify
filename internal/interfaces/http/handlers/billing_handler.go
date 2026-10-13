@@ -350,26 +350,43 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 	}
 	creditsTotal := int64(0)
 	creditsRemaining := int64(0)
+	creditsReserved := int64(0)
+	creditsConsumed := totalCreditsConsumed
 	if sub != nil {
 		creditsTotal = sub.CreditsTotal
 		creditsRemaining = sub.CreditsRemaining
+		creditsReserved = sub.CreditsReserved
 	}
-	if creditsTotal <= 0 {
+	creditWallet := billing.BillingModel(sub) == billing.BillingModelCredits
+	if !creditWallet && creditsTotal <= 0 {
 		creditsTotal = resolvePlan(h.rateCard, planName).CreditsIncluded
 	}
-	if creditsRemaining <= 0 && creditsTotal > 0 && totalCreditsConsumed <= creditsTotal {
+	if !creditWallet && creditsRemaining <= 0 && creditsTotal > 0 && totalCreditsConsumed <= creditsTotal {
 		creditsRemaining = creditsTotal - totalCreditsConsumed
+	}
+	if creditWallet {
+		creditsConsumed = creditsTotal - creditsRemaining
+		if creditsConsumed < 0 {
+			creditsConsumed = 0
+		}
+	}
+	creditsAvailable := creditsRemaining - creditsReserved
+	if creditsAvailable < 0 {
+		creditsAvailable = 0
 	}
 
 	return c.JSON(fiber.Map{
-		"billing_enabled":   true,
-		"plan":              planName,
-		"period_start":      from.Format(time.RFC3339),
-		"period_end":        to.Format(time.RFC3339),
-		"credits_total":     creditsTotal,
-		"credits_consumed":  totalCreditsConsumed,
-		"credits_remaining": creditsRemaining,
-		"breakdown":         items,
+		"billing_enabled":          true,
+		"plan":                     planName,
+		"period_start":             from.Format(time.RFC3339),
+		"period_end":               to.Format(time.RFC3339),
+		"credits_total":            creditsTotal,
+		"credits_consumed":         creditsConsumed,
+		"credits_remaining":        creditsRemaining,
+		"credits_reserved":         creditsReserved,
+		"credits_available":        creditsAvailable,
+		"metered_credits_consumed": totalCreditsConsumed,
+		"breakdown":                items,
 	})
 }
 

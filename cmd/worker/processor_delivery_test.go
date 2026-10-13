@@ -117,9 +117,11 @@ type deliveryTestBalanceRepo struct {
 	releaseContextErr error
 	commits           int
 	releases          int
+	lookupTenant      string
 }
 
-func (r *deliveryTestBalanceRepo) GetByTenantID(context.Context, string) (*billing.CreditBalance, error) {
+func (r *deliveryTestBalanceRepo) GetByTenantID(_ context.Context, tenant string) (*billing.CreditBalance, error) {
+	r.lookupTenant = tenant
 	copy := *r.balance
 	return &copy, nil
 }
@@ -421,7 +423,7 @@ func (q *accountingContextQueue) Acknowledge(ctx context.Context, _ queue.Notifi
 	}
 	return ctx.Err()
 }
-func TestProcessNotification_OTPDeadlineDoesNotCancelReleaseOrAcknowledgement(t *testing.T) {
+func TestProcessNotification_OTPDeadlineKeepsUnknownHoldAndAcknowledges(t *testing.T) {
 	repo := newStubNotifRepo()
 	notif := &notification.Notification{NotificationID: "provider-timeout-otp", AppID: "app-1", UserID: "user-1",
 		Channel: notification.ChannelEmail, Status: notification.StatusQueued, Content: notification.Content{Body: "OTP"},
@@ -437,17 +439,41 @@ func TestProcessNotification_OTPDeadlineDoesNotCancelReleaseOrAcknowledgement(t 
 	require.NoError(t, proc.providerManager.RegisterProvider(adapter))
 	proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
 	require.Equal(t, 1, adapter.sends)
-	require.Equal(t, 1, balance.releases)
+	require.Zero(t, balance.releases)
 	require.NoError(t, balance.releaseContextErr)
 	require.Zero(t, balance.commits)
-	require.Equal(t, notification.StatusFailed, notif.Status)
+	require.Equal(t, notification.StatusProcessing, notif.Status)
 	require.Nil(t, notif.SentAt)
-	require.Equal(t, "notification_expired", notif.Metadata["failure_code"])
+	require.Nil(t, notif.FailedAt)
+	require.Equal(t, "unknown", notif.Metadata["delivery_attempt_state"])
 	require.Equal(t, 1, q.ackCalls)
 	require.NoError(t, q.ackContextErr)
 }
 
 type successfulDeliveryProvider struct{ deliveryTestProvider }
+
+func TestDeliveryPreservesBillingOwnerForOrganizationAndLegacyApps(t *testing.T) {
+	for _, tc := range []struct{ declared, want string }{{"organization-1", "owner-1"}, {"", "owner-1"}} {
+		t.Run("organization="+tc.declared, func(t *testing.T) {
+			repo := newStubNotifRepo()
+			notif := &notification.Notification{NotificationID: "tenant-delivery", AppID: "app-1", UserID: "user-1", Channel: notification.ChannelEmail,
+				Status: notification.StatusQueued, Content: notification.Content{Body: "Hello"}, Metadata: map[string]interface{}{"tenant_id": "untrusted-input"}}
+			repo.notifications[notif.NotificationID] = notif
+			app := makeApp()
+			app.AdminUserID = "owner-1"
+			app.TenantID = tc.declared
+			proc := newProcessorForTest(repo, &stubQueue{}, map[string]*user.User{"user-1": makeUser()}, map[string]*application.Application{"app-1": app}, nil, nil)
+			balance := &deliveryTestBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: tc.want, CreditsTotal: 1500, CreditsRemaining: 1500}}
+			withDeliveryTestCredits(proc, balance)
+			proc.providerManager = providers.NewManager(nil, nil, zap.NewNop())
+			require.NoError(t, proc.providerManager.RegisterProvider(&successfulDeliveryProvider{}))
+			proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
+			require.Equal(t, notification.StatusSent, notif.Status)
+			require.Equal(t, tc.want, balance.lookupTenant)
+			require.Equal(t, tc.want, notif.Metadata["tenant_id"])
+		})
+	}
+}
 
 func (p *successfulDeliveryProvider) Send(context.Context, *notification.Notification, *user.User) (*providers.Result, error) {
 	p.sends++
@@ -556,6 +582,29 @@ func (r *deliveryEvidenceBalanceRepo) GetReservationReceipt(context.Context, str
 
 type uncertainDeliveryProvider struct{ deliveryTestProvider }
 
+func TestProcessNotification_UncertainDeliveryKeepsHealthyHoldAndDoesNotResend(t *testing.T) {
+	repo := newStubNotifRepo()
+	notif := &notification.Notification{NotificationID: "uncertain-healthy", AppID: "app-1", UserID: "user-1", Channel: notification.ChannelEmail, Status: notification.StatusQueued, Content: notification.Content{Body: "Hello"}}
+	repo.notifications[notif.NotificationID] = notif
+	proc := newProcessorForTest(repo, nil, map[string]*user.User{"user-1": makeUser()}, map[string]*application.Application{"app-1": makeApp()}, nil, nil)
+	q := &accountingContextQueue{}
+	proc.queue = q
+	balance := &deliveryTestBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: "app-1", CreditsTotal: 1500, CreditsRemaining: 1500}}
+	withDeliveryTestCredits(proc, balance)
+	provider := &uncertainDeliveryProvider{}
+	proc.providerManager = providers.NewManager(nil, nil, zap.NewNop())
+	require.NoError(t, proc.providerManager.RegisterProvider(provider))
+	proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
+	require.Zero(t, balance.releases, "an unknown provider outcome is not a proven refund")
+	require.Zero(t, balance.commits)
+	require.Empty(t, q.scheduled, "an uncertain send must not be retried automatically")
+	require.Equal(t, false, notif.Metadata["retryable"], "history must not advise retrying a quarantined attempt")
+	require.Equal(t, notification.StatusProcessing, notif.Status)
+	require.Nil(t, notif.FailedAt)
+	proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
+	require.Equal(t, 1, provider.sends, "recovered queue items must not resend a quarantined attempt")
+}
+
 func (p *uncertainDeliveryProvider) Send(context.Context, *notification.Notification, *user.User) (*providers.Result, error) {
 	p.sends++
 	err := context.DeadlineExceeded
@@ -595,7 +644,7 @@ func TestProcessNotification_ReleaseOutageRetainsDefiniteAttemptEvidence(t *test
 			} else {
 				require.Zero(t, balance.recordCalls)
 				require.Empty(t, balance.receipt.DeliveryOutcome, "do not invent evidence for an uncertain provider outcome")
-				require.Equal(t, notification.StatusQueued, notif.Status)
+				require.Equal(t, notification.StatusProcessing, notif.Status)
 			}
 		})
 	}

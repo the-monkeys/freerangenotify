@@ -1081,6 +1081,7 @@ func (it *IndexTemplates) GetSubscriptionsTemplate() map[string]interface{} {
 				"credit_allocation_journal": map[string]interface{}{
 					"type": "object", "enabled": false,
 				},
+				"credit_legacy_settlement_journal": map[string]interface{}{"type": "object", "enabled": false},
 				"credits_expire_at": map[string]interface{}{
 					"type": "date",
 				},

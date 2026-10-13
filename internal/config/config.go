@@ -176,7 +176,7 @@ type RedisConfig struct {
 type QueueConfig struct {
 	Type          string `mapstructure:"type"` // redis or kafka
 	Workers       int    `mapstructure:"workers"`
-	Concurrency   int    `mapstructure:"concurrency"`
+	Concurrency   int    `mapstructure:"concurrency"` // legacy setting; worker parallelism is controlled by workers
 	MaxRetries    int    `mapstructure:"max_retries"`
 	RetryDelay    int    `mapstructure:"retry_delay"`
 	MaxRetryDelay int    `mapstructure:"max_retry_delay"`
@@ -374,6 +374,8 @@ type SecurityConfig struct {
 	APIKeyHeader                 string     `mapstructure:"api_key_header"`
 	RateLimit                    int        `mapstructure:"rate_limit"`
 	RateLimitWindow              int        `mapstructure:"rate_limit_window"`
+	RateLimitEnabled             bool       `mapstructure:"rate_limit_enabled"`
+	AppRateLimitEnabled          bool       `mapstructure:"app_rate_limit_enabled"`
 	OpsEnabled                   bool       `mapstructure:"ops_enabled"`
 	OpsSecret                    string     `mapstructure:"ops_secret"`
 	OpsTimestampToleranceSeconds int        `mapstructure:"ops_timestamp_tolerance_seconds"`
@@ -432,7 +434,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("redis.min_idle_conn", 10)
 
 	viper.SetDefault("queue.type", "redis")
-	viper.SetDefault("queue.workers", 10)
+	viper.SetDefault("queue.workers", 20)
 	viper.SetDefault("queue.concurrency", 5)
 	viper.SetDefault("queue.max_retries", 3)
 	viper.SetDefault("queue.retry_delay", 5)
@@ -454,6 +456,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("security.jwt_refresh_expiration", 10080) // 7 days
 	viper.SetDefault("security.rate_limit", 1000)
 	viper.SetDefault("security.rate_limit_window", 3600)
+	viper.SetDefault("security.app_rate_limit_enabled", false)
+	viper.SetDefault("security.rate_limit_enabled", false)
 	viper.SetDefault("security.ops_enabled", false)
 	viper.SetDefault("security.ops_secret", "")
 	viper.SetDefault("security.ops_timestamp_tolerance_seconds", 300)
@@ -615,6 +619,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("security.ops_timestamp_tolerance_seconds must be >= 0")
 	}
 
+	if c.Security.RateLimitEnabled && (c.Security.RateLimit <= 0 || c.Security.RateLimitWindow <= 0) {
+		return fmt.Errorf("security.rate_limit and rate_limit_window must be positive when rate_limit_enabled=true")
+	}
 	if c.Security.OpsRateLimit < 0 {
 		return fmt.Errorf("security.ops_rate_limit must be >= 0")
 	}

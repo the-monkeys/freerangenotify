@@ -64,6 +64,9 @@ examples/
 node_modules/
 
 # Tools & local files
+.superpowers/
+body.json
+frn
 tools/
 local/
 

@@ -7,6 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -133,6 +136,40 @@ func (p *RazorpayProvider) VerifyPayment(ctx context.Context, v billing.PaymentV
 	return nil
 }
 
+// VerifyCapturedPayment is an optional provider capability so existing gateway
+// adapters retain their interface. A checkout signature alone proves neither
+// capture nor the amount actually paid.
+func (p *RazorpayProvider) VerifyCapturedPayment(ctx context.Context, v billing.PaymentVerification, amountPaisa int64, currency string) error {
+	endpoint := strings.TrimRight(p.client.BaseURL, "/") + "/v1/payments/" + url.PathEscape(v.PaymentID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("invalid payment verification request")
+	}
+	req.SetBasicAuth(p.client.Auth.Key, p.client.Auth.Secret)
+	res, err := p.client.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("payment capture lookup unavailable")
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("payment capture lookup failed with status %d", res.StatusCode)
+	}
+	var payment struct {
+		ID       string `json:"id"`
+		OrderID  string `json:"order_id"`
+		Status   string `json:"status"`
+		Amount   int64  `json:"amount"`
+		Currency string `json:"currency"`
+	}
+	if err := json.NewDecoder(io.LimitReader(res.Body, 64*1024)).Decode(&payment); err != nil {
+		return fmt.Errorf("invalid payment capture response")
+	}
+	if amountPaisa <= 0 || currency == "" || payment.ID != v.PaymentID || payment.OrderID != v.OrderID || payment.Status != "captured" || payment.Amount != amountPaisa || payment.Currency != currency {
+		return fmt.Errorf("captured payment does not match checkout")
+	}
+	return nil
+}
+
 // VerifyWebhook validates and parses a Razorpay webhook event.
 // Uses HMAC-SHA256 of the raw payload body against the webhook secret.
 func (p *RazorpayProvider) VerifyWebhook(payload []byte, signature string) (billing.WebhookEvent, error) {
@@ -146,10 +183,12 @@ func (p *RazorpayProvider) VerifyWebhook(payload []byte, signature string) (bill
 		Payload struct {
 			Payment struct {
 				Entity struct {
-					ID      string                 `json:"id"`
-					OrderID string                 `json:"order_id"`
-					Status  string                 `json:"status"`
-					Notes   map[string]interface{} `json:"notes"`
+					ID       string                 `json:"id"`
+					OrderID  string                 `json:"order_id"`
+					Status   string                 `json:"status"`
+					Amount   int64                  `json:"amount"`
+					Currency string                 `json:"currency"`
+					Notes    map[string]interface{} `json:"notes"`
 				} `json:"entity"`
 			} `json:"payment"`
 		} `json:"payload"`
@@ -160,16 +199,22 @@ func (p *RazorpayProvider) VerifyWebhook(payload []byte, signature string) (bill
 	}
 
 	entity := body.Payload.Payment.Entity
+	if body.Event == "payment.captured" && (entity.Status != "captured" || entity.ID == "" || entity.OrderID == "" || entity.Amount <= 0 || entity.Currency == "") {
+		return billing.WebhookEvent{}, fmt.Errorf("invalid captured payment details")
+	}
 	tenantID, _ := entity.Notes["tenant_id"].(string)
 	tier, _ := entity.Notes["tier"].(string)
 
 	return billing.WebhookEvent{
-		EventType: body.Event,
-		TenantID:  tenantID,
-		Tier:      tier,
-		OrderID:   entity.OrderID,
-		PaymentID: entity.ID,
-		IsActive:  body.Event == "payment.captured",
+		EventType:       body.Event,
+		TenantID:        tenantID,
+		Tier:            tier,
+		OrderID:         entity.OrderID,
+		PaymentID:       entity.ID,
+		IsActive:        body.Event == "payment.captured",
+		AmountPaisa:     entity.Amount,
+		Currency:        entity.Currency,
+		CaptureVerified: body.Event == "payment.captured",
 	}, nil
 }
 

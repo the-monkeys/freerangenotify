@@ -15,7 +15,25 @@ import (
 	"go.uber.org/zap"
 )
 
-type paymentTestProvider struct{}
+type paymentTestProvider struct{ event billing.WebhookEvent }
+
+type disabledCheckoutCard struct{ billing.RateCardManager }
+
+func (*disabledCheckoutCard) GetCheckoutPlan(string) (billing.PlanBundle, bool) {
+	return billing.PlanBundle{}, false
+}
+func (*disabledCheckoutCard) GetRateCardVersion() string { return "disabled-plan-version" }
+
+func TestCreateOrderRespectsDisabledRuntimePlan(t *testing.T) {
+	repo := &paymentTestSubRepo{}
+	h := NewPaymentHandler(&paymentTestProvider{}, repo, nil, billing.DefaultRates(), true, zap.NewNop())
+	h.SetRateCardManager(&disabledCheckoutCard{})
+	resp := postCheckout(t, newPaymentTestApp(h), "starter")
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusBadRequest || repo.createCalls != 0 {
+		t.Fatalf("disabled plan resurrected by fallback: status=%d writes=%d", resp.StatusCode, repo.createCalls)
+	}
+}
 
 func (p *paymentTestProvider) CreateOrder(ctx context.Context, tenantID, tier string, amountPaisa int64) (billing.CheckoutResponse, error) {
 	return billing.CheckoutResponse{
@@ -32,7 +50,7 @@ func (p *paymentTestProvider) VerifyPayment(ctx context.Context, verification bi
 }
 
 func (p *paymentTestProvider) VerifyWebhook(payload []byte, signature string) (billing.WebhookEvent, error) {
-	return billing.WebhookEvent{}, nil
+	return p.event, nil
 }
 
 type paymentTestSubRepo struct {
@@ -132,7 +150,7 @@ func TestCreateOrderAllowsActiveFreeSubscriptionUpgrade(t *testing.T) {
 	}
 }
 
-func TestCreateOrderRejectsAlreadyPaidActiveSubscription(t *testing.T) {
+func TestCreateOrderAllowsPaidCustomerRecharge(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &paymentTestSubRepo{sub: &license.Subscription{
 		ID:                 "sub-pro",
@@ -147,11 +165,11 @@ func TestCreateOrderRejectsAlreadyPaidActiveSubscription(t *testing.T) {
 	app := newPaymentTestApp(handler)
 
 	resp := postCheckout(t, app, "pro")
-	if resp.StatusCode != fiber.StatusConflict {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusConflict)
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, fiber.StatusOK)
 	}
-	if repo.updateCalls != 0 {
-		t.Fatalf("update calls = %d, want 0", repo.updateCalls)
+	if repo.updateCalls != 1 {
+		t.Fatalf("update calls = %d, want 1", repo.updateCalls)
 	}
 }
 
@@ -166,5 +184,81 @@ func TestCreateOrderRejectsFreeCheckout(t *testing.T) {
 	}
 	if repo.createCalls != 0 || repo.updateCalls != 0 {
 		t.Fatalf("create/update calls = %d/%d, want 0/0", repo.createCalls, repo.updateCalls)
+	}
+}
+
+func TestVerifyPaymentRejectsMissingCheckoutAndPreservesWallet(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &paymentTestSubRepo{sub: &license.Subscription{ID: "sub-1", TenantID: "user-1", Plan: "pro",
+		Status: license.SubscriptionStatusActive, CurrentPeriodStart: now.Add(-time.Hour), CurrentPeriodEnd: now.Add(time.Hour),
+		CreditsTotal: 1500, CreditsRemaining: 400, CreatedAt: now.Add(-time.Hour), Metadata: map[string]interface{}{}}}
+	h := NewPaymentHandler(&paymentTestProvider{}, repo, nil, billing.DefaultRates(), true, zap.NewNop())
+	app := fiber.New()
+	app.Post("/verify", func(c *fiber.Ctx) error { c.Locals("user_id", "user-1"); return h.VerifyPayment(c) })
+	body := `{"razorpay_order_id":"old-order","razorpay_payment_id":"old-payment","razorpay_signature":"signed"}`
+	req := httptest.NewRequest(http.MethodPost, "/verify", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusConflict || repo.sub.CreditsRemaining != 400 || repo.updateCalls != 0 {
+		t.Fatalf("unbound payment altered wallet: status=%d balance=%d writes=%d", resp.StatusCode, repo.sub.CreditsRemaining, repo.updateCalls)
+	}
+}
+
+func TestCapturedWebhookRejectsWrongOrder(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &paymentTestSubRepo{sub: &license.Subscription{ID: "sub-1", TenantID: "user-1", Plan: "pro",
+		CreditsTotal: 1500, CreditsRemaining: 400, CreatedAt: now.Add(-time.Hour),
+		Metadata: map[string]interface{}{"pending_checkout_order_id": "new-order", "pending_checkout_tier": "pro", "pending_checkout_credits": int64(35000)}}}
+	provider := &paymentTestProvider{event: billing.WebhookEvent{EventType: "payment.captured", TenantID: "user-1", PaymentID: "payment-1", OrderID: "old-order"}}
+	h := NewPaymentHandler(provider, repo, nil, billing.DefaultRates(), true, zap.NewNop())
+	app := fiber.New()
+	app.Post("/webhook", h.HandleWebhook)
+	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewBufferString(`{}`))
+	req.Header.Set("X-Razorpay-Signature", "signed")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 400 || repo.sub.CreditsRemaining != 400 || repo.updateCalls != 0 {
+		t.Fatalf("wrong order allocated credits: status=%d balance=%d writes=%d", resp.StatusCode, repo.sub.CreditsRemaining, repo.updateCalls)
+	}
+}
+
+func TestVerifyPaymentUsesStoredOlderCheckoutAndIsIdempotent(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &paymentTestSubRepo{sub: &license.Subscription{ID: "sub-1", TenantID: "user-1", Plan: "pro",
+		Status: license.SubscriptionStatusActive, CurrentPeriodStart: now.Add(-time.Hour), CurrentPeriodEnd: now.Add(time.Hour),
+		CreditsTotal: 1500, CreditsRemaining: 400, CreditsReserved: 100, CreatedAt: now.Add(-time.Hour), Metadata: map[string]interface{}{
+			"pending_checkout_order_id": "new-order", "pending_checkout_credits": int64(120000), "pending_checkout_plan_id": "pro",
+			"checkout_orders": map[string]interface{}{"old-order": map[string]interface{}{
+				"pending_checkout_order_id": "old-order", "pending_checkout_credits": int64(35000), "pending_checkout_plan_id": "starter",
+				"pending_checkout_amount_paisa": int64(49900), "pending_checkout_currency": "INR", "pending_checkout_rate_card_version": "purchase-version",
+			}},
+		}}}
+	h := NewPaymentHandler(&paymentTestProvider{}, repo, nil, billing.DefaultRates(), true, zap.NewNop())
+	app := fiber.New()
+	app.Post("/verify", func(c *fiber.Ctx) error { c.Locals("user_id", "user-1"); return h.VerifyPayment(c) })
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/verify", bytes.NewBufferString(`{"razorpay_order_id":"old-order","razorpay_payment_id":"paid-old","razorpay_signature":"signed"}`))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := app.Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("stored old checkout status=%d", resp.StatusCode)
+		}
+	}
+	if repo.sub.CreditsRemaining != 35400 || repo.sub.CreditsReserved != 100 || repo.updateCalls != 1 {
+		t.Fatalf("purchase snapshot/replay failed: remaining=%d held=%d writes=%d", repo.sub.CreditsRemaining, repo.sub.CreditsReserved, repo.updateCalls)
+	}
+	if repo.sub.Metadata["pending_checkout_order_id"] != "new-order" || repo.sub.Metadata["last_rate_card_version"] != "purchase-version" {
+		t.Fatalf("settling older checkout lost newer checkout or pinned price: %+v", repo.sub.Metadata)
 	}
 }

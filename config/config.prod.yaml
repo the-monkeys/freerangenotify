@@ -57,6 +57,8 @@ monitoring:
 
 security:
   jwt_secret: "${JWT_SECRET}"
+  app_rate_limit_enabled: false  # Enable after an application quota canary
+  rate_limit_enabled: false  # Public authentication IP quota rollout
   rate_limit: 10000  # Higher limit for production
   rate_limit_window: 3600
   cors:

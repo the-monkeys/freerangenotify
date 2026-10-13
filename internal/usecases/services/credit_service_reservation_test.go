@@ -9,6 +9,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"go.uber.org/zap"
 )
 
@@ -202,6 +203,56 @@ func TestCreditService_reaps_expired_reservations(t *testing.T) {
 	}
 	if snap.CreditsRemaining != 100 {
 		t.Fatalf("credits_remaining after reap = %d want 100", snap.CreditsRemaining)
+	}
+}
+
+type recoveryNotificationFixture struct {
+	notification.Repository
+	notif *notification.Notification
+}
+
+func (r *recoveryNotificationFixture) GetByID(context.Context, string) (*notification.Notification, error) {
+	return r.notif, nil
+}
+
+func TestLegacyReaperUsesBoundDeliveryEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		status                  notification.Status
+		bound                   bool
+		wantRemaining, wantHeld int64
+		wantError               bool
+	}{
+		{"sent", notification.StatusSent, true, 99, 0, false},
+		{"uncertain", notification.StatusProcessing, false, 100, 1, true},
+		{"different-attempt", notification.StatusSent, false, 100, 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := &racyBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: "tenant-1", CreditsTotal: 100, CreditsRemaining: 100}}
+			store := newMemoryReservationStore()
+			svc := newReservationCreditServiceWith(repo, store)
+			res, err := svc.ReserveForNotification(ctx, "tenant-1", "app-1", "n-1", "inapp")
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.ExpiresAt = time.Now().Add(-time.Minute)
+			if err := store.Save(ctx, res); err != nil {
+				t.Fatal(err)
+			}
+			notif := &notification.Notification{NotificationID: "n-1", AppID: "app-1", Status: tc.status, Metadata: map[string]interface{}{}}
+			if tc.bound {
+				notif.Metadata[billing.CreditDeliveryReservationMetadataKey] = res.ID
+			}
+			svc.SetReservationNotificationRepository(&recoveryNotificationFixture{notif: notif})
+			_, err = svc.ReapExpiredReservations(ctx)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("reconciliation error=%v, wantError=%v", err, tc.wantError)
+			}
+			if repo.balance.CreditsRemaining != tc.wantRemaining || repo.balance.CreditsReserved != tc.wantHeld {
+				t.Fatalf("wrong delivery settlement: %+v", repo.balance)
+			}
+		})
 	}
 }
 

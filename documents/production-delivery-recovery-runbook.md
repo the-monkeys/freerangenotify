@@ -418,8 +418,9 @@ classification; one terminal delta under duplicate/competing outcomes; repair of
 lost ES/Redis/ledger responses; old/new purchase, payment, and admin-renewal HTTP
 contracts; original-subscription binding; pagination beyond 100 subscription
 documents; recovery after more than 24 hours without Redis; and successful send
-plus accounting outage with no provider resend. Explicit purchase/renewal
-allocation on a journal-backed wallet requires draining active holds first.
+plus accounting outage with no provider resend. Purchase and admin-renewal grants
+add to the current unexpired wallet atomically and preserve active holds.
+Replacement allocations from older internal adapters still require draining holds.
 Generic metadata updates cannot overwrite journal counters. Atomic grant/bootstrap
 is the credit-writer API; uncertain manual grants still require operator
 reconciliation before retrying because they lack a durable grant operation ID.
@@ -432,17 +433,22 @@ old holds. Verify the marker on the canary before admitting work. Protection is
 active even when the reservation map is empty. An absent marker retains old-mode
 full-update behavior; disabling admissions never removes an existing marker.
 
-Captured-payment allocation blocked by active holds returns HTTP 503. Preserve
-the checkout snapshot and payment identity, drain known holds, and allow the
-provider to retry the same capture. Do not acknowledge capture until allocation
-is durable. Allocation replay receipts keyed by payment ID prevent a duplicate
-capture from replenishing credits consumed since that payment.
+Captured payments use the stored order snapshot, including credits, amount,
+currency and price version. Paid customers can recharge without replacing their
+remaining credits: 35,000 purchased plus 400 unexpired credits leaves 35,400.
+Active reservations survive recharge, and recharge never shortens expiry. Retain
+each checkout order snapshot so a newer checkout does not change an older order.
+Razorpay callback verification checks capture status, amount and currency against
+the gateway; signed capture webhooks are checked against the stored snapshot.
+Do not acknowledge capture until allocation is durable. Replay receipts keyed by
+payment and order prevent a repeated capture from granting credits again.
 
 Admin renewal accepts the existing request without a header. An optional
 `Idempotency-Key` (maximum 200 characters) supplies a stable renewal identity:
 reuse it for retries of the same intent, and use a new key for a new renewal.
 A keyed lost response can be retried after an intervening burn without refilling
-again in either old or journal mode. Old-mode keyed allocation receipts survive
+again in either old or journal mode. Renewal adds credits to the usable wallet.
+Old-mode keyed allocation receipts survive
 later journal adoption and do not by themselves mark the wallet journal-backed.
 Unkeyed requests retain the old renewal semantics and have no guarantee
 against an ambiguous rebuilt retry; inspect allocation/cycle state before a
@@ -454,7 +460,12 @@ and the new recovery-capable binary/wiring. Durable `cr1.` IDs are still committ
 released, and repaired with admission off. A journal-backed wallet rejects old
 lifecycle admissions/writes, rather than silently mixing them. The authoritative
 reaper scans subscription source, including expired subscriptions; Redis TTL is
-only cache retention. Terminal ledger failures are repaired without a second
+only terminal cache retention: pending records have no Redis TTL, and terminal
+records expire after 24 hours and leave the expiry index. Missing legacy records
+are reported for audited reconciliation; absence does not authorize a refund.
+Legacy recovery with notification storage wired commits a bound successful
+delivery, releases a definitively failed attempt, and retains unknown outcomes.
+Terminal ledger failures are repaired without a second
 balance delta. Sent/delivered/read evidence can commit an expired pending hold
 only when `metadata.delivery_reservation_id` equals that exact reservation ID.
 The worker writes successful status, timestamp and this binding together in one
@@ -481,3 +492,117 @@ Terminal reservation/allocation receipts remain retained; no replay-safe pruning
 policy has been approved. Track `journal_entries` and `expired_released` recovery
 logs together with document sizes and oldest pending/unrepaired receipt age, and
 stop expansion if growth or accounting invariants breach the agreed thresholds.
+
+## Customer billing and throughput rollout
+
+Recharge carries unexpired spendable credits and preserves outstanding holds.
+Expired spendable credits do not carry. `credits_total` includes cumulative grants
+while credits carry; consumption is total minus remaining. The usage response
+exposes reserved and available separately. A hold with an unknown delivery outcome
+stays reserved until evidence permits settlement. Do not clear all reserved credits
+or reduce a customer's balance to match a historically divergent ledger. Record
+the approved balance correction and its reason through the audited recovery path.
+These code changes do not repair historical production balances automatically.
+
+Billing continues to charge an application's existing admin wallet. An organization
+`tenant_id` is also an authorization identity; it does not redirect credits already
+purchased into a personal wallet. Usage events record the actual charged wallet.
+Price edits create immutable versions; notification reservations retain the price
+they were created with. The runtime active pointer determines the current card,
+including disabled checkout plans. Existing historical attribution and rate-card
+data require a separately reviewed backfill.
+
+A subscriber CSV can contain up to 10,000 records and 10 MiB. The dashboard parses
+quoted fields, validates before writing, and submits sequential chunks of at most
+500 records and 1 MiB under the unchanged 1,000-record public API cap. Progress and
+errors refer to original CSV record numbers. A transport failure stops subsequent
+chunks because the current chunk may already have been committed; inspect its
+results before resubmitting. Successful rows are never automatically replayed.
+
+Broadcast preparation reuses loaded profiles and persists queue-ready notifications
+in bounded batches before publication. An ambiguous publication response stays
+queued for operational review; automatic republication could duplicate delivery.
+The default is 20 workers; explicitly configured `queue.workers` values remain in
+effect. Tune concurrency to the SMTP provider's connection and send limits. Local
+fixtures with a 2 ms provider measured about 2.98 / 1.54 / 0.77 seconds for 6,001
+notifications at 5 / 10 / 20 workers. These are scheduling measurements, not a live
+SMTP delivery guarantee. No provider throttle can be bypassed by adding workers.
+
+Request quotas are separate from delivery throughput. Enable them after verifying
+Redis availability, reverse-proxy client-IP behavior and a customer canary:
+
+```yaml
+security:
+  app_rate_limit_enabled: true
+  rate_limit_enabled: true
+```
+
+Equivalent environment overrides are
+`FREERANGE_SECURITY_APP_RATE_LIMIT_ENABLED=true` and
+`FREERANGE_SECURITY_RATE_LIMIT_ENABLED=true`. Both default to false for a compatible
+rollout. The first enforces each application's configured requests/hour across its
+API keys and environments on app-scoped routes. Limits of zero or less retain the
+existing unlimited interpretation. One broadcast is one HTTP admission regardless
+of recipient count; each CSV chunk is one admission. Authentication/authorization
+runs first so invalid credentials and forbidden writes do not spend the app budget.
+The second applies `security.rate_limit` per `security.rate_limit_window` seconds to
+public authentication routes by client IP. Health checks and signed payment callbacks
+are outside this bucket. The existing ops quota remains independently configured.
+
+Denied requests return `429`, `Retry-After` and `X-RateLimit-*` headers without
+extending the window; browser CORS exposes these headers. Redis failure returns
+`503` when enforcement is enabled. Settings display the actual deployment state.
+Verify enabled/disabled settings, shared keys, expiry, concurrent admissions and
+callback delivery before expanding the canary. Use a coordinated binary rollout:
+the new limiter converts old nanosecond scores to milliseconds in Redis while
+retaining their admission and expiry history.
+
+## Delivery and broadcast uncertainty
+
+The worker persists `metadata.delivery_attempt_state: dispatching` before calling
+a provider. A lost acknowledgement, send timeout, or crash leaves that attempt
+quarantined as `processing`; recovery does not resend it or automatically refund
+its credits. `unknown` makes that quarantine explicit when the worker can persist
+the result. Reconcile the exact reservation and provider evidence before marking
+an outcome. A timeout after an OTP deadline does not prove the message was rejected.
+Definitive rejection evidence permits normal refund/retry. SMTP connection/auth/
+recipient failures occur before acceptance, and explicit 4xx/5xx replies prove
+rejection; loss of the final DATA reply does not. SMTP retries and provider fallback
+both stop on an unknown outcome. Successful DATA acceptance remains successful even
+when later connection cleanup fails.
+
+Compatible credit wallets now retain `credit_legacy_settlement_journal` as another
+source-only object mapping. Its reservation identity and terminal wallet delta are
+written atomically, even with journal admissions disabled. A lost Redis terminal
+write can replay the receipt without debiting again or consuming a sibling hold.
+The deterministic ledger write precedes terminal-cache removal from recovery. This
+does not reconstruct missing pre-deployment settlement evidence. Keep historical
+unknown reservations in the audited recovery process. Retain these settlement
+receipts until a replay-safe pruning policy is approved; monitor document growth.
+
+Scheduled publication claims each eligible pending/snoozed notification atomically
+before enqueueing. Redis-ready and Elasticsearch fallback schedulers share that
+claim; stale search results cannot republish it or overwrite a completed delivery.
+An ambiguous claim/publication response stays queued for reconciliation. Custom
+repository adapters must implement the optional atomic claim capability before
+scheduled dispatch; the shipped Elasticsearch repository implements it.
+
+Broadcast replies preserve `sent` and `total` and add rejected, skipped, unknown,
+not-attempted counts and an operation ID. Partial acceptance returns `202` with
+`partial:true` and `retryable:false`; it is not permission to repeat the full fan-out.
+Recipient outcomes are capped at 1,000 entries with an explicit truncation flag.
+Notifications retain `metadata.broadcast_operation_id` for source-level auditing.
+Use a stable `Idempotency-Key` for retries of the same intent. An atomic receipt is
+claimed before side effects, including concurrent requests. Interrupted/pending
+receipts have no TTL and return `409`; reconcile them instead of deleting the claim.
+Completed responses retain the existing 24-hour idempotency window. A different
+request with the same key returns `409`. Without a key, a fresh request is a new
+intent and cannot be deduplicated. The dashboard preserves its key and form after
+partial/unknown responses and explains the partial result; keep the operation/key
+when investigating across a page reload. CORS permits both idempotency headers.
+Forbidden role-specific app operations are checked before spending shared quota.
+Broadcast receipts retain the existing application/key Redis namespace so older
+readers see the pending/completed response. New request fingerprints reject reuse
+for another intent or environment. Complete the API fleet rollout before enabling
+new clients; an older request already in flight before a claim cannot be locked
+retroactively. Quarantined delivery history explicitly reports `retryable:false`.

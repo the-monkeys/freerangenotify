@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,169 @@ import (
 	"go.uber.org/zap"
 	"net/http/httptest"
 )
+
+type failTerminalReservationSave struct{ fail atomic.Bool }
+
+func (*failTerminalReservationSave) BeforeProcess(ctx context.Context, _ redis.Cmder) (context.Context, error) {
+	return ctx, nil
+}
+func (*failTerminalReservationSave) AfterProcess(context.Context, redis.Cmder) error { return nil }
+func (h *failTerminalReservationSave) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	for _, cmd := range cmds {
+		if cmd.Name() != "set" || len(cmd.Args()) < 3 {
+			continue
+		}
+		payload := fmt.Sprint(cmd.Args()[2])
+		if raw, ok := cmd.Args()[2].([]byte); ok {
+			payload = string(raw)
+		}
+		if strings.Contains(payload, `"status":"committed"`) && h.fail.Swap(false) {
+			return ctx, errors.New("terminal Redis write unavailable")
+		}
+	}
+	return ctx, nil
+}
+func (*failTerminalReservationSave) AfterProcessPipeline(context.Context, []redis.Cmder) error {
+	return nil
+}
+
+func TestCreditLegacyRealESSettlementSurvivesRedisFailureAndRestart(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	sub := f.sub(t, 1500)
+	hook := &failTerminalReservationSave{}
+	f.redis.AddHook(hook)
+	makeService := func() *services.CreditService {
+		return services.NewCreditService(f.balances, f.ledger, f.subs, nil, nil, nil, f.redis, zap.NewNop(), true)
+	}
+	svc := makeService()
+	first, err := svc.ReserveForNotification(ctx, f.tenant, "fixture-app", "first", "in_app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sibling, err := svc.ReserveForNotification(ctx, f.tenant, "fixture-app", "sibling", "in_app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, id := range []string{first.ID, sibling.ID} {
+			f.redis.Del(ctx, "frn:credit:res:"+id)
+			f.redis.ZRem(ctx, "frn:credit:res:expiry", id)
+		}
+	})
+	hook.fail.Store(true)
+	_, commitErr := svc.CommitOnSuccess(ctx, first.ID)
+	if commitErr == nil {
+		t.Fatal("fixture did not fail the terminal Redis save")
+	}
+	now := time.Now().UTC()
+	notifs := repository.NewNotificationRepository(f.es, zap.NewNop())
+	if err := notifs.Create(ctx, &notification.Notification{NotificationID: "first", AppID: "fixture-app", Status: notification.StatusSent, SentAt: &now, Metadata: map[string]interface{}{"delivery_reservation_id": first.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := f.redis.Get(ctx, "frn:credit:res:"+first.ID).Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pending billing.CreditReservation
+	if err := json.Unmarshal(payload, &pending); err != nil {
+		t.Fatal(err)
+	}
+	pending.ExpiresAt = now.Add(-time.Hour)
+	payload, _ = json.Marshal(pending)
+	if err := f.redis.Set(ctx, "frn:credit:res:"+first.ID, payload, 0).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.redis.ZAdd(ctx, "frn:credit:res:expiry", &redis.Z{Member: first.ID, Score: float64(pending.ExpiresAt.Unix())}).Err(); err != nil {
+		t.Fatal(err)
+	}
+	restarted := makeService()
+	restarted.SetReservationNotificationRepository(notifs)
+	if _, err := restarted.ReapExpiredReservations(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.subs.GetByID(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CreditsRemaining != 1499 || got.CreditsReserved != 1 {
+		t.Fatalf("settlement replay debited twice or consumed sibling hold: remaining=%d reserved=%d", got.CreditsRemaining, got.CreditsReserved)
+	}
+	// Stale generic metadata updates must preserve terminal identities/counters.
+	if err := f.subs.Update(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var failures atomic.Int64
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := makeService().CommitOnSuccess(ctx, first.ID); err != nil {
+				failures.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if failures.Load() != 0 {
+		t.Fatalf("concurrent settlement replays failed: %d", failures.Load())
+	}
+	got, err = f.subs.GetByID(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CreditsRemaining != 1499 || got.CreditsReserved != 1 {
+		t.Fatal("stale update or concurrent replay changed wallet")
+	}
+}
+
+func TestNotificationScheduleRealESAtomicClaimPreservesDelivery(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := repository.NewNotificationRepository(f.es, zap.NewNop())
+	claim, ok := repo.(interface {
+		ClaimScheduledNotification(context.Context, string) (bool, error)
+	})
+	if !ok {
+		t.Fatal("production repository must claim atomically")
+	}
+	due := time.Now().UTC().Add(-time.Minute)
+	if err := repo.Create(ctx, &notification.Notification{NotificationID: "schedule-claim", AppID: "fixture-app", Status: notification.StatusPending, ScheduledAt: &due}); err != nil {
+		t.Fatal(err)
+	}
+	var accepted, failures atomic.Int64
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			won, err := claim.ClaimScheduledNotification(ctx, "schedule-claim")
+			if err != nil {
+				failures.Add(1)
+			}
+			if won {
+				accepted.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if accepted.Load() != 1 || failures.Load() != 0 {
+		t.Fatalf("claims=%d failures=%d", accepted.Load(), failures.Load())
+	}
+	if err := repo.UpdateStatus(ctx, "schedule-claim", notification.StatusSent); err != nil {
+		t.Fatal(err)
+	}
+	if won, err := claim.ClaimScheduledNotification(ctx, "schedule-claim"); err != nil || won {
+		t.Fatalf("successful notification was reclaimed: %v %v", won, err)
+	}
+	future := time.Now().UTC().Add(time.Hour)
+	if err := repo.Create(ctx, &notification.Notification{NotificationID: "future-claim", AppID: "fixture-app", Status: notification.StatusPending, ScheduledAt: &future}); err != nil {
+		t.Fatal(err)
+	}
+	if won, err := claim.ClaimScheduledNotification(ctx, "future-claim"); err != nil || won {
+		t.Fatalf("future notification was claimed: %v %v", won, err)
+	}
+}
 
 // Opt-in only: point these variables at disposable ES/Redis services, never a
 // production cluster. Cleanup is limited to this fixture's generated IDs.
@@ -49,7 +213,7 @@ type creditFixtureTransport struct{ prefix string }
 func (s *creditFixtureTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	req := request.Clone(request.Context())
 	pieces := strings.Split(strings.TrimPrefix(req.URL.Path, "/"), "/")
-	indices := map[string]bool{"subscriptions": true, "credit_ledger": true, "notifications": true}
+	indices := map[string]bool{"subscriptions": true, "credit_ledger": true, "notifications": true, "billing_rate_cards": true, "billing_runtime": true}
 	if len(pieces) > 0 && indices[pieces[0]] {
 		pieces[0] = s.prefix + pieces[0]
 		req.URL.Path = "/" + strings.Join(pieces, "/")
@@ -126,7 +290,7 @@ func newCreditFixture(t *testing.T) *creditFixture {
 				}
 			}
 		}
-		for _, index := range []string{"subscriptions", "credit_ledger", "notifications"} {
+		for _, index := range []string{"subscriptions", "credit_ledger", "notifications", "billing_rate_cards", "billing_runtime"} {
 			resp, err := es.Indices.Delete([]string{index})
 			if err == nil {
 				resp.Body.Close()
@@ -343,6 +507,150 @@ func TestCreditJournalRealESRestartAndCacheOutage(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestRateCardRealESConcurrentActivationRejectsStaleEditor(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := billingrepo.NewESRateCardRepo(f.es, zap.NewNop())
+	for _, version := range []string{"base", "edit-a", "edit-b"} {
+		if err := repo.CreateVersion(ctx, &billing.RateCard{Version: version, ChannelCreditCost: map[string]int64{"email": 5}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.SetActiveVersion(ctx, "base"); err != nil {
+		t.Fatal(err)
+	}
+	updater, ok := interface{}(repo).(interface {
+		SetActiveVersionIfCurrent(context.Context, string, string) error
+	})
+	if !ok {
+		t.Fatal("price edits have no concurrency guard")
+	}
+	if err := updater.SetActiveVersionIfCurrent(ctx, "base", "edit-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := updater.SetActiveVersionIfCurrent(ctx, "base", "edit-b"); err == nil {
+		t.Fatal("stale price edit replaced a newer active card")
+	}
+	active, err := repo.GetActive(ctx)
+	if err != nil || active.Version != "edit-a" || !active.Active {
+		t.Fatalf("active runtime card is inconsistent: %+v / %v", active, err)
+	}
+}
+
+func TestRateCardRealESVersionCannotBeRepriced(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	repo := billingrepo.NewESRateCardRepo(f.es, zap.NewNop())
+	first := &billing.RateCard{Version: "purchase-version", ChannelCreditCost: map[string]int64{"email": 5}, Plans: billing.DefaultPlanBundles()}
+	if err := repo.CreateVersion(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	changed := &billing.RateCard{Version: "purchase-version", ChannelCreditCost: map[string]int64{"email": 7}}
+	if err := repo.CreateVersion(ctx, changed); err == nil {
+		t.Fatal("duplicate version silently overwrote purchase prices")
+	}
+	stored, err := repo.GetByVersion(ctx, "purchase-version")
+	if err != nil || stored.ChannelCreditCost["email"] != 5 {
+		t.Fatalf("historical price changed: %+v / %v", stored, err)
+	}
+}
+
+func TestCreditCheckoutRealESConcurrentSnapshotsPreserveWallet(t *testing.T) {
+	f := newCreditFixture(t)
+	ctx := context.Background()
+	sub := f.sub(t, 400)
+	saver, ok := f.subs.(interface {
+		UpdateCheckout(context.Context, *license.Subscription) error
+	})
+	if !ok {
+		t.Fatal("atomic checkout persistence is missing")
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, id := range []string{"order-a", "order-b"} {
+		copySub := *sub
+		copySub.CreditsRemaining = 1 // metadata save must not write these stale counters
+		copySub.Metadata = map[string]interface{}{"pending_checkout_order_id": id, "pending_checkout_plan_id": "starter", "pending_checkout_credits": int64(35000),
+			"checkout_orders": map[string]interface{}{id: map[string]interface{}{"pending_checkout_order_id": id, "pending_checkout_credits": int64(35000)}}}
+		wg.Add(1)
+		go func(s license.Subscription) { defer wg.Done(); errs <- saver.UpdateCheckout(ctx, &s) }(copySub)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := f.subs.GetByID(ctx, sub.ID)
+	if err != nil || got.CreditsRemaining != 400 {
+		t.Fatalf("checkout overwrote credits: %+v / %v", got, err)
+	}
+	orders, _ := got.Metadata["checkout_orders"].(map[string]interface{})
+	if orders["order-a"] == nil || orders["order-b"] == nil {
+		t.Fatalf("concurrent checkout snapshot lost: %+v", orders)
+	}
+}
+
+func TestCreditRechargeRealESAdditiveReplayAndActiveHolds(t *testing.T) {
+	for _, journal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("journal=%v", journal), func(t *testing.T) {
+			f := newCreditFixture(t)
+			ctx := context.Background()
+			sub := f.sub(t, 400)
+			if journal {
+				res := f.res(sub, 100)
+				if _, err := f.balances.ReserveReservation(ctx, res); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := f.balances.ReserveCredits(ctx, f.tenant, 100); err != nil {
+					t.Fatal(err)
+				}
+			}
+			updater := f.subs.(interface {
+				UpdateCreditAllocation(context.Context, *license.Subscription) error
+			})
+			makeGrant := func(id string) *license.Subscription {
+				grant := *sub // deliberately stale counters
+				grant.CreditsRemaining = 35400
+				grant.CreditsTotal = 35400
+				grant.CreditsReserved = 0
+				grant.Metadata = map[string]interface{}{"billing_model": "credits", "renewal_method": "razorpay", "last_payment_id": id,
+					"credit_allocation_delta": int64(35000), "credit_allocation_at": time.Now().UTC().Format(time.RFC3339Nano)}
+				return &grant
+			}
+			if err := updater.UpdateCreditAllocation(ctx, makeGrant("paid-1")); err != nil {
+				t.Fatal(err)
+			}
+			if err := updater.UpdateCreditAllocation(ctx, makeGrant("paid-1")); err != nil {
+				t.Fatal(err)
+			}
+			got, err := f.subs.GetByID(ctx, sub.ID)
+			if err != nil || got.CreditsRemaining != 35400 || got.CreditsReserved != 100 {
+				t.Fatalf("top-up lost hold or replayed: %+v / %v", got, err)
+			}
+			var wg sync.WaitGroup
+			errs := make(chan error, 2)
+			for _, id := range []string{"paid-2", "paid-3"} {
+				wg.Add(1)
+				go func(id string) { defer wg.Done(); errs <- updater.UpdateCreditAllocation(ctx, makeGrant(id)) }(id)
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, err = f.subs.GetByID(ctx, sub.ID)
+			if err != nil || got.CreditsRemaining != 105400 || got.CreditsTotal != 105400 || got.CreditsReserved != 100 {
+				t.Fatalf("concurrent recharge lost grant: %+v / %v", got, err)
+			}
+		})
+	}
+}
+
 func TestCreditJournalRealESAllocations(t *testing.T) {
 	f := newCreditFixture(t)
 	ctx := context.Background()
@@ -806,12 +1114,12 @@ func TestCreditJournalRealESHTTPPaymentAndRenewal(t *testing.T) {
 	}
 	request("/payment", `{"razorpay_order_id":"fixture-order","razorpay_payment_id":"fixture-paid-old","razorpay_signature":"fixture"}`, 200)
 	b, err := f.subs.GetByID(ctx, sub.ID)
-	if err != nil || b.CreditsRemaining != 55000 {
+	if err != nil || b.CreditsRemaining != 55100 {
 		t.Fatalf("old HTTP purchase lost allocation: %v", err)
 	}
 	request("/renew/"+sub.ID, `{"plan":"starter","months":1,"reason":"fixture old-mode renewal"}`, 200)
 	b, err = f.subs.GetByID(ctx, sub.ID)
-	if err != nil || b.CreditsRemaining != 15000 {
+	if err != nil || b.CreditsRemaining != 70100 {
 		t.Fatalf("old HTTP renewal lost allocation: %v", err)
 	}
 	hold := f.res(b, 1)
@@ -823,9 +1131,9 @@ func TestCreditJournalRealESHTTPPaymentAndRenewal(t *testing.T) {
 	if err := f.subs.Update(ctx, b); err != nil {
 		t.Fatal(err)
 	}
-	request("/payment", `{"razorpay_order_id":"fixture-order-new","razorpay_payment_id":"fixture-paid-new","razorpay_signature":"fixture"}`, 500)
+	request("/payment", `{"razorpay_order_id":"fixture-order-new","razorpay_payment_id":"fixture-paid-new","razorpay_signature":"fixture"}`, 200)
 	b, _ = f.subs.GetByID(ctx, sub.ID)
-	if b.CreditsReserved != 1 || b.CreditsRemaining != 15000 {
+	if b.CreditsReserved != 1 || b.CreditsRemaining != 125100 {
 		t.Fatal("HTTP purchase silently erased active hold")
 	}
 	if _, err := f.balances.TransitionReservation(ctx, hold.ID, billing.CreditReservationCommitted, ""); err != nil {
@@ -833,20 +1141,19 @@ func TestCreditJournalRealESHTTPPaymentAndRenewal(t *testing.T) {
 	}
 	request("/payment", `{"razorpay_order_id":"fixture-order-new","razorpay_payment_id":"fixture-paid-new","razorpay_signature":"fixture"}`, 200)
 	b, _ = f.subs.GetByID(ctx, sub.ID)
-	if b.CreditsRemaining != 55000 {
+	if b.CreditsRemaining != 125099 {
 		t.Fatal("journal HTTP purchase ignored intentional allocation")
 	}
 	hold = f.res(b, 1)
 	if _, err := f.balances.ReserveReservation(ctx, hold); err != nil {
 		t.Fatal(err)
 	}
-	request("/renew/"+sub.ID, `{"plan":"starter","months":1,"reason":"fixture journal renewal"}`, 500)
+	request("/renew/"+sub.ID, `{"plan":"starter","months":1,"reason":"fixture journal renewal"}`, 200)
 	if _, err := f.balances.TransitionReservation(ctx, hold.ID, billing.CreditReservationReleased, "drain"); err != nil {
 		t.Fatal(err)
 	}
-	request("/renew/"+sub.ID, `{"plan":"starter","months":1,"reason":"fixture journal renewal"}`, 200)
 	b, _ = f.subs.GetByID(ctx, sub.ID)
-	if b.CreditsRemaining != 15000 || b.CreditsReserved != 0 || len(b.CreditReservationJournal) != 2 {
+	if b.CreditsRemaining != 140099 || b.CreditsReserved != 0 || len(b.CreditReservationJournal) != 2 {
 		t.Fatal("journal HTTP renewal lost allocation or history")
 	}
 }
@@ -948,7 +1255,7 @@ func TestCreditJournalRealESCrossAttemptRecovery(t *testing.T) {
 	}
 }
 
-func TestCreditJournalRealESCapturedPaymentDrainAndReplay(t *testing.T) {
+func TestCreditJournalRealESCapturedPaymentPreservesHoldsAndReplay(t *testing.T) {
 	f := newCreditFixture(t)
 	ctx := context.Background()
 	sub := f.sub(t, 100)
@@ -978,10 +1285,10 @@ func TestCreditJournalRealESCapturedPaymentDrainAndReplay(t *testing.T) {
 			t.Fatalf("capture status=%d want=%d", response.StatusCode, want)
 		}
 	}
-	capture(503)
+	capture(200)
 	current, _ := f.subs.GetByID(ctx, sub.ID)
-	if current.CreditsReserved != 1 || current.Metadata["pending_checkout_order_id"] != "capture-order" || current.Metadata["last_payment_id"] == "capture-id" {
-		t.Fatal("undurable capture was acknowledged/checkout intent lost")
+	if current.CreditsReserved != 1 || current.CreditsRemaining != 55100 || current.Metadata["last_payment_id"] != "capture-id" {
+		t.Fatal("captured payment lost balance or active hold")
 	}
 	if _, err := f.balances.TransitionReservation(ctx, hold.ID, billing.CreditReservationCommitted, ""); err != nil {
 		t.Fatal(err)
@@ -996,7 +1303,7 @@ func TestCreditJournalRealESCapturedPaymentDrainAndReplay(t *testing.T) {
 	}
 	capture(200)
 	current, _ = f.subs.GetByID(ctx, sub.ID)
-	if current.CreditsRemaining != 54999 {
+	if current.CreditsRemaining != 55098 {
 		t.Fatal("duplicate capture replenished wallet")
 	}
 }
@@ -1146,12 +1453,12 @@ func TestCreditJournalRealESRebuiltRenewalIntent(t *testing.T) {
 	}
 	renew("stable-renewal-intent", 200)
 	current, _ := f.subs.GetByID(ctx, sub.ID)
-	if current.CreditsRemaining != 14999 {
+	if current.CreditsRemaining != 15098 {
 		t.Fatal("rebuilt duplicate renewal replenished consumed credits")
 	}
 	renew("explicit-new-renewal-intent", 200)
 	current, _ = f.subs.GetByID(ctx, sub.ID)
-	if current.CreditsRemaining != 15000 {
+	if current.CreditsRemaining != 30098 {
 		t.Fatal("new renewal intent ignored")
 	}
 }
@@ -1250,7 +1557,7 @@ func TestCreditJournalRealESKeyedOldModeRenewalSurvivesAdoption(t *testing.T) {
 	}
 	renew(200)
 	current, err := f.subs.GetByID(ctx, sub.ID)
-	if err != nil || current.CreditsRemaining != 14999 {
+	if err != nil || current.CreditsRemaining != 15099 {
 		t.Fatalf("old-mode keyed replay refilled consumed wallet: %+v %v", current, err)
 	}
 	hold := f.res(current, 1)
@@ -1262,7 +1569,7 @@ func TestCreditJournalRealESKeyedOldModeRenewalSurvivesAdoption(t *testing.T) {
 	}
 	renew(200)
 	current, err = f.subs.GetByID(ctx, sub.ID)
-	if err != nil || current.CreditsRemaining != 14998 {
+	if err != nil || current.CreditsRemaining != 15098 {
 		t.Fatalf("adoption lost old-mode renewal identity: %+v %v", current, err)
 	}
 }
