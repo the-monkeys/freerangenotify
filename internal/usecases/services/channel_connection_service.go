@@ -231,7 +231,7 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 	if c.Channel == notification.ChannelWhatsApp && c.Provider == "twilio" {
 		c.SenderID = strings.TrimPrefix(c.SenderID, "whatsapp:")
 	}
-	if c.Provider != "meta" && c.Provider != "twilio" {
+	if c.Provider != "meta" && c.Provider != "twilio" && !(c.Provider == "vonage" && c.Channel == notification.ChannelSMS) {
 		return nil, fmt.Errorf("unsupported provider")
 	}
 	if c.Provider == "meta" && c.Channel != notification.ChannelWhatsApp {
@@ -247,7 +247,7 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 		delete(credentials, field)
 	}
 	for field, value := range patch.Secrets {
-		if field != "access_token" && field != "auth_token" && field != "app_secret" {
+		if field != "access_token" && field != "auth_token" && field != "app_secret" && !(field == "api_secret" && c.Provider == "vonage") {
 			return nil, fmt.Errorf("unsupported secret field")
 		}
 		if strings.TrimSpace(value) != "" && !strings.HasPrefix(value, "****") {

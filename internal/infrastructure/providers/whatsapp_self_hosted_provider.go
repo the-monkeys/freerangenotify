@@ -10,7 +10,6 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
-	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
@@ -19,12 +18,16 @@ import (
 
 // WhatsAppSelfHostedProvider delivers WhatsApp notifications using a self-hosted paired multi-device client.
 type WhatsAppSelfHostedProvider struct {
-	service *services.WhatsAppSelfHostedService
-	logger  *zap.Logger
+	service interface {
+		GetClient(string) (*whatsmeow.Client, error)
+	}
+	logger *zap.Logger
 }
 
 // NewWhatsAppSelfHostedProvider creates a new WhatsAppSelfHostedProvider.
-func NewWhatsAppSelfHostedProvider(service *services.WhatsAppSelfHostedService, logger *zap.Logger) *WhatsAppSelfHostedProvider {
+func NewWhatsAppSelfHostedProvider(service interface {
+	GetClient(string) (*whatsmeow.Client, error)
+}, logger *zap.Logger) *WhatsAppSelfHostedProvider {
 	return &WhatsAppSelfHostedProvider{
 		service: service,
 		logger:  logger,

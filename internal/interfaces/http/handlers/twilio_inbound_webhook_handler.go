@@ -34,6 +34,7 @@ import (
 //
 // Acknowledges only accepted messages. Storage failures remain retryable.
 type TwilioInboundWebhookHandler struct {
+	Dispatch       *services.ChannelDispatchService
 	senderResolver *services.ChannelSenderResolver
 	publicURL      string
 	whatsappSvc    whatsapp.Service
@@ -103,6 +104,14 @@ func (h *TwilioInboundWebhookHandler) Handle(c *fiber.Ctx) error {
 	msg.Provider = binding.Provider
 	msg.AccountID = binding.AccountID
 	msg.SenderID = binding.SenderID
+	if h.Dispatch != nil {
+		stamp, err := h.Dispatch.ResolveTwilioInboundTimestamp(c.Context(), binding, msg.MetaMessageID, from)
+		if err != nil {
+			return c.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		msg.Timestamp = stamp
+		msg.RawPayload["DateCreated"] = stamp.UTC().Format(time.RFC3339)
+	}
 	if err := h.whatsappSvc.HandleInbound(c.Context(), appID, msg); err != nil {
 		h.logger.Error("Twilio inbound: HandleInbound failed",
 			zap.String("app_id", appID),

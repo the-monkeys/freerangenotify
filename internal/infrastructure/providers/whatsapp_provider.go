@@ -44,9 +44,13 @@ func NewWhatsAppProvider(config WhatsAppConfig, logger *zap.Logger) (*WhatsAppPr
 		timeout = 15 * time.Second
 	}
 
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
 	return &WhatsAppProvider{
 		config:     config,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: client,
 		logger:     logger,
 	}, nil
 }
@@ -207,7 +211,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 
 	providerMsgID := twilioResp.SID
 	if providerMsgID == "" {
-		providerMsgID = "whatsapp-" + notif.NotificationID
+		return NewErrorResult(fmt.Errorf("Twilio acceptance unconfirmed"), ErrorTypeUnknown), nil
 	}
 
 	p.logger.Info("WhatsApp notification delivered",

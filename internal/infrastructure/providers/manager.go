@@ -60,7 +60,7 @@ func (m *Manager) RegisterProvider(provider Provider) error {
 	namedKey := fmt.Sprintf("%s-%s", name, channel)
 
 	// Register as default for this channel if none exists
-	if _, exists := m.providers[channel]; !exists {
+	if _, exists := m.providers[channel]; !exists || (channel == notification.ChannelSMS && name == "twilio") || (channel == notification.ChannelWhatsApp && name == "whatsapp") {
 		m.providers[channel] = provider
 	}
 

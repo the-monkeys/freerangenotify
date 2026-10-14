@@ -803,3 +803,11 @@ existing reliability UI cases. The build retains the pre-existing large-chunk
 warning. Migration CLI help and the pre-database apply guard passed. No live
 provider accounts, paid messages, customer migrations, push or deployment were
 used. A final added-line credential scan found no high-confidence secrets.
+# Phase 3 local delivery integration
+
+Task 6 binds WhatsApp/SMS to a safe admitted connection reference before enqueue and credit admission. Retained encrypted revisions remain readable; legacy queued sends reject changed account/sender identities rather than selecting a replacement account. All free-form dispatches require the environment/account/sender-scoped customer-service window. Twilio inbound callbacks fetch `date_created` from the signed account's Message resource and verify account, SID and both endpoints before opening a window. Malformed/empty acceptance responses remain unknown outcomes, without synthetic IDs or fallback.
+
+Local tests use mock HTTP endpoints and disposable loopback-only ES/Redis. No production writes, live sends, tariff activation or actual environment edits. Quote/accounting/reply/OTP integration remains the next two Phase 3 tasks. Encrypted writers remain gated until the entire API/worker fleet can read the new records.
+
+Provider references checked 2026-10-14: [Twilio Message resource](https://www.twilio.com/docs/messaging/api/message-resource), [inbound webhook timestamps](https://help.twilio.com/articles/46569585455003), [SMS segment limits](https://www.twilio.com/docs/glossary/what-sms-character-limit).
+

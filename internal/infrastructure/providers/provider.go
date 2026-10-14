@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
@@ -56,6 +57,8 @@ type Result struct {
 
 // Config holds common configuration for all providers
 type Config struct {
+	// Optional shared transport; callers still enforce operation deadlines.
+	HTTPClient *http.Client
 	// Timeout for provider operations
 	Timeout time.Duration
 

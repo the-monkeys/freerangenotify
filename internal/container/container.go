@@ -52,6 +52,7 @@ import (
 // Container holds all dependencies for the application
 type Container struct {
 	ChannelConnections       *services.ChannelConnectionService
+	ChannelDispatch          *services.ChannelDispatchService
 	ChannelConnectionHandler *handlers.ChannelConnectionHandler
 	channelEventCancel       context.CancelFunc
 	// Configuration
@@ -267,6 +268,10 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}}
 
 	// Initialize licensing checker
+	container.ChannelDispatch = &services.ChannelDispatchService{Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
+	if cfg.Providers.Twilio.AccountSID == "" && cfg.Providers.Vonage.Enabled {
+		container.ChannelConnections.System[notification.ChannelSMS] = &channelconnection.Snapshot{Provider: "vonage", AccountID: cfg.Providers.Vonage.APIKey, SenderID: cfg.Providers.Vonage.FromNumber, Credentials: map[string]string{"api_secret": cfg.Providers.Vonage.APISecret}}
+	}
 	if cfg.Licensing.Enabled {
 		cacheTTL := time.Duration(cfg.Licensing.CacheTTLSeconds) * time.Second
 		grace := time.Duration(cfg.Licensing.GraceWindowSeconds) * time.Second
@@ -328,6 +333,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	)
 
 	// Initialize template service
+	container.NotificationService.(*usecases.NotificationService).SetChannelDispatch(container.ChannelDispatch)
 	container.TemplateService = usecases.NewTemplateService(
 		repos.Template,
 		logger,
@@ -991,6 +997,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		container.MetaWebhookHandler.SetRichTemplateService(container.WhatsAppRichTemplateService)
+		container.ChannelDispatch.RichTemplates = container.WhatsAppRichTemplateService
 		if configurer, ok := container.WhatsAppRichTemplateService.(interface {
 			SetChannelConnections(*services.ChannelConnectionService)
 		}); ok {
@@ -1015,6 +1022,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			)
 		}
 		container.TwilioInboundWebhookHandler.SetSenderResolver(senderResolver, cfg.Server.PublicURL)
+		container.TwilioInboundWebhookHandler.Dispatch = container.ChannelDispatch
 		if finder, ok := richTplRepo.(interface {
 			FindByTwilioContentSID(context.Context, string) (*whatsapp.RichTemplate, error)
 		}); ok {

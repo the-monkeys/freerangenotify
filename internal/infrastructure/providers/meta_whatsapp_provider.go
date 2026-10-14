@@ -18,11 +18,11 @@ import (
 
 // MetaWhatsAppConfig holds configuration for the Meta WhatsApp Cloud API provider.
 type MetaWhatsAppConfig struct {
-	Config                    // Common: Timeout, MaxRetries, RetryDelay
-	PhoneNumberID string     // Meta Phone Number ID (numeric)
-	WABAID        string     // WhatsApp Business Account ID
-	AccessToken   string     // Permanent System User token (starts with EAAG...)
-	APIVersion    string     // Graph API version (default: v23.0)
+	Config               // Common: Timeout, MaxRetries, RetryDelay
+	PhoneNumberID string // Meta Phone Number ID (numeric)
+	WABAID        string // WhatsApp Business Account ID
+	AccessToken   string // Permanent System User token (starts with EAAG...)
+	APIVersion    string // Graph API version (default: v23.0)
 }
 
 // MetaWhatsAppProvider delivers notifications via Meta's WhatsApp Cloud API.
@@ -42,9 +42,13 @@ func NewMetaWhatsAppProvider(config MetaWhatsAppConfig, logger *zap.Logger) (*Me
 		timeout = 15 * time.Second
 	}
 
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
 	return &MetaWhatsAppProvider{
 		config:     config,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: client,
 		logger:     logger,
 	}, nil
 }
@@ -76,9 +80,9 @@ type metaText struct {
 }
 
 type metaTemplate struct {
-	Name       string              `json:"name"`
-	Language   metaLanguage        `json:"language"`
-	Components []metaComponent     `json:"components,omitempty"`
+	Name       string          `json:"name"`
+	Language   metaLanguage    `json:"language"`
+	Components []metaComponent `json:"components,omitempty"`
 }
 
 type metaLanguage struct {
@@ -285,7 +289,7 @@ type metaButtonReply struct {
 }
 
 type metaSection struct {
-	Title string        `json:"title,omitempty"`
+	Title string           `json:"title,omitempty"`
 	Rows  []metaSectionRow `json:"rows"`
 }
 
@@ -406,7 +410,7 @@ func (p *MetaWhatsAppProvider) Send(ctx context.Context, notif *notification.Not
 		providerMsgID = metaResp.Messages[0].ID
 	}
 	if providerMsgID == "" {
-		providerMsgID = "meta-wa-" + notif.NotificationID
+		return NewErrorResult(fmt.Errorf("Meta acceptance unconfirmed"), ErrorTypeUnknown), nil
 	}
 
 	p.logger.Info("Meta WhatsApp notification delivered",

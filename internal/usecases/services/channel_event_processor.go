@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
@@ -225,5 +226,9 @@ func (s *whatsappService) trackInboundWindow(ctx context.Context, msg *whatsapp.
 		return nil
 	}
 	const script = `local previous = tonumber(redis.call('GET', KEYS[1]) or '0'); local current = tonumber(ARGV[1]); if current > previous then redis.call('SET', KEYS[1], ARGV[1], 'PXAT', ARGV[2]); end; return 1`
+	if err := s.redis.Eval(ctx, script, []string{channelconnection.WindowKey(msg.AppID, msg.EnvironmentID, msg.Provider, msg.AccountID, msg.SenderID, msg.ContactWAID)}, timestamp.UnixMilli(), expiry.UnixMilli()).Err(); err != nil {
+		return err
+	}
+	// Legacy display readers remain compatible; dispatch never authorizes from this key.
 	return s.redis.Eval(ctx, script, []string{fmt.Sprintf("csw:%s:%s", msg.AppID, msg.ContactWAID)}, timestamp.UnixMilli(), expiry.UnixMilli()).Err()
 }

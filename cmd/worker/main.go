@@ -263,6 +263,18 @@ func main() {
 	processorCtx, processorCancel := context.WithCancel(ctx)
 	defer processorCancel()
 
+	c.ChannelDispatch.VerifySystemOwner = func(ctx context.Context, appID string) error {
+		app, err := c.AppRepo.GetByID(ctx, appID)
+		if err != nil || app == nil {
+			return fmt.Errorf("application unavailable")
+		}
+		owner, err := c.AuthService.GetCurrentUser(ctx, app.AdminUserID)
+		if err != nil || owner == nil || !owner.PhoneVerified {
+			return fmt.Errorf("phone_verification_required")
+		}
+		return nil
+	}
+	processor.SetChannelDispatch(c.ChannelDispatch)
 	if err := processor.Start(processorCtx); err != nil {
 		logger.Fatal("Failed to start processor", zap.Error(err))
 	}

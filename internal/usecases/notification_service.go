@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
@@ -30,6 +31,9 @@ type appCacheEntry struct {
 
 // NotificationService implements the notification service interface
 type NotificationService struct {
+	channelDelivery interface {
+		PrepareChannelDelivery(context.Context, *notification.Notification, *user.User) (*channelconnection.PreparedDelivery, error)
+	}
 	notificationRepo notification.Repository
 	userRepo         user.Repository
 	appRepo          application.Repository
@@ -43,6 +47,23 @@ type NotificationService struct {
 	appCacheMu       sync.RWMutex
 	topicService     topic.Service    // Phase 2: optional, set via SetTopicService
 	workflowService  workflow.Service // Phase 2: optional, set via SetWorkflowService
+}
+
+func (s *NotificationService) SetChannelDispatch(dispatch interface {
+	PrepareChannelDelivery(context.Context, *notification.Notification, *user.User) (*channelconnection.PreparedDelivery, error)
+}) { s.channelDelivery = dispatch }
+
+func (s *NotificationService) prepareMessaging(ctx context.Context, n *notification.Notification, u *user.User) error {
+	if n.Metadata != nil {
+		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id"} {
+			delete(n.Metadata, key)
+		}
+	}
+	if s.channelDelivery != nil && (n.Channel == notification.ChannelSMS || n.Channel == notification.ChannelWhatsApp) {
+		_, err := s.channelDelivery.PrepareChannelDelivery(ctx, n, u)
+		return err
+	}
+	return nil
 }
 
 // SetTopicService injects the optional topic service for fan-out support.
@@ -270,6 +291,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	notif := &notification.Notification{
 		NotificationID: uuid.New().String(),
 		AppID:          req.AppID,
+		EnvironmentID:  req.EnvironmentID,
 		UserID:         req.UserID,
 		Channel:        req.Channel,
 		Priority:       req.Priority,
@@ -337,6 +359,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	// Save to database
+	if err := s.prepareMessaging(ctx, notif, u); err != nil {
+		return nil, err
+	}
 	if err := s.notificationRepo.Create(ctx, notif); err != nil {
 		s.logger.Error("Failed to create notification", zap.Error(err))
 		return nil, fmt.Errorf("failed to create notification: %w", err)
@@ -644,6 +669,9 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 			continue
 		}
 
+		if err := s.prepareMessaging(ctx, notif, u); err != nil {
+			return nil, err
+		}
 		notifications = append(notifications, notif)
 	}
 	confirmed := make([]*notification.Notification, 0, len(notifications))

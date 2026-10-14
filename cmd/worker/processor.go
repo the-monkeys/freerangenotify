@@ -53,6 +53,7 @@ type ProcessorConfig struct {
 
 // NotificationProcessor processes notifications from the queue
 type NotificationProcessor struct {
+	channelDispatch  *services.ChannelDispatchService
 	queue            queue.Queue
 	notifRepo        notification.Repository
 	userRepo         user.Repository
@@ -81,6 +82,10 @@ type NotificationProcessor struct {
 
 	wg       sync.WaitGroup
 	stopChan chan struct{}
+}
+
+func (p *NotificationProcessor) SetChannelDispatch(s *services.ChannelDispatchService) {
+	p.channelDispatch = s
 }
 
 // SetDigestManager injects the optional digest manager (Phase 1).
@@ -722,6 +727,13 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+
+		if _, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr); e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+	}
 	var reservation *billing.CreditReservation
 	if p.creditService != nil {
 		tenantID := notif.AppID
@@ -925,6 +937,18 @@ func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *
 
 // sendNotification sends the notification via the appropriate provider
 func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *notification.Notification, usr *user.User) error {
+	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+		d, err := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+		if err != nil {
+			return &providers.DeliveryError{Provider: "messaging", Stage: "configuration", ErrorType: providers.ErrorTypeConfiguration, Err: err}
+		}
+		result, err := p.channelDispatch.DispatchPrepared(ctx, d)
+		if err != nil {
+			return err
+		}
+		notif.Metadata["provider_message_id"] = result.ProviderMessageID
+		return nil
+	}
 	// Use provider manager to route and send
 	if p.providerManager == nil {
 		// Fallback: simulate sending if no provider manager (for testing)

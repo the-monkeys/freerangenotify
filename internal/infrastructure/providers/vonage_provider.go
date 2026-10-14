@@ -37,9 +37,13 @@ func NewVonageProvider(config VonageConfig, logger *zap.Logger) (Provider, error
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
 	return &VonageProvider{
 		config:     config,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: client,
 		logger:     logger,
 	}, nil
 }
@@ -124,6 +128,9 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 	if len(vonageResp.Messages) > 0 {
 		messageID = vonageResp.Messages[0].MessageID
 	}
+	if messageID == "" {
+		return NewErrorResult(fmt.Errorf("Vonage acceptance unconfirmed"), ErrorTypeUnknown), nil
+	}
 
 	deliveryTime := time.Since(start)
 	p.logger.Info("Vonage SMS sent successfully",
@@ -139,10 +146,12 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 	return res, nil
 }
 
-func (p *VonageProvider) GetName() string                                { return "vonage" }
-func (p *VonageProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelSMS }
-func (p *VonageProvider) IsHealthy(_ context.Context) bool               { return p.config.APIKey != "" && p.config.APISecret != "" }
-func (p *VonageProvider) Close() error                                   { return nil }
+func (p *VonageProvider) GetName() string                           { return "vonage" }
+func (p *VonageProvider) GetSupportedChannel() notification.Channel { return notification.ChannelSMS }
+func (p *VonageProvider) IsHealthy(_ context.Context) bool {
+	return p.config.APIKey != "" && p.config.APISecret != ""
+}
+func (p *VonageProvider) Close() error { return nil }
 
 func init() {
 	RegisterFactory("vonage", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {
