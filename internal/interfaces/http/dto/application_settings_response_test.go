@@ -33,3 +33,13 @@ func TestChannelSettingsSecretsProviderRoundTrip(t *testing.T) {
 		t.Fatal("safe response round-trip erased provider credentials")
 	}
 }
+func TestChannelSettingsNestedSMTPAndHeaders(t *testing.T) {
+	old := application.Settings{EmailConfig: &application.EmailConfig{ProviderType: "smtp", SMTP: &application.SMTPConfig{Host: "smtp.example.test", Port: 587, Username: "fixture-user", Password: "fixture-password", FromEmail: "sender@example.test"}}, ValidationConfig: &application.ValidationConfig{Method: "GET", TokenPlacement: "header", StaticHeaders: map[string]string{"Authorization": "fixture-auth", "X-Feature": "old"}}}
+	next, err := MergeSettingsPatch(old, []byte(`{"email_config":{"smtp":{"port":2525}},"validation_config":{"static_headers":{"X-Feature":"next"}}}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.EmailConfig.ProviderType != "smtp" || next.EmailConfig.SMTP.Host != old.EmailConfig.SMTP.Host || next.EmailConfig.SMTP.Username != "fixture-user" || next.EmailConfig.SMTP.Password != "fixture-password" || next.EmailConfig.SMTP.Port != 2525 || next.ValidationConfig.StaticHeaders["Authorization"] != "fixture-auth" || next.ValidationConfig.StaticHeaders["X-Feature"] != "next" || next.ValidationConfig.Method != "GET" {
+		t.Fatal("nested SMTP/header patch lost existing configuration")
+	}
+}

@@ -1,6 +1,26 @@
 import {test,expect} from '@playwright/test';
 
 test.describe('Delivery reliability UI channel settings',()=>{
+ test('overview updates cannot carry a stale connection form into a fresh revision',async({page})=>{
+  let saved:Record<string,unknown>|undefined;
+  const current={app_id:'channel',app_name:'Channel test',api_key:'dashboard:channel',updated_at:'2026-10-14T01:00:00Z',settings:{rate_limit:1000,whatsapp_config:{provider:'meta',meta_waba_id:'new-waba',meta_phone_number_id:'new-phone'}}};
+  const initial={...current,updated_at:'2026-10-14T00:00:00Z',settings:{...current.settings,whatsapp_config:{provider:'meta',meta_waba_id:'old-waba',meta_phone_number_id:'old-phone'}}};
+  await page.addInitScript(()=>localStorage.setItem('access_token','fixture-jwt'));
+  await page.route('**/v1/**',async route=>{
+   const path=new URL(route.request().url()).pathname.replace(/^\/v1/,'').replace(/\/$/,'');let data:unknown={success:true,data:[]};
+   if(path==='/admin/me')data={user_id:'owner',full_name:'Channel test',email:'test@example.test',phone_verified:true};
+   else if(path==='/apps/channel')data={data:route.request().method()==='PUT'?current:initial};
+   else if(path==='/apps/channel/code-samples')data={data:{}};
+   else if(path==='/apps/channel/settings'&&route.request().method()==='PUT'){saved=route.request().postDataJSON();data={success:true};}
+   await route.fulfill({status:200,json:data});
+  });
+  await page.goto('/apps/channel?tab=overview');await page.getByLabel('Application Name').fill('Changed');await page.getByLabel('Application Name').press('Enter');
+  await expect(page.getByText('Application updated successfully!',{exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'Settings',exact:true}).click();
+  const core=page.getByRole('button',{name:'Core Settings',exact:true});await expect(core).toBeVisible();if(await core.getAttribute('aria-expanded')!=='true')await core.click();
+  const field=page.getByLabel('Rate Limit (requests/hour)');await field.fill('900');await page.getByRole('button',{name:'Save Configuration',exact:true}).click();
+  await expect.poll(()=>saved).toBeDefined();expect(saved).toEqual({rate_limit:900,settings_revision:current.updated_at});
+ });
  for (const owner of [false,true]) test(`key reveal remains explicit and ${owner?'owner-only in memory':'denied for viewer'}`,async({page})=>{
   let reveals=0;
   await page.addInitScript(()=>localStorage.setItem('access_token','fixture-jwt'));
@@ -40,4 +60,3 @@ test.describe('Delivery reliability UI channel settings',()=>{
   expect(await page.evaluate(()=>localStorage.getItem('last_api_key'))).toBe('dashboard:channel');
  });
 });
-

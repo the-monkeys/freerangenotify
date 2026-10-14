@@ -48,11 +48,30 @@ func (r *ChannelSenderBindingRepository) ClaimSender(ctx context.Context, bindin
 	return nil
 }
 func (r *ApplicationRepository) FindWhatsAppSender(ctx context.Context, provider, account, sender string) ([]*application.Application, error) {
+	return r.FindWhatsAppSenderForAccount(ctx, provider, account, sender, "")
+}
+func (r *ApplicationRepository) FindWhatsAppSenderForAccount(ctx context.Context, provider, account, sender, defaultAccount string) ([]*application.Application, error) {
+	base := "settings.whatsapp_config."
+	exact := func(field, value string) map[string]interface{} {
+		return map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{map[string]interface{}{"term": map[string]interface{}{field: value}}, map[string]interface{}{"term": map[string]interface{}{field + ".keyword": value}}}, "minimum_should_match": 1}}
+	}
+	missingOrEmpty := func(field string) map[string]interface{} {
+		return map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{exact(field, ""), map[string]interface{}{"bool": map[string]interface{}{"must_not": map[string]interface{}{"exists": map[string]interface{}{"field": field}}}}}, "minimum_should_match": 1}}
+	}
 	field := "settings.whatsapp_config.meta_phone_number_id"
+	filters := []interface{}{exact(base+"provider", provider)}
+	filters = append(filters, exact(base+"meta_waba_id", account))
 	if provider == "twilio" {
 		field = "settings.whatsapp_config.from_number"
+		providerFilter := map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{exact(base+"provider", "twilio"), missingOrEmpty(base + "provider")}, "minimum_should_match": 1}}
+		accountFilter := exact(base+"account_sid", account)
+		if account == defaultAccount && defaultAccount != "" {
+			accountFilter = map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{accountFilter, missingOrEmpty(base + "account_sid")}, "minimum_should_match": 1}}
+		}
+		filters = []interface{}{providerFilter, accountFilter}
 	}
-	query := map[string]interface{}{"size": 2, "query": map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{map[string]interface{}{"term": map[string]interface{}{field: sender}}, map[string]interface{}{"term": map[string]interface{}{field + ".keyword": sender}}, map[string]interface{}{"term": map[string]interface{}{field: "whatsapp:" + strings.TrimPrefix(sender, "whatsapp:")}}, map[string]interface{}{"term": map[string]interface{}{field + ".keyword": "whatsapp:" + strings.TrimPrefix(sender, "whatsapp:")}}}, "minimum_should_match": 1}}}
+	filters = append(filters, map[string]interface{}{"bool": map[string]interface{}{"should": []interface{}{exact(field, strings.TrimPrefix(sender, "whatsapp:")), exact(field, "whatsapp:"+strings.TrimPrefix(sender, "whatsapp:"))}, "minimum_should_match": 1}})
+	query := map[string]interface{}{"size": 2, "query": map[string]interface{}{"bool": map[string]interface{}{"filter": filters, "must_not": exact(base+"connection_status", "disconnected")}}}
 	result, err := r.Search(ctx, query)
 	if err != nil {
 		return nil, err

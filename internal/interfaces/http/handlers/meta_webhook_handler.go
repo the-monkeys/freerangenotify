@@ -107,19 +107,28 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 				if err != nil {
 					return c.SendStatus(fiber.StatusServiceUnavailable)
 				}
+				var compatible []*services.InboundSenderBinding
+				hasSecret := false
 				for _, binding := range bindings {
 					key := binding.SigningSecret
 					if key == "" {
 						key = h.appSecret
 					}
 					if key == "" {
-						return c.SendStatus(fiber.StatusServiceUnavailable)
+						continue
 					}
-					if !verifyMetaSignature(key, rawBody, c.Get("X-Hub-Signature-256")) {
-						return c.SendStatus(fiber.StatusUnauthorized)
+					hasSecret = true
+					if verifyMetaSignature(key, rawBody, c.Get("X-Hub-Signature-256")) {
+						compatible = append(compatible, binding)
 					}
 				}
-				c.Locals("meta_template_bindings_"+entry.ID, bindings)
+				if len(compatible) == 0 {
+					if !hasSecret {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					return c.SendStatus(fiber.StatusUnauthorized)
+				}
+				c.Locals("meta_template_bindings_"+entry.ID, compatible)
 				verified = true
 				continue
 			}

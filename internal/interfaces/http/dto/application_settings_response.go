@@ -115,6 +115,46 @@ func PreserveSettingsSecrets(current, incoming application.Settings, clear []str
 	return result, err
 }
 
+// MergeSettingsPatch preserves field presence, including nested sender and SMTP
+// details. Decoding a partial object into a struct first would invent zero values.
+func MergeSettingsPatch(current application.Settings, raw []byte, clear []string) (application.Settings, error) {
+	encoded, _ := json.Marshal(current)
+	var merged, patch map[string]interface{}
+	if err := json.Unmarshal(encoded, &merged); err != nil {
+		return current, err
+	}
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		return current, err
+	}
+	mergePresentFields(merged, patch)
+	encoded, err := json.Marshal(merged)
+	if err != nil {
+		return current, err
+	}
+	var incoming application.Settings
+	if err = json.Unmarshal(encoded, &incoming); err != nil {
+		return current, err
+	}
+	if incoming.EmailConfig != nil && incoming.EmailConfig.SMTP != nil && incoming.EmailConfig.SMTP.Port == 0 {
+		incoming.EmailConfig.SMTP.Port = 587
+	}
+	return PreserveSettingsSecrets(current, incoming, clear)
+}
+func mergePresentFields(current, patch map[string]interface{}) {
+	for key, value := range patch {
+		if nested, ok := value.(map[string]interface{}); ok {
+			previous, ok := current[key].(map[string]interface{})
+			if !ok {
+				previous = map[string]interface{}{}
+			}
+			mergePresentFields(previous, nested)
+			current[key] = previous
+		} else {
+			current[key] = value
+		}
+	}
+}
+
 func preserve(old, next map[string]interface{}, prefix string) {
 	for key, value := range old {
 		path := key
@@ -159,7 +199,7 @@ func preserve(old, next map[string]interface{}, prefix string) {
 			continue
 		}
 		// Preserve absent credential/account fields as old clients send partial blocks.
-		sensitive := secretField(key) || key == "headers" || key == "static_headers" || key == "account_sid"
+		sensitive := secretField(key) || key == "headers" || key == "static_headers" || key == "account_sid" || strings.HasSuffix(prefix, "headers")
 		if sensitive {
 			s, _ := current.(string)
 			if !exists || current == nil || s == "" || strings.HasPrefix(s, "****") {

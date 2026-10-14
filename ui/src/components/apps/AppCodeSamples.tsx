@@ -120,7 +120,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
                     </div>
                 </div>
                 <p className="text-sm text-muted-foreground pt-1">
-                    Ready-to-use snippets with your real API keys pre-filled.
+                    Snippets use YOUR_API_KEY. Application owners can reveal and copy their SDK key from Integration.
                 </p>
             </CardHeader>
             <CardContent className="p-0">

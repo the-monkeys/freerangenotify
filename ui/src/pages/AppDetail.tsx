@@ -198,6 +198,9 @@ const AppDetail: React.FC = () => {
                 tenant_id: tenantId,
             });
             setApp(updated);
+            setSettings(updated.settings || {});
+            setStaticHeadersText(Object.entries(updated.settings?.validation_config?.static_headers || {}).map(([key,value]) => `${key}: ${value}`).join('\n'));
+            setEventMappingText(JSON.stringify(updated.settings?.inbound_webhook_config?.event_mapping || {}, null, 2));
             setTenantId(updated.tenant_id || '');
             localStorage.setItem('last_app_name', updated.app_name);
             setNavAppName(updated.app_name);

@@ -10,7 +10,10 @@ import (
 	"sync/atomic"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"go.uber.org/zap"
 	"testing"
 	"time"
@@ -20,6 +23,100 @@ type channelMessages struct {
 	whatsapp.Repository
 	whatsapp.EventRepository
 	rows map[string]*whatsapp.InboundMessage
+}
+type channelStatusRepo struct {
+	notification.Repository
+	row *notification.Notification
+}
+
+func (r *channelStatusRepo) List(context.Context, *notification.NotificationFilter) ([]*notification.Notification, error) {
+	return []*notification.Notification{r.row}, nil
+}
+func (r *channelStatusRepo) GetByID(context.Context, string) (*notification.Notification, error) {
+	copy := *r.row
+	return &copy, nil
+}
+func (r *channelStatusRepo) ApplyProviderDeliveryStatus(_ context.Context, id, appID, providerID string, state notification.Status, at time.Time) (bool, error) {
+	changed := r.row.Status != state
+	r.row.Status = state
+	return changed, nil
+}
+
+type channelSignalPublisher struct {
+	fail  bool
+	calls int
+}
+
+func (p *channelSignalPublisher) PublishMessage(*sse.SSEMessage) error {
+	p.calls++
+	if p.fail {
+		return fmt.Errorf("Redis unavailable")
+	}
+	return nil
+}
+func TestChannelEventRecoveryStatusRefresh(t *testing.T) {
+	for _, crashAfterTransition := range []bool{false, true} {
+		t.Run(fmt.Sprint(crashAfterTransition), func(t *testing.T) {
+			events := &channelMemoryEvents{rows: map[string]*whatsapp.EventReceipt{}}
+			state := notification.StatusSent
+			if crashAfterTransition {
+				state = notification.StatusRead
+			}
+			notifs := &channelStatusRepo{row: &notification.Notification{NotificationID: "n", AppID: "a", Status: state, Metadata: map[string]interface{}{"provider_message_id": "upstream"}}}
+			publisher := &channelSignalPublisher{fail: !crashAfterTransition}
+			svc := &whatsappService{events: events, notifRepo: notifs, sseBroadc: publisher, logger: zap.NewNop()}
+			receipt, err := svc.AcceptVerifiedEvent(context.Background(), &InboundSenderBinding{ID: "binding", AppID: "a", Provider: "meta"}, &whatsapp.VerifiedEvent{Kind: "status", Status: &whatsapp.DeliveryStatus{AppID: "a", MetaMessageID: "upstream", Status: "read", Timestamp: time.Now()}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = svc.ProcessEventReceipt(context.Background(), receipt.ID)
+			if crashAfterTransition {
+				if err != nil || publisher.calls != 1 || events.rows[receipt.ID].State != "done" {
+					t.Fatal("already-applied transition lost refresh after crash")
+				}
+			} else {
+				if err == nil || events.rows[receipt.ID].State != "pending" {
+					t.Fatal("failed refresh was acknowledged as done")
+				}
+				publisher.fail = false
+				events.rows[receipt.ID].NextAttempt = time.Time{}
+				if err = svc.ProcessEventReceipt(context.Background(), receipt.ID); err != nil || publisher.calls != 2 || events.rows[receipt.ID].State != "done" {
+					t.Fatal("refresh did not recover")
+				}
+			}
+		})
+	}
+}
+
+type channelWorkflowRepo struct {
+	workflow.Repository
+	creates int
+}
+
+func (*channelWorkflowRepo) GetWorkflowByTrigger(context.Context, string, string) (*workflow.Workflow, error) {
+	return nil, fmt.Errorf("temporary lookup failure")
+}
+func (r *channelWorkflowRepo) CreateExecution(context.Context, *workflow.WorkflowExecution) error {
+	r.creates++
+	return nil
+}
+func TestChannelEventRecoveryWorkflowBeforeDispatchRetries(t *testing.T) {
+	events := &channelMemoryEvents{rows: map[string]*whatsapp.EventReceipt{}}
+	repo := &channelMessages{EventRepository: events, rows: map[string]*whatsapp.InboundMessage{}}
+	apps := &channelEventApps{app: &application.Application{AppID: "a", Settings: application.Settings{WhatsAppInbound: &whatsapp.InboundConfig{Enabled: true, RouteAction: whatsapp.RouteWorkflow, WorkflowTriggerID: "workflow"}}}}
+	wfRepo := &channelWorkflowRepo{}
+	wfSvc := NewWorkflowService(wfRepo, nil, zap.NewNop())
+	svc := NewWhatsAppService(repo, apps, nil, nil, wfSvc, nil, zap.NewNop()).(*whatsappService)
+	receipt, err := svc.AcceptVerifiedEvent(context.Background(), &InboundSenderBinding{ID: "binding", AppID: "a", Provider: "meta"}, &whatsapp.VerifiedEvent{Kind: "inbound", Message: &whatsapp.InboundMessage{MetaMessageID: "upstream", ContactWAID: "123", Timestamp: time.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.ProcessEventReceipt(context.Background(), receipt.ID) == nil {
+		t.Fatal("lookup failure hidden")
+	}
+	if events.rows[receipt.ID].State != "pending" || wfRepo.creates != 0 {
+		t.Fatal("definite pre-dispatch failure stranded as unknown")
+	}
 }
 
 func (r *channelMessages) StoreMessage(_ context.Context, m *whatsapp.InboundMessage) error {

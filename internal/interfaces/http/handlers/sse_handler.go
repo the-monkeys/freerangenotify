@@ -32,15 +32,17 @@ const (
 
 // sseTokenData is stored in Redis and bound to a single user+app.
 type sseTokenData struct {
-	UserID string `json:"user_id"`
-	AppID  string `json:"app_id"`
+	UserID    string    `json:"user_id"`
+	AppID     string    `json:"app_id"`
+	Principal string    `json:"principal,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 }
 
 // SSEHandler handles Server-Sent Events connections and streaming.
 type SSEHandler struct {
-	broadcaster  *sse.Broadcaster
-	appService   usecases.ApplicationService
-	notifService notification.Service
+	broadcaster    *sse.Broadcaster
+	appService     usecases.ApplicationService
+	notifService   notification.Service
 	userRepo       user.Repository
 	membershipRepo auth.MembershipRepository
 	redisClient    *redis.Client
@@ -174,6 +176,7 @@ func (h *SSEHandler) CreateToken(c *fiber.Ctx) error {
 //
 //	GET /v1/sse?user_id=user002&token=frn_xxx
 func (h *SSEHandler) Connect(c *fiber.Ctx) error {
+	identity := sse.ClientIdentity{}
 	sseToken := c.Query("sse_token")
 	userID := c.Query("user_id")
 	token := c.Query("token")
@@ -202,6 +205,9 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 		// Override user_id and app_id from the token (authoritative).
 		userID = td.UserID
 		appID = td.AppID
+		if td.Principal == "dashboard" && td.AppID == "dashboard" && td.ExpiresAt.After(time.Now()) {
+			identity = sse.ClientIdentity{Dashboard: true, ExpiresAt: td.ExpiresAt}
+		}
 
 		h.logger.Info("SSE connection via sse_token",
 			zap.String("user_id", userID),
@@ -273,7 +279,7 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 	}
 
 	// ── 4. Hand off to the broadcaster ──
-	return h.broadcaster.HandleSSE(c, userID)
+	return h.broadcaster.HandleSSE(c, userID, identity)
 }
 
 // CreateDashboardToken issues a short-lived SSE token for dashboard users (JWT auth).
@@ -302,7 +308,7 @@ func (h *SSEHandler) CreateDashboardToken(c *fiber.Ctx) error {
 	}
 	tokenValue := "sset_" + hex.EncodeToString(rawBytes)
 
-	tokenData := sseTokenData{UserID: userID, AppID: "dashboard"}
+	tokenData := sseTokenData{UserID: userID, AppID: "dashboard", Principal: "dashboard", ExpiresAt: time.Now().UTC().Add(sseTokenTTL)}
 	payload, _ := json.Marshal(tokenData)
 
 	redisKey := sseTokenPrefix + tokenValue
@@ -391,7 +397,7 @@ func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 				FromDate:  &fromDate,
 				SortBy:    "created_at",
 				SortOrder: "asc", // Stream from oldest to newest
-				PageSize:  100,    // Limit history to last 100 events for performance
+				PageSize:  100,   // Limit history to last 100 events for performance
 			}
 
 			history, _ := h.notifService.List(subCtx, historyFilter)

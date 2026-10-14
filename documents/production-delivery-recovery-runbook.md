@@ -59,6 +59,32 @@ rollout, live sends, credential changes or balance repair have been performed.
 Later phases still cover encrypted connections, onboarding, outbound dispatch,
 pricing, OTP, domestic SMS and environment simplification.
 
+The Phase 1 review found eight release blockers. Regressions now cover spoofed
+public SSE identities, nested configuration loss, overview-induced stale forms,
+disconnect concurrency, definite pre-dispatch workflow failures, sender limits
+including disconnected records, shared-WABA signing contexts and status refresh
+recovery. Workflow `Trigger` retains its public return/error contract; the callback
+processor uses an optional outcome method to distinguish safe retries from
+uncertain writes/enqueues. Named webhook display URLs also round-trip without
+erasing the stored path/token. No minor findings were deferred.
+
+Private inbox events require a server-issued dashboard principal on each SSE
+connection, with expiry and current application authorization. Subscriber and
+legacy public connections cannot become dashboard connections by supplying an
+owner UUID. Reload dashboards to obtain the new token format. Ensure every API
+instance consuming SSE events has the principal gate before starting compatible
+callback producers; an old reader can broadcast private events globally. Use a
+coordinated cutover and retain compatible recovery readers during rollback.
+
+Local phase decisions: reuse the user's checkout on one branch, preserve existing
+edits, adapt bookkeeping to PowerShell, put common authorization in the auth
+domain, use public dashboard references for both app/environment keys, and keep
+owner key reveal explicit. Routing and receipt processing share one task commit
+to avoid incomplete bootstrap. Sender migration, key rotation and live recovery
+remain operator work. External outcome quarantine, repeatable SSE refreshes and
+Twilio timestamp requirements described above are deliberate limits; automatic
+replay cannot replace receiver idempotency or a provider creation timestamp.
+
 This is an operator procedure, not evidence of live recovery. Implementing Task 6
 does not authorize production deployment, credential/account changes, messages,
 balance adjustments, migration, or replay. Obtain incident-specific authorization

@@ -20,6 +20,43 @@ type channelSettingsMembers struct {
 	role auth.Role
 }
 
+func TestChannelSettingsNamedWebhookMaskedRoundTrip(t *testing.T) {
+	svc := &fakeApplicationService{app: &application.Application{AppID: "a", AdminUserID: "owner", Webhooks: map[string]string{"ops": "https://hook.example.test/private?token=fixture"}}}
+	h := NewApplicationHandler(svc, nil, nil, nil, validator.New(), zap.NewNop())
+	app := fiber.New(fiber.Config{ErrorHandler: middleware.ErrorHandler(zap.NewNop())})
+	app.Use(func(c *fiber.Ctx) error { c.Locals("user_id", "owner"); return c.Next() })
+	app.Put("/apps/:id", h.Update)
+	req := httptest.NewRequest("PUT", "/apps/a", strings.NewReader(`{"webhooks":{"ops":"https://hook.example.test"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 || svc.app.Webhooks["ops"] != "https://hook.example.test/private?token=fixture" {
+		t.Fatal("safe endpoint round-trip erased named webhook credentials")
+	}
+}
+
+func TestChannelSettingsNestedPatchKeepsOmittedFields(t *testing.T) {
+	svc := &fakeApplicationService{app: &application.Application{AppID: "a", AdminUserID: "owner", Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: "waba", MetaPhoneNumberID: "phone", MetaAccessToken: "fixture-old-token"}}}}
+	h := NewApplicationHandler(svc, nil, nil, nil, validator.New(), zap.NewNop())
+	app := fiber.New(fiber.Config{ErrorHandler: middleware.ErrorHandler(zap.NewNop())})
+	app.Use(func(c *fiber.Ctx) error { c.Locals("user_id", "owner"); return c.Next() })
+	app.Put("/apps/:id/settings", h.UpdateSettings)
+	req := httptest.NewRequest("PUT", "/apps/a/settings", strings.NewReader(`{"whatsapp_config":{"meta_access_token":"fixture-new-token"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	cfg := svc.app.Settings.WhatsApp
+	if res.StatusCode != 200 || cfg.Provider != "meta" || cfg.MetaWABAID != "waba" || cfg.MetaPhoneNumberID != "phone" || cfg.MetaAccessToken != "fixture-new-token" {
+		t.Fatal("nested patch erased omitted sender settings")
+	}
+}
+
 func (r *channelSettingsMembers) GetByAppAndUser(context.Context, string, string) (*auth.AppMembership, error) {
 	return &auth.AppMembership{Role: r.role}, nil
 }

@@ -62,9 +62,9 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 	var candidates []*application.Application
 	var err error
 	if finder, ok := r.apps.(interface {
-		FindWhatsAppSender(context.Context, string, string, string) ([]*application.Application, error)
+		FindWhatsAppSenderForAccount(context.Context, string, string, string, string) ([]*application.Application, error)
 	}); ok {
-		candidates, err = finder.FindWhatsAppSender(ctx, provider, accountID, senderID)
+		candidates, err = finder.FindWhatsAppSenderForAccount(ctx, provider, accountID, senderID, r.TwilioAccount)
 		if err != nil {
 			return nil, err
 		}

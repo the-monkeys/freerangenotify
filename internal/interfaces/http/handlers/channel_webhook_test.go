@@ -79,6 +79,29 @@ func TestChannelWebhookSignaturesMetaTemplatesPerAccount(t *testing.T) {
 		}
 	}
 }
+func TestChannelWebhookSignaturesMetaTemplateMixedSigningContexts(t *testing.T) {
+	repo := &channelAppRepo{apps: []*application.Application{
+		{AppID: "a", Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: "shared", MetaAppSecret: "fixture-origin-a"}}},
+		{AppID: "b", Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: "shared", MetaAppSecret: "fixture-origin-b"}}},
+	}}
+	events := &channelAcceptedEvents{}
+	h := NewMetaWebhookHandler(events, repo, "", "verify", zap.NewNop())
+	app := fiber.New()
+	app.Post("/", h.HandleWebhook)
+	body := `{"object":"whatsapp_business_account","entry":[{"id":"shared","changes":[{"field":"message_template_status_update","value":{"message_template_name":"welcome","event":"APPROVED"}}]}]}`
+	mac := hmac.New(sha256.New, []byte("fixture-origin-a"))
+	mac.Write([]byte(body))
+	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+	req.Header.Set("X-Hub-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 || len(events.apps) != 1 || events.apps[0] != "a" {
+		t.Fatalf("origin signature must route only compatible binding: status=%d apps=%v", res.StatusCode, events.apps)
+	}
+}
 
 type channelInboundCapture struct {
 	captureService

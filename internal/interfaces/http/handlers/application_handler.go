@@ -265,6 +265,11 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 		app.WebhookURL = req.WebhookURL
 	}
 	if req.Webhooks != nil {
+		for name, value := range req.Webhooks {
+			if old, exists := app.Webhooks[name]; exists && value == dto.SafeEndpoint(old) {
+				req.Webhooks[name] = old
+			}
+		}
 		app.Webhooks = req.Webhooks
 	}
 	if req.Settings != nil {
@@ -543,69 +548,7 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 			return errors.Conflict("Settings changed; reload before saving")
 		}
 	}
-	settings := *currentSettings
-
-	if req.RateLimit != nil {
-		settings.RateLimit = *req.RateLimit
-	}
-	if req.RetryAttempts != nil {
-		settings.RetryAttempts = *req.RetryAttempts
-	}
-	if req.DefaultTemplate != nil {
-		settings.DefaultTemplate = *req.DefaultTemplate
-	}
-	if req.EnableWebhooks != nil {
-		settings.EnableWebhooks = *req.EnableWebhooks
-	}
-	if req.EnableAnalytics != nil {
-		settings.EnableAnalytics = *req.EnableAnalytics
-	}
-	if req.ValidationURL != nil {
-		settings.ValidationURL = *req.ValidationURL
-	}
-	if req.ValidationConfig != nil {
-		settings.ValidationConfig = req.ValidationConfig
-	}
-	if req.EmailConfig != nil {
-		if req.EmailConfig.SMTP != nil && req.EmailConfig.SMTP.Port == 0 {
-			req.EmailConfig.SMTP.Port = 587
-		}
-		settings.EmailConfig = req.EmailConfig
-	}
-	if req.DailyEmailLimit != nil {
-		settings.DailyEmailLimit = *req.DailyEmailLimit
-	}
-	if req.DefaultPreferences != nil {
-		if settings.DefaultPreferences == nil {
-			settings.DefaultPreferences = &application.DefaultPreferences{}
-		}
-		if req.DefaultPreferences.EmailEnabled != nil {
-			settings.DefaultPreferences.EmailEnabled = req.DefaultPreferences.EmailEnabled
-		}
-		if req.DefaultPreferences.PushEnabled != nil {
-			settings.DefaultPreferences.PushEnabled = req.DefaultPreferences.PushEnabled
-		}
-		if req.DefaultPreferences.SMSEnabled != nil {
-			settings.DefaultPreferences.SMSEnabled = req.DefaultPreferences.SMSEnabled
-		}
-		if req.DefaultPreferences.WhatsAppEnabled != nil {
-			settings.DefaultPreferences.WhatsAppEnabled = req.DefaultPreferences.WhatsAppEnabled
-		}
-	}
-	if req.WhatsAppConfig != nil {
-		settings.WhatsApp = req.WhatsAppConfig
-	}
-	if req.SMSConfig != nil {
-		settings.SMS = req.SMSConfig
-	}
-	if req.OnUserCreatedTriggerID != nil {
-		settings.OnUserCreatedTriggerID = *req.OnUserCreatedTriggerID
-	}
-	if req.InboundWebhookConfig != nil {
-		settings.InboundWebhookConfig = req.InboundWebhookConfig
-	}
-
-	settings, err = dto.PreserveSettingsSecrets(*currentSettings, settings, req.ClearSecrets)
+	settings, err := dto.MergeSettingsPatch(*currentSettings, c.Body(), req.ClearSecrets)
 	if err != nil {
 		return errors.BadRequest("Invalid secret clear operation")
 	}

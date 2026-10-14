@@ -30,7 +30,7 @@
 
 ## Phase 1 — Security and customer isolation
 
-**Local status:** Tasks 1–3 implemented; independent phase review and final evidence recorded below. Phases 2–5 remain pending. No production changes or push.
+**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phases 2–5 remain pending. No production changes or push.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -40,11 +40,11 @@
 
 **Interfaces:** Produce `ToSafeApplicationSettings(settings application.Settings) SafeApplicationSettings` and a shared `AuthorizeChannelAccess(ctx context.Context, userID, appID string, manage bool) error` service under `internal/usecases/services/channel_authorization.go`. Existing settings writes retain their field names; add configured flags and explicit clear fields. Existing API-key callers remain valid; ordinary read responses no longer distribute master keys.
 
-- [ ] Write `TestChannelSettingsSecrets` asserting viewer/editor/ordinary admin reads contain no token, password, custom secret header or unrestricted API key; owner reveal requires a separate authorized action. Assert omission preserves credentials, explicit clear deletes them and stale/masked writes cannot restore secrets.
-- [ ] Run `go test ./internal/interfaces/http/dto ./internal/interfaces/http/handlers ./internal/interfaces/http/middleware -run 'TestChannel(SettingsSecrets|Authorization)' -count=1`; verify RED assertions, not setup errors.
-- [ ] Implement safe response mapping, unified tenant/app authorization, owner-only reveal, credential-preserving writes and sanitized transport errors. Update UI to use configured flags without echoing credentials. Reject unapproved secret-bearing read endpoints; document the intentional security change.
-- [ ] Re-run targeted tests; add browser assertions for edit-without-token and viewer permissions. Inspect captured logs/responses for fixture-secret absence.
-- [ ] Review/stage only Task 1 paths and commit `fix: isolate channel configuration secrets and permissions`.
+- [x] Write `TestChannelSettingsSecrets` asserting viewer/editor/ordinary admin reads contain no token, password, custom secret header or unrestricted API key; owner reveal requires a separate authorized action. Assert omission preserves credentials, explicit clear deletes them and stale/masked writes cannot restore secrets.
+- [x] Run `go test ./internal/interfaces/http/dto ./internal/interfaces/http/handlers ./internal/interfaces/http/middleware -run 'TestChannel(SettingsSecrets|Authorization)' -count=1`; verify RED assertions, not setup errors.
+- [x] Implement safe response mapping, unified tenant/app authorization, owner-only reveal, credential-preserving writes and sanitized transport errors. Update UI to use configured flags without echoing credentials. Reject unapproved secret-bearing read endpoints; document the intentional security change.
+- [x] Re-run targeted tests; add browser assertions for edit-without-token and viewer permissions. Inspect captured logs/responses for fixture-secret absence.
+- [x] Review/stage only Task 1 paths and commit `fix: isolate channel configuration secrets and permissions`.
 
 ### Task 2: Scoped inbox SSE and authenticated sender routing
 
@@ -52,11 +52,11 @@
 
 **Interfaces:** Produce `ResolveInboundSender(ctx context.Context, provider, accountID, senderID string) (*InboundSenderBinding, error)` and `PublishInboxEvent(ctx context.Context, appID, environmentID, eventType string, data map[string]interface{}) error`. `InboundSenderBinding` contains app/environment/connection identities and signing context. Legacy user-targeted SSE stays valid; unrouted inbox messages fail closed.
 
-- [ ] Write `TestChannelInboxIsolation`, `TestChannelSenderRouting` and `TestChannelWebhookSignatures`: two tenants, revoked membership, two numbers in one WABA, more than 500 apps, duplicate sender assignments, full Twilio form including `MediaUrl1`, forged forwarded host, missing secrets and mismatched AccountSid.
-- [ ] Run `go test ./internal/infrastructure/sse ./internal/interfaces/http/handlers ./internal/usecases/services -run 'TestChannel(InboxIsolation|SenderRouting|WebhookSignatures)' -count=1`; verify RED.
-- [ ] Implement explicit authorized SSE audience and complete form/canonical-URL verification. Add durable sender lookup/claims, phone-first Meta routing with WABA agreement, account-specific verification and protected content-status callbacks. Quarantine ambiguous legacy shared-sender inbound events.
-- [ ] Re-run tests and a disposable-ES concurrency test proving conflicting new sender claims yield one owner. Confirm a private event never enters BroadcastToAll.
-- [ ] Commit `fix: scope WhatsApp events and verify sender callbacks`.
+- [x] Write `TestChannelInboxIsolation`, `TestChannelSenderRouting` and `TestChannelWebhookSignatures`: two tenants, revoked membership, two numbers in one WABA, more than 500 apps, duplicate sender assignments, full Twilio form including `MediaUrl1`, forged forwarded host, missing secrets and mismatched AccountSid.
+- [x] Run `go test ./internal/infrastructure/sse ./internal/interfaces/http/handlers ./internal/usecases/services -run 'TestChannel(InboxIsolation|SenderRouting|WebhookSignatures)' -count=1`; verify RED.
+- [x] Implement explicit authorized SSE audience and complete form/canonical-URL verification. Add durable sender lookup/claims, phone-first Meta routing with WABA agreement, account-specific verification and protected content-status callbacks. Quarantine ambiguous legacy shared-sender inbound events.
+- [x] Re-run tests and a disposable-ES concurrency test proving conflicting new sender claims yield one owner. Confirm a private event never enters BroadcastToAll.
+- [x] Commit `fix: scope WhatsApp events and verify sender callbacks`.
 
 ### Task 3: Durable callback receipt and inbox state recovery
 
@@ -64,13 +64,13 @@
 
 **Interfaces:** Produce `AcceptVerifiedEvent(ctx context.Context, binding *InboundSenderBinding, event *whatsapp.VerifiedEvent) (*whatsapp.EventReceipt, error)` and `ProcessEventReceipt(ctx context.Context, receiptID string) error`. Receipts track durable stages and individual side-effect identities, not just a processed boolean. Notification transitions use conditional repository updates.
 
-- [ ] Write `TestChannelEventRecovery`: replay the same message twice (one row/workflow effect), crash at each durable stage, transient storage failure (no success ack), reversed/concurrent statuses, late failure after read, delayed inbound timestamp, and mark-read reducing the local unread count.
-- [ ] Run `go test ./internal/usecases/services ./internal/infrastructure/repository -run 'TestChannelEvent' -count=1`; verify RED.
-- [ ] Implement authenticated durable acceptance, idempotent stages/outbox, bounded recovery and dead-letter records. Derive CSW expiry from validated upstream time; CAS transitions and actual local read markers replace read-modify-write/status/count shortcuts. Expose auto-reply as unavailable until normal-dispatch implementation exists.
-- [ ] Run targeted tests and `go test ./tests/integration -run '^TestChannelEventsRealES' -count=1 -v` against disposable fixtures. Prove restart recovery and no duplicate side effects.
-- [ ] Commit `fix: recover WhatsApp callbacks and preserve inbox state`.
+- [x] Write `TestChannelEventRecovery`: replay the same message twice (one row/workflow effect), crash at each durable stage, transient storage failure (no success ack), reversed/concurrent statuses, late failure after read, delayed inbound timestamp, and mark-read reducing the local unread count.
+- [x] Run `go test ./internal/usecases/services ./internal/infrastructure/repository -run 'TestChannelEvent' -count=1`; verify RED.
+- [x] Implement authenticated durable acceptance, idempotent stages/outbox, bounded recovery and dead-letter records. Derive CSW expiry from validated upstream time; CAS transitions and actual local read markers replace read-modify-write/status/count shortcuts. Expose auto-reply as unavailable until normal-dispatch implementation exists.
+- [x] Run targeted tests and `go test ./tests/integration -run '^TestChannelEventsRealES' -count=1 -v` against disposable fixtures. Prove restart recovery and no duplicate side effects.
+- [x] Commit `fix: recover WhatsApp callbacks and preserve inbox state`.
 
-**Phase 1 checkpoint:** review security diff, fixture-secret scan and cross-tenant event tests. Deployment of these corrections can be considered independently; implementation does not deploy them.
+**Phase 1 checkpoint: passed locally.** Full Go short suite; 43 reliability browser cases; seven disposable ES/Redis scenarios; production UI build (existing chunk warning); Linux SSE race regressions. Credential scan and security diff reviewed. Full services/providers/handlers Linux race coverage remains a Phase 5 CI requirement. No deployment, production migration, key rotation or live sends performed.
 
 ## Phase 2 — Explicit customer connections and onboarding
 

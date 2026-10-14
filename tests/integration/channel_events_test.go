@@ -77,6 +77,29 @@ func TestChannelEventsRealES(t *testing.T) {
 	client := channelFixture(t)
 	ctx := context.Background()
 	logger := zap.NewNop()
+	t.Run("sender limit excludes disconnected records", func(t *testing.T) {
+		apps := repository.NewApplicationRepository(client, logger)
+		waba, phone := uuid.NewString(), uuid.NewString()
+		active := ""
+		for i := 0; i < 3; i++ {
+			state := "disconnected"
+			if i == 0 {
+				state = "connected"
+			}
+			app := &application.Application{AppID: uuid.NewString(), Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: waba, MetaPhoneNumberID: phone, ConnectionStatus: state}}}
+			if err := apps.Create(ctx, app); err != nil {
+				t.Fatal(err)
+			}
+			if i == 0 {
+				active = app.AppID
+			}
+		}
+		resolver := services.NewChannelSenderResolver(apps, nil)
+		binding, err := resolver.ResolveInboundSender(ctx, "meta", waba, phone)
+		if err != nil || binding.AppID != active {
+			t.Fatalf("disconnected senders blocked active owner: %v", err)
+		}
+	})
 	t.Run("one concurrent sender owner", func(t *testing.T) {
 		store := repository.NewChannelSenderBindingRepository(client)
 		var winners atomic.Int32

@@ -41,8 +41,14 @@ type ClientPayload struct {
 
 // Client represents an SSE client connection.
 type Client struct {
-	UserID string
-	Chan   chan string
+	UserID    string
+	Chan      chan string
+	Dashboard bool
+	ExpiresAt time.Time
+}
+type ClientIdentity struct {
+	Dashboard bool
+	ExpiresAt time.Time
 }
 
 // Broadcaster manages SSE connections and broadcasts messages via Redis pub/sub.
@@ -168,12 +174,20 @@ func (b *Broadcaster) PublishMessage(msg *SSEMessage) error {
 
 // AddClient registers a new SSE client for a user.
 func (b *Broadcaster) AddClient(userID string) *Client {
+	return b.addClient(userID, ClientIdentity{})
+}
+func (b *Broadcaster) AddDashboardClient(userID string, expires time.Time) *Client {
+	return b.addClient(userID, ClientIdentity{Dashboard: true, ExpiresAt: expires})
+}
+func (b *Broadcaster) addClient(userID string, identity ClientIdentity) *Client {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	client := &Client{
-		UserID: userID,
-		Chan:   make(chan string, 10),
+		UserID:    userID,
+		Chan:      make(chan string, 10),
+		Dashboard: identity.Dashboard,
+		ExpiresAt: identity.ExpiresAt,
 	}
 
 	b.clients[userID] = append(b.clients[userID], client)
@@ -205,8 +219,8 @@ func (b *Broadcaster) RemoveClient(userID string, client *Client) {
 // Broadcast sends a message to all clients of a specific user.
 func (b *Broadcaster) Broadcast(userID string, message string) {
 	b.mu.RLock()
+	defer b.mu.RUnlock()
 	clients := b.clients[userID]
-	b.mu.RUnlock()
 
 	for _, client := range clients {
 		select {
@@ -236,7 +250,11 @@ func (b *Broadcaster) BroadcastToAll(message string) {
 }
 
 // HandleSSE manages the long-lived SSE connection for a single user.
-func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
+func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string, identities ...ClientIdentity) error {
+	identity := ClientIdentity{}
+	if len(identities) > 0 {
+		identity = identities[0]
+	}
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -252,7 +270,7 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 
 	ctxDone := c.Context().Done()
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		client := b.AddClient(userID)
+		client := b.addClient(userID, identity)
 
 		defer func() {
 			if r := recover(); r != nil {
@@ -295,6 +313,9 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 				}
 
 			case <-ticker.C:
+				if client.Dashboard && !client.ExpiresAt.After(time.Now()) {
+					return
+				}
 				// SSE comment line — not visible to EventSource API but keeps TCP alive
 				fmt.Fprintf(w, ": keepalive\n\n")
 				if err := w.Flush(); err != nil {
@@ -347,13 +368,18 @@ func (b *Broadcaster) routeMessage(msg *SSEMessage) {
 		}
 		b.mu.RLock()
 		users := make([]string, 0, len(b.clients))
-		for id := range b.clients {
-			users = append(users, id)
+		for id, clients := range b.clients {
+			for _, client := range clients {
+				if client.Dashboard && client.ExpiresAt.After(time.Now()) {
+					users = append(users, id)
+					break
+				}
+			}
 		}
 		b.mu.RUnlock()
 		for _, id := range users {
 			if b.inboxAuthorize(context.Background(), msg.AppID, id) {
-				b.Broadcast(id, b.buildClientPayload(msg))
+				b.broadcastDashboard(id, b.buildClientPayload(msg))
 			}
 		}
 		return
@@ -363,6 +389,19 @@ func (b *Broadcaster) routeMessage(msg *SSEMessage) {
 		b.Broadcast(msg.UserID, data)
 	} else {
 		b.BroadcastToAll(data)
+	}
+}
+func (b *Broadcaster) broadcastDashboard(userID, message string) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, client := range b.clients[userID] {
+		if !client.Dashboard || !client.ExpiresAt.After(time.Now()) {
+			continue
+		}
+		select {
+		case client.Chan <- message:
+		default:
+		}
 	}
 }
 

@@ -159,14 +159,21 @@ func (s *workflowService) List(ctx context.Context, appID, environmentID string,
 }
 
 func (s *workflowService) Trigger(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, error) {
+	execution, _, err := s.TriggerWithOutcome(ctx, appID, req)
+	return execution, err
+}
+
+// The outcome is false only when no execution write or enqueue was attempted.
+// Trigger retains its existing return type and public error behavior.
+func (s *workflowService) TriggerWithOutcome(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, bool, error) {
 	// 1. Resolve workflow by trigger_id
 	wf, err := s.repo.GetWorkflowByTrigger(ctx, appID, req.TriggerID)
-	if err != nil {
-		return nil, errors.NotFound("workflow", req.TriggerID)
+	if err != nil || wf == nil {
+		return nil, false, errors.NotFound("workflow", req.TriggerID)
 	}
 
 	if wf.Status != workflow.WorkflowStatusActive {
-		return nil, errors.BadRequest(fmt.Sprintf("workflow '%s' is not active (status: %s)", wf.Name, wf.Status))
+		return nil, false, errors.BadRequest(fmt.Sprintf("workflow '%s' is not active (status: %s)", wf.Name, wf.Status))
 	}
 
 	// 2. Idempotency check
@@ -174,7 +181,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		existing, _ := s.repo.GetActiveExecutions(ctx, req.UserID, wf.ID)
 		for _, exec := range existing {
 			if exec.TransactionID == req.TransactionID {
-				return exec, nil // Already running, return existing
+				return exec, true, nil // Already running, return existing
 			}
 		}
 	}
@@ -200,7 +207,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 	}
 
 	if err := s.repo.CreateExecution(ctx, exec); err != nil {
-		return nil, fmt.Errorf("failed to create execution: %w", err)
+		return nil, true, fmt.Errorf("failed to create execution: %w", err)
 	}
 
 	// 4. Enqueue first step
@@ -209,7 +216,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		StepID:      firstStepID,
 		EnqueuedAt:  time.Now(),
 	}); err != nil {
-		return nil, fmt.Errorf("failed to enqueue workflow: %w", err)
+		return nil, true, fmt.Errorf("failed to enqueue workflow: %w", err)
 	}
 
 	s.logger.Info("Workflow triggered",
@@ -217,7 +224,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		zap.String("execution_id", exec.ID),
 		zap.String("trigger_id", req.TriggerID))
 
-	return exec, nil
+	return exec, true, nil
 }
 
 // triggerForUsers triggers a workflow for each user. Returns execution IDs and continues on per-user errors.

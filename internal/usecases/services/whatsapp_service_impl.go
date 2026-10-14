@@ -26,7 +26,7 @@ type whatsappService struct {
 	repo          whatsapp.Repository
 	appRepo       application.Repository
 	notifRepo     notification.Repository
-	sseBroadc     *sse.Broadcaster
+	sseBroadc     interface{ PublishMessage(*sse.SSEMessage) error }
 	workflowSvc   workflow.Service
 	redis         *redis.Client
 	logger        *zap.Logger
@@ -46,10 +46,12 @@ func NewWhatsAppService(
 		repo:        repo,
 		appRepo:     appRepo,
 		notifRepo:   notifRepo,
-		sseBroadc:   sseBroadcaster,
 		workflowSvc: workflowSvc,
 		redis:       redisClient,
 		logger:      logger,
+	}
+	if sseBroadcaster != nil {
+		service.sseBroadc = sseBroadcaster
 	}
 	if events, ok := repo.(whatsapp.EventRepository); ok {
 		service.events = events
@@ -141,14 +143,6 @@ func (s *whatsappService) applyDeliveryStatus(ctx context.Context, status *whats
 		return nil
 	}
 
-	s.publishSSE("delivery_status", map[string]interface{}{
-		"notification_id": notif.NotificationID,
-		"app_id":          notif.AppID,
-		"status":          status.Status,
-		"timestamp":       status.Timestamp,
-		"meta_message_id": status.MetaMessageID,
-	})
-
 	s.logger.Info("Delivery status updated",
 		zap.String("notification_id", notif.NotificationID),
 		zap.String("status", status.Status),
@@ -221,7 +215,7 @@ func classifyInboundEvent(msg *whatsapp.InboundMessage) string {
 
 func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID string, msg *whatsapp.InboundMessage) error {
 	if s.workflowSvc == nil || triggerID == "" {
-		return fmt.Errorf("workflow trigger unavailable")
+		return &workflow.BeforeDispatch{Err: fmt.Errorf("workflow trigger unavailable")}
 	}
 	userID := msg.UserID
 	if userID == "" {
@@ -263,12 +257,24 @@ func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID 
 	if eventName := classifyInboundEvent(msg); eventName != "" {
 		payload["event_name"] = eventName
 	}
-	_, err := s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
+	req := &workflow.TriggerRequest{
 		TriggerID:     triggerID,
 		TransactionID: "channel-event:" + msg.ID,
 		UserID:        userID,
 		Payload:       payload,
-	})
+	}
+	var err error
+	if dispatcher, ok := s.workflowSvc.(interface {
+		TriggerWithOutcome(context.Context, string, *workflow.TriggerRequest) (*workflow.WorkflowExecution, bool, error)
+	}); ok {
+		var attempted bool
+		_, attempted, err = dispatcher.TriggerWithOutcome(ctx, appID, req)
+		if err != nil && !attempted {
+			err = &workflow.BeforeDispatch{Err: err}
+		}
+	} else {
+		_, err = s.workflowSvc.Trigger(ctx, appID, req)
+	}
 	if err != nil {
 		s.logger.Error("Failed to trigger workflow from inbound WhatsApp",
 			zap.String("app_id", appID),

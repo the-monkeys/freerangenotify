@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
+	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"time"
 )
 
@@ -53,12 +55,15 @@ func (s *whatsappService) ProcessEventReceipt(ctx context.Context, id string) er
 			err = s.applyTemplate(ctx, &receipt.Event.Binding, receipt.Event.Template)
 		}
 	} else if receipt.Event.Kind == "status" {
-		err = s.applyDeliveryStatus(ctx, receipt.Event.Status)
+		err = s.processStatusReceipt(ctx, receipt)
 	} else {
 		err = s.processInboundReceipt(ctx, receipt)
 	}
 	if err != nil {
 		receipt.LastError = "callback processing unavailable"
+		if workflow.IsBeforeDispatch(err) {
+			receipt.Steps["action"] = "pending"
+		}
 		if receipt.Steps["action"] == "dispatching" {
 			receipt.State = "unknown"
 		} else if receipt.Attempts >= 5 {
@@ -75,6 +80,37 @@ func (s *whatsappService) ProcessEventReceipt(ctx context.Context, id string) er
 		return saveErr
 	}
 	return err
+}
+func (s *whatsappService) processStatusReceipt(ctx context.Context, receipt *whatsapp.EventReceipt) error {
+	status := receipt.Event.Status
+	if status == nil || status.MetaMessageID == "" {
+		return fmt.Errorf("provider status identity required")
+	}
+	if receipt.Steps["status"] != "done" {
+		if err := s.applyDeliveryStatus(ctx, status); err != nil {
+			return err
+		}
+		receipt.Steps["status"] = "done"
+		if err := s.events.SaveEvent(ctx, receipt); err != nil {
+			return err
+		}
+	}
+	if receipt.Steps["sse"] == "done" {
+		return nil
+	}
+	rows, err := s.notifRepo.List(ctx, &notification.NotificationFilter{AppID: receipt.Event.Binding.AppID, Channel: notification.ChannelWhatsApp, ProviderMessageID: status.MetaMessageID, PageSize: 1})
+	if err != nil || len(rows) == 0 {
+		return fmt.Errorf("delivery refresh state unavailable")
+	}
+	row, err := s.notifRepo.GetByID(ctx, rows[0].NotificationID)
+	if err != nil || row == nil || row.AppID != receipt.Event.Binding.AppID {
+		return fmt.Errorf("delivery refresh state unavailable")
+	}
+	if err := s.publishSSE("delivery_status", map[string]interface{}{"notification_id": row.NotificationID, "app_id": row.AppID, "status": string(row.Status), "timestamp": status.Timestamp, "meta_message_id": status.MetaMessageID}); err != nil {
+		return err
+	}
+	receipt.Steps["sse"] = "done"
+	return s.events.SaveEvent(ctx, receipt)
 }
 func (s *whatsappService) processInboundReceipt(ctx context.Context, receipt *whatsapp.EventReceipt) error {
 	msg := receipt.Event.Message

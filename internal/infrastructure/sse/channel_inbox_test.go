@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"go.uber.org/zap"
+	"runtime"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestChannelInboxIsolation(t *testing.T) {
@@ -27,11 +30,63 @@ func TestChannelInboxIsolation(t *testing.T) {
 	default:
 	}
 }
+func TestChannelInboxDisconnectDuringBroadcast(t *testing.T) {
+	b := NewBroadcaster(nil, zap.NewNop())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	stop := make(chan struct{})
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				b.Broadcast("owner", "fixture")
+				runtime.Gosched()
+			}
+		}
+	}()
+	for i := 0; i < 10000; i++ {
+		client := b.AddClient("owner")
+		runtime.Gosched()
+		b.RemoveClient("owner", client)
+	}
+	close(stop)
+	wg.Wait()
+}
+func TestChannelInboxIsolationRejectsSpoofedSubscriber(t *testing.T) {
+	b := NewBroadcaster(nil, zap.NewNop())
+	b.SetInboxAuthorizer(func(context.Context, string, string) bool { return true })
+	legacy := b.AddClient("owner")
+	b.routeMessage(&SSEMessage{Type: "whatsapp_inbound", AppID: "a", Data: map[string]interface{}{"private": "fixture"}})
+	select {
+	case <-legacy.Chan:
+		t.Fatal("unverified owner UUID received inbox data")
+	default:
+	}
+	if registrar, ok := interface{}(b).(interface {
+		AddDashboardClient(string, time.Time) *Client
+	}); ok {
+		dashboard := registrar.AddDashboardClient("owner", time.Now().Add(time.Minute))
+		b.routeMessage(&SSEMessage{Type: "whatsapp_inbound", AppID: "a", Data: map[string]interface{}{"private": "fixture"}})
+		select {
+		case <-dashboard.Chan:
+		default:
+			t.Fatal("verified dashboard principal missed event")
+		}
+		select {
+		case <-legacy.Chan:
+			t.Fatal("subscriber sharing UUID received dashboard event")
+		default:
+		}
+	}
+}
 
 func TestChannelInboxIsolationRevocation(t *testing.T) {
 	b := NewBroadcaster(nil, zap.NewNop())
-	member := b.AddClient("member")
-	outsider := b.AddClient("other")
+	member := b.AddDashboardClient("member", time.Now().Add(time.Minute))
+	outsider := b.AddDashboardClient("other", time.Now().Add(time.Minute))
 	allowed := true
 	b.SetInboxAuthorizer(func(_ context.Context, appID, userID string) bool {
 		return allowed && appID == "a" && userID == "member"
