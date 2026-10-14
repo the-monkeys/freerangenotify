@@ -138,7 +138,11 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 		if response.StatusCode == 429 {
 			category = ErrorTypeRateLimit
 		}
-		return NewErrorResult(fmt.Errorf("Twilio SMS rejected (%d)", response.StatusCode), category), nil
+		result := NewErrorResult(fmt.Errorf("Twilio SMS rejected (%d)", response.StatusCode), category)
+		if response.StatusCode >= 400 && response.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, nil
 	}
 	if decodeErr != nil || resp.SID == "" {
 		return NewErrorResult(fmt.Errorf("Twilio SMS acceptance unconfirmed"), ErrorTypeUnknown), nil

@@ -395,14 +395,17 @@ func (p *MetaWhatsAppProvider) Send(ctx context.Context, notif *notification.Not
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return p.handleErrorResponse(resp.StatusCode, bodyBytes, notif.NotificationID)
+		result, err := p.handleErrorResponse(resp.StatusCode, bodyBytes, notif.NotificationID)
+		if result != nil && resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, err
 	}
 
 	var metaResp metaResponse
 	if err := json.Unmarshal(bodyBytes, &metaResp); err != nil {
 		p.logger.Warn("Failed to decode Meta WhatsApp response",
-			zap.Error(err),
-			zap.String("raw_body", string(bodyBytes)))
+			zap.Error(err))
 	}
 
 	providerMsgID := ""
@@ -838,8 +841,7 @@ func (p *MetaWhatsAppProvider) handleErrorResponse(statusCode int, body []byte, 
 	var metaErr metaErrorResponse
 	if err := json.Unmarshal(body, &metaErr); err != nil {
 		p.logger.Error("Meta WhatsApp API error (unparseable)",
-			zap.Int("http_status", statusCode),
-			zap.String("raw_body", string(body)))
+			zap.Int("http_status", statusCode))
 		return NewErrorResult(
 			fmt.Errorf("Meta WhatsApp API returned status %d", statusCode),
 			ErrorTypeProviderAPI,
@@ -863,7 +865,6 @@ func (p *MetaWhatsAppProvider) handleErrorResponse(statusCode int, body []byte, 
 		zap.Int("http_status", statusCode),
 		zap.Int("meta_error_code", metaErr.Error.Code),
 		zap.String("meta_error_type", metaErr.Error.Type),
-		zap.String("meta_error_message", metaErr.Error.Message),
 		zap.String("fbtrace_id", metaErr.Error.FBTraceID),
 		zap.String("notification_id", notifID))
 

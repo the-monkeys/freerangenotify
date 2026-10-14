@@ -62,7 +62,7 @@ func (s *NotificationService) SetChannelDispatch(dispatch interface {
 
 func (s *NotificationService) prepareMessaging(ctx context.Context, n *notification.Notification, u *user.User) error {
 	if n.Metadata != nil {
-		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared"} {
+		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared", "inbox_reply_phone", "inbox_reply_contact", "inbox_reply_text", "inbox_reply_template", "inbox_reply_key"} {
 			delete(n.Metadata, key)
 		}
 	}

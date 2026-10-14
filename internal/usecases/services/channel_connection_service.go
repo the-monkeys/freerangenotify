@@ -83,6 +83,10 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 			if wa.Provider == "meta" {
 				snap.Provider = "meta"
 				snap.AccountID = wa.MetaWABAID
+				// Older outbound-only Meta settings did not persist a WABA.
+				if snap.AccountID == "" && wa.MetaPhoneNumberID != "" {
+					snap.AccountID = "phone:" + wa.MetaPhoneNumberID
+				}
 				snap.SenderID = wa.MetaPhoneNumberID
 				snap.Credentials = map[string]string{"access_token": wa.MetaAccessToken, "app_secret": wa.MetaAppSecret}
 				snap.CredentialSource = "byoc"

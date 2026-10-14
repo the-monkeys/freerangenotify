@@ -386,6 +386,28 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		logger,
 	)
 
+	platformSMS := *container.ChannelConnections.System[notification.ChannelSMS]
+	platformSMS.AppID = "__platform_auth"
+	platformSMS.EnvironmentID = cfg.App.Environment
+	platformSMS.Channel = notification.ChannelSMS
+	platformSMS.CredentialSource = "system"
+	phoneDispatch := &services.PhoneOTPDispatcher{Dispatch: container.ChannelDispatch, Redis: redisClient, Pending: otpRepo, Snapshot: &platformSMS, Policy: services.PhoneOTPPolicy{AllowedPrefixes: cfg.PhoneVerification.AllowedPrefixes, DailyBudgetMinor: cfg.PhoneVerification.DailyBudgetMinor, CostMinorPerSegment: cfg.PhoneVerification.CostMinorPerSegment, Currency: cfg.PhoneVerification.Currency}}
+	container.AuthService.(interface {
+		SetPhoneOTPDispatcher(interface {
+			DispatchPhoneVerificationOTP(context.Context, string, string, string) error
+		})
+	}).SetPhoneOTPDispatcher(phoneDispatch)
+	container.ChannelDispatch.VerifySystemOwner = func(ctx context.Context, appID string) error {
+		app, err := repos.Application.GetByID(ctx, appID)
+		if err != nil || app == nil {
+			return fmt.Errorf("application unavailable")
+		}
+		owner, err := container.AuthService.GetCurrentUser(ctx, app.AdminUserID)
+		if err != nil || owner == nil || !owner.PhoneVerified {
+			return fmt.Errorf("phone_verification_required")
+		}
+		return nil
+	}
 	// Initialize tenant/organization support (C1)
 	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
 	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
@@ -942,6 +964,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			redisClient,
 			logger,
 		)
+		container.WhatsAppService.(interface {
+			SetReplyDispatcher(*services.ChannelInboxReplyService)
+		}).SetReplyDispatcher(&services.ChannelInboxReplyService{Dispatch: container.ChannelDispatch, Notifications: repos.Notification, Queue: container.Queue, Inbox: waRepo})
 		container.MetaWebhookHandler = handlers.NewMetaWebhookHandler(
 			container.WhatsAppService,
 			repos.Application,

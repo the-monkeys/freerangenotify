@@ -5,7 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"net/http"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 
 // whatsappService implements whatsapp.Service.
 type whatsappService struct {
+	replyDispatcher *ChannelInboxReplyService
+	connections     *ChannelConnectionService
+
 	applyTemplate func(context.Context, *InboundSenderBinding, *whatsapp.TemplateStatusEvent) error
 	events        whatsapp.EventRepository
 	repo          whatsapp.Repository
@@ -159,6 +163,15 @@ func (s *whatsappService) IsCSWOpen(ctx context.Context, appID, contactWAID stri
 	if s.redis == nil {
 		return false
 	}
+	if s.connections != nil {
+		env := channelconnection.EnvironmentID(ctx)
+		snap, err := s.connections.ResolveDeliveryConnection(ctx, appID, env, notification.ChannelWhatsApp)
+		if err != nil {
+			return false
+		}
+		key := channelconnection.WindowKey(appID, env, snap.Provider, snap.AccountID, snap.SenderID, contactWAID)
+		return s.redis.Exists(ctx, key).Val() == 1
+	}
 	key := fmt.Sprintf("csw:%s:%s", appID, contactWAID)
 	_, err := s.redis.Get(ctx, key).Result()
 	return err == nil
@@ -295,72 +308,19 @@ func (s *whatsappService) ListConversations(ctx context.Context, appID string, l
 	return convos, total, nil
 }
 
-func (s *whatsappService) Reply(ctx context.Context, appID, contactWAID, text, templateName string) error {
-	app, err := s.appRepo.GetByID(ctx, appID)
-	if err != nil {
-		return fmt.Errorf("failed to load app: %w", err)
+func (s *whatsappService) SetReplyDispatcher(d *ChannelInboxReplyService) {
+	s.replyDispatcher = d
+	s.connections = d.Dispatch.Connections
+}
+func (s *whatsappService) ReplyQueued(ctx context.Context, app, contact, text, template, key string) (*notification.Notification, error) {
+	if s.replyDispatcher == nil {
+		return nil, fmt.Errorf("reply dispatch unavailable")
 	}
-	wa := app.Settings.WhatsApp
-	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" {
-		return fmt.Errorf("WhatsApp Meta not configured for app %s", appID)
-	}
-
-	var payload map[string]interface{}
-
-	if s.IsCSWOpen(ctx, appID, contactWAID) && text != "" {
-		payload = map[string]interface{}{
-			"messaging_product": "whatsapp",
-			"recipient_type":    "individual",
-			"to":                contactWAID,
-			"type":              "text",
-			"text": map[string]interface{}{
-				"preview_url": false,
-				"body":        text,
-			},
-		}
-	} else if templateName != "" {
-		payload = map[string]interface{}{
-			"messaging_product": "whatsapp",
-			"recipient_type":    "individual",
-			"to":                contactWAID,
-			"type":              "template",
-			"template": map[string]interface{}{
-				"name":     templateName,
-				"language": map[string]interface{}{"code": "en_US"},
-			},
-		}
-	} else {
-		return fmt.Errorf("CSW is closed and no template specified — cannot send free-form text outside the 24h window")
-	}
-
-	body, _ := json.Marshal(payload)
-	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages",
-		"v23.0", wa.MetaPhoneNumberID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to build Meta API request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+wa.MetaAccessToken)
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("Meta API request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Meta API error %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	s.logger.Info("Reply sent via Meta WhatsApp",
-		zap.String("app_id", appID),
-		zap.String("to", contactWAID))
-
-	return nil
+	return s.replyDispatcher.EnqueueReply(ctx, app, contact, text, template, key)
+}
+func (s *whatsappService) Reply(ctx context.Context, app, contact, text, template string) error {
+	_, err := s.ReplyQueued(ctx, app, contact, text, template, uuid.NewString())
+	return err
 }
 
 func (s *whatsappService) MarkRead(ctx context.Context, appID, contactWAID string) error {

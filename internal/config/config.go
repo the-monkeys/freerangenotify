@@ -10,22 +10,30 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
-	Connection ConnectionConfig `mapstructure:"connection"`
-	App        AppConfig        `mapstructure:"app"`
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	Queue      QueueConfig      `mapstructure:"queue"`
-	Providers  ProvidersConfig  `mapstructure:"providers"`
-	Monitoring MonitoringConfig `mapstructure:"monitoring"`
-	Security   SecurityConfig   `mapstructure:"security"`
-	OIDC       OIDCConfig       `mapstructure:"oidc"`
-	Features   FeaturesConfig   `mapstructure:"features"`
-	Billing    BillingConfig    `mapstructure:"billing"`
-	Payment    PaymentConfig    `mapstructure:"payment"`
-	Licensing  LicensingConfig  `mapstructure:"licensing"`
-	Filestore  FilestoreConfig  `mapstructure:"filestore"`
-	BizBilling BizBillingConfig `mapstructure:"biz_billing"`
+	PhoneVerification PhoneVerificationConfig `mapstructure:"phone_verification"`
+	Connection        ConnectionConfig        `mapstructure:"connection"`
+	App               AppConfig               `mapstructure:"app"`
+	Server            ServerConfig            `mapstructure:"server"`
+	Database          DatabaseConfig          `mapstructure:"database"`
+	Redis             RedisConfig             `mapstructure:"redis"`
+	Queue             QueueConfig             `mapstructure:"queue"`
+	Providers         ProvidersConfig         `mapstructure:"providers"`
+	Monitoring        MonitoringConfig        `mapstructure:"monitoring"`
+	Security          SecurityConfig          `mapstructure:"security"`
+	OIDC              OIDCConfig              `mapstructure:"oidc"`
+	Features          FeaturesConfig          `mapstructure:"features"`
+	Billing           BillingConfig           `mapstructure:"billing"`
+	Payment           PaymentConfig           `mapstructure:"payment"`
+	Licensing         LicensingConfig         `mapstructure:"licensing"`
+	Filestore         FilestoreConfig         `mapstructure:"filestore"`
+	BizBilling        BizBillingConfig        `mapstructure:"biz_billing"`
+}
+
+type PhoneVerificationConfig struct {
+	AllowedPrefixes     []string `mapstructure:"allowed_prefixes"`
+	DailyBudgetMinor    int64    `mapstructure:"daily_budget_minor"`
+	CostMinorPerSegment int64    `mapstructure:"cost_minor_per_segment"`
+	Currency            string   `mapstructure:"currency"`
 }
 
 type ConnectionConfig struct {
@@ -413,6 +421,14 @@ type OIDCConfig struct {
 
 // Load loads configuration from various sources
 func Load() (*Config, error) {
+	viper.SetDefault("phone_verification.allowed_prefixes", []string{})
+	viper.SetDefault("phone_verification.daily_budget_minor", 0)
+	viper.SetDefault("phone_verification.cost_minor_per_segment", 0)
+	viper.SetDefault("phone_verification.currency", "INR")
+	_ = viper.BindEnv("phone_verification.allowed_prefixes", "FREERANGE_AUTH_PHONE_OTP_ALLOWED_PREFIXES")
+	_ = viper.BindEnv("phone_verification.daily_budget_minor", "FREERANGE_AUTH_PHONE_OTP_DAILY_BUDGET_MINOR")
+	_ = viper.BindEnv("phone_verification.cost_minor_per_segment", "FREERANGE_AUTH_PHONE_OTP_COST_MINOR_PER_SEGMENT")
+	_ = viper.BindEnv("phone_verification.currency", "FREERANGE_AUTH_PHONE_OTP_CURRENCY")
 	viper.SetDefault("connection.encryption_keys", "")
 	viper.SetDefault("connection.writes_enabled", false)
 	_ = viper.BindEnv("connection.encryption_keys", "FREERANGE_CONNECTION_ENCRYPTION_KEYS")

@@ -129,29 +129,11 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 				}
 			}
 		}
-		sid, _ := n.Content.Data["content_sid"].(string)
-		_, meta := n.Content.Data["whatsapp_template"]
-		rich, hasRich := n.Content.Data["whatsapp_rich"].(map[string]interface{})
-		if sid != "" {
-			if snap.Provider != "twilio" || meta {
-				return nil, fmt.Errorf("Content SID requires admitted Twilio account")
-			}
-			kind = "template"
+		kind, err = providers.WhatsAppPayloadKind(n, snap.Provider)
+		if err != nil {
+			return nil, err
 		}
-		if meta {
-			if snap.Provider != "meta" {
-				return nil, fmt.Errorf("Meta template requires admitted Meta account")
-			}
-			kind = "template"
-		}
-		if hasRich {
-			if snap.Provider != "meta" {
-				return nil, fmt.Errorf("rich payload requires Meta account")
-			}
-			if name, _ := rich["template_name"].(string); name != "" {
-				kind = "template"
-			}
-		}
+
 		if kind == "text" {
 			if s.Redis == nil {
 				return nil, fmt.Errorf("WhatsApp window unavailable; approved template required")
@@ -225,7 +207,11 @@ func (s *ChannelDispatchService) DispatchPrepared(ctx context.Context, d *channe
 		if result != nil {
 			category = result.ErrorType
 		}
-		return result, &providers.DeliveryError{Provider: p.GetName(), Stage: "send", CredentialSource: snap.CredentialSource, ErrorType: category, Retryable: category == providers.ErrorTypeRateLimit, Err: err}
+		stage := "send"
+		if result != nil && result.Metadata["acceptance_rejected"] == true {
+			stage = "rejected"
+		}
+		return result, &providers.DeliveryError{Provider: p.GetName(), Stage: stage, CredentialSource: snap.CredentialSource, ErrorType: category, Retryable: category == providers.ErrorTypeRateLimit, Err: err}
 	}
 	result.Metadata["credential_source"] = snap.CredentialSource
 	result.Metadata["provider"] = snap.Provider

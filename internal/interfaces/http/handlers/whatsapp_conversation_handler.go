@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -80,8 +83,9 @@ func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 
 // replyRequest is the payload for the reply endpoint.
 type replyRequest struct {
-	Text         string `json:"text"`
-	TemplateName string `json:"template_name"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Text           string `json:"text"`
+	TemplateName   string `json:"template_name"`
 }
 
 // Reply handles POST /v1/whatsapp/conversations/:contact_id/reply
@@ -102,6 +106,22 @@ func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 	}
 	if req.Text == "" && req.TemplateName == "" {
 		return pkgerrors.BadRequest("Either text or template_name is required")
+	}
+	if queued, ok := h.whatsappSvc.(interface {
+		ReplyQueued(context.Context, string, string, string, string, string) (*notification.Notification, error)
+	}); ok {
+		key := req.IdempotencyKey
+		if key == "" {
+			key = c.Get("Idempotency-Key")
+		}
+		if key == "" {
+			key = uuid.NewString()
+		}
+		n, err := queued.ReplyQueued(channelTemplateContext(c), appID, contactID, req.Text, req.TemplateName, key)
+		if err != nil {
+			return err
+		}
+		return c.JSON(fiber.Map{"success": true, "accepted": true, "message": "Reply queued", "notification_id": n.NotificationID, "status": n.Status, "idempotency_key": key})
 	}
 
 	if err := h.whatsappSvc.Reply(c.Context(), appID, contactID, req.Text, req.TemplateName); err != nil {

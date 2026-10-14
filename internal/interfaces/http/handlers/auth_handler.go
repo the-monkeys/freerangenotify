@@ -11,6 +11,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
@@ -593,7 +594,7 @@ func (h *AuthHandler) SendPhoneOTP(c *fiber.Ctx) error {
 		Phone: req.Phone,
 	}
 
-	if err := h.authService.SendPhoneOTP(c.Context(), userID, authReq); err != nil {
+	if err := h.authService.SendPhoneOTP(services.WithPhoneOTPClientIP(c.Context(), c.IP()), userID, authReq); err != nil {
 		h.logger.Error("Failed to send phone OTP", zap.String("user_id", userID), zap.Error(err))
 		return err
 	}

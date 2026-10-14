@@ -162,6 +162,10 @@ export interface WhatsAppConversation {
 }
 
 export interface WhatsAppMessage {
+ text_body?:string;
+ delivery_state?:string;
+ notification_id?:string;
+ template_name?:string;
     id: string;
     app_id: string;
     meta_message_id?: string;

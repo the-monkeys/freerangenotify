@@ -1533,8 +1533,8 @@ export const whatsappConversationsAPI = {
     return { messages: data.data, total: data.total };
   },
 
-  reply: async (apiKey: string, contactId: string, payload: { text?: string; template_name?: string }) => {
-    const { data } = await api.post<{ success: boolean; message: string }>(`/whatsapp/conversations/${contactId}/reply`, payload, {
+  reply: async (apiKey: string, contactId: string, payload: { text?: string; template_name?: string; idempotency_key?: string }) => {
+    const { data } = await api.post<{ success: boolean; message: string; notification_id?:string;status?:string;idempotency_key?:string }>(`/whatsapp/conversations/${contactId}/reply`, payload, {
       headers: getAuthHeaders(apiKey),
     });
     return data;

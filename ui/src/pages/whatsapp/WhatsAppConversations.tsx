@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { whatsappConversationsAPI } from '../../services/api';
+import { whatsappConversationsAPI, notificationsAPI } from '../../services/api';
 import { useApiQuery } from '../../hooks/use-api-query';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -20,6 +20,9 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
     const [selectedContact, setSelectedContact] = useState<string | null>(null);
     const [selectedName, setSelectedName] = useState<string>('');
     const [replyText, setReplyText] = useState('');
+    const [replyTemplate, setReplyTemplate] = useState('');
+    const [replyReceipt, setReplyReceipt] = useState<{id:string;status:string;error?:string}|null>(null);
+    const replyRequest = useRef<{signature:string;key:string}|null>(null);
     const [sending, setSending] = useState(false);
     const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
@@ -60,20 +63,26 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
         setSelectedName(conv.contact_name || conv.contact_wa_id);
     };
 
+    useEffect(() => {
+        if (!replyReceipt || ['sent','delivered','read','failed','cancelled'].includes(replyReceipt.status)) return;
+        let cancelled=false;
+        const poll=async()=>{try{const n=await notificationsAPI.get(apiKey,replyReceipt.id);if(cancelled)return;setReplyReceipt({id:n.notification_id,status:n.status,error:n.error_message});if(['sent','delivered','read','failed'].includes(n.status)){replyRequest.current=null;if(selectedContact){const rows=await whatsappConversationsAPI.getMessages(apiKey,selectedContact);if(!cancelled)setMessages(rows.messages||[])}}}catch{if(!cancelled)setReplyReceipt(previous=>previous?{...previous,error:'Unable to refresh reply status; outcome may still be pending'}:null)}};
+        const timer=window.setInterval(poll,2000);return()=>{cancelled=true;window.clearInterval(timer)};
+    },[apiKey,replyReceipt?.id,replyReceipt?.status,selectedContact]);
+
     const handleReply = async () => {
-        if (!replyText.trim() || !selectedContact) return;
+        if (sending || (!replyText.trim() && !replyTemplate.trim()) || !selectedContact) return;
         setSending(true);
+        const signature=JSON.stringify([selectedContact,replyText,replyTemplate]);
+        if(replyRequest.current?.signature!==signature)replyRequest.current={signature,key:crypto.randomUUID()};
         try {
-            await whatsappConversationsAPI.reply(apiKey, selectedContact, { text: replyText });
-            setReplyText('');
-            const res = await whatsappConversationsAPI.getMessages(apiKey, selectedContact);
-            setMessages(res.messages || []);
-            toast.success('Reply sent');
-        } catch (err: any) {
-            toast.error('Failed to send reply: ' + (err.response?.data?.error || err.message));
-        } finally {
-            setSending(false);
-        }
+            const accepted=await whatsappConversationsAPI.reply(apiKey,selectedContact,{text:replyText,template_name:replyTemplate||undefined,idempotency_key:replyRequest.current.key});
+            if(accepted.notification_id){setReplyReceipt({id:accepted.notification_id,status:accepted.status||'queued'});toast.success('Reply accepted into queue')}
+            else {toast.info(accepted.message||'Reply request accepted')}
+            setReplyText('');setReplyTemplate('');
+            const res=await whatsappConversationsAPI.getMessages(apiKey,selectedContact);setMessages(res.messages||[]);
+        } catch (err:any) {toast.error('Failed to queue reply: '+(err.response?.data?.error?.message||err.response?.data?.error||err.message))}
+        finally {setSending(false)}
     };
 
     const handleMarkRead = async () => {
@@ -139,15 +148,15 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
                                             : 'bg-muted rounded-bl-md'
                                     }`}
                                 >
-                                    <p>{msg.body || `[${msg.message_type}]`}</p>
+                                    <p>{msg.text_body || msg.body || `[${msg.message_type}${msg.template_name ? `: ${msg.template_name}` : ''}]`}</p>
                                     <div className={`flex items-center gap-1 mt-1 text-xs ${
                                         msg.direction === 'outbound' ? 'text-green-100' : 'text-muted-foreground'
                                     }`}>
                                         <Clock className="h-3 w-3" />
                                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        {msg.direction === 'outbound' && msg.status && (
+                                        {msg.direction === 'outbound' && (msg.delivery_state || msg.status) && (
                                             <Badge variant="outline" className="text-[10px] ml-1 py-0 border-green-200 text-green-100">
-                                                {msg.status}
+                                                {msg.delivery_state || msg.status}
                                             </Badge>
                                         )}
                                     </div>
@@ -158,6 +167,8 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
                     <div ref={messagesEndRef} />
                 </div>
 
+                {replyReceipt && <p role={replyReceipt.status==='failed'?'alert':'status'} className="text-sm py-2">{replyReceipt.status==='failed'?`Reply failed: ${replyReceipt.error||'Delivery failed'}`:['sent','delivered','read'].includes(replyReceipt.status)?'Reply accepted by provider':'Reply queued'}{replyReceipt.error && replyReceipt.status!=='failed' && <span> - {replyReceipt.error}</span>}</p>}
+                <Input aria-label="Approved reply template" placeholder="Approved template name or Content SID (optional)" value={replyTemplate} onChange={e=>setReplyTemplate(e.target.value)} />
                 <div className="border-t pt-3 flex gap-2">
                     <Input
                         className="flex-1"
@@ -166,7 +177,7 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
                         onChange={(e) => setReplyText(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleReply()}
                     />
-                    <Button onClick={handleReply} disabled={sending || !replyText.trim()}>
+                    <Button onClick={handleReply} disabled={sending || (!replyText.trim() && !replyTemplate.trim())}>
                         {sending ? <Spinner className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                     </Button>
                 </div>

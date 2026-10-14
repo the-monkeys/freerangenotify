@@ -54,6 +54,7 @@ type ProcessorConfig struct {
 // NotificationProcessor processes notifications from the queue
 type NotificationProcessor struct {
 	channelDispatch  *services.ChannelDispatchService
+	channelInbox     whatsapp.Repository
 	queue            queue.Queue
 	notifRepo        notification.Repository
 	userRepo         user.Repository
@@ -84,6 +85,7 @@ type NotificationProcessor struct {
 	stopChan chan struct{}
 }
 
+func (p *NotificationProcessor) SetChannelInbox(r whatsapp.Repository) { p.channelInbox = r }
 func (p *NotificationProcessor) SetChannelDispatch(s *services.ChannelDispatchService) {
 	p.channelDispatch = s
 }
@@ -436,7 +438,9 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 
 	// Get user details (only if UserID is present)
 	var usr *user.User
-	if notif.UserID != "" {
+	if phone, reply := services.InboxReplyRecipient(notif); reply {
+		usr = &user.User{UserID: notif.UserID, AppID: notif.AppID, Phone: phone}
+	} else if notif.UserID != "" {
 		usr, err = p.userRepo.GetByID(ctx, notif.UserID)
 		if err != nil {
 			logger.Error("Failed to get user", zap.Error(err))
@@ -892,6 +896,11 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		// Bind the proven successful delivery to its own attempt. Recovery must
 		// never infer success for earlier holds from a notification-wide status.
 		notif.Metadata["delivery_reservation_id"] = reservation.ID
+	}
+	if p.channelInbox != nil && notif.Channel == notification.ChannelWhatsApp {
+		if err := services.RecordOutboundConversation(ctx, p.channelInbox, notif, usr); err != nil {
+			logger.Error("Outbound conversation persistence requires repair", zap.String("notification_id", notif.NotificationID), zap.Error(err))
+		}
 	}
 	// Persist success, time, reservation binding, and rendered content together.
 	// A separate sent-only write can expose a prior attempt's reservation ID.
