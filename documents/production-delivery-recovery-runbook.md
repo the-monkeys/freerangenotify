@@ -691,3 +691,84 @@ readers see the pending/completed response. New request fingerprints reject reus
 for another intent or environment. Complete the API fleet rollout before enabling
 new clients; an older request already in flight before a claim cannot be locked
 retroactively. Quarantined delivery history explicitly reports `retryable:false`.
+
+## WhatsApp/SMS Phase 2 — local connections and onboarding
+
+Phase 2 adds `channel_connections`, redacted JWT/app-authorized connection reads,
+CAS updates, retained encrypted revisions, provider validation and scoped authoring.
+A connection update resets readiness to pending. Disconnect creates an explicit
+block against legacy/global fallback. The dashboard preserves its selected
+messaging environment across navigation and reload, refreshes parent settings after
+connection changes, and separates local draft save/edit from provider submission.
+Local draft removal leaves the provider resource intact. Imported providers expose
+only the specifically linked resources and report origin/action permissions.
+
+### Rollout gate and key rotation
+
+`FREERANGE_CONNECTION_WRITES_ENABLED` defaults to false. Keep it false until Phase 3
+has wired delivery admission, workers and charged replies to immutable connection
+snapshots and **all** API/worker readers have been upgraded. Phase 2 alone is not a
+production enablement checkpoint. No real environment values are changed by this
+implementation.
+
+Set `FREERANGE_CONNECTION_ENCRYPTION_KEYS` through the deployment secret manager.
+Its format is an ordered comma-separated `key-id:base64-32-byte-key` keyring. The
+first key encrypts; retained IDs decrypt old revisions. Keep old keys while queued
+sends, bindings and historical revisions still reference them. AES-256-GCM binds
+connection/app/environment/provider/field identity. Do not rename a key ID during
+rotation or remove a decrypt key while it remains in use.
+
+### Scoped, additive migration
+
+`frn channel-connections --app <app-id>` is a dry run. It emits only the application,
+channel, action and revision, and sends no provider requests. After reader rollout,
+a maintenance window and provisioning the keyring, operators can add `--apply
+--readers-upgraded` with encrypted writes enabled. Pause connection settings writes
+and sending during apply/validation; resume only after readiness checks. Each
+created connection is its own checkpoint: rerunning skips explicit connections,
+including customer edits, rather than overwriting them. Legacy plaintext settings
+are retained for compatible recovery; migration never deletes them. No customer
+migration was executed during local development.
+
+Manual Meta onboarding needs the customer's token, WABA, selected phone and Meta
+app signing secret; it does not need platform Facebook SDK keys. Empty/mismatched
+phone lists are rejected. The connection panel can discover a paginated owned phone
+list by saving the account/token and validating before selecting the sender.
+Embedded Signup does not seed customer business assets from frontend environment
+values. Saving credentials is distinct from confirming provider readiness.
+
+Validation uses authenticated read requests, never a paid test message. It checks
+account access, sender ownership/registration, token permissions and callback
+subscription. Meta callback URL/fields are checked with the customer's app context;
+unknown readiness remains pending. Billing state that the provider does not expose
+is labelled `not_exposed`; operators still need provider billing/compliance setup.
+Twilio validation uses the current v2 WhatsApp Senders API, including the required
+channel filter and trusted pagination. References: [Twilio Senders API](https://www.twilio.com/docs/whatsapp/api/senders),
+[Twilio phone-number capabilities](https://www.twilio.com/docs/phone-numbers/api/incomingphonenumber-resource).
+
+Provider account database failures never borrow global credentials. Encrypted
+Twilio template callbacks resolve their pinned connection revision and preserve
+the owning environment in durable receipts. Meta template callbacks read explicit
+connections before the legacy adapter. New unvalidated sender assignments do not
+receive inbound traffic. Ambiguous vendor submission outcomes become
+`submission_unknown` and require reconciliation before another submission.
+
+### Decisions and limits
+
+- Keep the existing local checkout/branch for phase monitoring. There is no extra
+  worktree isolation; unrelated existing edits are excluded from task commits.
+- Deny vendor template mutations on shared accounts until an explicit ownership
+  grant exists. Historical ownership cannot safely be guessed. Shared-account
+  users need a scoped grant before those mutations can resume.
+- Leave encrypted writers disabled until Phase 3 and the fleet reader rollout.
+  Enabling early would leave legacy delivery credentials in use. Existing tariffs,
+  historical balances and production credentials are untouched.
+
+### Local verification
+
+Task 4 encryption, legacy/BYOC compatibility, environment precedence, revision
+conflicts, immutable old revisions and redacted/resumable migration tests passed.
+Disposable Elasticsearch verified concurrent connection updates retain one winner.
+Phase 2 browser coverage includes connect/save, disconnect/save, environment
+persistence and local-save versus explicit-submission messages. Final suite and
+review evidence is recorded with the Phase 2 checkpoint in the implementation plan.

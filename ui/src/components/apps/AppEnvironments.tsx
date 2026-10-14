@@ -20,7 +20,7 @@ import { Loader2, Globe, Plus, Key, Copy, Check, ArrowRight, Trash2, Eye, EyeOff
 interface AppEnvironmentsProps {
     appId: string;
     currentApiKey: string;
-    onApiKeyChange: (apiKey: string, envName: string) => void;
+    onApiKeyChange: (apiKey: string, envName: string,envId:string) => void;
 }
 
 const ENV_NAMES: EnvironmentName[] = ['development', 'staging', 'production'];
@@ -185,7 +185,7 @@ const AppEnvironments: React.FC<AppEnvironmentsProps> = ({ appId, currentApiKey,
                                                 variant="outline"
                                                 size="sm"
                                                 className="text-xs"
-                                                onClick={() => onApiKeyChange(env.api_key, env.name)}
+                                                onClick={() => onApiKeyChange(env.api_key, env.name,env.id)}
                                             >
                                                 Switch to this
                                             </Button>

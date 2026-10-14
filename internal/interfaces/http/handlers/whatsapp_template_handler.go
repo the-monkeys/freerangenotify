@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,13 +12,16 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // WhatsAppTemplateHandler manages WhatsApp message templates via Meta Graph API.
 type WhatsAppTemplateHandler struct {
+	Connections       *services.ChannelConnectionService
 	appRepo           application.Repository
 	sseBroadcaster    *sse.Broadcaster
 	metaAPIVersion    string
@@ -91,7 +95,7 @@ func (h *WhatsAppTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed: "+err.Error())
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed")
 	}
 	defer resp.Body.Close()
 
@@ -104,7 +108,6 @@ func (h *WhatsAppTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 		return c.Status(resp.StatusCode).JSON(fiber.Map{
 			"success": false,
 			"error":   "Meta API error",
-			"details": json.RawMessage(respBody),
 		})
 	}
 
@@ -134,7 +137,7 @@ func (h *WhatsAppTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		h.metaAPIVersion, wa.MetaWABAID)
 
 	params := url.Values{}
-	params.Set("access_token", wa.MetaAccessToken)
+
 	params.Set("limit", "100")
 
 	if nameFilter := c.Query("name"); nameFilter != "" {
@@ -144,9 +147,9 @@ func (h *WhatsAppTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		params.Set("status", statusFilter)
 	}
 
-	resp, err := http.Get(apiURL + "?" + params.Encode())
+	resp, err := h.metaTemplateGET(c.Context(), apiURL+"?"+params.Encode(), wa.MetaAccessToken)
 	if err != nil {
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed: "+err.Error())
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed")
 	}
 	defer resp.Body.Close()
 
@@ -156,7 +159,6 @@ func (h *WhatsAppTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 		return c.Status(resp.StatusCode).JSON(fiber.Map{
 			"success": false,
 			"error":   "Meta API error",
-			"details": json.RawMessage(body),
 		})
 	}
 
@@ -183,12 +185,12 @@ func (h *WhatsAppTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 		h.metaAPIVersion, wa.MetaWABAID)
 
 	params := url.Values{}
-	params.Set("access_token", wa.MetaAccessToken)
+
 	params.Set("name", name)
 
-	resp, err := http.Get(apiURL + "?" + params.Encode())
+	resp, err := h.metaTemplateGET(c.Context(), apiURL+"?"+params.Encode(), wa.MetaAccessToken)
 	if err != nil {
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed: "+err.Error())
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed")
 	}
 	defer resp.Body.Close()
 
@@ -198,7 +200,6 @@ func (h *WhatsAppTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 		return c.Status(resp.StatusCode).JSON(fiber.Map{
 			"success": false,
 			"error":   "Meta API error",
-			"details": json.RawMessage(body),
 		})
 	}
 
@@ -233,27 +234,27 @@ func (h *WhatsAppTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 		h.metaAPIVersion, wa.MetaWABAID)
 
 	params := url.Values{}
-	params.Set("access_token", wa.MetaAccessToken)
+
 	params.Set("name", name)
 
 	req, err := http.NewRequestWithContext(c.Context(), http.MethodDelete, apiURL+"?"+params.Encode(), nil)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to create request")
 	}
+	req.Header.Set("Authorization", "Bearer "+wa.MetaAccessToken)
 
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed: "+err.Error())
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed")
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return c.Status(resp.StatusCode).JSON(fiber.Map{
 			"success": false,
 			"error":   "Meta API error",
-			"details": json.RawMessage(body),
 		})
 	}
 
@@ -281,12 +282,12 @@ func (h *WhatsAppTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 		h.metaAPIVersion, wa.MetaWABAID)
 
 	params := url.Values{}
-	params.Set("access_token", wa.MetaAccessToken)
+
 	params.Set("name", name)
 
-	resp, err := http.Get(apiURL + "?" + params.Encode())
+	resp, err := h.metaTemplateGET(c.Context(), apiURL+"?"+params.Encode(), wa.MetaAccessToken)
 	if err != nil {
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed: "+err.Error())
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Meta API request failed")
 	}
 	defer resp.Body.Close()
 
@@ -296,7 +297,6 @@ func (h *WhatsAppTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 		return c.Status(resp.StatusCode).JSON(fiber.Map{
 			"success": false,
 			"error":   "Meta API error",
-			"details": json.RawMessage(body),
 		})
 	}
 
@@ -371,24 +371,62 @@ func (h *WhatsAppTemplateHandler) resolveMetaConfig(c *fiber.Ctx) (*application.
 	}
 
 	app, err := h.appRepo.GetByID(c.Context(), appID)
-	if err != nil {
+	if err != nil || app == nil {
 		return nil, "", pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to load application")
 	}
 
 	wa := app.Settings.WhatsApp
+	env, _ := c.Locals("environment_id").(string)
+	if env == "" {
+		env = "default"
+	}
+	if h.Connections != nil {
+		var snap *channelconnection.Snapshot
+		var explicit bool
+		resolved, snapshot, found, e := h.Connections.ExplicitWhatsAppConfig(c.Context(), appID, env)
+		err = e
+		explicit = found
+		snap = snapshot
+		if found && e == nil {
+			wa = resolved
+		}
+		if err != nil {
+			return nil, "", pkgerrors.BadRequest("Selected WhatsApp connection unavailable")
+		}
+		if explicit && snap.Readiness != "ready" && c.Method() != http.MethodGet {
+			return nil, "", pkgerrors.BadRequest("Validate connection readiness before provider mutations")
+		}
+	}
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" || wa.MetaWABAID == "" {
+		if wa != nil && (wa.Provider != "" || wa.MetaAccessToken != "" || wa.MetaWABAID != "") {
+			return nil, "", pkgerrors.BadRequest("Meta connection incomplete or a different provider is selected")
+		}
 		// Fallback to global credentials
 		if h.globalAccessToken != "" && h.globalWABAID != "" {
-			return &application.WhatsAppAppConfig{
+			wa = &application.WhatsAppAppConfig{
 				Provider:          "meta",
 				MetaWABAID:        h.globalWABAID,
 				MetaAccessToken:   h.globalAccessToken,
 				MetaPhoneNumberID: h.globalPhoneNumID,
-			}, appID, nil
+			}
+		} else {
+			return nil, "", pkgerrors.BadRequest(
+				"WhatsApp Meta is not configured for this app. Connect via Embedded Signup or set Meta credentials in app settings.")
 		}
-		return nil, "", pkgerrors.BadRequest(
-			"WhatsApp Meta is not configured for this app. Connect via Embedded Signup or set Meta credentials in app settings.")
+	}
+	if c.Method() != http.MethodGet && !strings.HasSuffix(c.Path(), "/sync") {
+		if err = services.EnsureExclusiveTemplateAccount(c.Context(), h.appRepo, h.Connections, appID, env, "meta", wa.MetaWABAID, h.globalWABAID); err != nil {
+			return nil, "", pkgerrors.Forbidden("Template mutation requires ownership of an exclusive provider account")
+		}
 	}
 
 	return wa, appID, nil
+}
+func (h *WhatsAppTemplateHandler) metaTemplateGET(ctx context.Context, endpoint, token string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Meta request")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return (&http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
 }

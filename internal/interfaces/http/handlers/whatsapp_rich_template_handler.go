@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -16,6 +18,74 @@ import (
 type WhatsAppRichTemplateHandler struct {
 	svc    services.WhatsAppRichTemplateService
 	logger *zap.Logger
+}
+
+func channelTemplateContext(c *fiber.Ctx) context.Context {
+	env, _ := c.Locals("environment_id").(string)
+	return channelconnection.WithEnvironment(c.Context(), env)
+}
+func (h *WhatsAppRichTemplateHandler) CreateDraft(c *fiber.Ctx) error {
+	appID, _ := c.Locals("app_id").(string)
+	if appID == "" {
+		return pkgerrors.Unauthorized("Application required")
+	}
+	var body whatsapp.RichTemplate
+	if c.BodyParser(&body) != nil {
+		return pkgerrors.BadRequest("Invalid draft")
+	}
+	body.AppID = appID
+	svc, ok := h.svc.(services.ChannelTemplateDraftService)
+	if !ok {
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Draft authoring unavailable")
+	}
+	tpl, err := svc.CreateDraft(channelTemplateContext(c), &body)
+	if err != nil {
+		return connectionHTTPError(err)
+	}
+	return c.Status(201).JSON(fiber.Map{"success": true, "data": tpl})
+}
+func (h *WhatsAppRichTemplateHandler) UpdateDraft(c *fiber.Ctx) error {
+	appID, _ := c.Locals("app_id").(string)
+	if appID == "" {
+		return pkgerrors.Unauthorized("Application required")
+	}
+	var body struct {
+		Template whatsapp.RichTemplate `json:"template"`
+		Revision string                `json:"revision"`
+	}
+	if c.BodyParser(&body) != nil || body.Revision == "" {
+		return pkgerrors.BadRequest("Draft revision required")
+	}
+	svc, ok := h.svc.(services.ChannelTemplateDraftService)
+	if !ok {
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Draft authoring unavailable")
+	}
+	tpl, err := svc.UpdateDraft(channelTemplateContext(c), appID, c.Params("id"), body.Revision, &body.Template)
+	if err != nil {
+		return connectionHTTPError(err)
+	}
+	return c.JSON(fiber.Map{"success": true, "data": tpl})
+}
+func (h *WhatsAppRichTemplateHandler) SubmitDraft(c *fiber.Ctx) error {
+	appID, _ := c.Locals("app_id").(string)
+	if appID == "" {
+		return pkgerrors.Unauthorized("Application required")
+	}
+	var body struct {
+		Revision string `json:"revision"`
+	}
+	if c.BodyParser(&body) != nil || body.Revision == "" {
+		return pkgerrors.BadRequest("Draft revision required")
+	}
+	svc, ok := h.svc.(services.ChannelTemplateDraftService)
+	if !ok {
+		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Draft authoring unavailable")
+	}
+	tpl, err := svc.SubmitDraft(channelTemplateContext(c), appID, c.Params("id"), body.Revision)
+	if err != nil {
+		return connectionHTTPError(err)
+	}
+	return c.JSON(fiber.Map{"success": true, "data": tpl})
 }
 
 // NewWhatsAppRichTemplateHandler wires the handler. The service handles all
@@ -47,7 +117,7 @@ func (h *WhatsAppRichTemplateHandler) Create(c *fiber.Ctx) error {
 		body.TenantID = tenantID
 	}
 
-	tpl, err := h.svc.Create(c.Context(), &body)
+	tpl, err := h.svc.Create(channelTemplateContext(c), &body)
 	if err != nil {
 		if verrs, isValidation := err.(whatsapp.ValidationErrors); isValidation {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -80,7 +150,7 @@ func (h *WhatsAppRichTemplateHandler) List(c *fiber.Ctx) error {
 	if tenantID, ok := c.Locals("tenant_id").(string); ok {
 		filter.TenantID = tenantID
 	}
-	tpls, total, err := h.svc.List(c.Context(), filter)
+	tpls, total, err := h.svc.List(channelTemplateContext(c), filter)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, err.Error())
 	}
@@ -93,7 +163,7 @@ func (h *WhatsAppRichTemplateHandler) Get(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	tpl, err := h.svc.Get(c.Context(), appID, id)
+	tpl, err := h.svc.Get(channelTemplateContext(c), appID, id)
 	if err != nil {
 		return pkgerrors.NotFound("rich_template", id)
 	}
@@ -106,7 +176,7 @@ func (h *WhatsAppRichTemplateHandler) Delete(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	if err := h.svc.Delete(c.Context(), appID, id); err != nil {
+	if err := h.svc.Delete(channelTemplateContext(c), appID, id); err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, err.Error())
 	}
 	return c.JSON(fiber.Map{"success": true, "message": "Template deleted"})
@@ -120,7 +190,7 @@ func (h *WhatsAppRichTemplateHandler) Sync(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	tpl, err := h.svc.SyncApproval(c.Context(), appID, id)
+	tpl, err := h.svc.SyncApproval(channelTemplateContext(c), appID, id)
 	if err != nil {
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, err.Error())
 	}
@@ -142,7 +212,7 @@ func (h *WhatsAppRichTemplateHandler) Preview(c *fiber.Ctx) error {
 	}
 	_ = c.BodyParser(&body)
 
-	preview, err := h.svc.Preview(c.Context(), appID, id, body.Variables)
+	preview, err := h.svc.Preview(channelTemplateContext(c), appID, id, body.Variables)
 	if err != nil {
 		return pkgerrors.NotFound("rich_template", id)
 	}

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,17 +10,22 @@ import (
 	"strings"
 	"time"
 
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // WhatsAppAdminHandler handles WhatsApp Embedded Signup and connection management.
 type WhatsAppAdminHandler struct {
+	Connections    *services.ChannelConnectionService
 	tenantService  tenant.Service
 	appService     usecases.ApplicationService
 	membershipRepo auth.MembershipRepository
@@ -62,6 +68,15 @@ func (h *WhatsAppAdminHandler) GetStatus(c *fiber.Ctx) error {
 	}
 
 	wa := app.Settings.WhatsApp
+	if h.Connections != nil {
+		row, e := h.Connections.Repo.Get(c.Context(), channelconnection.ID(app.AppID, "default", notification.ChannelWhatsApp))
+		if e == nil {
+			return c.JSON(fiber.Map{"success": true, "data": fiber.Map{"connected": row.Readiness == "ready", "provider": row.Provider, "connection_status": row.Readiness, "revision": row.Revision, "waba_id": row.AccountID, "phone_number_id": row.SenderID}})
+		}
+		if !errors.Is(e, channelconnection.ErrNotFound) {
+			return pkgerrors.New(pkgerrors.ErrCodeInternal, "Connection unavailable")
+		}
+	}
 	if wa == nil || wa.Provider != "meta" {
 		prov := "twilio"
 		if wa != nil && wa.Provider != "" {
@@ -94,8 +109,10 @@ func (h *WhatsAppAdminHandler) GetStatus(c *fiber.Ctx) error {
 
 // connectRequest is the payload from the frontend after Embedded Signup OAuth completes.
 type connectRequest struct {
-	Code  string `json:"code" validate:"required"`
-	AppID string `json:"app_id" validate:"required"` // FRN app to associate
+	PhoneNumberID string `json:"phone_number_id"`
+	Revision      *int64 `json:"revision"`
+	Code          string `json:"code" validate:"required"`
+	AppID         string `json:"app_id" validate:"required"` // FRN app to associate
 }
 
 // Connect handles POST /v1/admin/whatsapp/connect
@@ -139,7 +156,7 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	}
 
 	// Step 3: Get phone number(s) registered under this WABA
-	phoneInfo, err := h.getPhoneNumbers(wabaID, accessToken)
+	phoneInfo, err := h.getPhoneNumbers(wabaID, accessToken, req.PhoneNumberID)
 	if err != nil {
 		h.logger.Error("Failed to get phone numbers", zap.String("waba_id", wabaID), zap.String("error_category", "meta_request_failed"))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve phone numbers")
@@ -152,9 +169,10 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	}
 	waCfg.Provider = "meta"
 	waCfg.MetaAccessToken = accessToken
+	waCfg.MetaAppSecret = h.metaAppSecret
 	waCfg.MetaWABAID = wabaID
 	waCfg.MetaBusinessID = bizID
-	waCfg.ConnectionStatus = "connected"
+	waCfg.ConnectionStatus = "pending"
 	waCfg.ConnectedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if phoneInfo != nil {
@@ -164,11 +182,10 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	}
 
 	app.Settings.WhatsApp = waCfg
-	app.UpdatedAt = time.Now().UTC()
 
-	if err := h.appRepo.Update(c.Context(), app); err != nil {
+	if err := h.saveConnection(c, app, waCfg, req.Revision); err != nil {
 		h.logger.Error("Failed to save WhatsApp connection", zap.String("app_id", req.AppID), zap.String("error_category", "meta_request_failed"))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to save connection")
+		return connectionHTTPError(err)
 	}
 
 	h.logger.Info("WhatsApp Embedded Signup connected",
@@ -182,7 +199,7 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 			"waba_id":           wabaID,
 			"phone_number_id":   waCfg.MetaPhoneNumberID,
 			"display_phone":     waCfg.DisplayPhoneNumber,
-			"connection_status": "connected",
+			"connection_status": "pending",
 		},
 	})
 }
@@ -192,6 +209,25 @@ func (h *WhatsAppAdminHandler) Disconnect(c *fiber.Ctx) error {
 	app, err := h.authorize(c)
 	if err != nil {
 		return err
+	}
+	if h.Connections != nil {
+		row, e := h.Connections.Repo.Get(c.Context(), channelconnection.ID(app.AppID, "default", notification.ChannelWhatsApp))
+		if e == nil {
+			var body struct {
+				Revision *int64 `json:"revision"`
+			}
+			_ = c.BodyParser(&body)
+			if body.Revision == nil || *body.Revision != row.Revision {
+				return connectionHTTPError(channelconnection.ErrConflict)
+			}
+			if _, e = h.Connections.UpdateConnection(c.Context(), row.ID, *body.Revision, channelconnection.Patch{Disconnect: true}); e != nil {
+				return connectionHTTPError(e)
+			}
+			return c.JSON(fiber.Map{"success": true, "message": "WhatsApp disconnected"})
+		}
+		if !errors.Is(e, channelconnection.ErrNotFound) {
+			return pkgerrors.New(pkgerrors.ErrCodeInternal, "Connection unavailable")
+		}
 	}
 
 	if app.Settings.WhatsApp == nil {
@@ -220,6 +256,13 @@ func (h *WhatsAppAdminHandler) SubscribeWebhooks(c *fiber.Ctx) error {
 	}
 
 	wa := app.Settings.WhatsApp
+	if h.Connections != nil {
+		resolved, _, e := h.Connections.WhatsAppConfig(c.Context(), app.AppID, "default")
+		if e != nil {
+			return pkgerrors.BadRequest("Selected connection unavailable")
+		}
+		wa = resolved
+	}
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" {
 		return pkgerrors.BadRequest("WhatsApp Meta is not connected for this app")
 	}
@@ -242,14 +285,14 @@ func (h *WhatsAppAdminHandler) SubscribeWebhooks(c *fiber.Ctx) error {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		h.logger.Error("Meta webhook subscription failed",
 			zap.Int("status", resp.StatusCode),
-			zap.String("body", string(body)))
+		)
 		return pkgerrors.New(pkgerrors.ErrCodeInternal,
-			fmt.Sprintf("Meta returned %d: %s", resp.StatusCode, string(body)))
+			fmt.Sprintf("Meta webhook subscription returned %d", resp.StatusCode))
 	}
 
 	h.logger.Info("WABA webhook subscription successful",
@@ -268,6 +311,8 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	}
 
 	var req struct {
+		Revision      *int64 `json:"revision"`
+		AppSecret     string `json:"app_secret"`
 		AppID         string `json:"app_id"`
 		AccessToken   string `json:"access_token"`
 		WABAID        string `json:"waba_id"`
@@ -286,18 +331,10 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	}
 
 	// Fetch phone numbers from the WABA to validate the token and get phone info
-	phoneInfo, err := h.getPhoneNumbers(req.WABAID, req.AccessToken)
+	phoneInfo, err := h.getPhoneNumbers(req.WABAID, req.AccessToken, req.PhoneNumberID)
 	if err != nil {
 		h.logger.Error("Failed to validate token by fetching phone numbers", zap.String("error_category", "meta_request_failed"))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to validate access token with Meta")
-	}
-
-	// If a specific phone number ID was provided, try to match it
-	if req.PhoneNumberID != "" && phoneInfo != nil && phoneInfo.ID != req.PhoneNumberID {
-		allPhones, _ := h.getPhoneNumbers(req.WABAID, req.AccessToken)
-		if allPhones != nil {
-			phoneInfo = allPhones
-		}
+		return pkgerrors.BadRequest("Select an owned phone number from a non-empty WABA")
 	}
 
 	waCfg := app.Settings.WhatsApp
@@ -307,7 +344,10 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	waCfg.Provider = "meta"
 	waCfg.MetaAccessToken = req.AccessToken
 	waCfg.MetaWABAID = req.WABAID
-	waCfg.ConnectionStatus = "connected"
+	if req.AppSecret != "" {
+		waCfg.MetaAppSecret = req.AppSecret
+	}
+	waCfg.ConnectionStatus = "pending"
 	waCfg.ConnectedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if phoneInfo != nil {
@@ -320,11 +360,10 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	}
 
 	app.Settings.WhatsApp = waCfg
-	app.UpdatedAt = time.Now().UTC()
 
-	if err := h.appRepo.Update(c.Context(), app); err != nil {
+	if err := h.saveConnection(c, app, waCfg, req.Revision); err != nil {
 		h.logger.Error("Failed to save manual WhatsApp connection", zap.String("app_id", req.AppID), zap.String("error_category", "meta_request_failed"))
-		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to save connection")
+		return connectionHTTPError(err)
 	}
 
 	h.logger.Info("WhatsApp manually connected",
@@ -338,12 +377,48 @@ func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 			"waba_id":           req.WABAID,
 			"phone_number_id":   waCfg.MetaPhoneNumberID,
 			"display_phone":     waCfg.DisplayPhoneNumber,
-			"connection_status": "connected",
+			"connection_status": "pending",
 		},
 	})
 }
 
 // --- OAuth helpers ---
+
+func (h *WhatsAppAdminHandler) saveConnection(c *fiber.Ctx, app *application.Application, wa *application.WhatsAppAppConfig, expected *int64) error {
+	if h.Connections != nil && h.Connections.WritesEnabled {
+		revision := int64(0)
+		id := channelconnection.ID(app.AppID, "default", notification.ChannelWhatsApp)
+		old, err := h.Connections.Repo.Get(c.Context(), id)
+		if err == nil {
+			if expected == nil || *expected != old.Revision {
+				return channelconnection.ErrConflict
+			}
+			revision = *expected
+		} else if !errors.Is(err, channelconnection.ErrNotFound) {
+			return err
+		}
+		provider, source := "meta", "byoc"
+		_, err = h.Connections.UpdateConnection(c.Context(), id, revision, channelconnection.Patch{AppID: app.AppID, Channel: notification.ChannelWhatsApp, Provider: &provider, CredentialSource: &source, AccountID: &wa.MetaWABAID, SenderID: &wa.MetaPhoneNumberID, Secrets: map[string]string{"access_token": wa.MetaAccessToken, "app_secret": wa.MetaAppSecret}})
+		return err
+	}
+	if h.Connections != nil {
+		_, err := h.Connections.Repo.Get(c.Context(), channelconnection.ID(app.AppID, "default", notification.ChannelWhatsApp))
+		if err == nil {
+			return channelconnection.ErrWritesDisabled
+		}
+		if !errors.Is(err, channelconnection.ErrNotFound) {
+			return err
+		}
+	}
+	app.Settings.WhatsApp = wa
+	if repo, ok := h.appRepo.(interface {
+		UpdateSettingsIfRevision(context.Context, string, time.Time, application.Settings) error
+	}); ok {
+		return repo.UpdateSettingsIfRevision(c.Context(), app.AppID, app.UpdatedAt, app.Settings)
+	}
+	app.UpdatedAt = time.Now().UTC()
+	return h.appRepo.Update(c.Context(), app)
+}
 
 func (h *WhatsAppAdminHandler) exchangeCodeForToken(code string) (string, error) {
 	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/oauth/access_token", h.metaAPIVersion)
@@ -432,44 +507,27 @@ type phoneNumberInfo struct {
 	QualityRating string
 }
 
-func (h *WhatsAppAdminHandler) getPhoneNumbers(wabaID, accessToken string) (*phoneNumberInfo, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/phone_numbers?access_token=%s",
-		h.metaAPIVersion, wabaID, accessToken)
-
-	resp, err := http.Get(apiURL)
+func (h *WhatsAppAdminHandler) getPhoneNumbers(wabaID, accessToken string, selected ...string) (*phoneNumberInfo, error) {
+	phones, err := (&services.ConnectionValidator{GraphVersion: h.metaAPIVersion}).MetaPhones(context.Background(), wabaID, accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("phone numbers request failed: %w", err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Meta returned %d: %s", resp.StatusCode, string(body))
+	wanted := ""
+	if len(selected) > 0 {
+		wanted = selected[0]
 	}
-
-	var result struct {
-		Data []struct {
-			ID                 string `json:"id"`
-			DisplayPhoneNumber string `json:"display_phone_number"`
-			QualityRating      string `json:"quality_rating"`
-			VerifiedName       string `json:"verified_name"`
-		} `json:"data"`
+	if len(phones) == 0 {
+		return nil, fmt.Errorf("WABA has no phone numbers")
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse phone numbers: %w", err)
+	if wanted == "" && len(phones) != 1 {
+		return nil, fmt.Errorf("select a phone number")
 	}
-
-	if len(result.Data) == 0 {
-		return nil, nil
+	for _, phone := range phones {
+		if wanted == "" || phone.ID == wanted {
+			return &phoneNumberInfo{ID: phone.ID, DisplayPhone: phone.DisplayPhoneNumber, QualityRating: phone.QualityRating}, nil
+		}
 	}
-
-	phone := result.Data[0]
-	return &phoneNumberInfo{
-		ID:            phone.ID,
-		DisplayPhone:  phone.DisplayPhoneNumber,
-		QualityRating: phone.QualityRating,
-	}, nil
+	return nil, fmt.Errorf("selected phone does not belong to WABA")
 }
 
 // --- Authorization helpers ---

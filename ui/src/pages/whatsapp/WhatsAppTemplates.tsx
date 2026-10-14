@@ -38,7 +38,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ apiKey, appId }) 
     const { data, loading, refetch } = useApiQuery(
         () => whatsappTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `wa-templates-${appId}` }
+        { enabled: !!apiKey, cacheKey: `wa-templates-${appId}-${apiKey}` }
     );
 
     const templates: WhatsAppMetaTemplate[] = data?.data || [];

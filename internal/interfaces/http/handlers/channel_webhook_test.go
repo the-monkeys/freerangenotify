@@ -37,9 +37,10 @@ func signChannelForm(token, endpoint string, values map[string]string) string {
 type channelAcceptedEvents struct {
 	whatsapp.Service
 	whatsapp.EventProcessor
-	event *whatsapp.VerifiedEvent
-	fail  bool
-	apps  []string
+	event    *whatsapp.VerifiedEvent
+	fail     bool
+	apps     []string
+	bindings []*whatsapp.InboundSenderBinding
 }
 
 func (s *channelAcceptedEvents) AcceptVerifiedEvent(_ context.Context, b *whatsapp.InboundSenderBinding, e *whatsapp.VerifiedEvent) (*whatsapp.EventReceipt, error) {
@@ -47,6 +48,7 @@ func (s *channelAcceptedEvents) AcceptVerifiedEvent(_ context.Context, b *whatsa
 		return nil, fmt.Errorf("storage unavailable")
 	}
 	s.event = e
+	s.bindings = append(s.bindings, b)
 	s.apps = append(s.apps, b.AppID)
 	return &whatsapp.EventReceipt{ID: "durable"}, nil
 }

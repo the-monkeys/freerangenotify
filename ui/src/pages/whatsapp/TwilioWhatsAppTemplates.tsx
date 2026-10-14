@@ -100,7 +100,7 @@ const TwilioWhatsAppTemplates: React.FC<TwilioWhatsAppTemplatesProps> = ({ apiKe
     const { data: rawData, loading, refetch } = useApiQuery(
         () => twilioTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `twilio-templates-${appId}` }
+        { enabled: !!apiKey, cacheKey: `twilio-templates-${appId}-${apiKey}` }
     );
 
     const templates: TwilioContentTemplate[] = rawData?.contents || [];

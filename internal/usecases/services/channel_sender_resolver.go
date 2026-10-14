@@ -32,12 +32,37 @@ func (r *ChannelSenderResolver) ResolveMetaTemplateSenders(ctx context.Context, 
 		return nil, fmt.Errorf("template account required")
 	}
 	var out []*InboundSenderBinding
+	if r.Connections != nil {
+		rows, err := r.Connections.Repo.FindAccount(ctx, "meta", account)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.Channel != "whatsapp" || row.Readiness != "ready" {
+				continue
+			}
+			snap, err := r.Connections.ResolveRevision(ctx, row.ID, row.Revision)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, &InboundSenderBinding{ID: "meta-templates:" + account + ":" + row.ID, AppID: row.AppID, EnvironmentID: row.EnvironmentID, Provider: "meta", AccountID: account, SigningSecret: snap.Credentials["app_secret"]})
+		}
+	}
 	for offset := 0; ; offset += 500 {
 		apps, err := r.apps.List(ctx, application.ApplicationFilter{Limit: 500, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
 		for _, app := range apps {
+			if r.Connections != nil {
+				_, err := r.Connections.Repo.Get(ctx, channelconnection.ID(app.AppID, "default", "whatsapp"))
+				if err == nil {
+					continue
+				}
+				if err != channelconnection.ErrNotFound {
+					return nil, err
+				}
+			}
 			cfg := app.Settings.WhatsApp
 			if cfg == nil || cfg.Provider != "meta" || cfg.MetaWABAID != account || cfg.ConnectionStatus == "disconnected" {
 				continue
@@ -68,7 +93,7 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 			return nil, err
 		}
 		for _, row := range rows {
-			if row.Channel != "whatsapp" || row.Readiness == "disconnected" {
+			if row.Channel != "whatsapp" || row.Readiness != "ready" {
 				continue
 			}
 			if explicit != nil {
@@ -82,7 +107,9 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 			if provider == "twilio" {
 				secret = snap.Credentials["auth_token"]
 			}
-			explicit = &InboundSenderBinding{ID: row.ID, AppID: row.AppID, EnvironmentID: row.EnvironmentID, Provider: provider, AccountID: accountID, SenderID: senderID, SigningSecret: secret}
+			canonicalSender := strings.TrimPrefix(senderID, "whatsapp:")
+			id := fmt.Sprintf("%x", sha256.Sum256([]byte(provider+"\x00"+accountID+"\x00"+canonicalSender)))
+			explicit = &InboundSenderBinding{ID: id, AppID: row.AppID, EnvironmentID: row.EnvironmentID, Provider: provider, AccountID: accountID, SenderID: canonicalSender, SigningSecret: secret}
 		}
 	}
 	var candidates []*application.Application

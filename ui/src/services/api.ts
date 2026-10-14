@@ -1367,7 +1367,7 @@ export const whatsappAdminAPI = {
     return data.data;
   },
 
-  connect: async (payload: { code: string; app_id: string }) => {
+  connect: async (payload: { code: string; app_id: string;revision?:number;phone_number_id?:string;waba_id?:string }) => {
     const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/connect', payload);
     return data.data;
   },
@@ -1380,13 +1380,15 @@ export const whatsappAdminAPI = {
     access_token: string;
     waba_id: string;
     phone_number_id?: string;
+    revision?:number;
+    app_secret?:string;
   }) => {
     const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/manual-connect', payload);
     return data.data;
   },
 
-  disconnect: async (appId: string) => {
-    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`);
+  disconnect: async (appId: string,revision?:number) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`,{revision});
     return data;
   },
 
@@ -1394,6 +1396,24 @@ export const whatsappAdminAPI = {
     const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/subscribe-webhooks`);
     return data;
   },
+};
+
+export interface ChannelConnectionView {
+ id: string; app_id: string; environment_id: string; channel: string;
+ provider: string; credential_source: string; account_id: string; sender_id: string;
+ revision: number; readiness: string; writes_enabled: boolean; inherited?: boolean;
+ facts?: Record<string,string>; secret_configured: Record<string,boolean>;
+}
+export const channelConnectionsAPI = {
+ get: async (appId:string,channel:string,environmentId='default') => {
+  const {data}=await api.get<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}`,{params:{environment_id:environmentId}});return data.data;
+ },
+ update: async (appId:string,channel:string,environmentId:string,payload:Record<string,unknown>) => {
+  const {data}=await api.put<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}`,payload,{params:{environment_id:environmentId}});return data.data;
+ },
+ validate: async(appId:string,channel:string,environmentId:string,revision:number) => {
+  const {data}=await api.post<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}/validate`,{revision},{params:{environment_id:environmentId}});return data.data;
+ }
 };
 
 // ============= WhatsApp Template APIs (API-key-protected) =============
@@ -1442,6 +1462,9 @@ export const whatsappTemplatesAPI = {
 // FRN persists and submits to Meta (and Twilio in parallel when configured).
 // All endpoints are API-key protected and scoped by app via the auth header.
 export const whatsappRichTemplatesAPI = {
+  createDraft: async(apiKey:string,payload:Record<string,unknown>)=>{const {data}=await api.post<ApiResponse<any>>('/whatsapp/rich-templates/drafts',payload,{headers:{'X-API-Key':apiKey}});return data.data;},
+  updateDraft: async(apiKey:string,id:string,revision:string,template:Record<string,unknown>)=>{const {data}=await api.put<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/draft`,{revision,template},{headers:{'X-API-Key':apiKey}});return data.data;},
+  submitDraft: async(apiKey:string,id:string,revision:string)=>{const {data}=await api.post<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/submit`,{revision},{headers:{'X-API-Key':apiKey}});return data.data;},
   create: async (apiKey: string, payload: Record<string, any>) => {
     const { data } = await api.post<ApiResponse<any>>('/whatsapp/rich-templates/', payload, {
       headers: getAuthHeaders(apiKey),

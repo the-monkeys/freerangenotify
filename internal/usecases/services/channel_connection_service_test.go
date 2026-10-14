@@ -204,3 +204,23 @@ func TestChannelConnectionCompatibility(t *testing.T) {
 		t.Fatal("connection storage contains plaintext")
 	}
 }
+func TestChannelConnectionOnboardingLegacySecretRetention(t *testing.T) {
+	s := connectionTestService()
+	ctx := context.Background()
+	provider, source, account, sender := "twilio", "byoc", "legacy", "+456"
+	_, err := s.UpdateConnection(ctx, channelconnection.ID("a", "default", notification.ChannelWhatsApp), 0, channelconnection.Patch{AppID: "a", Channel: notification.ChannelWhatsApp, Provider: &provider, CredentialSource: &source, AccountID: &account, SenderID: &sender})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := s.ResolveDeliveryConnection(ctx, "a", "default", notification.ChannelWhatsApp)
+	if err != nil || snap.Credentials["auth_token"] != "fixture-legacy" {
+		t.Fatal("blank new connection form erased legacy credential", err)
+	}
+}
+func TestChannelConnectionMigrationUnconfiguredChannel(t *testing.T) {
+	s := connectionTestService()
+	result, err := s.MigrateLegacyConnection(context.Background(), "a", notification.ChannelSMS, false)
+	if err != nil || result.Action != "unconfigured" {
+		t.Fatalf("unconfigured channel stopped scoped migration: %#v %v", result, err)
+	}
+}

@@ -7,6 +7,8 @@ import (
 
 var ErrConflict = errors.New("connection revision conflict")
 var ErrNotFound = errors.New("connection not found")
+var ErrUnconfigured = errors.New("system channel not configured")
+var ErrDisconnected = errors.New("channel connection disconnected")
 var ErrWritesDisabled = errors.New("encrypted connection writes are disabled until all readers are upgraded")
 
 type Repository interface {

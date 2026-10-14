@@ -2,7 +2,11 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
+	"strings"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -18,6 +22,36 @@ import (
 type WhatsAppRichTemplateRepository struct {
 	base   *BaseRepository
 	logger *zap.Logger
+}
+
+func (r *WhatsAppRichTemplateRepository) UpdateDraftIfRevision(ctx context.Context, tpl *whatsapp.RichTemplate, expected string) error {
+	raw, _ := json.Marshal(tpl)
+	var doc map[string]interface{}
+	if json.Unmarshal(raw, &doc) != nil {
+		return fmt.Errorf("invalid template")
+	}
+	body, _ := json.Marshal(map[string]interface{}{"script": map[string]interface{}{"lang": "painless", "source": "if (ctx._source.updated_at != params.expected) { ctx.op = 'noop'; } else { ctx._source = params.doc; }", "params": map[string]interface{}{"expected": expected, "doc": doc}}})
+	res, err := (&esapi.UpdateRequest{Index: r.base.indexName, DocumentID: tpl.ID, Body: strings.NewReader(string(body)), Refresh: "wait_for"}).Do(ctx, r.base.client)
+	if err != nil {
+		return fmt.Errorf("template write unavailable")
+	}
+	defer res.Body.Close()
+	if res.StatusCode == 409 {
+		return channelconnection.ErrConflict
+	}
+	if res.IsError() {
+		return fmt.Errorf("template write failed: %d", res.StatusCode)
+	}
+	var out struct {
+		Result string `json:"result"`
+	}
+	if json.NewDecoder(res.Body).Decode(&out) != nil {
+		return fmt.Errorf("invalid template write response")
+	}
+	if out.Result == "noop" {
+		return channelconnection.ErrConflict
+	}
+	return nil
 }
 
 // NewWhatsAppRichTemplateRepository wires up a repository backed by the
@@ -123,6 +157,15 @@ func (r *WhatsAppRichTemplateRepository) List(ctx context.Context, filter whatsa
 	if filter.TenantID != "" {
 		must = append(must, map[string]interface{}{"term": map[string]interface{}{"tenant_id": filter.TenantID}})
 	}
+	env := filter.EnvironmentID
+	if env == "" {
+		env = "default"
+	}
+	choices := []interface{}{map[string]interface{}{"term": map[string]interface{}{"environment_id": env}}, map[string]interface{}{"term": map[string]interface{}{"environment_id.keyword": env}}}
+	if env == "default" {
+		choices = append(choices, map[string]interface{}{"bool": map[string]interface{}{"must_not": map[string]interface{}{"exists": map[string]interface{}{"field": "environment_id"}}}})
+	}
+	must = append(must, map[string]interface{}{"bool": map[string]interface{}{"should": choices, "minimum_should_match": 1}})
 	if filter.Kind != "" {
 		must = append(must, map[string]interface{}{"term": map[string]interface{}{"kind": filter.Kind}})
 	}

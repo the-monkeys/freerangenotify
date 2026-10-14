@@ -29,6 +29,14 @@ func (s *ChannelConnectionService) MigrateLegacyConnection(ctx context.Context, 
 		return nil, err
 	}
 	snap, err := s.LegacySnapshot(ctx, appID, "default", ch)
+	if errors.Is(err, channelconnection.ErrUnconfigured) {
+		result.Action = "unconfigured"
+		return result, nil
+	}
+	if errors.Is(err, channelconnection.ErrDisconnected) {
+		result.Action = "legacy_disconnected"
+		return result, nil
+	}
 	if err != nil {
 		return nil, err
 	}

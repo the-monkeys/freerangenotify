@@ -340,6 +340,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		waRich := v1.Group("/whatsapp/rich-templates")
 		applyAuth(waRich)
 		waRich.Post("/", c.WhatsAppRichTemplateHandler.Create)
+		waRich.Post("/drafts", c.WhatsAppRichTemplateHandler.CreateDraft)
+		waRich.Put("/:id/draft", c.WhatsAppRichTemplateHandler.UpdateDraft)
+		waRich.Post("/:id/submit", c.WhatsAppRichTemplateHandler.SubmitDraft)
 		waRich.Get("/", c.WhatsAppRichTemplateHandler.List)
 		waRich.Get("/:id", c.WhatsAppRichTemplateHandler.Get)
 		waRich.Delete("/:id", c.WhatsAppRichTemplateHandler.Delete)
@@ -607,8 +610,14 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Use(jwtAuth)
 	c.ApplicationHandler.SetRateLimitEnabled(c.Config.Security.AppRateLimitEnabled)
 	apps.Use("/:id", c.ApplicationHandler.AuthorizeQuotaRequest, middleware.ApplicationRateLimit(c.Limiter, c.Config.Security.AppRateLimitEnabled, c.Logger))
+	if c.ChannelConnectionHandler != nil {
+		apps.Get("/:id/channel-connections/:channel", c.ChannelConnectionHandler.Get)
+		apps.Put("/:id/channel-connections/:channel", c.ChannelConnectionHandler.Update)
+		apps.Post("/:id/channel-connections/:channel/validate", c.ChannelConnectionHandler.Validate)
+	}
 	apps.Post("/", c.ApplicationHandler.Create)
 	apps.Get("/", c.ApplicationHandler.List)
+
 	apps.Get("/:id", c.ApplicationHandler.GetByID)
 	apps.Put("/:id", c.ApplicationHandler.Update)
 	apps.Delete("/:id", c.ApplicationHandler.Delete)

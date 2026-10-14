@@ -51,8 +51,9 @@ import (
 
 // Container holds all dependencies for the application
 type Container struct {
-	ChannelConnections *services.ChannelConnectionService
-	channelEventCancel context.CancelFunc
+	ChannelConnections       *services.ChannelConnectionService
+	ChannelConnectionHandler *handlers.ChannelConnectionHandler
+	channelEventCancel       context.CancelFunc
 	// Configuration
 	Config *config.Config
 	Logger *zap.Logger
@@ -381,6 +382,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Initialize tenant/organization support (C1)
 	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
+	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 
@@ -957,6 +959,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		container.WhatsAppAdminHandler.SetTenantService(container.TenantService)
+		container.WhatsAppAdminHandler.Connections = container.ChannelConnections
 		container.WhatsAppTemplateHandler = handlers.NewWhatsAppTemplateHandler(
 			repos.Application,
 			container.SSEBroadcaster,
@@ -967,6 +970,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		container.MetaWebhookHandler.SetTemplateHandler(container.WhatsAppTemplateHandler)
+		container.WhatsAppTemplateHandler.Connections = container.ChannelConnections
 		container.WhatsAppConversationHandler = handlers.NewWhatsAppConversationHandler(
 			container.WhatsAppService,
 			logger,
@@ -987,10 +991,16 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		container.MetaWebhookHandler.SetRichTemplateService(container.WhatsAppRichTemplateService)
+		if configurer, ok := container.WhatsAppRichTemplateService.(interface {
+			SetChannelConnections(*services.ChannelConnectionService)
+		}); ok {
+			configurer.SetChannelConnections(container.ChannelConnections)
+		}
 		container.TwilioContentStatusHandler = handlers.NewTwilioContentStatusHandler(
 			container.WhatsAppRichTemplateService,
 			logger,
 		)
+		container.TwilioContentStatusHandler.Connections = container.ChannelConnections
 		// Inbound Twilio WhatsApp webhook (replies, button taps).
 		// Signature validation uses the system-level Twilio auth token; per-app
 		// auth tokens are not currently surfaced to the inbound webhook because
@@ -1015,6 +1025,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			if configurer, ok := container.WhatsAppService.(whatsapp.TemplateEventConfigurer); ok {
 				configurer.SetTemplateStatusApplier(func(ctx context.Context, b *whatsapp.InboundSenderBinding, e *whatsapp.TemplateStatusEvent) error {
 					ctx = context.WithValue(ctx, whatsapp.CallbackAppKey, b.AppID)
+					ctx = channelconnection.WithEnvironment(ctx, b.EnvironmentID)
 					var err error
 					if b.Provider == "twilio" {
 						err = container.WhatsAppRichTemplateService.ApplyTwilioStatus(ctx, e.TemplateID, e.Status, e.Reason)
@@ -1082,6 +1093,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		logger.Info("Twilio Content Template management enabled")
+		container.TwilioTemplateHandler.Connections = container.ChannelConnections
 	}
 
 	// ── Phase 6: Multi-Environment (feature-gated) ──

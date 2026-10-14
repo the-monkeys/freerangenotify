@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Fiber, Elasticsearch CAS, Redis, React/TypeScript, existing Meta/Twilio/Vonage clients, proposed Exotel HTTP adapter, Go mock HTTP servers and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phase 1 approved for local implementation).
+**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–2 approved for local implementation).
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 
 ## Phase 1 — Security and customer isolation
 
-**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phases 2–5 remain pending. No production changes or push.
+**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; review pending. Phases 3–5 remain pending. No production changes or push.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -80,11 +80,11 @@
 
 **Interfaces:** Produce `ResolveDeliveryConnection(ctx context.Context, appID, environmentID string, channel notification.Channel) (*channelconnection.Snapshot, error)` and `UpdateConnection(ctx context.Context, id string, expectedRevision int64, patch channelconnection.Patch) (*channelconnection.Connection, error)`. Snapshot includes stable connection/revision/provider/source/sender fields. `ConnectionCodec.Seal(plaintext []byte, binding SecretBinding) (EncryptedSecret, error)` and `Open(secret EncryptedSecret, binding SecretBinding) ([]byte, error)` bind ciphertext to connection/app/environment/provider/field; define those types in `connection_codec.go`.
 
-- [ ] Write `TestChannelConnectionCompatibility`: legacy Twilio fields, BYOC without global credentials, environment-before-parent resolution, CAS conflict, ciphertext/key rotation, wrong associated data, missing key rejection, queued old-revision identity and redacted dry-run output.
-- [ ] Run `go test ./internal/infrastructure/secrets ./internal/usecases/services -run 'TestChannelConnection' -count=1`; verify RED.
-- [ ] Implement AES-256-GCM keyring, encrypted repository, legacy read adapter, immutable snapshots and explicit disconnect behavior. Add resumable dry-run-first migration with CAS/checkpoints; do not run it on customer data. Wire Task 2 sender resolver to connections without losing legacy recovery.
-- [ ] Run targeted tests plus `TestChannelConnectionsRealES`; verify two concurrent updates cannot overwrite each other and migration interruption leaves readable records. Keep encrypted writes disabled until compatible reader rollout.
-- [ ] Commit `feat: add encrypted application channel connections`.
+- [x] Write `TestChannelConnectionCompatibility`: legacy Twilio fields, BYOC without global credentials, environment-before-parent resolution, CAS conflict, ciphertext/key rotation, wrong associated data, missing key rejection, queued old-revision identity and redacted dry-run output.
+- [x] Run `go test ./internal/infrastructure/secrets ./internal/usecases/services -run 'TestChannelConnection' -count=1`; verify RED.
+- [x] Implement AES-256-GCM keyring, encrypted repository, legacy read adapter, immutable snapshots and explicit disconnect behavior. Add resumable dry-run-first migration with CAS/checkpoints; do not run it on customer data. Wire Task 2 sender resolver to connections without losing legacy recovery.
+- [x] Run targeted tests plus `TestChannelConnectionsRealES`; verify two concurrent updates cannot overwrite each other and migration interruption leaves readable records. Keep encrypted writes disabled until compatible reader rollout.
+- [x] Commit `feat: add encrypted application channel connections`.
 
 ### Task 5: Validated onboarding and truthful environment/template UI
 
@@ -92,13 +92,15 @@
 
 **Interfaces:** Add JWT/app-authorized `GET/PUT /v1/apps/:id/channel-connections/:channel` and `POST /v1/apps/:id/channel-connections/:channel/validate`, with optional environment/revision fields. Validation returns readiness facts and never sends a paid message. Add explicit rich draft update/submit operations and provider-template ownership checks.
 
-- [ ] Write `TestChannelConnectionOnboarding`: manual Meta without SDK keys, selected phone absent from WABA, empty phone list, forbidden tenant/viewer access, app-load failure without system fallback, shared-account template mutation denied, stale revision and imported-provider links/actions.
-- [ ] Run handler tests matching `TestChannelConnectionOnboarding`; verify RED. Add browser scenarios tagged `WhatsApp SMS connections` for connect-then-unrelated-save, disconnect-then-save, selected environment persistence and saved-versus-submitted draft messages.
-- [ ] Implement full phone selection/ownership validation and readiness; refresh parent configuration and patch changed fields. Scope template bindings/account permissions, draft submission and imported resources. Present explicit load/permission errors and separate local removal from vendor deletion.
-- [ ] Run targeted Go tests and `npx playwright test --config ui/playwright.channels.config.ts --workers=1`; create this config using the existing reliability config's fixture/server pattern, with grep `WhatsApp SMS connections` and separate output directory. Confirm legacy settings requests still work.
-- [ ] Commit `feat: validate customer messaging connections and environments`.
+- [x] Write `TestChannelConnectionOnboarding`: manual Meta without SDK keys, selected phone absent from WABA, empty phone list, forbidden tenant/viewer access, app-load failure without system fallback, shared-account template mutation denied, stale revision and imported-provider links/actions.
+- [x] Run handler tests matching `TestChannelConnectionOnboarding`; verify RED. Add browser scenarios tagged `WhatsApp SMS connections` for connect-then-unrelated-save, disconnect-then-save, selected environment persistence and saved-versus-submitted draft messages.
+- [x] Implement full phone selection/ownership validation and readiness; refresh parent configuration and patch changed fields. Scope template bindings/account permissions, draft submission and imported resources. Present explicit load/permission errors and separate local removal from vendor deletion.
+- [x] Run targeted Go tests and `npx playwright test --config ui/playwright.channels.config.ts --workers=1`; create this config using the existing reliability config's fixture/server pattern, with grep `WhatsApp SMS connections` and separate output directory. Confirm legacy settings requests still work.
+- [x] Commit `feat: validate customer messaging connections and environments`.
 
-**Phase 2 checkpoint:** demonstrate two independent customers onboarding without global sender credentials and prove environment selection changes the effective connection.
+**Phase 2 checkpoint:** local fixture validation proves two independent Meta customers need no global sender credentials, and scoped connection resolution selects the environment override before the application default.
+
+**Local implementation status:** Tasks 4–5 implemented. Go suite, production-schema Elasticsearch CAS/recovery, UI build and 47 browser cases verified; independent review pending. Encrypted writers remain disabled until Phase 3 and complete fleet reader rollout.
 
 ## Phase 3 — Shared dispatch, pricing and delivery accounting
 

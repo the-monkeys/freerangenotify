@@ -26,11 +26,12 @@ declare global {
 
 interface WhatsAppConnectProps {
     appId: string;
+    onChanged?:()=>Promise<void>;
 }
 
 const META_SDK_VERSION = 'v23.0';
 
-const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
+const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId,onChanged }) => {
     const [disconnecting, setDisconnecting] = useState(false);
     const [subscribing, setSubscribing] = useState(false);
     const [connecting, setConnecting] = useState(false);
@@ -40,12 +41,12 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
     const [manualSubmitting, setManualSubmitting] = useState(false);
     const [manualForm, setManualForm] = useState({
         access_token: '',
-        waba_id: (import.meta.env.VITE_META_WABA_ID as string | undefined)?.trim() || '',
-        phone_number_id: (import.meta.env.VITE_META_PHONE_NUMBER_ID as string | undefined)?.trim() || '',
+        waba_id: '',
+        phone_number_id: '',
     });
     const sdkLoadAttempted = useRef(false);
 
-    const { data: status, loading, refetch } = useApiQuery<WhatsAppConnectionStatus>(
+    const { data: status, loading, error, refetch } = useApiQuery<WhatsAppConnectionStatus>(
         () => whatsappAdminAPI.getStatus(appId),
         [appId],
         { enabled: !!appId, cacheKey: `wa-status-${appId}`, staleTime: 30000 }
@@ -84,7 +85,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
 
     const handleConnect = useCallback(() => {
         if (!window.FB) {
-            toast.error('Facebook SDK not loaded. Check that VITE_META_APP_ID is set in your .env file.');
+            toast.error('Embedded signup is unavailable. Use your business credentials in the connection panel.');
             return;
         }
 
@@ -94,12 +95,12 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
             (response) => {
                 if (response.authResponse?.code) {
                     whatsappAdminAPI
-                        .connect({ code: response.authResponse.code, app_id: appId })
+                        .connect({ code: response.authResponse.code, app_id: appId,revision:status?.revision })
                         .then((data) => {
                             toast.success(
-                                `WhatsApp connected! Phone: ${data?.display_phone || 'configured'}`
+                                `Credentials saved. Validate readiness. Phone: ${data?.display_phone || 'configured'}`
                             );
-                            refetch();
+                            refetch();onChanged?.();
                         })
                         .catch((err: any) => {
                             toast.error(
@@ -147,17 +148,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                 response_type: 'code',
                 override_default_response_type: true,
                 extras: {
-                    setup: {
-                        ...(import.meta.env.VITE_META_BUSINESS_ID
-                            ? { business: { id: (import.meta.env.VITE_META_BUSINESS_ID as string).trim() } }
-                            : {}),
-                        ...(import.meta.env.VITE_META_WABA_ID
-                            ? { whatsAppBusinessAccount: { id: (import.meta.env.VITE_META_WABA_ID as string).trim() } }
-                            : {}),
-                        ...(import.meta.env.VITE_META_PHONE_NUMBER_ID
-                            ? { phone: { id: (import.meta.env.VITE_META_PHONE_NUMBER_ID as string).trim() } }
-                            : {}),
-                    },
+                    setup: {},
                     featureType: '',
                     sessionInfoVersion: 3,
                 },
@@ -169,9 +160,9 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
         if (!confirm('Disconnect WhatsApp? This will remove the Meta connection for this app.')) return;
         setDisconnecting(true);
         try {
-            await whatsappAdminAPI.disconnect(appId);
+            await whatsappAdminAPI.disconnect(appId,status?.revision);
             toast.success('WhatsApp disconnected');
-            refetch();
+            refetch();await onChanged?.();
         } catch (err: any) {
             toast.error('Disconnect failed: ' + (err.response?.data?.message || err.message));
         } finally {
@@ -193,11 +184,12 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                     access_token: manualForm.access_token.trim(),
                     waba_id: manualForm.waba_id.trim(),
                     phone_number_id: manualForm.phone_number_id.trim() || undefined,
+                    revision:status?.revision,
                 });
-                toast.success(`WhatsApp connected via System User token. Phone: ${data?.display_phone || 'configured'}`);
+                toast.success(`Credentials saved. Validate readiness in the connection panel. Phone: ${data?.display_phone || 'configured'}`);
                 setShowManualForm(false);
                 setManualForm((f) => ({ ...f, access_token: '' }));
-                refetch();
+                refetch();await onChanged?.();
             } catch (err: any) {
                 toast.error(
                     'Manual connect failed: ' + (err.response?.data?.message || err.message)
@@ -230,6 +222,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
     }
 
     const connected = status?.connected === true;
+    if(error)return <p role="alert">Could not load the WhatsApp connection. Check your access and retry.</p>;
     const hasSdkConfig = !!metaAppId;
 
     return (

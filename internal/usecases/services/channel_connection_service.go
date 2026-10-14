@@ -58,7 +58,7 @@ func (s *ChannelConnectionService) ResolveDeliveryConnection(ctx context.Context
 			return nil, err
 		}
 		if c.Readiness == "disconnected" {
-			return nil, fmt.Errorf("channel connection disconnected")
+			return nil, channelconnection.ErrDisconnected
 		}
 		return s.snapshot(c)
 	}
@@ -78,7 +78,7 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 		wa := app.Settings.WhatsApp
 		if wa != nil {
 			if wa.ConnectionStatus == "disconnected" {
-				return nil, fmt.Errorf("channel connection disconnected")
+				return nil, channelconnection.ErrDisconnected
 			}
 			if wa.Provider == "meta" {
 				snap.Provider = "meta"
@@ -111,7 +111,7 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 	if snap.CredentialSource == "system" {
 		system := s.System[ch]
 		if system == nil {
-			return nil, fmt.Errorf("system channel not configured")
+			return nil, channelconnection.ErrUnconfigured
 		}
 		copy := *system
 		snap.Provider = copy.Provider
@@ -155,6 +155,7 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 		return nil, channelconnection.ErrWritesDisabled
 	}
 	c, err := s.Repo.Get(ctx, id)
+	creating := errors.Is(err, channelconnection.ErrNotFound)
 	if errors.Is(err, channelconnection.ErrNotFound) {
 		if revision != 0 {
 			return nil, channelconnection.ErrConflict
@@ -199,6 +200,36 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 	}
 	if patch.SenderID != nil {
 		c.SenderID = *patch.SenderID
+	}
+	if creating && !patch.Disconnect {
+		inherited, e := s.ResolveDeliveryConnection(ctx, c.AppID, c.EnvironmentID, c.Channel)
+		if e != nil && !errors.Is(e, channelconnection.ErrUnconfigured) && !errors.Is(e, channelconnection.ErrDisconnected) {
+			return nil, e
+		}
+		if e == nil {
+			if c.Provider == "" {
+				c.Provider = inherited.Provider
+			}
+			if c.AccountID == "" {
+				c.AccountID = inherited.AccountID
+			}
+			if c.SenderID == "" {
+				c.SenderID = inherited.SenderID
+			}
+			if c.CredentialSource == "byoc" && inherited.CredentialSource == "byoc" && c.Provider == inherited.Provider && c.AccountID == inherited.AccountID {
+				for field, value := range inherited.Credentials {
+					if value != "" {
+						credentials[field] = value
+					}
+				}
+			}
+		}
+	}
+	if c.Provider == "" && patch.Disconnect {
+		c.Provider = "twilio"
+	}
+	if c.Channel == notification.ChannelWhatsApp && c.Provider == "twilio" {
+		c.SenderID = strings.TrimPrefix(c.SenderID, "whatsapp:")
 	}
 	if c.Provider != "meta" && c.Provider != "twilio" {
 		return nil, fmt.Errorf("unsupported provider")

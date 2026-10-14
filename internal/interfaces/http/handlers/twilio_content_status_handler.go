@@ -18,11 +18,13 @@ import (
 // validation is delegated to a middleware so this handler stays focused
 // on event processing.
 type TwilioContentStatusHandler struct {
-	events         whatsapp.EventProcessor
-	resolveSigning func(context.Context, string, string) (string, string, error)
-	publicURL      string
-	svc            services.WhatsAppRichTemplateService
-	logger         *zap.Logger
+	Connections        *services.ChannelConnectionService
+	events             whatsapp.EventProcessor
+	resolveSigning     func(context.Context, string, string) (string, string, error)
+	resolveEnvironment func(context.Context, string) (string, error)
+	publicURL          string
+	svc                services.WhatsAppRichTemplateService
+	logger             *zap.Logger
 }
 
 // NewTwilioContentStatusHandler creates a new handler.
@@ -60,6 +62,13 @@ func (h *TwilioContentStatusHandler) Handle(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusServiceUnavailable)
 	}
 	binding := &whatsapp.InboundSenderBinding{ID: "twilio-content:" + contentSid, AppID: appID, EnvironmentID: "default", Provider: "twilio", AccountID: values["AccountSid"], SenderID: contentSid}
+	if h.resolveEnvironment != nil {
+		env, err := h.resolveEnvironment(c.Context(), contentSid)
+		if err != nil {
+			return c.SendStatus(503)
+		}
+		binding.EnvironmentID = env
+	}
 	if _, err := h.events.AcceptVerifiedEvent(c.Context(), binding, &whatsapp.VerifiedEvent{Kind: "template", Template: &whatsapp.TemplateStatusEvent{TemplateID: contentSid, Status: status, Reason: reason}}); err != nil {
 		h.logger.Warn("Twilio status durable acceptance unavailable")
 		return c.SendStatus(fiber.StatusServiceUnavailable)

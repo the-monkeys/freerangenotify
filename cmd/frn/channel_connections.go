@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/the-monkeys/freerangenotify/internal/config"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
@@ -39,6 +40,13 @@ func newChannelConnectionsCmd() *cobra.Command {
 		}
 		defer client.Close()
 		svc := &services.ChannelConnectionService{Apps: repository.NewApplicationRepository(client.GetClient(), zap.NewNop()), Repo: repository.NewChannelConnectionRepository(client.GetClient()), Codec: codec, WritesEnabled: apply && cfg.Connection.WritesEnabled}
+		svc.System = map[notification.Channel]*channelconnection.Snapshot{}
+		if cfg.Providers.WhatsApp.AccountSID != "" && cfg.Providers.WhatsApp.AuthToken != "" {
+			svc.System[notification.ChannelWhatsApp] = &channelconnection.Snapshot{Provider: "twilio", AccountID: cfg.Providers.WhatsApp.AccountSID, SenderID: cfg.Providers.WhatsApp.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.WhatsApp.AuthToken}}
+		}
+		if cfg.Providers.Twilio.AccountSID != "" && cfg.Providers.Twilio.AuthToken != "" {
+			svc.System[notification.ChannelSMS] = &channelconnection.Snapshot{Provider: "twilio", AccountID: cfg.Providers.Twilio.AccountSID, SenderID: cfg.Providers.Twilio.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.Twilio.AuthToken}}
+		}
 		for _, appID := range appIDs {
 			for _, channel := range []notification.Channel{notification.ChannelWhatsApp, notification.ChannelSMS} {
 				result, err := svc.MigrateLegacyConnection(cmd.Context(), appID, channel, apply)

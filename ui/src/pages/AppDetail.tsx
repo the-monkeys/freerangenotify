@@ -19,6 +19,7 @@ import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
 import TemplateLibrary from './TemplateLibrary';
 import WhatsAppConnect from '../components/whatsapp/WhatsAppConnect';
+import ChannelConnections from '../components/whatsapp/ChannelConnections';
 import WhatsAppTemplates from './whatsapp/WhatsAppTemplates';
 import WhatsAppRichTemplates from './whatsapp/WhatsAppRichTemplates';
 import WhatsAppConversations from './whatsapp/WhatsAppConversations';
@@ -51,10 +52,13 @@ const AppDetail: React.FC = () => {
     const [tenants, setTenants] = useState<Tenant[]>([]);
 
     const tabParam = searchParams.get('tab') as TabId | null;
+    const messagingEnvironment=searchParams.get('environment')||'default';
+    const messagingApiKey=messagingEnvironment==='default' ? app?.api_key||'' : `dashboard:${id}:${messagingEnvironment}`;
+    const setMessagingEnvironment=(environment:string)=>{const next=new URLSearchParams(searchParams);next.set('environment',environment);setSearchParams(next,{replace:true});};
     const activeTab: TabId = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
 
     const setActiveTab = useCallback((tab: TabId) => {
-        setSearchParams({ tab }, { replace: true });
+        setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set('tab',tab);return next;}, { replace: true });
     }, [setSearchParams]);
 
     // Local state for editing
@@ -354,11 +358,12 @@ const AppDetail: React.FC = () => {
 
                 {app && activeTab === 'whatsapp' && (
                     <div className="space-y-8">
-                        <WhatsAppConnect appId={app.app_id} />
-                        <TwilioWhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppRichTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppConversations apiKey={app.api_key} appId={app.app_id} />
+                        <ChannelConnections appId={app.app_id} environmentId={messagingEnvironment} onEnvironmentChange={setMessagingEnvironment} onChanged={fetchAppDetails}/>
+                        {messagingEnvironment==='default'&&<WhatsAppConnect appId={app.app_id} onChanged={fetchAppDetails}/>}
+                        <TwilioWhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} />
+                        <WhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} />
+                        <WhatsAppRichTemplates apiKey={messagingApiKey} appId={app.app_id} />
+                        <WhatsAppConversations apiKey={messagingApiKey} appId={app.app_id} />
 						<p className="text-sm text-muted-foreground">Automatic WhatsApp replies are currently unavailable. Configure an inbound workflow or use the inbox to reply.</p>
                     </div>
                 )}
@@ -1188,8 +1193,9 @@ const AppDetail: React.FC = () => {
                 {activeTab === 'environments' && app && (
                     <AppEnvironments
                         appId={app.app_id}
-                        currentApiKey={app.api_key}
-                        onApiKeyChange={(_apiKey, envName) => {
+                        currentApiKey={messagingApiKey}
+                        onApiKeyChange={(_apiKey, envName,envId) => {
+                            setMessagingEnvironment(envId);
                             toast.success(`Switched to ${envName} environment`);
                             // Re-fetch app details to reflect the new API key context
                             fetchAppDetails();

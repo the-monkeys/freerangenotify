@@ -11,8 +11,10 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -21,6 +23,7 @@ const twilioContentAPIBase = "https://content.twilio.com"
 
 // TwilioTemplateHandler manages Twilio Content Templates via the Twilio Content API.
 type TwilioTemplateHandler struct {
+	Connections    *services.ChannelConnectionService
 	appRepo        application.Repository
 	sseBroadcaster *sse.Broadcaster
 	accountSID     string
@@ -50,17 +53,31 @@ func NewTwilioTemplateHandler(
 // provider while still holding valid Twilio credentials for template management.
 func (h *TwilioTemplateHandler) resolveTwilioConfig(ctx context.Context, appID string) (string, string, error) {
 	if appID == "" {
-		return h.accountSID, h.authToken, nil
+		return "", "", fmt.Errorf("application context required")
 	}
 
 	app, err := h.appRepo.GetByID(ctx, appID)
 	if err != nil {
-		// Graceful fallback: a transient ES error must not block template management.
-		h.logger.Warn("failed to load app for Twilio credential resolution, using system credentials",
+		h.logger.Warn("failed to load app for Twilio credential resolution",
 			zap.String("app_id", appID),
 			zap.Error(err),
 		)
-		return h.accountSID, h.authToken, nil
+		return "", "", fmt.Errorf("application unavailable")
+	}
+	if app == nil {
+		return "", "", fmt.Errorf("application unavailable")
+	}
+	if h.Connections != nil {
+		wa, _, explicit, err := h.Connections.ExplicitWhatsAppConfig(ctx, appID, channelconnection.EnvironmentID(ctx))
+		if err != nil {
+			return "", "", err
+		}
+		if explicit {
+			if wa.Provider != "twilio" {
+				return "", "", fmt.Errorf("selected connection is not Twilio")
+			}
+			return wa.AccountSID, wa.AuthToken, nil
+		}
 	}
 
 	// Use per-app Twilio credentials when present, regardless of the active delivery provider.
@@ -70,6 +87,9 @@ func (h *TwilioTemplateHandler) resolveTwilioConfig(ctx context.Context, appID s
 		return app.Settings.WhatsApp.AccountSID, app.Settings.WhatsApp.AuthToken, nil
 	}
 
+	if wa := app.Settings.WhatsApp; wa != nil && (wa.AccountSID != "" || wa.AuthToken != "" || wa.ConnectionStatus == "disconnected") {
+		return "", "", fmt.Errorf("Twilio connection incomplete or disconnected")
+	}
 	return h.accountSID, h.authToken, nil
 }
 
@@ -466,9 +486,25 @@ func (h *TwilioTemplateHandler) PreviewTemplate(c *fiber.Ctx) error {
 // twilioRequest executes an authenticated HTTP request to the Twilio Content API.
 func (h *TwilioTemplateHandler) twilioRequest(c *fiber.Ctx, method, path string, body io.Reader) (*http.Response, error) {
 	appID, _ := c.Locals("app_id").(string)
-	accountSID, authToken, err := h.resolveTwilioConfig(c.Context(), appID)
+	env, _ := c.Locals("environment_id").(string)
+	if env == "" {
+		env = "default"
+	}
+	ctx := channelconnection.WithEnvironment(c.Context(), env)
+	accountSID, authToken, err := h.resolveTwilioConfig(ctx, appID)
 	if err != nil {
 		return nil, err
+	}
+	if method != http.MethodGet {
+		if err = services.EnsureExclusiveTemplateAccount(ctx, h.appRepo, h.Connections, appID, env, "twilio", accountSID, h.accountSID); err != nil {
+			return nil, pkgerrors.Forbidden("Template mutation requires ownership of an exclusive provider account")
+		}
+		if h.Connections != nil {
+			_, snap, explicit, e := h.Connections.ExplicitWhatsAppConfig(ctx, appID, env)
+			if e != nil || explicit && snap.Readiness != "ready" {
+				return nil, pkgerrors.BadRequest("Validate connection readiness before provider mutations")
+			}
+		}
 	}
 
 	url := twilioContentAPIBase + path

@@ -74,7 +74,7 @@ const AppDetailSidebarNav: React.FC<AppDetailSidebarNavProps> = ({ appId }) => {
                                 {group.tabs.map((tab) => (
                                     <SidebarMenuItem key={tab.id}>
                                         <NavLink
-                                            to={`/apps/${appId}?tab=${tab.id}`}
+                                            to={`/apps/${appId}?${new URLSearchParams({tab:tab.id,...(searchParams.get('environment')?{environment:searchParams.get('environment')!}:{})})}`}
                                             className={() => tabLinkClass(tab.id)}
                                             onClick={handleNavigate}
                                             title={tab.label}

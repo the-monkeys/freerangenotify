@@ -185,31 +185,65 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 		return errors.Unauthorized("authentication required")
 	}
 
-	app, _, err := h.authorizeProviderAccess(c, appID, userID)
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
 
 	providers := make([]application.CustomProviderConfig, len(app.Settings.CustomProviders))
 	copy(providers, app.Settings.CustomProviders)
+	origins := map[string]string{}
 
 	// Merge linked providers from source apps.
 	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeProvider)
+		linkedAppIDs, linkErr := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeProvider)
+		if linkErr != nil {
+			return errors.Internal("Imported provider links unavailable", linkErr)
+		}
 		for _, srcAppID := range linkedAppIDs {
+			linkedIDs, linkErr := h.linkRepo.GetLinkedResourceIDs(c.Context(), appID, srcAppID, resourcelink.TypeProvider)
+			if linkErr != nil {
+				return errors.Internal("Imported provider resources unavailable", linkErr)
+			}
+			allowed := map[string]bool{}
+			for _, id := range linkedIDs {
+				allowed[id] = true
+			}
 			srcApp, sErr := h.service.GetByID(c.Context(), srcAppID)
-			if sErr == nil && srcApp != nil {
-				providers = append(providers, srcApp.Settings.CustomProviders...)
+			if sErr != nil || srcApp == nil {
+				return errors.BadRequest("Imported provider source unavailable")
+			}
+			for _, provider := range srcApp.Settings.CustomProviders {
+				if allowed[provider.ProviderID] {
+					providers = append(providers, provider)
+					origins[provider.ProviderID] = srcAppID
+				}
 			}
 		}
 	}
 
 	safe := dto.ToSafeApplicationSettings(application.Settings{CustomProviders: providers})
 	providers = safe.CustomProviders
+	type resourceView struct {
+		application.CustomProviderConfig
+		OriginAppID    string          `json:"origin_app_id"`
+		Imported       bool            `json:"imported"`
+		AllowedActions map[string]bool `json:"allowed_actions"`
+	}
+	views := make([]resourceView, 0, len(providers))
+	manage := role == auth.RoleOwner || role == auth.RoleAdmin
+	for _, provider := range providers {
+		origin := origins[provider.ProviderID]
+		imported := origin != ""
+		if origin == "" {
+			origin = appID
+		}
+		views = append(views, resourceView{provider, origin, imported, map[string]bool{"remove": manage, "test": manage && !imported, "rotate": manage && !imported}})
+	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    providers,
+		"data":    views,
 	})
 }
 

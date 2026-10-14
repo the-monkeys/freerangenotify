@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"go.uber.org/zap"
 )
@@ -62,6 +63,7 @@ type httpDoer interface {
 }
 
 type whatsappRichTemplateService struct {
+	connections   *ChannelConnectionService
 	repo          whatsapp.RichTemplateRepository
 	appRepo       application.Repository
 	httpClient    httpDoer
@@ -148,11 +150,38 @@ func (s *whatsappRichTemplateService) Create(ctx context.Context, tpl *whatsapp.
 		return nil, fmt.Errorf("load app %s: %w", tpl.AppID, err)
 	}
 	wa := app.Settings.WhatsApp
+	if s.connections != nil {
+		resolved, snap, explicit, e := s.connections.ExplicitWhatsAppConfig(ctx, tpl.AppID, channelconnection.EnvironmentID(ctx))
+		if e != nil {
+			return nil, e
+		}
+		if explicit {
+			if snap.Readiness != "ready" {
+				return nil, fmt.Errorf("validate connection readiness before template submission")
+			}
+			wa = resolved
+			tpl.ConnectionID = snap.ConnectionID
+			tpl.ConnectionRevision = snap.Revision
+			tpl.ProviderType = snap.Provider
+			tpl.ProviderAccountID = snap.AccountID
+		}
+	}
+	tpl.EnvironmentID = channelconnection.EnvironmentID(ctx)
 	metaConfigured := wa != nil && wa.Provider == "meta" && wa.MetaAccessToken != "" && wa.MetaWABAID != ""
 	// Twilio Content API is submitted whenever Twilio creds are present on
 	// the app, regardless of the runtime Provider field — so an app can run
 	// Meta in prod and keep Twilio Content SIDs warm as a failover.
 	twilioConfigured := wa != nil && wa.AccountSID != "" && wa.AuthToken != ""
+	if metaConfigured {
+		if err := EnsureExclusiveTemplateAccount(ctx, s.appRepo, s.connections, tpl.AppID, channelconnection.EnvironmentID(ctx), "meta", wa.MetaWABAID, ""); err != nil {
+			return nil, err
+		}
+	}
+	if twilioConfigured && wa.Provider != "meta" {
+		if err := EnsureExclusiveTemplateAccount(ctx, s.appRepo, s.connections, tpl.AppID, channelconnection.EnvironmentID(ctx), "twilio", wa.AccountSID, ""); err != nil {
+			return nil, err
+		}
+	}
 
 	tpl.ID = "frn_tpl_" + uuid.NewString()
 	now := s.now()
@@ -233,6 +262,9 @@ func (s *whatsappRichTemplateService) Get(ctx context.Context, appID, id string)
 	if tpl.AppID != appID {
 		return nil, fmt.Errorf("rich template %s does not belong to app %s", id, appID)
 	}
+	if tpl.EnvironmentID != "" && tpl.EnvironmentID != channelconnection.EnvironmentID(ctx) {
+		return nil, fmt.Errorf("template does not belong to selected environment")
+	}
 	return tpl, nil
 }
 
@@ -248,6 +280,7 @@ func (s *whatsappRichTemplateService) GetByName(ctx context.Context, appID, name
 }
 
 func (s *whatsappRichTemplateService) List(ctx context.Context, filter whatsapp.RichTemplateFilter) ([]*whatsapp.RichTemplate, int64, error) {
+	filter.EnvironmentID = channelconnection.EnvironmentID(ctx)
 	return s.repo.List(ctx, filter)
 }
 
@@ -329,7 +362,20 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 		if err != nil {
 			return err
 		}
-		if app == nil || app.Settings.WhatsApp == nil || app.Settings.WhatsApp.MetaWABAID != wabaID {
+		if app == nil {
+			return fmt.Errorf("template application unavailable")
+		}
+		wa := app.Settings.WhatsApp
+		if s.connections != nil {
+			resolved, _, explicit, e := s.connections.ExplicitWhatsAppConfig(ctx, appID, channelconnection.EnvironmentID(ctx))
+			if e != nil {
+				return e
+			}
+			if explicit {
+				wa = resolved
+			}
+		}
+		if wa == nil || wa.MetaWABAID != wabaID {
 			return fmt.Errorf("template callback account mismatch")
 		}
 		return s.applyMetaStatusForApp(ctx, appID, templateName, status, reason)
@@ -364,6 +410,9 @@ func (s *whatsappRichTemplateService) applyMetaStatusForApp(ctx context.Context,
 	if tpl == nil {
 		// Template was created outside FRN (raw Graph API) — nothing to do.
 		return nil
+	}
+	if tpl.EnvironmentID != "" && tpl.EnvironmentID != channelconnection.EnvironmentID(ctx) {
+		return fmt.Errorf("template callback environment mismatch")
 	}
 	if tpl.Providers.Meta == nil {
 		tpl.Providers.Meta = &whatsapp.MetaBinding{TemplateName: templateName}

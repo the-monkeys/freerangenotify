@@ -130,6 +130,7 @@ export interface WhatsAppConfig {
 
 // ============= WhatsApp Meta Types =============
 export interface WhatsAppConnectionStatus {
+	revision?:number;
     connected: boolean;
     provider: string;
     connection_status?: string;
@@ -1157,6 +1158,9 @@ export type ProviderKind = 'generic' | 'discord' | 'slack' | 'teams';
 export type ProviderSignatureVersion = 'v1' | 'v2';
 
 export interface CustomProvider {
+	imported?:boolean;
+	origin_app_id?:string;
+	allowed_actions?:Record<string,boolean>;
     provider_id: string;
     name: string;
     channel: string;
