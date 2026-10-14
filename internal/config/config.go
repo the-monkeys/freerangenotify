@@ -10,6 +10,7 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
+	Connection ConnectionConfig `mapstructure:"connection"`
 	App        AppConfig        `mapstructure:"app"`
 	Server     ServerConfig     `mapstructure:"server"`
 	Database   DatabaseConfig   `mapstructure:"database"`
@@ -25,6 +26,11 @@ type Config struct {
 	Licensing  LicensingConfig  `mapstructure:"licensing"`
 	Filestore  FilestoreConfig  `mapstructure:"filestore"`
 	BizBilling BizBillingConfig `mapstructure:"biz_billing"`
+}
+
+type ConnectionConfig struct {
+	EncryptionKeys string `mapstructure:"encryption_keys"`
+	WritesEnabled  bool   `mapstructure:"writes_enabled"`
 }
 
 // FilestoreConfig configures the file-attachments subsystem (POST /v1/files).
@@ -407,6 +413,9 @@ type OIDCConfig struct {
 
 // Load loads configuration from various sources
 func Load() (*Config, error) {
+	viper.SetDefault("connection.encryption_keys", "")
+	viper.SetDefault("connection.writes_enabled", false)
+	_ = viper.BindEnv("connection.encryption_keys", "FREERANGE_CONNECTION_ENCRYPTION_KEYS")
 	// Set default values
 	viper.SetDefault("app.name", "FreeRangeNotify")
 	viper.SetDefault("app.version", version.Get())

@@ -13,6 +13,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/audit"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/digest"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
 	domainfile "github.com/the-monkeys/freerangenotify/internal/domain/file"
@@ -37,6 +38,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/secrets"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/sse"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
@@ -49,6 +51,7 @@ import (
 
 // Container holds all dependencies for the application
 type Container struct {
+	ChannelConnections *services.ChannelConnectionService
 	channelEventCancel context.CancelFunc
 	// Configuration
 	Config *config.Config
@@ -253,6 +256,14 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 	// Get repositories from database manager
 	repos := dbManager.GetRepositories()
+	connectionCodec, err := secrets.NewConnectionCodec(cfg.Connection.EncryptionKeys)
+	if err != nil {
+		return nil, err
+	}
+	container.ChannelConnections = &services.ChannelConnectionService{Apps: repos.Application, Repo: repository.NewChannelConnectionRepository(dbManager.Client.GetClient()), Environments: repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger), Codec: connectionCodec, WritesEnabled: cfg.Connection.WritesEnabled, System: map[notification.Channel]*channelconnection.Snapshot{
+		notification.ChannelWhatsApp: {Provider: "twilio", AccountID: cfg.Providers.WhatsApp.AccountSID, SenderID: cfg.Providers.WhatsApp.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.WhatsApp.AuthToken}},
+		notification.ChannelSMS:      {Provider: "twilio", AccountID: cfg.Providers.Twilio.AccountSID, SenderID: cfg.Providers.Twilio.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.Twilio.AuthToken}},
+	}}
 
 	// Initialize licensing checker
 	if cfg.Licensing.Enabled {
@@ -909,6 +920,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	if cfg.Features.WhatsAppMetaEnabled {
 		senderResolver := services.NewChannelSenderResolver(repos.Application, repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient()))
 		senderResolver.MetaSecret = cfg.Providers.MetaWhatsApp.AppSecret
+		senderResolver.Connections = container.ChannelConnections
 		senderResolver.TwilioAccount = cfg.Providers.WhatsApp.AccountSID
 		senderResolver.TwilioSecret = cfg.Providers.WhatsApp.AuthToken
 		waRepo := repository.NewWhatsAppRepository(dbManager.Client.GetClient(), logger)

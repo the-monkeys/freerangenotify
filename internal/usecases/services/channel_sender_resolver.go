@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"strings"
 )
@@ -12,6 +13,7 @@ import (
 type InboundSenderBinding = whatsapp.InboundSenderBinding
 type SenderBindingStore = whatsapp.SenderBindingStore
 type ChannelSenderResolver struct {
+	Connections   *ChannelConnectionService
 	apps          application.Repository
 	bindings      SenderBindingStore
 	MetaSecret    string
@@ -59,6 +61,30 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 	if accountID == "" || senderID == "" {
 		return nil, fmt.Errorf("inbound account and sender required")
 	}
+	var explicit *InboundSenderBinding
+	if r.Connections != nil {
+		rows, err := r.Connections.Repo.FindSender(ctx, provider, accountID, strings.TrimPrefix(senderID, "whatsapp:"))
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			if row.Channel != "whatsapp" || row.Readiness == "disconnected" {
+				continue
+			}
+			if explicit != nil {
+				return nil, fmt.Errorf("ambiguous inbound sender assignment")
+			}
+			snap, err := r.Connections.ResolveRevision(ctx, row.ID, row.Revision)
+			if err != nil {
+				return nil, err
+			}
+			secret := snap.Credentials["app_secret"]
+			if provider == "twilio" {
+				secret = snap.Credentials["auth_token"]
+			}
+			explicit = &InboundSenderBinding{ID: row.ID, AppID: row.AppID, EnvironmentID: row.EnvironmentID, Provider: provider, AccountID: accountID, SenderID: senderID, SigningSecret: secret}
+		}
+	}
 	var candidates []*application.Application
 	var err error
 	if finder, ok := r.apps.(interface {
@@ -82,6 +108,15 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 	}
 	var binding *InboundSenderBinding
 	for _, app := range candidates {
+		if r.Connections != nil {
+			_, err := r.Connections.Repo.Get(ctx, channelconnection.ID(app.AppID, "default", "whatsapp"))
+			if err == nil {
+				continue
+			}
+			if err != channelconnection.ErrNotFound {
+				return nil, err
+			}
+		}
 		cfg := app.Settings.WhatsApp
 		if cfg == nil {
 			continue
@@ -112,6 +147,11 @@ func (r *ChannelSenderResolver) ResolveInboundSender(ctx context.Context, provid
 		}
 		id := fmt.Sprintf("%x", sha256.Sum256([]byte(provider+"\x00"+accountID+"\x00"+senderID)))
 		binding = &InboundSenderBinding{ID: id, AppID: app.AppID, EnvironmentID: "default", Provider: provider, AccountID: accountID, SenderID: senderID, SigningSecret: secret}
+	}
+	if binding == nil {
+		binding = explicit
+	} else if explicit != nil {
+		return nil, fmt.Errorf("ambiguous inbound sender assignment")
 	}
 	if binding == nil {
 		return nil, fmt.Errorf("inbound sender is not assigned")
