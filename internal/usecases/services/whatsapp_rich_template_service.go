@@ -177,7 +177,7 @@ func (s *whatsappRichTemplateService) Create(ctx context.Context, tpl *whatsapp.
 			return nil, err
 		}
 	}
-	if twilioConfigured && wa.Provider != "meta" {
+	if twilioConfigured {
 		if err := EnsureExclusiveTemplateAccount(ctx, s.appRepo, s.connections, tpl.AppID, channelconnection.EnvironmentID(ctx), "twilio", wa.AccountSID, ""); err != nil {
 			return nil, err
 		}
@@ -312,11 +312,26 @@ func (s *whatsappRichTemplateService) SyncApproval(ctx context.Context, appID, i
 	if tpl.Providers.Meta == nil || tpl.Providers.Meta.TemplateName == "" {
 		return tpl, nil // never submitted; nothing to sync
 	}
-	app, err := s.appRepo.GetByID(ctx, appID)
-	if err != nil {
-		return nil, err
+	var wa *application.WhatsAppAppConfig
+	if tpl.ConnectionID != "" && tpl.ConnectionRevision > 0 {
+		if s.connections == nil {
+			return nil, fmt.Errorf("bound connection reader unavailable")
+		}
+		snap, e := s.connections.ResolveRevision(ctx, tpl.ConnectionID, tpl.ConnectionRevision)
+		if e != nil || snap.AppID != appID || snap.AccountID != tpl.ProviderAccountID || snap.Provider != "meta" {
+			return nil, fmt.Errorf("template binding unavailable")
+		}
+		wa = &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: snap.AccountID, MetaPhoneNumberID: snap.SenderID, MetaAccessToken: snap.Credentials["access_token"]}
+	} else {
+		app, e := s.appRepo.GetByID(ctx, appID)
+		if e != nil || app == nil {
+			return nil, fmt.Errorf("template application unavailable")
+		}
+		wa = app.Settings.WhatsApp
+		if tpl.ProviderAccountID != "" && (wa == nil || wa.MetaWABAID != tpl.ProviderAccountID) {
+			return nil, fmt.Errorf("legacy template account changed; reconcile before syncing")
+		}
 	}
-	wa := app.Settings.WhatsApp
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" || wa.MetaWABAID == "" {
 		return tpl, nil
 	}

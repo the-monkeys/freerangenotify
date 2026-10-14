@@ -114,3 +114,35 @@ func TestChannelConnectionsRealES(t *testing.T) {
 		}
 	})
 }
+func TestChannelPhase2ReviewInboxRealES(t *testing.T) {
+	client := channelFixture(t)
+	repo := repository.NewWhatsAppRepository(client, zap.NewNop())
+	appID := uuid.NewString()
+	contact := "same-contact"
+	now := time.Now().UTC()
+	for _, env := range []string{"prod", "stage"} {
+		if err := repo.StoreMessage(context.Background(), &whatsapp.InboundMessage{ID: uuid.NewString(), AppID: appID, EnvironmentID: env, ContactWAID: contact, Direction: whatsapp.DirectionInbound, Timestamp: now, CreatedAt: now, TextBody: env}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prod := channelconnection.WithEnvironment(context.Background(), "prod")
+	stage := channelconnection.WithEnvironment(context.Background(), "stage")
+	messages, _, err := repo.List(prod, &whatsapp.MessageFilter{AppID: appID, ContactWAID: contact})
+	if err != nil || len(messages) != 1 || messages[0].TextBody != "prod" {
+		t.Fatal("inbox leaked across environments", err)
+	}
+	conversations, _, err := repo.ListConversations(prod, appID, 50, 0)
+	if err != nil || len(conversations) != 1 || conversations[0].UnreadCount != 1 {
+		t.Fatal("unread aggregation crossed environments", err)
+	}
+	marker := repo.(interface {
+		MarkContactRead(context.Context, string, string, time.Time) error
+	})
+	if err = marker.MarkContactRead(prod, appID, contact, now); err != nil {
+		t.Fatal(err)
+	}
+	unread, _, err := repo.ListConversations(stage, appID, 50, 0)
+	if err != nil || len(unread) != 1 || unread[0].UnreadCount != 1 {
+		t.Fatal("read marker changed another environment", err)
+	}
+}

@@ -15,6 +15,7 @@ import type { WhatsAppMetaTemplate } from '../../types';
 interface WhatsAppTemplatesProps {
     apiKey: string;
     appId: string;
+    bindingKey?:string;
 }
 
 const statusColors: Record<string, string> = {
@@ -24,7 +25,7 @@ const statusColors: Record<string, string> = {
     DISABLED: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
 };
 
-const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ apiKey, appId }) => {
+const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ apiKey, appId,bindingKey="legacy" }) => {
     const [searchName, setSearchName] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -38,7 +39,7 @@ const WhatsAppTemplates: React.FC<WhatsAppTemplatesProps> = ({ apiKey, appId }) 
     const { data, loading, refetch } = useApiQuery(
         () => whatsappTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `wa-templates-${appId}-${apiKey}` }
+        { enabled: !!apiKey, cacheKey: `wa-templates-${appId}-${apiKey}-${bindingKey}` }
     );
 
     const templates: WhatsAppMetaTemplate[] = data?.data || [];

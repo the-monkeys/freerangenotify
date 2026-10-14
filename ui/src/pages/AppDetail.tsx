@@ -1,7 +1,7 @@
 import { channelSettingsPatch } from "../lib/channelSettingsPatch";
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI } from '../services/api';
+import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI,channelConnectionsAPI,type ChannelConnectionView } from '../services/api';
 import type { Application, ApplicationSettings, Workflow as WorkflowType, Tenant } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
@@ -53,6 +53,11 @@ const AppDetail: React.FC = () => {
 
     const tabParam = searchParams.get('tab') as TabId | null;
     const messagingEnvironment=searchParams.get('environment')||'default';
+	const messagingScope=`${id}:${messagingEnvironment}`;
+	const [messagingBinding,setMessagingBinding]=useState<{scope:string;key:string}|null>(null);
+	const captureMessagingBinding=useCallback((view:ChannelConnectionView)=>setMessagingBinding({scope:messagingScope,key:[view.id,view.effective_revision??view.revision,view.provider,view.account_id,view.sender_id,view.environment_id].join(':')}),[messagingScope]);
+	const messagingBindingKey=messagingBinding?.scope===messagingScope?messagingBinding.key:null;
+	const refreshMessaging=async()=>{setMessagingBinding(null);await fetchAppDetails();if(id){const view=await channelConnectionsAPI.get(id,'whatsapp',messagingEnvironment);captureMessagingBinding(view);}};
     const messagingApiKey=messagingEnvironment==='default' ? app?.api_key||'' : `dashboard:${id}:${messagingEnvironment}`;
     const setMessagingEnvironment=(environment:string)=>{const next=new URLSearchParams(searchParams);next.set('environment',environment);setSearchParams(next,{replace:true});};
     const activeTab: TabId = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
@@ -358,12 +363,14 @@ const AppDetail: React.FC = () => {
 
                 {app && activeTab === 'whatsapp' && (
                     <div className="space-y-8">
-                        <ChannelConnections appId={app.app_id} environmentId={messagingEnvironment} onEnvironmentChange={setMessagingEnvironment} onChanged={fetchAppDetails}/>
-                        {messagingEnvironment==='default'&&<WhatsAppConnect appId={app.app_id} onChanged={fetchAppDetails}/>}
-                        <TwilioWhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} />
-                        <WhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} />
-                        <WhatsAppRichTemplates apiKey={messagingApiKey} appId={app.app_id} />
+                        <ChannelConnections appId={app.app_id} environmentId={messagingEnvironment} onEnvironmentChange={setMessagingEnvironment} onChanged={refreshMessaging} onWhatsAppLoaded={captureMessagingBinding}/>
+                        {messagingEnvironment==='default'&&<WhatsAppConnect appId={app.app_id} onChanged={refreshMessaging}/>}
+                        {messagingBindingKey!==null&&<React.Fragment key={messagingBindingKey}>
+                        <TwilioWhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
+                        <WhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
+                        <WhatsAppRichTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
                         <WhatsAppConversations apiKey={messagingApiKey} appId={app.app_id} />
+                        </React.Fragment>}
 						<p className="text-sm text-muted-foreground">Automatic WhatsApp replies are currently unavailable. Configure an inbound workflow or use the inbox to reply.</p>
                     </div>
                 )}

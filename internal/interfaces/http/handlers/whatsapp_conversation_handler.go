@@ -30,7 +30,7 @@ func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 
-	conversations, total, err := h.whatsappSvc.ListConversations(c.Context(), appID, limit, offset)
+	conversations, total, err := h.whatsappSvc.ListConversations(channelTemplateContext(c), appID, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list conversations", zap.String("app_id", appID), zap.Error(err))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to list conversations")
@@ -60,7 +60,7 @@ func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 
-	messages, total, err := h.whatsappSvc.ListMessages(c.Context(), &whatsapp.MessageFilter{
+	messages, total, err := h.whatsappSvc.ListMessages(channelTemplateContext(c), &whatsapp.MessageFilter{
 		AppID:       appID,
 		ContactWAID: contactID,
 		Limit:       limit,
@@ -127,7 +127,7 @@ func (h *WhatsAppConversationHandler) MarkRead(c *fiber.Ctx) error {
 		return pkgerrors.BadRequest("contact_id is required")
 	}
 
-	if err := h.whatsappSvc.MarkRead(c.Context(), appID, contactID); err != nil {
+	if err := h.whatsappSvc.MarkRead(channelTemplateContext(c), appID, contactID); err != nil {
 		h.logger.Error("Mark read failed", zap.String("contact", contactID), zap.Error(err))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to mark as read")
 	}

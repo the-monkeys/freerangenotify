@@ -139,7 +139,10 @@ func (s *whatsappRichTemplateService) SubmitDraft(ctx context.Context, appID, id
 		return nil, err
 	}
 	next := *old
-	next.ConnectionID = snap.ConnectionID
+	next.ConnectionID = ""
+	if snap.Revision > 0 {
+		next.ConnectionID = snap.ConnectionID
+	}
 	next.ConnectionRevision = snap.Revision
 	next.ProviderAccountID = snap.AccountID
 	next.ProviderType = snap.Provider

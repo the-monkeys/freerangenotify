@@ -29,7 +29,7 @@ func (h *TwilioContentStatusHandler) SetVerifier(apps application.Repository, te
 		if err != nil || tpl == nil {
 			return "", "", fmt.Errorf("content binding unavailable")
 		}
-		if tpl.ConnectionID != "" {
+		if tpl.ConnectionID != "" && tpl.ConnectionRevision > 0 {
 			if h.Connections == nil {
 				return "", "", fmt.Errorf("encrypted connection reader unavailable")
 			}
@@ -50,6 +50,9 @@ func (h *TwilioContentStatusHandler) SetVerifier(apps application.Repository, te
 		actualAccount, token := account, secret
 		if cfg := app.Settings.WhatsApp; cfg != nil && cfg.AccountSID != "" {
 			actualAccount, token = cfg.AccountSID, cfg.AuthToken
+		}
+		if tpl.ProviderAccountID != "" && actualAccount != tpl.ProviderAccountID {
+			return "", "", fmt.Errorf("legacy content account changed")
 		}
 		if token == "" || actualAccount == "" || claimedAccount != "" && claimedAccount != actualAccount {
 			return "", "", fmt.Errorf("content account mismatch")

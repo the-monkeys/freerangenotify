@@ -772,3 +772,34 @@ Disposable Elasticsearch verified concurrent connection updates retain one winne
 Phase 2 browser coverage includes connect/save, disconnect/save, environment
 persistence and local-save versus explicit-submission messages. Final suite and
 review evidence is recorded with the Phase 2 checkpoint in the implementation plan.
+
+### Phase 2 independent review corrections
+
+One independent whole-branch review identified two critical and six important
+issues. All entered a single regression-driven fix pass: shared global Meta and
+legacy dual-provider Twilio mutations now require account ownership checks;
+legacy onboarding calls the real settings CAS signature and preserves conflicts;
+revision-zero legacy drafts do not claim an encrypted historical record; rich Sync
+uses its pinned encrypted connection; inbox lists/unread/read markers respect the
+selected environment; cached vendor actions disappear while a changed connection
+loads; and Embedded Signup carries and validates the SDK-selected WABA and phone.
+
+The review deliberately left worker/queued-price/rotation dispatch integration,
+charged replies, OTP and full CSW dispatch to Phase 3, and detailed tariffs/BYOC
+fees, Exotel/DLT and runtime config cleanup to Phase 4. Encrypted writers must
+remain off while those consumers are incomplete. Historical template owner grants
+remain deferred; shared-account vendor writes are denied meanwhile. Production
+migration, fleet rollout, approvals, commercial-rate verification and live canaries
+remain operator work, so local fixtures do not prove live account readiness.
+Previously copied-key rotation and historical data repairs remain separate
+operator actions: this work changes no production credentials or balances. Existing
+unrelated local files remain excluded and unreviewed. No minor review findings were
+deferred.
+
+Final Phase 2 verification passed after the review fix pass: full Go short suite;
+three disposable Elasticsearch/Redis integration suites (connections/drafts,
+callback recovery, scoped inbox); UI production build; 6 channel UI cases and 43
+existing reliability UI cases. The build retains the pre-existing large-chunk
+warning. Migration CLI help and the pre-database apply guard passed. No live
+provider accounts, paid messages, customer migrations, push or deployment were
+used. A final added-line credential scan found no high-confidence secrets.

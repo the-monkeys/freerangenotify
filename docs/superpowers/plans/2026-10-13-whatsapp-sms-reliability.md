@@ -30,7 +30,7 @@
 
 ## Phase 1 — Security and customer isolation
 
-**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; review pending. Phases 3–5 remain pending. No production changes or push.
+**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with RED→GREEN regressions and all final checks passing. Phases 3–5 remain pending. No production changes or push.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -100,7 +100,7 @@
 
 **Phase 2 checkpoint:** local fixture validation proves two independent Meta customers need no global sender credentials, and scoped connection resolution selects the environment override before the application default.
 
-**Local implementation status:** Tasks 4–5 implemented. Go suite, production-schema Elasticsearch CAS/recovery, UI build and 47 browser cases verified; independent review pending. Encrypted writers remain disabled until Phase 3 and complete fleet reader rollout.
+**Local implementation status:** Tasks 4–5 implemented. One independent review found eight blockers; all reproduced and fixed with regression coverage. Final verification passed: go test -p 2 -short ./..., production-schema ES/Redis connection/draft/callback/inbox isolation, UI build, 6 channel browser cases and 43 reliability browser cases. Encrypted writers remain disabled until Phase 3 and complete fleet reader rollout.
 
 ## Phase 3 — Shared dispatch, pricing and delivery accounting
 

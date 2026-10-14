@@ -7,10 +7,10 @@ import {Label} from '../ui/label';
 import {Card,CardHeader,CardTitle,CardContent} from '../ui/card';
 import {toast} from 'sonner';
 
-function Connection({appId,channel,environmentId,onChanged}:{appId:string;channel:'sms'|'whatsapp';environmentId:string;onChanged:()=>Promise<void>}){
+function Connection({appId,channel,environmentId,onChanged,onLoaded}:{appId:string;channel:'sms'|'whatsapp';environmentId:string;onChanged:()=>Promise<void>;onLoaded?:(view:ChannelConnectionView)=>void}){
  const [view,setView]=useState<ChannelConnectionView|null>(null);const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [form,setForm]=useState({provider:channel==='sms'?'twilio':'meta',credential_source:'byoc',account_id:'',sender_id:'',token:'',signing:''});
- useEffect(()=>{let live=true;setView(null);setError('');channelConnectionsAPI.get(appId,channel,environmentId).then(v=>{if(live){setView(v);setForm({provider:v.provider|| (channel==='sms'?'twilio':'meta'),credential_source:v.credential_source||'byoc',account_id:v.account_id||'',sender_id:v.sender_id||'',token:'',signing:''})}}).catch(()=>{if(live)setError('Could not load this connection. Check your access and retry.')});return()=>{live=false}},[appId,channel,environmentId]);
+ useEffect(()=>{let live=true;setView(null);setError('');channelConnectionsAPI.get(appId,channel,environmentId).then(v=>{if(live){setView(v);onLoaded?.(v);setForm({provider:v.provider|| (channel==='sms'?'twilio':'meta'),credential_source:v.credential_source||'byoc',account_id:v.account_id||'',sender_id:v.sender_id||'',token:'',signing:''})}}).catch(()=>{if(live)setError('Could not load this connection. Check your access and retry.')});return()=>{live=false}},[appId,channel,environmentId,onLoaded]);
  const save=async(disconnect=false)=>{if(!view)return;setBusy(true);setError('');try{
   const patch:Record<string,unknown>={revision:view.revision??0};if(disconnect)patch.disconnect=true;else{
    for(const field of ['provider','credential_source','account_id','sender_id'] as const){if(view.inherited||form[field]!==view[field]||!view.revision)patch[field]=form[field]}
@@ -38,8 +38,8 @@ function Connection({appId,channel,environmentId,onChanged}:{appId:string;channe
   </>}
  </CardContent></Card>;
 }
-export default function ChannelConnections({appId,environmentId,onEnvironmentChange,onChanged}:{appId:string;environmentId:string;onEnvironmentChange:(id:string)=>void;onChanged:()=>Promise<void>}){
+export default function ChannelConnections({appId,environmentId,onEnvironmentChange,onChanged,onWhatsAppLoaded}:{appId:string;environmentId:string;onEnvironmentChange:(id:string)=>void;onChanged:()=>Promise<void>;onWhatsAppLoaded?:(view:ChannelConnectionView)=>void}){
  const [environments,setEnvironments]=useState<Environment[]>([]);const [environmentError,setEnvironmentError]=useState('');
  useEffect(()=>{let live=true;environmentsAPI.list(appId).then(rows=>{if(live)setEnvironments(rows||[])}).catch(()=>{if(live)setEnvironmentError('Could not load environments; application default remains selected.')});return()=>{live=false}},[appId]);
- return <div className="space-y-4"><Label htmlFor="messaging-environment">Messaging environment</Label><select id="messaging-environment" className="block border rounded p-2 bg-background" value={environmentId} onChange={e=>onEnvironmentChange(e.target.value)}><option value="default">Application default</option>{environments.map(env=><option key={env.id} value={env.id}>{env.name}</option>)}</select>{environmentError&&<p role="alert">{environmentError}</p>}{(['whatsapp','sms'] as const).map(channel=><Connection key={`${appId}:${environmentId}:${channel}`} appId={appId} channel={channel} environmentId={environmentId} onChanged={onChanged}/>)}</div>
+ return <div className="space-y-4"><Label htmlFor="messaging-environment">Messaging environment</Label><select id="messaging-environment" className="block border rounded p-2 bg-background" value={environmentId} onChange={e=>onEnvironmentChange(e.target.value)}><option value="default">Application default</option>{environments.map(env=><option key={env.id} value={env.id}>{env.name}</option>)}</select>{environmentError&&<p role="alert">{environmentError}</p>}{(['whatsapp','sms'] as const).map(channel=><Connection key={`${appId}:${environmentId}:${channel}`} appId={appId} channel={channel} environmentId={environmentId} onChanged={onChanged} onLoaded={channel==='whatsapp'?onWhatsAppLoaded:undefined}/>)}</div>
 }

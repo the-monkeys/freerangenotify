@@ -106,6 +106,10 @@ func (h *ChannelConnectionHandler) Get(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true, "data": h.view(row, env != "default", 0)})
 }
 func connectionHTTPError(err error) error {
+	var appErr *pkgerrors.AppError
+	if errors.As(err, &appErr) {
+		return appErr
+	}
 	if errors.Is(err, channelconnection.ErrConflict) {
 		return fiber.NewError(409, "Connection changed; reload before retrying")
 	}

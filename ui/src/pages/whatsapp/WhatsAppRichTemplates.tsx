@@ -14,6 +14,7 @@ import { Plus, RefreshCw, Trash2, Eye, Layers, Tag, ExternalLink } from 'lucide-
 interface Props {
     apiKey: string;
     appId: string;
+    bindingKey?:string;
 }
 
 // approvalColors maps the aggregate ApprovalState (set server-side from
@@ -42,7 +43,7 @@ type DraftKind = 'carousel' | 'coupon_code';
 
 const emptyCard = (): DraftCard => ({ header_image_url: '', body: '', button_text: 'View', button_url: '' });
 
-const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
+const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId,bindingKey="legacy" }) => {
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
     const [editingTemplate,setEditingTemplate]=useState<any>(null);
@@ -59,7 +60,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
     const { data, loading, refetch } = useApiQuery(
         () => whatsappRichTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `wa-rich-templates-${appId}-${apiKey}` },
+        { enabled: !!apiKey, cacheKey: `wa-rich-templates-${appId}-${apiKey}-${bindingKey}` },
     );
     const templates: any[] = data?.templates || [];
 

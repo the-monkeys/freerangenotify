@@ -45,6 +45,8 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId,onChanged }) =>
         phone_number_id: '',
     });
     const sdkLoadAttempted = useRef(false);
+	const selectedAssets=useRef<{waba_id?:string;phone_number_id?:string}>({});
+	useEffect(()=>{selectedAssets.current={};const receive=(event:MessageEvent)=>{if(!['https://www.facebook.com','https://web.facebook.com'].includes(event.origin))return;try{const payload=typeof event.data==='string'?JSON.parse(event.data):event.data;if(payload?.type==='WA_EMBEDDED_SIGNUP'&&payload.event==='FINISH'&&typeof payload.data?.waba_id==='string'&&typeof payload.data?.phone_number_id==='string'){selectedAssets.current={waba_id:payload.data.waba_id,phone_number_id:payload.data.phone_number_id}}}catch{/* Ignore unrelated/malformed SDK messages. */}};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[appId]);
 
     const { data: status, loading, error, refetch } = useApiQuery<WhatsAppConnectionStatus>(
         () => whatsappAdminAPI.getStatus(appId),
@@ -90,12 +92,13 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId,onChanged }) =>
         }
 
         setConnecting(true);
+		selectedAssets.current={};
 
         window.FB.login(
             (response) => {
                 if (response.authResponse?.code) {
                     whatsappAdminAPI
-                        .connect({ code: response.authResponse.code, app_id: appId,revision:status?.revision })
+                        .connect({ code: response.authResponse.code, app_id: appId,revision:status?.revision,...selectedAssets.current })
                         .then((data) => {
                             toast.success(
                                 `Credentials saved. Validate readiness. Phone: ${data?.display_phone || 'configured'}`

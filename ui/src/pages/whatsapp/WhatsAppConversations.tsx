@@ -28,7 +28,7 @@ const WhatsAppConversations: React.FC<WhatsAppConversationsProps> = ({ apiKey, a
     const { data, loading, refetch } = useApiQuery(
         () => whatsappConversationsAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `wa-conversations-${appId}` }
+        { enabled: !!apiKey, cacheKey: `wa-conversations-${appId}-${apiKey}` }
     );
 
     const conversations: WhatsAppConversation[] = data?.conversations || [];

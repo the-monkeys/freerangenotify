@@ -1402,6 +1402,7 @@ export interface ChannelConnectionView {
  id: string; app_id: string; environment_id: string; channel: string;
  provider: string; credential_source: string; account_id: string; sender_id: string;
  revision: number; readiness: string; writes_enabled: boolean; inherited?: boolean;
+ effective_revision?:number;
  facts?: Record<string,string>; secret_configured: Record<string,boolean>;
 }
 export const channelConnectionsAPI = {

@@ -55,6 +55,8 @@ func EnsureExclusiveTemplateAccount(ctx context.Context, apps application.Reposi
 			if provider == "meta" {
 				if wa != nil && wa.Provider == "meta" {
 					other = wa.MetaWABAID
+				} else if wa == nil || wa.Provider == "" && wa.MetaWABAID == "" && wa.MetaAccessToken == "" {
+					other = globalAccount
 				}
 			} else {
 				if wa != nil {

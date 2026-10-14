@@ -109,6 +109,7 @@ func (h *WhatsAppAdminHandler) GetStatus(c *fiber.Ctx) error {
 
 // connectRequest is the payload from the frontend after Embedded Signup OAuth completes.
 type connectRequest struct {
+	WABAID        string `json:"waba_id"`
 	PhoneNumberID string `json:"phone_number_id"`
 	Revision      *int64 `json:"revision"`
 	Code          string `json:"code" validate:"required"`
@@ -149,7 +150,7 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	}
 
 	// Step 2: Get shared WABA ID from the debug token / business integration response
-	wabaID, bizID, err := h.getSharedWABAInfo(accessToken)
+	wabaID, bizID, err := h.getSharedWABAInfo(accessToken, req.WABAID)
 	if err != nil {
 		h.logger.Error("Failed to get shared WABA info", zap.String("error_category", "meta_request_failed"))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to retrieve WABA info")
@@ -412,9 +413,9 @@ func (h *WhatsAppAdminHandler) saveConnection(c *fiber.Ctx, app *application.App
 	}
 	app.Settings.WhatsApp = wa
 	if repo, ok := h.appRepo.(interface {
-		UpdateSettingsIfRevision(context.Context, string, time.Time, application.Settings) error
+		UpdateSettingsIfRevision(context.Context, string, application.Settings, string) error
 	}); ok {
-		return repo.UpdateSettingsIfRevision(c.Context(), app.AppID, app.UpdatedAt, app.Settings)
+		return repo.UpdateSettingsIfRevision(c.Context(), app.AppID, app.Settings, app.UpdatedAt.Format(time.RFC3339Nano))
 	}
 	app.UpdatedAt = time.Now().UTC()
 	return h.appRepo.Update(c.Context(), app)
@@ -456,7 +457,7 @@ func (h *WhatsAppAdminHandler) exchangeCodeForToken(code string) (string, error)
 
 // getSharedWABAInfo uses the debug_token endpoint and the business's shared
 // WABA list to find the WABA ID granted during Embedded Signup.
-func (h *WhatsAppAdminHandler) getSharedWABAInfo(accessToken string) (wabaID, businessID string, err error) {
+func (h *WhatsAppAdminHandler) getSharedWABAInfo(accessToken string, selected ...string) (wabaID, businessID string, err error) {
 	// First, debug the token to get the granular scopes and business ID
 	debugURL := fmt.Sprintf("https://graph.facebook.com/%s/debug_token?input_token=%s&access_token=%s|%s",
 		h.metaAPIVersion, accessToken, h.metaAppID, h.metaAppSecret)
@@ -481,17 +482,28 @@ func (h *WhatsAppAdminHandler) getSharedWABAInfo(accessToken string) (wabaID, bu
 		return "", "", fmt.Errorf("failed to parse debug_token: %w", err)
 	}
 
-	// Extract WABA ID from the whatsapp_business_messaging scope target
+	available := map[string]bool{}
 	for _, scope := range debugResult.Data.GranularScopes {
-		if scope.Scope == "whatsapp_business_messaging" && len(scope.TargetIDs) > 0 {
-			wabaID = scope.TargetIDs[0]
-		}
-		if scope.Scope == "whatsapp_business_management" && len(scope.TargetIDs) > 0 && wabaID == "" {
-			wabaID = scope.TargetIDs[0]
+		if scope.Scope == "whatsapp_business_messaging" || scope.Scope == "whatsapp_business_management" {
+			for _, id := range scope.TargetIDs {
+				available[id] = true
+			}
 		}
 		if scope.Scope == "business_management" && len(scope.TargetIDs) > 0 {
 			businessID = scope.TargetIDs[0]
 		}
+	}
+	if len(selected) > 0 && selected[0] != "" {
+		if !available[selected[0]] {
+			return "", "", fmt.Errorf("selected WABA is not granted by signup")
+		}
+		wabaID = selected[0]
+	} else if len(available) == 1 {
+		for id := range available {
+			wabaID = id
+		}
+	} else if len(available) > 1 {
+		return "", "", fmt.Errorf("select a granted WABA explicitly")
 	}
 
 	if wabaID == "" {

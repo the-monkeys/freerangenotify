@@ -40,6 +40,7 @@ function extractVariableKeys(body: string): string[] {
 interface TwilioWhatsAppTemplatesProps {
     apiKey: string;
     appId: string;
+    bindingKey?:string;
 }
 
 const approvalStatusColors: Record<string, string> = {
@@ -68,7 +69,7 @@ function getBodyText(tpl: TwilioContentTemplate): string {
     return JSON.stringify(tpl.types, null, 2);
 }
 
-const TwilioWhatsAppTemplates: React.FC<TwilioWhatsAppTemplatesProps> = ({ apiKey, appId }) => {
+const TwilioWhatsAppTemplates: React.FC<TwilioWhatsAppTemplatesProps> = ({ apiKey, appId,bindingKey="legacy" }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -100,7 +101,7 @@ const TwilioWhatsAppTemplates: React.FC<TwilioWhatsAppTemplatesProps> = ({ apiKe
     const { data: rawData, loading, refetch } = useApiQuery(
         () => twilioTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `twilio-templates-${appId}-${apiKey}` }
+        { enabled: !!apiKey, cacheKey: `twilio-templates-${appId}-${apiKey}-${bindingKey}` }
     );
 
     const templates: TwilioContentTemplate[] = rawData?.contents || [];
