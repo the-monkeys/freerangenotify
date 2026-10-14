@@ -798,6 +798,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		rateCardService.Start(rcCtx)
 		container.rateCardSvcCancel = rcCancel
 		container.RateCardService = rateCardService
+		container.ChannelDispatch.Quotes = &services.ChannelQuoteService{Rates: rateCardService, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
 
 		if mode, ok := repos.Subscription.(interface{ SetCreditJournalModeEnabled(bool) }); ok {
 			mode.SetCreditJournalModeEnabled(cfg.Billing.ReservationJournalEnabled)

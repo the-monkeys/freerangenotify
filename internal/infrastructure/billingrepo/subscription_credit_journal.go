@@ -43,6 +43,7 @@ if (params.action == 'reserve') {
       receipt.reservation.channel != params.reservation.channel ||
       receipt.reservation.app_id != params.reservation.app_id ||
       receipt.reservation.rate_card_version != params.reservation.rate_card_version ||
+      (params.reservation.quote != null && (receipt.reservation.quote == null || receipt.reservation.quote.id != params.reservation.quote.id)) ||
       receipt.reservation.subscription_id != params.subscription) {
    throw new IllegalArgumentException('reservation identity mismatch');
   }

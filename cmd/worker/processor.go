@@ -479,7 +479,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	}
 
 	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
-	if notif.TemplateID != "" {
+	if notif.TemplateID != "" && notif.Metadata["channel_content_prepared"] != true {
 		var tmpl *template.Template
 
 		// Try by UUID first; if that fails and it's not a valid UUID, resolve by name
@@ -740,7 +740,23 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		if app, appErr := p.appRepo.GetByID(ctx, notif.AppID); appErr == nil && app != nil && app.AdminUserID != "" {
 			tenantID = app.AdminUserID
 		}
-		reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		if p.channelDispatch != nil && p.channelDispatch.Quotes != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+			prepared, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+			if e != nil {
+				p.handleCreditBlocked(ctx, notif, e.Error())
+				return
+			}
+			quote, e := p.channelDispatch.Quotes.QuoteChannelDelivery(ctx, prepared)
+			if e != nil {
+				p.handleCreditBlocked(ctx, notif, e.Error())
+				return
+			}
+			quote.Attempt = notif.RetryCount
+			reservation, err = p.creditService.ReserveQuotedDelivery(ctx, tenantID, notif.AppID, notif.NotificationID, quote)
+		} else {
+			reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		}
+
 		if err != nil {
 			message := annotateNotificationFailure(notif, err, err.Error())
 			var unavailable *billing.CreditUnavailableError
@@ -756,6 +772,10 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			return
 		}
 		if reservation != nil {
+			if reservation.Status != billing.CreditReservationReserved {
+				logger.Warn("Terminal reservation requires reconciliation; resend blocked", zap.String("notification_id", notif.NotificationID))
+				return
+			}
 			if notif.Metadata == nil {
 				notif.Metadata = make(map[string]interface{})
 			}
@@ -787,11 +807,25 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		notif.Metadata = make(map[string]interface{})
 	}
 	notif.Metadata["delivery_attempt_state"] = "dispatching"
-	if persistErr := p.notifRepo.Update(ctx, notif); persistErr != nil {
+	if claimer, ok := p.notifRepo.(interface {
+		ClaimChannelDeliveryAttempt(context.Context, *notification.Notification) (bool, error)
+	}); ok {
+		claimed, persistErr := claimer.ClaimChannelDeliveryAttempt(ctx, notif)
+		if persistErr != nil {
+			logger.Error("Cannot claim provider boundary", zap.Error(persistErr))
+			retainNotificationProcessingItem(ctx)
+			return
+		}
+		if !claimed {
+			logger.Warn("Provider boundary already claimed", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+	} else if persistErr := p.notifRepo.Update(ctx, notif); persistErr != nil {
 		logger.Error("Cannot persist delivery attempt before dispatch", zap.Error(persistErr))
 		retainNotificationProcessingItem(ctx)
 		return
 	}
+
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
 		message := annotateNotificationFailure(notif, err, err.Error())
@@ -947,6 +981,9 @@ func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *not
 			return err
 		}
 		notif.Metadata["provider_message_id"] = result.ProviderMessageID
+		if p.providerManager != nil {
+			p.providerManager.EmitPreparedUsage(notif, result, d.Snapshot.Provider)
+		}
 		return nil
 	}
 	// Use provider manager to route and send

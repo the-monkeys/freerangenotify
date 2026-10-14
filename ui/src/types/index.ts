@@ -1138,6 +1138,10 @@ export interface BillingUsageBreakdown {
 }
 
 export interface BillingRates {
+ pricing_model?: string;
+ charge_basis?: string;
+ vendor_costs?: string;
+ detailed_rates?: Array<{channel:string;provider:string;credential_source:string;destination_prefix:string;country:string;category:string;credits_per_unit:number;vendor_cost_minor_per_unit:number;vendor_currency:string}>;
     currency: string;
     active_version: string;
     effective_at: string;

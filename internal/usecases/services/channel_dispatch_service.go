@@ -17,6 +17,7 @@ import (
 )
 
 type ChannelDispatchService struct {
+	Quotes        *ChannelQuoteService
 	Connections   *ChannelConnectionService
 	Redis         *redis.Client
 	Client        *http.Client
@@ -168,7 +169,13 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 	safe := *snap
 	safe.Credentials = nil
 	n.Metadata[channelconnection.DeliveryMetadataKey] = safe
-	return &channelconnection.PreparedDelivery{Snapshot: snap, PayloadKind: kind, Notification: n, User: u}, nil
+	d := &channelconnection.PreparedDelivery{Snapshot: snap, PayloadKind: kind, Notification: n, User: u}
+	if s.Quotes != nil {
+		if _, err := s.Quotes.QuoteChannelDelivery(ctx, d); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
 }
 
 func (s *ChannelDispatchService) DispatchPrepared(ctx context.Context, d *channelconnection.PreparedDelivery) (*providers.Result, error) {

@@ -1,10 +1,14 @@
 package usecases
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
+	stdtemplate "text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +22,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	templateutil "github.com/the-monkeys/freerangenotify/internal/usecases/template"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
@@ -51,15 +56,85 @@ type NotificationService struct {
 
 func (s *NotificationService) SetChannelDispatch(dispatch interface {
 	PrepareChannelDelivery(context.Context, *notification.Notification, *user.User) (*channelconnection.PreparedDelivery, error)
-}) { s.channelDelivery = dispatch }
+}) {
+	s.channelDelivery = dispatch
+}
 
 func (s *NotificationService) prepareMessaging(ctx context.Context, n *notification.Notification, u *user.User) error {
 	if n.Metadata != nil {
-		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id"} {
+		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared"} {
 			delete(n.Metadata, key)
 		}
 	}
 	if s.channelDelivery != nil && (n.Channel == notification.ChannelSMS || n.Channel == notification.ChannelWhatsApp) {
+		if n.Content.Data != nil {
+			b, err := json.Marshal(n.Content.Data)
+			if err != nil {
+				return fmt.Errorf("invalid message data")
+			}
+			var data map[string]interface{}
+			if json.Unmarshal(b, &data) != nil {
+				return fmt.Errorf("invalid message data")
+			}
+			n.Content.Data = data
+		}
+		if n.TemplateID != "" {
+			tmpl, err := s.resolveTemplate(ctx, n.AppID, n.TemplateID)
+			if err != nil {
+				return err
+			}
+			if n.Content.Data == nil {
+				n.Content.Data = map[string]interface{}{}
+			}
+			templateutil.ApplyUserAutoFill(tmpl.Variables, n.Content.Data, u)
+			for _, variable := range tmpl.Variables {
+				if value, ok := n.Content.Data[variable]; ok && value != nil && value != "" {
+					continue
+				}
+				if variable == "product" {
+					app, e := s.appRepo.GetByID(ctx, n.AppID)
+					if e != nil || app == nil {
+						return fmt.Errorf("application unavailable")
+					}
+					product := app.AppName
+					if product == "" {
+						product = "our platform"
+					}
+					n.Content.Data[variable] = product
+				}
+				if variable == "cta_url" {
+					base := os.Getenv("FREERANGE_FRONTEND_URL")
+					if base == "" {
+						base = "http://localhost:3000"
+					}
+					n.Content.Data[variable] = base + "/login"
+				}
+			}
+			render := func(text string) (string, error) {
+				t, err := stdtemplate.New("message").Parse(NormalizeTemplateBody(text))
+				if err != nil {
+					return "", fmt.Errorf("invalid messaging template")
+				}
+				var b bytes.Buffer
+				if err := t.Execute(&b, n.Content.Data); err != nil {
+					return "", fmt.Errorf("messaging template data missing")
+				}
+				return b.String(), nil
+			}
+			title, err := render(tmpl.Subject)
+			if err != nil {
+				return err
+			}
+			body, err := render(tmpl.Body)
+			if err != nil {
+				return err
+			}
+			n.Content.Title, n.Content.Body = title, body
+		}
+		if n.Metadata == nil {
+			n.Metadata = map[string]interface{}{}
+		}
+		n.Metadata["channel_content_prepared"] = true
 		_, err := s.channelDelivery.PrepareChannelDelivery(ctx, n, u)
 		return err
 	}

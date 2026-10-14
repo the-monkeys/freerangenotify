@@ -417,11 +417,12 @@ func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"currency":             "INR",
-		"active_version":       active.Version,
-		"effective_at":         active.UpdatedAt.Format(time.RFC3339),
-		"credit_value_inr":     active.CreditValueINR,
-		"channel_credit_cost":  active.ChannelCreditCost,
+		"currency":            "INR",
+		"active_version":      active.Version,
+		"effective_at":        active.UpdatedAt.Format(time.RFC3339),
+		"credit_value_inr":    active.CreditValueINR,
+		"channel_credit_cost": active.ChannelCreditCost,
+		"pricing_model":       active.PricingModel, "detailed_rates": active.DetailedRates, "charge_basis": "provider_acceptance", "vendor_costs": "separate_estimates",
 		"overage_per_message":  overageINR,
 		"free_tier_daily_caps": map[string]int64{"sms": 3, "whatsapp": 2},
 	})
@@ -579,11 +580,12 @@ func (h *BillingHandler) GetPublicPricing(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{
-		"currency":             "INR",
-		"active_version":       active.Version,
-		"effective_at":         active.UpdatedAt.Format(time.RFC3339),
-		"credit_value_inr":     active.CreditValueINR,
-		"channel_credit_cost":  active.ChannelCreditCost,
+		"currency":            "INR",
+		"active_version":      active.Version,
+		"effective_at":        active.UpdatedAt.Format(time.RFC3339),
+		"credit_value_inr":    active.CreditValueINR,
+		"channel_credit_cost": active.ChannelCreditCost,
+		"pricing_model":       active.PricingModel, "detailed_rates": active.DetailedRates, "charge_basis": "provider_acceptance", "vendor_costs": "separate_estimates",
 		"overage_per_message":  overageINR,
 		"free_tier_daily_caps": map[string]int64{"sms": 3, "whatsapp": 2},
 		"plans":                plans,

@@ -489,6 +489,14 @@ func (m *Manager) GetSupportedChannels() []notification.Channel {
 }
 
 func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Result, providerName string) {
+	// Durable quoted settlement writes usage before acknowledging its ledger.
+	if notif != nil && notif.Metadata["channel_quote"] != nil {
+		if id, ok := notif.Metadata["reservation_id"].(string); ok {
+			if _, journal := billing.JournalSubscriptionID(id); journal {
+				return
+			}
+		}
+	}
 	if !m.billingEnabled || m.usageEmitter == nil || notif == nil || result == nil {
 		return
 	}
@@ -549,6 +557,7 @@ func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Resul
 	}
 
 	event := &billing.UsageEvent{
+		ID:               "delivery:" + notif.NotificationID,
 		TenantID:         tenantID,
 		AppID:            notif.AppID,
 		NotificationID:   notif.NotificationID,
@@ -568,4 +577,8 @@ func (m *Manager) emitUsageEvent(notif *notification.Notification, result *Resul
 				zap.Error(err))
 		}
 	}()
+}
+
+func (m *Manager) EmitPreparedUsage(notif *notification.Notification, result *Result, provider string) {
+	m.emitUsageEvent(notif, result, provider)
 }

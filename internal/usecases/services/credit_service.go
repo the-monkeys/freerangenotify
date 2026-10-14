@@ -126,9 +126,15 @@ func (s *CreditService) reserveCredits(
 	appID string,
 	notificationID string,
 	channel string,
+	quotes ...*billing.ChannelQuote,
 ) (*billing.CreditReservation, error) {
 	normalizedChannel := normalizeCreditChannel(channel)
 	creditsNeeded, version := s.creditCostSnapshot(normalizedChannel)
+	var quote *billing.ChannelQuote
+	if len(quotes) > 0 {
+		quote = quotes[0]
+		creditsNeeded, version = quote.Credits, quote.RateCardVersion
+	}
 	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
 	if err != nil {
 		return nil, err
@@ -145,7 +151,7 @@ func (s *CreditService) reserveCredits(
 	}
 
 	if s.reservationJournalEnabled {
-		return s.reserveJournal(ctx, balance, tenantID, appID, notificationID, normalizedChannel, creditsNeeded, version, capKey)
+		return s.reserveJournal(ctx, balance, tenantID, appID, notificationID, normalizedChannel, creditsNeeded, version, capKey, quote)
 	}
 	if balance.JournalBacked {
 		s.undoDailyCapKey(ctx, capKey)
@@ -181,6 +187,7 @@ func (s *CreditService) reserveCredits(
 
 	reservation := &billing.CreditReservation{
 		ID:              uuid.NewString(),
+		Quote:           quote,
 		SubscriptionID:  balance.ID,
 		DailyCapKey:     capKey,
 		TenantID:        tenantID,
@@ -215,6 +222,7 @@ func (s *CreditService) reserveLegacyQuota(
 	notificationID string,
 	channel string,
 	sub *license.Subscription,
+	sources ...string,
 ) (*billing.CreditReservation, error) {
 	normalizedChannel := normalizeCreditChannel(channel)
 	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
@@ -227,6 +235,9 @@ func (s *CreditService) reserveLegacyQuota(
 		app, _ = s.appRepo.GetByID(ctx, appID)
 	}
 	credSource := billing.InferCredentialSource(app, channel)
+	if len(sources) > 0 {
+		credSource = sources[0]
+	}
 	if credSource == billing.CredSourceBYOC || credSource == billing.CredSourcePlatform {
 		return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, "", capKey), nil
 	}
