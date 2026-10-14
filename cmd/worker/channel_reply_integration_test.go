@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -44,10 +45,22 @@ func (t replyFixtureTransport) RoundTrip(req *http.Request) (*http.Response, err
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-type replyFixtureRates struct{ billing.RateCardManager }
+type replyFixtureRates struct {
+	billing.RateCardManager
+	cost    int64
+	version string
+}
 
-func (*replyFixtureRates) GetActiveRateCard() *billing.RateCard {
-	return &billing.RateCard{Version: "fixture", ChannelCreditCost: map[string]int64{"whatsapp": 108}}
+func (r *replyFixtureRates) GetActiveRateCard() *billing.RateCard {
+	cost := r.cost
+	if cost == 0 {
+		cost = 108
+	}
+	version := r.version
+	if version == "" {
+		version = "fixture"
+	}
+	return &billing.RateCard{Version: version, ChannelCreditCost: map[string]int64{"whatsapp": cost}}
 }
 
 type replyFixtureQueue struct {
@@ -70,8 +83,9 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 	if os.Getenv("FRN_CHANNEL_ES_URL") != "http://127.0.0.1:19219" || os.Getenv("FRN_PHONE_OTP_REDIS_ADDR") != "127.0.0.1:16388" {
 		t.Fatal("only designated disposable loopback services permitted")
 	}
-	for _, provider := range []string{"twilio", "meta"} {
-		t.Run(provider, func(t *testing.T) {
+	for _, tc := range []struct{ provider, mode string }{{"twilio", "journal"}, {"meta", "journal"}, {"twilio", "compat"}, {"twilio", "preupgrade"}} {
+		provider := tc.provider
+		t.Run(provider+"-"+tc.mode, func(t *testing.T) {
 			prefix := "phase3-reply-" + uuid.NewString() + "-"
 			es, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{"http://127.0.0.1:19219"}, Transport: replyFixtureTransport{prefix: prefix}, DisableRetry: true})
 			if err != nil {
@@ -120,7 +134,7 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 			apps := repository.NewApplicationRepository(es, logger)
 			notifs := repository.NewNotificationRepository(es, logger)
 			subs := repository.NewSubscriptionRepository(es, logger)
-			subs.(interface{ SetCreditJournalModeEnabled(bool) }).SetCreditJournalModeEnabled(true)
+			subs.(interface{ SetCreditJournalModeEnabled(bool) }).SetCreditJournalModeEnabled(tc.mode != "compat")
 			now := time.Now().UTC()
 			tenant := "fixture-" + uuid.NewString()
 			app := &application.Application{AppID: "fixture-app", AdminUserID: tenant, AppName: "Fixture", Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: provider, AccountSID: "fixture-account", AuthToken: "fixture-token", FromNumber: "+919000000001", MetaWABAID: "fixture-waba", MetaPhoneNumberID: "fixture-phone", MetaAccessToken: "fixture-token"}}}
@@ -137,7 +151,8 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 			}
 			res.Body.Close()
 			connections := &services.ChannelConnectionService{Apps: apps, Repo: repository.NewChannelConnectionRepository(es)}
-			dispatch := &services.ChannelDispatchService{Connections: connections, Quotes: &services.ChannelQuoteService{Rates: &replyFixtureRates{}}, Client: &http.Client{Transport: replyFixtureTransport{target: server.URL}}, Logger: logger}
+			rates := &replyFixtureRates{}
+			dispatch := &services.ChannelDispatchService{Connections: connections, Quotes: &services.ChannelQuoteService{Rates: rates}, Client: &http.Client{Transport: replyFixtureTransport{target: server.URL}}, Logger: logger}
 			inbox := repository.NewWhatsAppRepository(es, logger)
 			q := &replyFixtureQueue{}
 			reply := &services.ChannelInboxReplyService{Dispatch: dispatch, Notifications: notifs, Queue: q, Inbox: inbox}
@@ -157,15 +172,36 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 			}
 			balances := billingrepo.NewSubscriptionCreditBalanceRepo(subs, logger)
 			ledger := billingrepo.NewESCreditLedgerRepo(es, logger)
-			credits := services.NewCreditService(balances, ledger, subs, usage, apps, &replyFixtureRates{}, rc, logger, true)
-			credits.EnableReservationJournal(true)
+			credits := services.NewCreditService(balances, ledger, subs, usage, apps, rates, rc, logger, true)
+			credits.EnableReservationJournal(tc.mode != "compat")
 			credits.SetReservationNotificationRepository(notifs)
-			proc := NewNotificationProcessor(q, notifs, nil, apps, nil, nil, nil, nil, credits, rc, logger, ProcessorConfig{MaxRetries: 3}, nil)
+			if tc.mode == "preupgrade" {
+				old, e := credits.ReserveForNotification(ctx, tenant, app.AppID, n.NotificationID, "whatsapp")
+				if e != nil {
+					t.Fatal(e)
+				}
+				delete(n.Metadata, billing.ChannelQuoteMetadataKey)
+				n.Metadata["reservation_id"] = old.ID
+				if e := notifs.Update(ctx, n); e != nil {
+					t.Fatal(e)
+				}
+				rates.cost = 200
+				rates.version = "fixture-next"
+			}
+			overlap := &replyOverlapRepo{NotificationRepository: notifs.(*repository.NotificationRepository), ready: make(chan struct{})}
+			proc := NewNotificationProcessor(q, overlap, nil, apps, nil, nil, nil, nil, credits, rc, logger, ProcessorConfig{MaxRetries: 3}, nil)
 			proc.SetChannelDispatch(dispatch)
 			proc.SetChannelInbox(inbox)
+			var wg sync.WaitGroup
 			for i := 0; i < 2; i++ {
-				proc.processNotification(ctx, &queue.NotificationQueueItem{NotificationID: n.NotificationID, AppID: n.AppID}, logger)
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					proc.processNotification(ctx, &queue.NotificationQueueItem{NotificationID: n.NotificationID, AppID: n.AppID}, logger)
+				}()
 			}
+			wg.Wait()
+			proc.processNotification(ctx, &queue.NotificationQueueItem{NotificationID: n.NotificationID, AppID: n.AppID}, logger)
 			saved, err := notifs.GetByID(ctx, n.NotificationID)
 			if err != nil || saved.Status != notification.StatusSent || saved.Metadata["provider_message_id"] != messageID || calls.Load() != 1 {
 				t.Fatalf("reply delivery/identity mismatch %+v calls=%d err=%v", saved, calls.Load(), err)
@@ -184,7 +220,7 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 			}
 			refresh.Body.Close()
 			events, err := usage.GetEvents(ctx, tenant, now.Add(-time.Hour), time.Now().Add(time.Hour), 10)
-			if err != nil || len(events) != 1 || events[0].CreditsUsed != 108 {
+			if tc.mode != "compat" && (err != nil || len(events) != 1 || events[0].CreditsUsed != 108) {
 				t.Fatalf("reply usage %+v %v", events, err)
 			}
 			msg, err := inbox.GetByMetaMessageID(ctx, messageID)
@@ -192,5 +228,87 @@ func TestChannelInboxReplyAccountingRealES(t *testing.T) {
 				t.Fatalf("reply conversation %+v %v", msg, err)
 			}
 		})
+	}
+}
+
+// Both workers observe the queued row before either can claim processing.
+type replyOverlapRepo struct {
+	*repository.NotificationRepository
+	reads atomic.Int32
+	ready chan struct{}
+}
+
+func (r *replyOverlapRepo) GetByID(ctx context.Context, id string) (*notification.Notification, error) {
+	n, e := r.NotificationRepository.GetByID(ctx, id)
+	count := r.reads.Add(1)
+	if count <= 2 {
+		if count == 2 {
+			close(r.ready)
+		}
+		select {
+		case <-r.ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return n, e
+}
+func TestPhase3ReviewProcessingLeaseRealES(t *testing.T) {
+	if os.Getenv("FRN_CHANNEL_INTEGRATION") != "1" {
+		t.Skip("disposable fixture required")
+	}
+	if os.Getenv("FRN_CHANNEL_ES_URL") != "http://127.0.0.1:19219" {
+		t.Fatal("only designated loopback fixture allowed")
+	}
+	prefix := "phase3-claim-" + uuid.NewString() + "-"
+	es, e := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{"http://127.0.0.1:19219"}, Transport: replyFixtureTransport{prefix: prefix}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		res, e := es.Indices.Delete([]string{prefix + "*"})
+		if e == nil {
+			res.Body.Close()
+		}
+	})
+	repo := repository.NewNotificationRepository(es, zap.NewNop()).(*repository.NotificationRepository)
+	ctx := context.Background()
+	n := &notification.Notification{NotificationID: "n", AppID: "a", Channel: notification.ChannelSMS, Status: notification.StatusQueued, CreatedAt: time.Now(), Metadata: map[string]interface{}{"worker_claim": "one"}}
+	if e = repo.Create(ctx, n); e != nil {
+		t.Fatal(e)
+	}
+	claimed, e := repo.ClaimNotificationProcessing(ctx, n)
+	if e != nil || !claimed {
+		t.Fatalf("first claim %v %v", claimed, e)
+	}
+	stale := *n
+	stale.Metadata = map[string]interface{}{"worker_claim": "two"}
+	if won, e := repo.ClaimNotificationProcessing(ctx, &stale); e != nil || won {
+		t.Fatal("overlapping processing claim admitted")
+	}
+	// Lease recovery fences off the original worker even before provider dispatch.
+	n.Metadata["worker_claim_until"] = time.Now().Add(-time.Second).UnixMilli()
+	if e := repo.Update(notification.WithProcessingClaim(ctx, "one"), n); e != nil {
+		t.Fatal(e)
+	}
+	if won, e := repo.ClaimNotificationProcessing(ctx, &stale); e != nil || !won {
+		t.Fatalf("expired preparation not recoverable: %v %v", won, e)
+	}
+	if e := repo.UpdateStatus(notification.WithProcessingClaim(ctx, "one"), "n", notification.StatusSent); e == nil {
+		t.Fatal("stale worker wrote after lease recovery")
+	}
+	if won, e := repo.ClaimChannelDeliveryAttempt(ctx, n); e != nil || won {
+		t.Fatal("stale worker crossed provider boundary")
+	}
+	stale.Status = notification.StatusSent
+	if e := repo.Update(notification.WithProcessingClaim(ctx, "two"), &stale); e != nil {
+		t.Fatal(e)
+	}
+	if won, e := repo.ClaimNotificationProcessing(ctx, n); e != nil || won {
+		t.Fatal("successful notification reclaimed")
+	}
+	saved, e := repo.GetByID(ctx, "n")
+	if e != nil || saved.Status != notification.StatusSent {
+		t.Fatal("winning status lost")
 	}
 }

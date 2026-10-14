@@ -32,7 +32,8 @@ func (r *WhatsAppRepository) StoreOutboundMessage(ctx context.Context, m *whatsa
  if (ctx.op == 'create') {return;}
  if (ctx._source.app_id != params.message.app_id || ctx._source.notification_id != params.message.notification_id || ctx._source.account_id != params.message.account_id || ctx._source.sender_id != params.message.sender_id) {throw new IllegalArgumentException('outbound owner mismatch');}
  if (params.message.meta_message_id != null && params.message.meta_message_id != '') {ctx._source.meta_message_id=params.message.meta_message_id;}
- def rank=['pending':0,'queued':1,'processing':2,'failed':2,'sent':3,'delivered':4,'read':5];
+ def rank=['pending':0,'queued':1,'processing':2,'failed':3,'sent':3,'delivered':4,'read':5,'cancelled':3,'archived':6];
+ if(ctx._source.delivery_state=='failed' && (params.message.delivery_state=='queued'||params.message.delivery_state=='processing')){return;}
  def old=rank[ctx._source.delivery_state];def next=rank[params.message.delivery_state];
  if (next != null && (old == null || next >= old)) {ctx._source.delivery_state=params.message.delivery_state;ctx._source.timestamp=params.message.timestamp;}
  `, "params": map[string]interface{}{"message": m}}})

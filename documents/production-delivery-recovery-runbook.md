@@ -803,11 +803,11 @@ existing reliability UI cases. The build retains the pre-existing large-chunk
 warning. Migration CLI help and the pre-database apply guard passed. No live
 provider accounts, paid messages, customer migrations, push or deployment were
 used. A final added-line credential scan found no high-confidence secrets.
-# Phase 3 local delivery integration
+## Phase 3 local delivery integration
 
 Task 6 binds WhatsApp/SMS to a safe admitted connection reference before enqueue and credit admission. Retained encrypted revisions remain readable; legacy queued sends reject changed account/sender identities rather than selecting a replacement account. All free-form dispatches require the environment/account/sender-scoped customer-service window. Twilio inbound callbacks fetch `date_created` from the signed account's Message resource and verify account, SID and both endpoints before opening a window. Malformed/empty acceptance responses remain unknown outcomes, without synthetic IDs or fallback.
 
-Local tests use mock HTTP endpoints and disposable loopback-only ES/Redis. No production writes, live sends, tariff activation or actual environment edits. Quote/accounting/reply/OTP integration remains the next two Phase 3 tasks. Encrypted writers remain gated until the entire API/worker fleet can read the new records.
+Local tests use mock HTTP endpoints and disposable loopback-only ES/Redis. No production writes, live sends, tariff activation or actual environment edits. Quote/accounting/reply/OTP integration is implemented in Tasks 7–8 below. Encrypted writers remain gated until the entire API/worker fleet can read the new records.
 
 Provider references checked 2026-10-14: [Twilio Message resource](https://www.twilio.com/docs/messaging/api/message-resource), [inbound webhook timestamps](https://help.twilio.com/articles/46569585455003), [SMS segment limits](https://www.twilio.com/docs/glossary/what-sms-character-limit).
 
@@ -823,5 +823,86 @@ Platform phone-verification OTP is synchronous through the shared SMS adapter, w
 
 Operators must configure approved destination prefixes and verified conservative provider costs/currency before phone OTP dispatch: `FREERANGE_AUTH_PHONE_OTP_ALLOWED_PREFIXES`, `FREERANGE_AUTH_PHONE_OTP_DAILY_BUDGET_MINOR`, `FREERANGE_AUTH_PHONE_OTP_COST_MINOR_PER_SEGMENT`, `FREERANGE_AUTH_PHONE_OTP_CURRENCY`. A zero budget/cost is disabled; no invented price/default enables paid sends. Budget amounts are estimates; provider account spend controls and billing reconciliation remain operational prerequisites. Configure trusted proxy client-IP handling explicitly; an untrusted forwarded address does not supply the abuse identity.
 
-Task 8 local verification passed: production-schema ES/Redis + actual worker for both providers, all repository Go short tests, atomic OTP/abuse/spend fixtures, 7 channel and 43 reliability browser cases, and production UI build. Only the plan-owned disposable services and mock vendor endpoints were used. Independent Phase 3 review is still pending at this checkpoint.
+Task 8 local verification passed: production-schema ES/Redis + actual worker for both providers, all repository Go short tests, atomic OTP/abuse/spend fixtures, 7 channel and 43 reliability browser cases, and production UI build. Only the plan-owned disposable services and mock vendor endpoints were used. Independent Phase 3 review was pending at this earlier checkpoint; its findings and disposition follow.
 
+## Phase 3 review and recovery decisions
+
+The independent read-only review of `e533c28..0ec26eb` found 13 Important findings, one Minor, and no substantiated Critical finding. All Important findings entered one author fix pass. Targeted regression cases reproduced the reported failures before the implementation changes; no second reviewer was dispatched.
+
+Processing now claims a notification before status changes or financial admission. Preparation leases expire, and a replaced token fences stale workers from status writes and the irreversible provider boundary. Journal and compatibility workers share this claim; old bound holds are loaded before any new admission. Pre-upgrade reserved holds receive a durable quote with their existing amount and tariff version, so recovery can repair usage without retroactive pricing. Terminal admissions block resend.
+
+Explicit platform Meta payloads retain their configured Meta route, including credential-free app settings; customer credentials never borrow missing fields. Resolver output is normalized before carousel classification. Admission and worker rendering share control defaults, saved values, caller overrides, newsletter enrichment and auto-fill. The admitted destination is protected even without billing. Explicitly pending onboarding cannot dispatch; historical status-less settings remain compatible. Pending legacy onboarding needs reader-first encrypted rollout, an explicit connection save and readiness validation.
+
+Conversation history is projected idempotently from stored notification state after worker processing, including failures. Failed projection writes retain the processing item; recovery repairs terminal history without another provider send. Durable callback receipts include conversation projection before acknowledgment. Delivered/read history cannot regress to sent. Vonage definitive HTTP/message rejections carry refund evidence, while network/malformed outcomes stay unknown; raw provider response text is excluded from logs/errors. Twilio rejects unsupported Meta-specific shapes. Recurring occurrences retain environment and receive fresh connection/quote metadata before scheduling.
+
+Final verification passed: all 31 tested packages across the repository-owned Go short suite, 7 channel and 43 reliability browser cases, and the UI production build (existing chunk-size warning). Disposable cross-phase ES/Redis/service/worker checks passed in 45.222s/70.737s/3.087s; the final actual-worker overlap/lease/legacy drain run after compensation passed in 58.630s. Expired-message claim ordering and lost-lease compensation were also reproduced RED→GREEN. Only a known rejected ownership CAS releases a fresh unbound compatibility hold; shared/prior holds and uncertain writes remain quarantined. Added-line high-confidence credential matches: zero; changed files are valid UTF-8 and diff checks pass. New prices, encrypted writers and paid OTP remain operator-gated; no production writes, real `.env` edits, live sends, push or deployment occurred.
+
+Deferred minor: quoted journal usage does not yet populate FRN `Currency`; vendor-estimate currency remains separately populated. Phase 5 should add that display/reporting metadata. No charge amount is changed by this omission.
+
+Phase 3 rulings (including all review exclusions), in execution order:
+
+- Pre-flight: Task 4 -> 6: snapshot credentials private; revision zero has no historical record. Ruling: persist safe legacy identity and reject account/sender drift on recovery; encrypted revisions use retained history — avoids silently changing queued accounts — cost: an unmigrated queued send may require operator reconciliation after rotation.
+
+- Pre-flight: Task 3 -> 6/8: CSW currently keyed only app/contact. Ruling: bind new windows to environment/provider/account/sender and require a verified provider timestamp; do not trust receipt-time or unscoped legacy windows — cost: legacy free-form sends may temporarily require a template.
+
+- Ruling: reuse current local branch as requested; PowerShell bookkeeping implements shell scripts' ledger contract — cost: none to delivery behavior.
+
+- Ruling: provider-to-service import cycle required attachment sentinels moved to domain with service aliases and an interface for the existing self-hosted adapter — preserves callers and avoids premature Phase 5 deletion — cost: additional narrow refactor.
+
+- Ruling: full ./... traversal stalled; all repository-owned Go roots passed offline via go test -p 2 -short ./cmd/... ./internal/... ./pkg/... ./sdk/go/... ./tests/... — excludes frontend third-party Go test code — cost: no validation of vendored frontend dependency's incidental Go package.
+
+- Ruling: client price/free hints are ignored and reserved accounting metadata is stripped rather than rejecting an otherwise compatible payload — server-derived quotes remain authoritative — cost: submitted hints cannot be treated as approved prices.
+
+- Ruling: legacy Meta settings without WABA use sender-scoped account identity for flat outbound delivery; detailed tariff validation/inbound assignment still needs a validated WABA — preserves old phone/token configurations without another account — cost: revalidation required before detailed pricing/inbound mapping.
+
+- Final: Ruling: Exotel, DLT readiness and sender throughput/budgets remain Phase 4 work — existing Twilio/Vonage/Meta paths remain available — cost: no domestic-route or throughput guarantee yet.
+
+- Final: Ruling: Runtime aliases/capabilities, flag consolidation and Graph-version cleanup remain Phase 5 work — legacy configuration remains readable — cost: configuration simplification is still pending.
+
+- Final: Ruling: Self-hosted adapter deletion and dependencies remain Phase 5 work — only the narrow import-cycle compatibility refactor was needed now — cost: old dependency footprint remains.
+
+- Final: Ruling: Linux race-suite completion remains Phase 5 work — Windows short-suite results are not race coverage — cost: concurrent races outside fixture scenarios are not ruled out.
+
+- Final: Ruling: Live provider approval/readiness, paid behavior and canaries remain operator work — this phase was authorized for local mocked implementation only — cost: production certification is pending.
+
+- Final: Ruling: Commercial rates, taxes, currencies, allowances and provider segmentation exceptions need account-specific verification — fixture tariffs remain inactive and are not commercial quotes — cost: no verified cheapest-price claim.
+
+- Final: Ruling: Detailed tariff activation and required encrypted writes stay gated — reader-first rollout and explicit operator activation are required — cost: new rates/writes are not activated by these commits.
+
+- Final: Ruling: Previously copied master-key rotation remains separate operator work — ordinary-read masking does not revoke copied credentials — cost: old copied keys remain valid until rotated.
+
+- Final: Ruling: Historical balance repair and attribution backfills remain separate audited work — no live database modifications are authorized in this phase — cost: historical discrepancies remain.
+
+- Final: Ruling: Queued legacy sends reject account/sender drift after rotation — no historical secret revision exists for revision-zero connections — cost: operator reconciliation can be required.
+
+- Final: Ruling: Unscoped old CSW records do not authorize new free-form sends — validated timestamp and app/environment/account/sender scope are required — cost: an approved template may be needed temporarily.
+
+- Final: Ruling: Ambiguous external workflow/webhook results are quarantined — replay cannot safely prove whether the external action occurred — cost: manual reconciliation can be required.
+
+- Final: Ruling: Client price/free hints are stripped rather than rejecting compatible requests — server-derived immutable quotes alone authorize pricing — cost: client hints do not affect the charged amount.
+
+- Final: Ruling: Legacy Meta without WABA retains sender-scoped flat outbound identity — old phone/token integrations remain readable without inventing a WABA — cost: detailed pricing/inbound mapping still needs revalidation.
+
+- Final: Ruling: Automatic replies remain unavailable — permitted by the spec; messages remain in the inbox — cost: replies require an explicit manual action.
+
+- Final: Ruling: General fallback outside the admitted connection remains withheld — customer account identity and unknown-outcome safety take precedence — cost: delivery can fail instead of switching providers.
+
+- Final: Ruling: Frontend incidental third-party Go packages are excluded from the owned Go suite — all cmd/internal/pkg/sdk/go/tests roots are exercised — cost: no verification of that third-party incidental package.
+
+- Final: Ruling: Unrelated working edits and sibling scratch content remain excluded — preserve the user's work and other plans — cost: those edits are not reviewed by this phase.
+
+- Final: Ruling: Runbook trailing EOF blank line is normalized as documentation formatting — no delivery behavior is affected — cost: none.
+
+- Final: Ruling: pending legacy onboarding is honored while status-less historical settings remain usable — explicit pending is not readiness approval — cost: pending accounts require validation before delivery.
+
+- Final: Ruling: retain the admitted phone exactly and fail closed on profile drift even without billing — prevents queued sends redirecting to another recipient — cost: operator reconciliation/re-admission is required after a destination change.
+
+- Final: Ruling: pre-upgrade reserved holds gain a quote only before settlement, using their original amount/version — durable usage repair needs bound identity, without retrospective re-pricing — cost: a transient persistence outage delays the send until recovery.
+
+Additional recovery rulings:
+
+- Final: Ruling: an unresolved stored reservation ID fails closed — replacing it could orphan or double-charge an earlier admission — cost: reconciliation is needed for damaged/missing receipts.
+
+- Final: Ruling: only a known rejected ownership CAS permits compensation of a fresh compatibility hold — shared holds and ambiguous persistence outcomes are not safe refund evidence — cost: ambiguous storage outcomes may require reconciliation.
+
+Phase 3 local task commits: `efd1fda`, `d08aa8a`, `0ec26eb`, followed by the review-correction commit. Phase 4 (Exotel/DLT/sender budgets/throughput fixtures) and Phase 5 (configuration/cleanup/Linux race checks/rollout evidence) remain pending. The quoted-usage currency Minor is explicitly carried into Phase 5.

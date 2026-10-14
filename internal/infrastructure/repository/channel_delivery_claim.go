@@ -19,6 +19,7 @@ func (r *NotificationRepository) ClaimChannelDeliveryAttempt(ctx context.Context
  if (ctx._source.app_id != params.app) {throw new IllegalArgumentException('wrong delivery owner');}
  if (ctx._source.status == 'sent' || ctx._source.status == 'delivered' || ctx._source.status == 'read' || ctx._source.status == 'cancelled') {ctx.op='noop';return;}
  if (ctx._source.metadata == null) {ctx._source.metadata=[:];}
+ if (params.metadata.worker_claim != null && ctx._source.metadata.worker_claim != params.metadata.worker_claim) {ctx.op='noop';return;}
  def state=ctx._source.metadata.delivery_attempt_state;
  if (state == 'dispatching' || state == 'unknown' || state == 'accepted') {ctx.op='noop';return;}
  ctx._source.metadata.putAll(params.metadata);ctx._source.metadata.delivery_attempt_state='dispatching';

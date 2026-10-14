@@ -1,6 +1,6 @@
 # WhatsApp and SMS customer connections and delivery design
 
-Status: proposed for review. Implementation and production changes have not started.
+Status: Phases 1–3 approved for local implementation. Phases 1–3 implemented and verified locally, including review fixes. Phases 4–5 remain pending. No production changes.
 
 ## Purpose and scope
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	stdtemplate "text/template"
@@ -62,7 +61,7 @@ func (s *NotificationService) SetChannelDispatch(dispatch interface {
 
 func (s *NotificationService) prepareMessaging(ctx context.Context, n *notification.Notification, u *user.User) error {
 	if n.Metadata != nil {
-		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared", "inbox_reply_phone", "inbox_reply_contact", "inbox_reply_text", "inbox_reply_template", "inbox_reply_key"} {
+		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_destination", "worker_claim", "worker_claim_until", "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared", "inbox_reply_phone", "inbox_reply_contact", "inbox_reply_text", "inbox_reply_template", "inbox_reply_key"} {
 			delete(n.Metadata, key)
 		}
 	}
@@ -83,33 +82,18 @@ func (s *NotificationService) prepareMessaging(ctx context.Context, n *notificat
 			if err != nil {
 				return err
 			}
-			if n.Content.Data == nil {
-				n.Content.Data = map[string]interface{}{}
-			}
-			templateutil.ApplyUserAutoFill(tmpl.Variables, n.Content.Data, u)
+			appName := ""
 			for _, variable := range tmpl.Variables {
-				if value, ok := n.Content.Data[variable]; ok && value != nil && value != "" {
-					continue
-				}
 				if variable == "product" {
 					app, e := s.appRepo.GetByID(ctx, n.AppID)
 					if e != nil || app == nil {
 						return fmt.Errorf("application unavailable")
 					}
-					product := app.AppName
-					if product == "" {
-						product = "our platform"
-					}
-					n.Content.Data[variable] = product
-				}
-				if variable == "cta_url" {
-					base := os.Getenv("FREERANGE_FRONTEND_URL")
-					if base == "" {
-						base = "http://localhost:3000"
-					}
-					n.Content.Data[variable] = base + "/login"
+					appName = app.AppName
+					break
 				}
 			}
+			n.Content.Data = templateutil.EnrichData(tmpl, n.Content.Data, u, appName, n.UserID, n.AppID)
 			render := func(text string) (string, error) {
 				t, err := stdtemplate.New("message").Parse(NormalizeTemplateBody(text))
 				if err != nil {

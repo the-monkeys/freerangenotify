@@ -166,3 +166,19 @@ func RecordOutboundConversation(ctx context.Context, repo whatsapp.Repository, n
 	}
 	return repo.StoreMessage(ctx, m)
 }
+
+// Replayable projection of the durable notification. Old rows without an
+// admitted binding remain owned by the legacy inbox reader.
+func RepairOutboundConversation(ctx context.Context, repo whatsapp.Repository, n *notification.Notification) error {
+	if n == nil || n.Channel != notification.ChannelWhatsApp || n.Metadata[channelconnection.DeliveryMetadataKey] == nil {
+		return nil
+	}
+	phone, _ := n.Metadata["channel_destination"].(string)
+	if phone == "" {
+		phone, _ = n.Metadata["inbox_reply_phone"].(string)
+	}
+	if phone == "" {
+		return fmt.Errorf("admitted inbox destination unavailable")
+	}
+	return RecordOutboundConversation(ctx, repo, n, &user.User{Phone: phone})
+}

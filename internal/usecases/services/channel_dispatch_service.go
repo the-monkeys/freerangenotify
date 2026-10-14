@@ -49,7 +49,7 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 		if safe.Revision > 0 {
 			snap, err = s.Connections.ResolveRevision(ctx, safe.ConnectionID, safe.Revision)
 		} else {
-			snap, err = s.Connections.LegacySnapshot(ctx, n.AppID, n.EnvironmentID, n.Channel)
+			snap, err = s.Connections.LegacyProviderSnapshot(ctx, n.AppID, n.EnvironmentID, n.Channel, safe.Provider)
 		}
 		if err != nil {
 			return nil, err
@@ -63,7 +63,13 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 			return nil, err
 		}
 	}
-	if snap.Revision > 0 && snap.Readiness != "ready" {
+	if snap.CredentialSource == "system" && snap.Revision == 0 && snap.Provider != "meta" && n.Channel == notification.ChannelWhatsApp && (n.Content.Data["whatsapp_template"] != nil || n.Content.Data["whatsapp_rich"] != nil || n.Content.Data["whatsapp_interactive"] != nil || n.Content.Data["whatsapp_location"] != nil || n.Content.Data["whatsapp_video"] != nil) {
+		snap, err = s.Connections.LegacyProviderSnapshot(ctx, n.AppID, n.EnvironmentID, n.Channel, "meta")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if snap.Revision > 0 && snap.Readiness != "ready" || snap.Revision == 0 && snap.Readiness != "" && snap.Readiness != "connected" && snap.Readiness != "ready" {
 		return nil, fmt.Errorf("messaging connection is not ready")
 	}
 	if snap.AccountID == "" || snap.SenderID == "" {
@@ -120,6 +126,11 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 					return nil, e
 				}
 				if snap.Provider == "meta" {
+					// Normalize typed resolver slices to the same JSON shape used at recovery.
+					b, e := json.Marshal(resolved)
+					if e != nil || json.Unmarshal(b, &resolved) != nil {
+						return nil, fmt.Errorf("invalid resolved payload")
+					}
 					n.Content.Data["whatsapp_rich"] = resolved
 				} else {
 					delete(n.Content.Data, "whatsapp_rich")
@@ -147,6 +158,11 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 	if n.Metadata == nil {
 		n.Metadata = map[string]interface{}{}
 	}
+	// Destination integrity is independent of whether billing is enabled.
+	if prior, exists := n.Metadata["channel_destination"]; exists && prior != u.Phone {
+		return nil, fmt.Errorf("admitted destination changed; reconciliation required")
+	}
+	n.Metadata["channel_destination"] = u.Phone
 	// JSON conversion deliberately drops private credentials.
 	safe := *snap
 	safe.Credentials = nil

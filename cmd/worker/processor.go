@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	stdtemplate "text/template"
@@ -345,6 +344,21 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		span.SetStatus(codes.Error, "failed_to_get_notification")
 		return
 	}
+	defer func() {
+		if p.channelInbox == nil || notif.Channel != notification.ChannelWhatsApp {
+			return
+		}
+		repairCtx, cancel := notificationAccountingContext(ctx)
+		defer cancel()
+		saved, e := p.notifRepo.GetByID(repairCtx, notif.NotificationID)
+		if e == nil {
+			e = services.RepairOutboundConversation(repairCtx, p.channelInbox, saved)
+		}
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Conversation repair deferred", zap.String("notification_id", notif.NotificationID))
+		}
+	}()
 	span.SetAttributes(
 		attribute.String("app.id", notif.AppID),
 		attribute.String("channel", string(notif.Channel)),
@@ -365,15 +379,6 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	}
 	if state, _ := notif.Metadata["delivery_attempt_state"].(string); state == "dispatching" || state == "unknown" {
 		logger.Warn("Delivery attempt requires reconciliation; automatic resend blocked", zap.String("notification_id", notif.NotificationID))
-		return
-	}
-	if deadline, ok := notificationDeliveryDeadline(notif); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, deadline)
-		defer cancel()
-	}
-	if notificationDeliveryExpired(notif, time.Now().UTC()) {
-		p.handleExpiredNotification(ctx, notif)
 		return
 	}
 
@@ -416,6 +421,34 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	if claimer, ok := p.notifRepo.(interface {
+		ClaimNotificationProcessing(context.Context, *notification.Notification) (bool, error)
+	}); ok {
+		token := uuid.NewString()
+		if notif.Metadata == nil {
+			notif.Metadata = map[string]interface{}{}
+		}
+		notif.Metadata["worker_claim"] = token
+		claimed, e := claimer.ClaimNotificationProcessing(ctx, notif)
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Processing claim unavailable", zap.Error(e))
+			return
+		}
+		if !claimed {
+			return
+		}
+		ctx = notification.WithProcessingClaim(ctx, token)
+	}
+	if deadline, ok := notificationDeliveryDeadline(notif); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
 	// Remove stored failure fields before attempting another delivery. A failed
 	// removal must recover from the processing queue, rather than leave false
 	// failure history on a later successful delivery.
@@ -505,70 +538,16 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		} else {
 			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
 			if tmpl != nil {
-				// Phase 6: Merge control defaults → saved values → payload
-				if len(tmpl.Controls) > 0 || len(tmpl.ControlValues) > 0 {
-					notif.Content.Data = p.mergeTemplateData(tmpl, notif.Content.Data)
-				}
-
-				// Phase 4: Auto-inject unsubscribe_url for newsletter-category templates
-				if tmpl.Metadata != nil {
-					if cat, ok := tmpl.Metadata["category"].(string); ok && cat == "newsletter" {
-						if notif.Content.Data == nil {
-							notif.Content.Data = make(map[string]interface{})
+				appName := ""
+				for _, variable := range tmpl.Variables {
+					if variable == "product" {
+						if app, e := p.appRepo.GetByID(ctx, notif.AppID); e == nil && app != nil {
+							appName = app.AppName
 						}
-						if _, exists := notif.Content.Data["unsubscribe_url"]; !exists {
-							notif.Content.Data["unsubscribe_url"] = fmt.Sprintf(
-								"https://notify.example.com/v1/unsubscribe?user=%s&app=%s",
-								notif.UserID, notif.AppID,
-							)
-							logger.Debug("Auto-injected unsubscribe_url for newsletter template",
-								zap.String("notification_id", notif.NotificationID))
-						}
+						break
 					}
 				}
-
-				// Auto-inject user-derived name variables (name, user_name, full_name,
-				// first_name, last_name) declared by the template. The helper is
-				// channel-agnostic and gates each injection on tmpl.Variables, mirroring
-				// the product/cta_url pattern below. user.FullName is the authoritative
-				// source; email/external_id local-parts and "there" are fallbacks.
-				if notif.Content.Data == nil {
-					notif.Content.Data = make(map[string]interface{})
-				}
-				templateutil.ApplyUserAutoFill(tmpl.Variables, notif.Content.Data, usr)
-
-				// Auto-inject product and cta_url for welcome_email and similar templates when missing
-				hasProductVar := containsString(tmpl.Variables, "product")
-				hasCtaURLVar := containsString(tmpl.Variables, "cta_url")
-				needProduct := hasProductVar && needTemplateVar(notif.Content.Data, "product")
-				needCtaURL := hasCtaURLVar && needTemplateVar(notif.Content.Data, "cta_url")
-				if needProduct || needCtaURL {
-					frontendURL := os.Getenv("FREERANGE_FRONTEND_URL")
-					if frontendURL == "" {
-						frontendURL = "http://localhost:3000"
-					}
-					if needProduct {
-						product := ""
-						if app, err := p.appRepo.GetByID(ctx, notif.AppID); err == nil && app != nil && app.AppName != "" {
-							product = app.AppName
-						}
-						if product == "" {
-							product = "our platform"
-						}
-						notif.Content.Data["product"] = product
-						logger.Debug("Auto-injected product for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("product", product))
-					}
-					if needCtaURL {
-						ctaURL := frontendURL + "/login"
-						notif.Content.Data["cta_url"] = ctaURL
-						logger.Debug("Auto-injected cta_url for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("cta_url", ctaURL))
-					}
-				}
-
+				notif.Content.Data = templateutil.EnrichData(tmpl, notif.Content.Data, usr, appName, notif.UserID, notif.AppID)
 				// Render template content
 				title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
 				if err != nil {
@@ -731,6 +710,42 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	var reservation *billing.CreditReservation
+	freshReservation := false
+	if p.creditService != nil {
+		if id, _ := notif.Metadata["reservation_id"].(string); id != "" {
+			reservation, err = p.creditService.ResolveDeliveryReservation(ctx, id, notif.AppID, notif.NotificationID, string(notif.Channel))
+			if err != nil {
+				p.handleCreditBlocked(ctx, notif, "existing admission requires reconciliation")
+				return
+			}
+			if reservation != nil && reservation.Status == billing.CreditReservationReleased {
+				reservation = nil
+			}
+		}
+	}
+	if reservation != nil && reservation.Quote == nil && p.channelDispatch != nil && p.channelDispatch.Quotes != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+		unpriced := *p.channelDispatch
+		unpriced.Quotes = nil
+		prepared, e := unpriced.PrepareChannelDelivery(ctx, notif, usr)
+		if e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+		quote, e := p.channelDispatch.Quotes.QuoteExistingReservation(prepared, reservation)
+		if e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+		reservation, e = p.creditService.BindDeliveryQuote(ctx, reservation, quote)
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Existing admission quote persistence deferred", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+	} else if reservation != nil && reservation.Quote != nil {
+		notif.Metadata[billing.ChannelQuoteMetadataKey] = reservation.Quote
+	}
 	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
 
 		if _, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr); e != nil {
@@ -738,8 +753,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			return
 		}
 	}
-	var reservation *billing.CreditReservation
-	if p.creditService != nil {
+	if p.creditService != nil && reservation == nil {
 		tenantID := notif.AppID
 		if app, appErr := p.appRepo.GetByID(ctx, notif.AppID); appErr == nil && app != nil && app.AdminUserID != "" {
 			tenantID = app.AdminUserID
@@ -775,18 +789,41 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			p.handleFailure(ctx, notif, item, err, fmt.Sprintf("credit reservation failed: %s", message))
 			return
 		}
-		if reservation != nil {
-			if reservation.Status != billing.CreditReservationReserved {
-				logger.Warn("Terminal reservation requires reconciliation; resend blocked", zap.String("notification_id", notif.NotificationID))
-				return
+		freshReservation = reservation != nil
+	}
+	if reservation != nil {
+		if reservation.Status != billing.CreditReservationReserved {
+			logger.Warn("Terminal reservation requires reconciliation; resend blocked", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["credits_used"] = reservation.CreditsReserved
+		notif.Metadata["tenant_id"] = reservation.TenantID
+		notif.Metadata["rate_card_version"] = reservation.RateCardVersion
+		notif.Metadata["reservation_id"] = reservation.ID
+	}
+	if reservation != nil && notification.ProcessingClaim(ctx) != "" {
+		if e := p.notifRepo.Update(ctx, notif); e != nil {
+			// A fresh UUID hold was never exposed by a rejected CAS. It cannot
+			// belong to the winning worker. Shared journal or reused holds
+			// must remain owned by the winner and are never refunded here.
+			if freshReservation && errors.Is(e, notification.ErrProcessingClaimLost) {
+				if _, journal := billing.JournalSubscriptionID(reservation.ID); !journal {
+					accountingCtx, cancel := notificationAccountingContext(ctx)
+					if proofErr := p.creditService.RecordReservationDeliveryFailure(accountingCtx, reservation.ID); proofErr != nil {
+						logger.Error("Unused hold proof persistence deferred", zap.Error(proofErr))
+					}
+					if releaseErr := p.creditService.ReleaseOnFailure(accountingCtx, reservation.ID, "processing claim lost before admission binding"); releaseErr != nil {
+						logger.Error("Unused hold compensation deferred", zap.Error(releaseErr))
+					}
+					cancel()
+				}
 			}
-			if notif.Metadata == nil {
-				notif.Metadata = make(map[string]interface{})
-			}
-			notif.Metadata["credits_used"] = reservation.CreditsReserved
-			notif.Metadata["tenant_id"] = reservation.TenantID
-			notif.Metadata["rate_card_version"] = reservation.RateCardVersion
-			notif.Metadata["reservation_id"] = reservation.ID
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Admission binding persistence deferred", zap.String("notification_id", notif.NotificationID))
+			return
 		}
 	}
 
@@ -896,11 +933,6 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		// Bind the proven successful delivery to its own attempt. Recovery must
 		// never infer success for earlier holds from a notification-wide status.
 		notif.Metadata["delivery_reservation_id"] = reservation.ID
-	}
-	if p.channelInbox != nil && notif.Channel == notification.ChannelWhatsApp {
-		if err := services.RecordOutboundConversation(ctx, p.channelInbox, notif, usr); err != nil {
-			logger.Error("Outbound conversation persistence requires repair", zap.String("notification_id", notif.NotificationID), zap.Error(err))
-		}
 	}
 	// Persist success, time, reservation binding, and rendered content together.
 	// A separate sent-only write can expose a prior attempt's reservation ID.
@@ -1644,6 +1676,7 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 	newNotif := &notification.Notification{
 		NotificationID: uuid.New().String(),
 		AppID:          notif.AppID,
+		EnvironmentID:  notif.EnvironmentID,
 		UserID:         notif.UserID,
 		Channel:        notif.Channel,
 		Priority:       notif.Priority,
@@ -1658,6 +1691,24 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 		RetryCount:     0,
 	}
 
+	// New occurrence receives its own quote and connection, never the previous hold.
+	raw, e := json.Marshal(newNotif.Content)
+	if e != nil || json.Unmarshal(raw, &newNotif.Content) != nil {
+		p.logger.Error("Cannot copy recurring content")
+		return
+	}
+	if p.channelDispatch != nil && (newNotif.Channel == notification.ChannelSMS || newNotif.Channel == notification.ChannelWhatsApp) {
+		usr, e := p.userRepo.GetByID(ctx, newNotif.UserID)
+		if e != nil {
+			p.logger.Error("Cannot admit recurring recipient")
+			return
+		}
+		if _, e = p.channelDispatch.PrepareChannelDelivery(ctx, newNotif, usr); e != nil {
+			p.logger.Error("Cannot admit recurring message", zap.Error(e))
+			return
+		}
+		newNotif.Metadata["channel_content_prepared"] = true
+	}
 	// Save new notification
 	if err := p.notifRepo.Create(ctx, newNotif); err != nil {
 		p.logger.Error("Failed to create next recurring notification", zap.Error(err))

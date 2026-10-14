@@ -72,11 +72,12 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 	if err != nil || app == nil {
 		return nil, fmt.Errorf("application unavailable")
 	}
-	snap := &channelconnection.Snapshot{ConnectionID: channelconnection.ID(appID, "default", ch), AppID: appID, EnvironmentID: "default", Channel: ch, Provider: "twilio", CredentialSource: "system", Readiness: "pending", Credentials: map[string]string{}}
+	snap := &channelconnection.Snapshot{ConnectionID: channelconnection.ID(appID, "default", ch), AppID: appID, EnvironmentID: "default", Channel: ch, Provider: "twilio", CredentialSource: "system", Readiness: "", Credentials: map[string]string{}}
 	switch ch {
 	case notification.ChannelWhatsApp:
 		wa := app.Settings.WhatsApp
 		if wa != nil {
+			snap.Readiness = wa.ConnectionStatus
 			if wa.ConnectionStatus == "disconnected" {
 				return nil, channelconnection.ErrDisconnected
 			}
@@ -89,7 +90,9 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 				}
 				snap.SenderID = wa.MetaPhoneNumberID
 				snap.Credentials = map[string]string{"access_token": wa.MetaAccessToken, "app_secret": wa.MetaAppSecret}
-				snap.CredentialSource = "byoc"
+				if wa.MetaWABAID != "" || wa.MetaPhoneNumberID != "" || wa.MetaAccessToken != "" || wa.MetaAppSecret != "" {
+					snap.CredentialSource = "byoc"
+				}
 			} else {
 				snap.AccountID = wa.AccountSID
 				snap.SenderID = wa.FromNumber
@@ -114,6 +117,9 @@ func (s *ChannelConnectionService) LegacySnapshot(ctx context.Context, appID, en
 	}
 	if snap.CredentialSource == "system" {
 		system := s.System[ch]
+		if snap.Provider == "meta" {
+			system = s.System[notification.Channel("meta_whatsapp")]
+		}
 		if system == nil {
 			return nil, channelconnection.ErrUnconfigured
 		}
@@ -287,4 +293,28 @@ func (s *ChannelConnectionService) ResolveRevision(ctx context.Context, id strin
 		return nil, err
 	}
 	return s.snapshot(c)
+}
+
+// SystemProvider selects an explicitly requested platform provider. A BYOC
+// snapshot is never eligible for this compatibility route.
+func (s *ChannelConnectionService) LegacyProviderSnapshot(ctx context.Context, app, env string, ch notification.Channel, provider string) (*channelconnection.Snapshot, error) {
+	snap, err := s.LegacySnapshot(ctx, app, env, ch)
+	if err != nil {
+		return nil, err
+	}
+	if snap.CredentialSource != "system" || snap.Provider == provider {
+		return snap, nil
+	}
+	system := s.System[notification.Channel(provider+"_"+string(ch))]
+	if system == nil {
+		return nil, channelconnection.ErrUnconfigured
+	}
+	snap.Provider = system.Provider
+	snap.AccountID = system.AccountID
+	snap.SenderID = system.SenderID
+	snap.Credentials = map[string]string{}
+	for k, v := range system.Credentials {
+		snap.Credentials[k] = v
+	}
+	return snap, nil
 }

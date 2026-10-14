@@ -70,6 +70,12 @@ if (params.action == 'reserve') {
  journal[params.id] = receipt;
 } else {
  if (receipt == null) { throw new IllegalArgumentException('credit reservation not found'); }
+ if (params.action == 'quote') {
+  def q=params.reservation.quote;
+  if(receipt.reservation.status!='reserved' || q.credits!=receipt.reservation.credits_reserved || q.rate_card_version!=receipt.reservation.rate_card_version || q.connection.app_id!=receipt.reservation.app_id || q.channel!=receipt.reservation.channel) {throw new IllegalArgumentException('old admission quote mismatch');}
+  if(receipt.reservation.quote!=null){if(receipt.reservation.quote.id!=q.id){throw new IllegalArgumentException('old quote changed');}ctx.op='noop';return;}
+  receipt.reservation.quote=q;ctx._source.updated_at=params.now;return;
+ }
  if (params.action == 'ack') {
   if (receipt.reservation.status != params.status || receipt.reservation.status == 'reserved') { throw new IllegalArgumentException('invalid credit ledger acknowledgement'); }
   if (receipt.ledger_recorded == true) { ctx.op = 'noop'; return; }
@@ -287,4 +293,22 @@ func (r *SubscriptionCreditBalanceRepo) BootstrapCreditBalance(ctx context.Conte
 		return nil, fmt.Errorf("credit bootstrap must be positive")
 	}
 	return r.applyCreditScript(ctx, tenant, creditBootstrapScript, map[string]interface{}{"amount": amount, "expiry": expiry.UTC().Format(time.RFC3339Nano), "now": time.Now().UTC().Format(time.RFC3339Nano)})
+}
+
+func (r *SubscriptionCreditBalanceRepo) BindReservationQuote(ctx context.Context, id string, q *billing.ChannelQuote) (*billing.CreditReservation, error) {
+	if q.Validate() != nil {
+		return nil, fmt.Errorf("invalid reservation quote")
+	}
+	receipt, e := r.GetReservationReceipt(ctx, id)
+	if e != nil {
+		return nil, e
+	}
+	copy := receipt.Reservation
+	copy.Quote = q
+	out, e := r.applyJournal(ctx, id, copy.TenantID, "quote", copy.Status, "", &copy)
+	if e != nil {
+		return nil, e
+	}
+	bound := out.Receipt.Reservation
+	return &bound, nil
 }

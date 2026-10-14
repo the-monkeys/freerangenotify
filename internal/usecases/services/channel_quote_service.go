@@ -152,3 +152,31 @@ func (s *ChannelQuoteService) QuoteChannelDelivery(ctx context.Context, d *chann
 	return q, nil
 }
 func nPhone(s string) string { return strings.TrimPrefix(s, "whatsapp:") }
+
+// Older holds predate quote storage. Preserve their admitted amount/version;
+// current tariffs cannot retroactively replace that financial admission.
+func (s *ChannelQuoteService) QuoteExistingReservation(d *channelconnection.PreparedDelivery, r *billing.CreditReservation) (*billing.ChannelQuote, error) {
+	if r.CreditsReserved <= 0 || r.RateCardVersion == "" {
+		return nil, fmt.Errorf("legacy admission price unavailable")
+	}
+	safe := *d.Snapshot
+	safe.Credentials = nil
+	q := &billing.ChannelQuote{Connection: safe, DeliveryEnvironment: d.Notification.EnvironmentID, PayloadHash: ChannelPayloadHash(d), Channel: string(d.Notification.Channel), Units: 1, Credits: r.CreditsReserved, RateCardVersion: r.RateCardVersion, PricingModel: "flat", Country: "unknown", Category: "unknown", VendorCostStatus: "not_quoted"}
+	if q.Channel == "sms" {
+		body := d.Notification.Content.Body
+		if safe.Provider == "vonage" && d.Notification.Content.Title != "" {
+			body = d.Notification.Content.Title + ": " + body
+		}
+		var e error
+		q.Encoding, q.Units, e = billing.SMSUnits(body)
+		if e != nil {
+			return nil, e
+		}
+	}
+	q.ID = q.Fingerprint()
+	if e := q.Validate(); e != nil {
+		return nil, e
+	}
+	d.Notification.Metadata[billing.ChannelQuoteMetadataKey] = q
+	return q, nil
+}

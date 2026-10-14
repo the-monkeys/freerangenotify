@@ -56,7 +56,7 @@ func (r *NotificationRepository) GetByID(ctx context.Context, notificationID str
 // Update updates an existing notification
 func (r *NotificationRepository) Update(ctx context.Context, n *notification.Notification) error {
 	n.UpdatedAt = time.Now()
-	return r.BaseRepository.Update(ctx, n.NotificationID, n)
+	return r.updateWithProcessingClaim(ctx, n.NotificationID, n)
 }
 
 // UpdateStatus updates the status of a notification
@@ -79,7 +79,7 @@ func (r *NotificationRepository) UpdateStatus(ctx context.Context, notificationI
 		updateDoc["failed_at"] = now
 	}
 
-	return r.BaseRepository.Update(ctx, notificationID, updateDoc)
+	return r.updateWithProcessingClaim(ctx, notificationID, updateDoc)
 }
 
 // Delete deletes a notification
@@ -238,9 +238,10 @@ func (r *NotificationRepository) GetRetryable(ctx context.Context, maxRetries in
 func (r *NotificationRepository) IncrementRetryCount(ctx context.Context, notificationID string, errorMessage string) error {
 	script := map[string]interface{}{
 		"script": map[string]interface{}{
-			"source": "ctx._source.retry_count += 1; ctx._source.error_message = params.error_message; ctx._source.updated_at = params.now",
+			"source": "if(params.token!='' && (ctx._source.metadata==null || ctx._source.metadata.worker_claim!=params.token)){ctx.op='noop';return;} if(ctx._source.status=='sent'||ctx._source.status=='delivered'||ctx._source.status=='read'){ctx.op='noop';return;} ctx._source.retry_count += 1; ctx._source.error_message = params.error_message; ctx._source.updated_at = params.now",
 			"lang":   "painless",
 			"params": map[string]interface{}{
+				"token":         notification.ProcessingClaim(ctx),
 				"error_message": errorMessage,
 				"now":           time.Now().Format(time.RFC3339),
 			},
@@ -468,8 +469,8 @@ func (r *NotificationRepository) ClearDeliveryFailure(ctx context.Context, id st
 	return r.BaseRepository.ScriptUpdate(ctx, id, map[string]interface{}{
 		"script": map[string]interface{}{
 			"lang":   "painless",
-			"source": "ctx._source.remove('error_message'); ctx._source.remove('failed_at'); if (ctx._source.metadata != null) { for (def key : params.keys) { ctx._source.metadata.remove(key); } }",
-			"params": map[string]interface{}{"keys": []string{
+			"source": "if(params.token!='' && (ctx._source.metadata==null || ctx._source.metadata.worker_claim!=params.token)){ctx.op='noop';return;} if(ctx._source.status=='sent'||ctx._source.status=='delivered'||ctx._source.status=='read'){ctx.op='noop';return;} ctx._source.remove('error_message'); ctx._source.remove('failed_at'); if (ctx._source.metadata != null) { for (def key : params.keys) { ctx._source.metadata.remove(key); } }",
+			"params": map[string]interface{}{"token": notification.ProcessingClaim(ctx), "keys": []string{
 				"failure_code", "failure_stage", "retryable",
 				"credits_required", "credits_remaining", "credits_reserved", "credits_available",
 			}},

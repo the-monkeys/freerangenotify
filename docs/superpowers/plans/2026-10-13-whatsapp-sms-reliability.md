@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Fiber, Elasticsearch CAS, Redis, React/TypeScript, existing Meta/Twilio/Vonage clients, proposed Exotel HTTP adapter, Go mock HTTP servers and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–2 approved for local implementation).
+**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–3 approved for local implementation).
 
 ## Global Constraints
 
@@ -30,7 +30,7 @@
 
 ## Phase 1 — Security and customer isolation
 
-**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with RED→GREEN regressions and all final checks passing. Phases 3–5 remain pending. No production changes or push.
+**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with RED→GREEN regressions and all final checks passing. Phase 3 Tasks 6–8 complete locally; 13 Important review findings fixed with RED→GREEN regressions and final checks passing. Phases 4–5 remain pending. No production changes or push.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -110,11 +110,11 @@
 
 **Interfaces:** Produce `PrepareChannelDelivery(ctx context.Context, notif *notification.Notification, usr *user.User) (*channelconnection.PreparedDelivery, error)` and `DispatchPrepared(ctx context.Context, delivery *channelconnection.PreparedDelivery) (*providers.Result, error)`. Resolve identity before financial admission; store safe snapshot metadata and retrieve secrets privately. Preserve Provider interface and current notification payloads.
 
-- [ ] Write `TestChannelDispatchRouting`: Twilio BYOC plus Content SID uses customer account, Meta template stays Meta, SMS Twilio/Vonage selection independent of map order, missing app sender never inherits a foreign sender, app load/disconnect fail closed, timeout/cancellation and lost acceptance response cause no fallback.
-- [ ] Run `go test ./cmd/worker ./internal/infrastructure/providers ./internal/usecases/services -run 'TestChannelDispatch' -count=1`; verify RED.
-- [ ] Implement request-scoped BYOC adapters without global bootstrap requirements, explicit provider/source selection and contextual HTTP deadlines. Apply the Task 3 CSW check to all free-form WhatsApp sends. Remove synthetic success IDs for malformed acceptance responses; preserve unknown-outcome quarantine.
-- [ ] Re-run targeted tests with mock servers that count accepted requests. Confirm legacy empty provider defaults to Twilio and configured explicit choices never drift across accounts.
-- [ ] Commit `fix: bind messaging delivery to the admitted customer account`.
+- [x] Write `TestChannelDispatchRouting`: Twilio BYOC plus Content SID uses customer account, Meta template stays Meta, SMS Twilio/Vonage selection independent of map order, missing app sender never inherits a foreign sender, app load/disconnect fail closed, timeout/cancellation and lost acceptance response cause no fallback.
+- [x] Run `go test ./cmd/worker ./internal/infrastructure/providers ./internal/usecases/services -run 'TestChannelDispatch' -count=1`; verify RED.
+- [x] Implement request-scoped BYOC adapters without global bootstrap requirements, explicit provider/source selection and contextual HTTP deadlines. Apply the Task 3 CSW check to all free-form WhatsApp sends. Remove synthetic success IDs for malformed acceptance responses; preserve unknown-outcome quarantine.
+- [x] Re-run targeted tests with mock servers that count accepted requests. Confirm legacy empty provider defaults to Twilio and configured explicit choices never drift across accounts.
+- [x] Commit `fix: bind messaging delivery to the admitted customer account`.
 
 ### Task 7: Immutable quotes with BYOC, category and segment dimensions
 
@@ -122,11 +122,11 @@
 
 **Interfaces:** Produce `QuoteChannelDelivery(ctx context.Context, prepared *channelconnection.PreparedDelivery) (*billing.ChannelQuote, error)` and `ReserveQuotedDelivery(ctx context.Context, tenantID, appID, notificationID string, quote *billing.ChannelQuote) (*billing.CreditReservation, error)`. Quote contains immutable rate-card version, pricing model, connection identity, credit amount, unit count, source, country/category and estimated vendor cost currency. Add detailed rate dimensions while preserving legacy flat cards and existing `Reserve` callers through their compatibility adapter.
 
-- [ ] Write `TestChannelQuote`: unchanged old card costs; BYOC fee from an explicitly activated detailed card; GSM 160/161 and UCS-2 70/71 boundaries, extension characters, emoji and exact rendered body; destination/category differences; spoofed client cost/free flags rejected; quote survives rate refresh and queued account changes.
-- [ ] Run `go test ./internal/domain/billing ./internal/usecases/services -run 'TestChannelQuote' -count=1`; verify RED.
-- [ ] Implement server-derived quote inputs, segment counting, immutable tariff dimensions, admitted snapshots and atomic exactly-once settlement. Separate vendor delivery costs/late failures from FRN processing charges. Preserve current tariffs and old reservations; no automatic new rate activation or retrospective billing.
-- [ ] Run targeted tests and `TestChannelQuoteSettlementRealES` with concurrent admission/replay/release. Check wallet, ledger and usage agree and a late callback cannot charge or refund twice. Document provider rate verification/activation prerequisites without inventing prices.
-- [ ] Commit `feat: quote messaging costs by connection and billable units`.
+- [x] Write `TestChannelQuote`: unchanged old card costs; BYOC fee from an explicitly activated detailed card; GSM 160/161 and UCS-2 70/71 boundaries, extension characters, emoji and exact rendered body; destination/category differences; spoofed client cost/free flags rejected; quote survives rate refresh and queued account changes.
+- [x] Run `go test ./internal/domain/billing ./internal/usecases/services -run 'TestChannelQuote' -count=1`; verify RED.
+- [x] Implement server-derived quote inputs, segment counting, immutable tariff dimensions, admitted snapshots and atomic exactly-once settlement. Separate vendor delivery costs/late failures from FRN processing charges. Preserve current tariffs and old reservations; no automatic new rate activation or retrospective billing.
+- [x] Run targeted tests and `TestChannelQuoteSettlementRealES` with concurrent admission/replay/release. Check wallet, ledger and usage agree and a late callback cannot charge or refund twice. Document provider rate verification/activation prerequisites without inventing prices.
+- [x] Commit `feat: quote messaging costs by connection and billable units`.
 
 ### Task 8: Inbox replies and phone OTP through shared dispatch
 
@@ -134,13 +134,13 @@
 
 **Interfaces:** Preserve `whatsapp.Service.Reply` and existing HTTP request fields; internally enqueue through notification/quote admission and add notification/accepted status fields to the response. Produce `DispatchPhoneVerificationOTP(ctx context.Context, userID, phone, code string) error` using a platform authentication connection/budget rather than a customer's wallet.
 
-- [ ] Write `TestChannelInboxReplyAccounting` and `TestChannelPhoneOTPDispatch`: Meta/Twilio replies produce one outbound record/provider ID/charge, expired CSW requires template, replay does not resend, plus-phone encoded correctly, missing configuration returns failure, code never logged, expiry/attempt limits unchanged, user/destination/IP budgets reject excess.
-- [ ] Run targeted service/handler tests for these names; verify RED.
-- [ ] Replace direct Meta inbox HTTP calls and raw-env/manual-form OTP code with shared dispatch. Enforce spec defaults (3/user/10min, 3/destination/10min, 10/IP/10min), destination allowlist and operator spend budget; Redis budget errors fail closed. Keep phone verification independent of the system-send verified-phone gate.
-- [ ] Run targeted tests and browser queued-reply/failure cases. Assert notification history, conversation history, usage and wallet consistency; API failure cannot claim an OTP was sent.
-- [ ] Commit `fix: account for inbox replies and validate OTP dispatch`.
+- [x] Write `TestChannelInboxReplyAccounting` and `TestChannelPhoneOTPDispatch`: Meta/Twilio replies produce one outbound record/provider ID/charge, expired CSW requires template, replay does not resend, plus-phone encoded correctly, missing configuration returns failure, code never logged, expiry/attempt limits unchanged, user/destination/IP budgets reject excess.
+- [x] Run targeted service/handler tests for these names; verify RED.
+- [x] Replace direct Meta inbox HTTP calls and raw-env/manual-form OTP code with shared dispatch. Enforce spec defaults (3/user/10min, 3/destination/10min, 10/IP/10min), destination allowlist and operator spend budget; Redis budget errors fail closed. Keep phone verification independent of the system-send verified-phone gate.
+- [x] Run targeted tests and browser queued-reply/failure cases. Assert notification history, conversation history, usage and wallet consistency; API failure cannot claim an OTP was sent.
+- [x] Commit `fix: account for inbox replies and validate OTP dispatch`.
 
-**Phase 3 checkpoint:** legacy Twilio templates, Meta templates, SMS, inbox replies and OTP all retain identity and use the intended accounting path. New prices remain inactive.
+**Phase 3 checkpoint:** complete locally. Legacy Twilio/Meta templates, SMS, inbox replies and OTP use the shared dispatch/accounting/budget path. Fresh independent review found 13 Important findings, all fixed with regression tests; the quoted-usage FRN currency field remains a deferred Minor for Phase 5. Final owned Go short suite: 31 tested packages pass; mock/browser cases: 7 channel + 43 reliability pass; production UI build passes with existing chunk warning. Disposable ES/Redis verifies overlapping workers, journal on/off, tariff-change drain, lease recovery, callback isolation and OTP budgets. Linux race checks remain Phase 5. New prices and required encrypted writes remain gated; no push/deployment/live send or actual `.env` edit. Details/rulings: documents/production-delivery-recovery-runbook.md.
 
 ## Phase 4 — Domestic SMS and operational controls
 

@@ -107,6 +107,15 @@ func (s *whatsappService) processStatusReceipt(ctx context.Context, receipt *wha
 	if err != nil || row == nil || row.AppID != receipt.Event.Binding.AppID {
 		return fmt.Errorf("delivery refresh state unavailable")
 	}
+	if receipt.Steps["inbox"] != "done" {
+		if err := RepairOutboundConversation(ctx, s.repo, row); err != nil {
+			return err
+		}
+		receipt.Steps["inbox"] = "done"
+		if err := s.events.SaveEvent(ctx, receipt); err != nil {
+			return err
+		}
+	}
 	if err := s.publishSSE("delivery_status", map[string]interface{}{"notification_id": row.NotificationID, "app_id": row.AppID, "status": string(row.Status), "timestamp": status.Timestamp, "meta_message_id": status.MetaMessageID}); err != nil {
 		return err
 	}

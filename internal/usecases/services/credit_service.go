@@ -941,3 +941,61 @@ func normalizeCreditChannel(channel string) string {
 		return channel
 	}
 }
+
+// Bound pre-upgrade admissions remain authoritative during a worker drain.
+func (s *CreditService) ResolveDeliveryReservation(ctx context.Context, id, app, notif, ch string) (*billing.CreditReservation, error) {
+	var res *billing.CreditReservation
+	var err error
+	if _, durable := billing.JournalSubscriptionID(id); durable {
+		repo, e := s.journal()
+		if e != nil {
+			return nil, e
+		}
+		receipt, e := repo.GetReservationReceipt(ctx, id)
+		if e != nil {
+			return nil, e
+		}
+		if receipt != nil {
+			copy := receipt.Reservation
+			res = &copy
+		}
+	} else {
+		res, err = s.loadReservationWithError(ctx, id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if res == nil || res.AppID != app || res.NotificationID != notif || res.Channel != normalizeCreditChannel(ch) {
+		return nil, fmt.Errorf("existing reservation binding unavailable")
+	}
+	return res, nil
+}
+
+func (s *CreditService) BindDeliveryQuote(ctx context.Context, r *billing.CreditReservation, q *billing.ChannelQuote) (*billing.CreditReservation, error) {
+	if q.Validate() != nil || q.Credits != r.CreditsReserved || q.RateCardVersion != r.RateCardVersion || q.Connection.AppID != r.AppID || q.Channel != r.Channel || r.Status != billing.CreditReservationReserved {
+		return nil, fmt.Errorf("existing admission quote mismatch")
+	}
+	if _, durable := billing.JournalSubscriptionID(r.ID); durable {
+		binder, ok := s.balanceRepo.(interface {
+			BindReservationQuote(context.Context, string, *billing.ChannelQuote) (*billing.CreditReservation, error)
+		})
+		if !ok {
+			return nil, fmt.Errorf("old admission quote journal unavailable")
+		}
+		return binder.BindReservationQuote(ctx, r.ID, q)
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	current, e := s.ResolveDeliveryReservation(ctx, r.ID, r.AppID, r.NotificationID, r.Channel)
+	if e != nil {
+		return nil, e
+	}
+	if current.Status != billing.CreditReservationReserved || current.Quote != nil && current.Quote.ID != q.ID {
+		return nil, fmt.Errorf("old admission changed")
+	}
+	current.Quote = q
+	if e = s.saveReservation(ctx, current); e != nil {
+		return nil, e
+	}
+	return current, nil
+}

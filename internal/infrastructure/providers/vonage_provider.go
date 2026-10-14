@@ -98,12 +98,12 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 
 	if resp.StatusCode != http.StatusOK {
 		p.logger.Error("Vonage API HTTP error",
-			zap.Int("status_code", resp.StatusCode),
-			zap.String("body", string(respBody)))
-		return NewErrorResult(
-			fmt.Errorf("Vonage API error: %d - %s", resp.StatusCode, string(respBody)),
-			ErrorTypeProviderAPI,
-		), nil
+			zap.Int("status_code", resp.StatusCode))
+		result := NewErrorResult(fmt.Errorf("Vonage API HTTP error: %d", resp.StatusCode), ErrorTypeProviderAPI)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, nil
 	}
 
 	var vonageResp struct {
@@ -118,10 +118,9 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 	}
 
 	if len(vonageResp.Messages) > 0 && vonageResp.Messages[0].Status != "0" {
-		return NewErrorResult(
-			fmt.Errorf("Vonage send failed: status=%s error=%s", vonageResp.Messages[0].Status, vonageResp.Messages[0].ErrorText),
-			ErrorTypeProviderAPI,
-		), nil
+		result := NewErrorResult(fmt.Errorf("Vonage message rejected"), ErrorTypeProviderAPI)
+		result.Metadata["acceptance_rejected"] = true
+		return result, nil
 	}
 
 	messageID := ""

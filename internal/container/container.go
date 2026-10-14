@@ -267,6 +267,13 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		notification.ChannelSMS:      {Provider: "twilio", AccountID: cfg.Providers.Twilio.AccountSID, SenderID: cfg.Providers.Twilio.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.Twilio.AuthToken}},
 	}}
 
+	if cfg.Providers.MetaWhatsApp.Enabled {
+		account := cfg.Providers.MetaWhatsApp.WABAID
+		if account == "" && cfg.Providers.MetaWhatsApp.PhoneNumberID != "" {
+			account = "phone:" + cfg.Providers.MetaWhatsApp.PhoneNumberID
+		}
+		container.ChannelConnections.System[notification.Channel("meta_whatsapp")] = &channelconnection.Snapshot{Provider: "meta", AccountID: account, SenderID: cfg.Providers.MetaWhatsApp.PhoneNumberID, Credentials: map[string]string{"access_token": cfg.Providers.MetaWhatsApp.AccessToken, "app_secret": cfg.Providers.MetaWhatsApp.AppSecret}}
+	}
 	// Initialize licensing checker
 	container.ChannelDispatch = &services.ChannelDispatchService{Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
 	if cfg.Providers.Twilio.AccountSID == "" && cfg.Providers.Vonage.Enabled {

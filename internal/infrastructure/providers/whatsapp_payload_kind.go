@@ -9,6 +9,11 @@ import (
 // an interactive/text send into a template for permission or fee purposes.
 func WhatsAppPayloadKind(n *notification.Notification, provider string) (string, error) {
 	if provider == "twilio" {
+		for _, key := range []string{"whatsapp_template", "whatsapp_rich", "whatsapp_interactive", "whatsapp_location", "whatsapp_video", "whatsapp_image", "whatsapp_audio", "whatsapp_document"} {
+			if _, exists := n.Content.Data[key]; exists {
+				return "", fmt.Errorf("Meta payload requires Meta account")
+			}
+		}
 		if raw, exists := n.Content.Data["content_sid"]; exists {
 			sid, ok := raw.(string)
 			if !ok || sid == "" {
