@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Fiber, Elasticsearch CAS, Redis, React/TypeScript, existing Meta/Twilio/Vonage clients, proposed Exotel HTTP adapter, Go mock HTTP servers and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–3 approved for local implementation).
+**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1â€“3 approved for local implementation).
 
 ## Global Constraints
 
@@ -28,9 +28,9 @@
 4. A queued send surviving disconnect/rotation must retain its admitted identity and price: Tasks 4 and 7.
 5. An unchanged secret in a stale browser form must not overwrite a newly connected account: Tasks 1 and 5.
 
-## Phase 1 — Security and customer isolation
+## Phase 1 â€” Security and customer isolation
 
-**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with RED→GREEN regressions and all final checks passing. Phase 3 Tasks 6–8 complete locally; 13 Important review findings fixed with RED→GREEN regressions and final checks passing. Phases 4–5 remain pending. No production changes or push.
+**Local status:** Tasks 1â€“3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with REDâ†’GREEN regressions and all final checks passing. Phase 3 Tasks 6â€“8 complete locally; 13 Important review findings fixed with REDâ†’GREEN regressions and final checks passing. Phases 4â€“5 remain pending. No production changes or push.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -72,7 +72,7 @@
 
 **Phase 1 checkpoint: passed locally.** Full Go short suite; 43 reliability browser cases; seven disposable ES/Redis scenarios; production UI build (existing chunk warning); Linux SSE race regressions. Credential scan and security diff reviewed. Full services/providers/handlers Linux race coverage remains a Phase 5 CI requirement. No deployment, production migration, key rotation or live sends performed.
 
-## Phase 2 — Explicit customer connections and onboarding
+## Phase 2 â€” Explicit customer connections and onboarding
 
 ### Task 4: Encrypted connections, resolution and migration
 
@@ -100,9 +100,9 @@
 
 **Phase 2 checkpoint:** local fixture validation proves two independent Meta customers need no global sender credentials, and scoped connection resolution selects the environment override before the application default.
 
-**Local implementation status:** Tasks 4–5 implemented. One independent review found eight blockers; all reproduced and fixed with regression coverage. Final verification passed: go test -p 2 -short ./..., production-schema ES/Redis connection/draft/callback/inbox isolation, UI build, 6 channel browser cases and 43 reliability browser cases. Encrypted writers remain disabled until Phase 3 and complete fleet reader rollout.
+**Local implementation status:** Tasks 4â€“5 implemented. One independent review found eight blockers; all reproduced and fixed with regression coverage. Final verification passed: go test -p 2 -short ./..., production-schema ES/Redis connection/draft/callback/inbox isolation, UI build, 6 channel browser cases and 43 reliability browser cases. Encrypted writers remain disabled until Phase 3 and complete fleet reader rollout.
 
-## Phase 3 — Shared dispatch, pricing and delivery accounting
+## Phase 3 â€” Shared dispatch, pricing and delivery accounting
 
 ### Task 6: Deterministic outbound routing and timeout boundaries
 
@@ -142,7 +142,7 @@
 
 **Phase 3 checkpoint:** complete locally. Legacy Twilio/Meta templates, SMS, inbox replies and OTP use the shared dispatch/accounting/budget path. Fresh independent review found 13 Important findings, all fixed with regression tests; the quoted-usage FRN currency field remains a deferred Minor for Phase 5. Final owned Go short suite: 31 tested packages pass; mock/browser cases: 7 channel + 43 reliability pass; production UI build passes with existing chunk warning. Disposable ES/Redis verifies overlapping workers, journal on/off, tariff-change drain, lease recovery, callback isolation and OTP budgets. Linux race checks remain Phase 5. New prices and required encrypted writes remain gated; no push/deployment/live send or actual `.env` edit. Details/rulings: documents/production-delivery-recovery-runbook.md.
 
-## Phase 4 — Domestic SMS and operational controls
+## Phase 4 â€” Domestic SMS and operational controls
 
 ### Task 9: Exotel adapter, DLT readiness and sender budgets
 
@@ -150,15 +150,18 @@
 
 **Interfaces:** Exotel implements the existing Provider interface with app-scoped encrypted credentials, approved sender, DLT entity/template IDs and per-connection throughput. `AcquireDeliveryBudget(ctx context.Context, snapshot *channelconnection.Snapshot, units int64) error` uses atomic Redis limits separate from HTTP quotas. Define detailed request fields from the verified provider API before implementation, not legacy draft documentation.
 
-- [ ] Verify current Exotel official API/auth/callback requirements and account-specific Indian routes; record dated references and confirm mock-only development. Write `TestExotelDelivery` for valid/invalid DLT binding, approved-template variable mismatch, auth/429/network/unknown response, provider acceptance and signed callback correlation.
-- [ ] Run `go test ./internal/infrastructure/providers -run '^TestExotel' -count=1`; verify RED. Add a mock two-connection budget test showing a busy sender cannot exhaust another sender's allowance.
-- [ ] Implement Exotel, safe UI fields/readiness and atomic sender/unit/spend budgets. Additive provider choice preserves Twilio defaults; domestic route starts disabled. Validate rendered text against approved DLT template; do not route internationally as an implicit workaround.
-- [ ] Run Exotel/unit/integration/browser tests with mocks/disposable Redis. Simulate a 6,000-recipient queue at allowed throughput, measure preparation/processing and report provider-imposed limits; no zero-time delivery promise. Require a verified commercial quote before live enablement.
-- [ ] Commit `feat: add domestic SMS connections and delivery budgets`.
+- [x] Verify current Exotel official API/auth/callback requirements and account-specific Indian routes; record dated references and confirm mock-only development. Write `TestExotelDelivery` for valid/invalid DLT binding, approved-template variable mismatch, auth/429/network/unknown response, provider acceptance and signed callback correlation.
+- [x] Run `go test ./internal/infrastructure/providers -run '^TestExotel' -count=1`; verify RED. Add a mock two-connection budget test showing a busy sender cannot exhaust another sender's allowance.
+- [x] Implement Exotel, safe UI fields/readiness and atomic sender/unit/spend budgets. Additive provider choice preserves Twilio defaults; domestic route starts disabled. Validate rendered text against approved DLT template; do not route internationally as an implicit workaround.
+- [x] Run Exotel/unit/integration/browser tests with mocks/disposable Redis. Simulate a 6,000-recipient queue at allowed throughput, measure preparation/processing and report provider-imposed limits; no zero-time delivery promise. Require a verified commercial quote before live enablement.
+- [x] Commit `feat: add domestic SMS connections and delivery budgets`.
 
 **Phase 4 checkpoint:** demonstrate domestic SMS configuration/estimates and queue behavior with fixtures; provider approval and actual prices remain deployment prerequisites.
 
-## Phase 5 — Environment simplification, cleanup and rollout evidence
+
+**Local Task 9 implementation checkpoint:** Exotel provider, configuration/UI, rolling/daily budgets and durable status recovery implemented. Owned Go short suite: 31 packages pass; 8 channel and 43 reliability browser cases pass; UI build passes (existing chunk warning). Disposable ES verifies Exotel restart/kind separation and legacy callbacks/reply accounting. 6,000 real Redis queue/mock HTTP sends verified in 30 virtual capacity windows. Independent review and a reproduced editable-draft schema fix are pending before Phase 4 completion. No live enablement or production changes.
+
+## Phase 5 â€” Environment simplification, cleanup and rollout evidence
 
 ### Task 10: Runtime public configuration and compatible environment aliases
 

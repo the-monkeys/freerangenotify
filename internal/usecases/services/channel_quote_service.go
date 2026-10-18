@@ -141,6 +141,16 @@ func (s *ChannelQuoteService) QuoteChannelDelivery(ctx context.Context, d *chann
 			return nil, fmt.Errorf("unsupported pricing model")
 		}
 	}
+	if snap.Provider == "exotel" {
+		if snap.Exotel == nil || snap.Exotel.Validate() != nil {
+			return nil, fmt.Errorf("verified domestic SMS cost unavailable")
+		}
+		q.Country = "IN"
+		q.EstimatedVendorCostMinor = snap.Exotel.Limits.CostMinorPerUnit * q.Units
+		q.VendorCurrency = snap.Exotel.Limits.Currency
+		q.VendorCostStatus = "estimated"
+	}
+
 	q.ID = q.Fingerprint()
 	if err := q.Validate(); err != nil {
 		return nil, err

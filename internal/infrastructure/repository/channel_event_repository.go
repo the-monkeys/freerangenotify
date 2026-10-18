@@ -104,7 +104,23 @@ func (r *ChannelEventRepository) ClaimEvent(ctx context.Context, id string, now 
 	return event, nil
 }
 func (r *ChannelEventRepository) PendingEvents(ctx context.Context, now time.Time, limit int) ([]string, error) {
+	return r.pendingEvents(ctx, now, limit, "")
+}
+func (r *ChannelEventRepository) PendingEventsForKind(ctx context.Context, now time.Time, limit int, kind string) ([]string, error) {
+	return r.pendingEvents(ctx, now, limit, kind)
+}
+func (r *ChannelEventRepository) pendingEvents(ctx context.Context, now time.Time, limit int, kind string) ([]string, error) {
 	body, _ := json.Marshal(map[string]interface{}{"size": limit, "query": map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{map[string]interface{}{"terms": map[string]interface{}{"state.keyword": []string{"pending", "processing"}}}, map[string]interface{}{"range": map[string]interface{}{"lease_until": map[string]interface{}{"lte": now.Format(time.RFC3339Nano)}}}, map[string]interface{}{"range": map[string]interface{}{"next_attempt": map[string]interface{}{"lte": now.Format(time.RFC3339Nano)}}}}}}, "sort": []interface{}{map[string]interface{}{"created_at": "asc"}}})
+	var query map[string]interface{}
+	_ = json.Unmarshal(body, &query)
+	b := query["query"].(map[string]interface{})["bool"].(map[string]interface{})
+	term := map[string]interface{}{"term": map[string]interface{}{"event.kind.keyword": "exotel_status"}}
+	if kind == "" {
+		b["must_not"] = []interface{}{term}
+	} else {
+		b["filter"] = append(b["filter"].([]interface{}), map[string]interface{}{"term": map[string]interface{}{"event.kind.keyword": kind}})
+	}
+	body, _ = json.Marshal(query)
 	req := esapi.SearchRequest{Index: []string{"channel_events"}, Body: strings.NewReader(string(body))}
 	res, err := req.Do(ctx, r.client)
 	if err != nil {

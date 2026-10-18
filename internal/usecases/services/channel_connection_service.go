@@ -19,6 +19,7 @@ type ChannelConnectionService struct {
 	Environments  environment.Repository
 	Codec         *secrets.ConnectionCodec
 	WritesEnabled bool
+	ExotelEnabled bool
 	System        map[notification.Channel]*channelconnection.Snapshot
 }
 
@@ -140,7 +141,7 @@ func (s *ChannelConnectionService) binding(c *channelconnection.Connection, fiel
 	return secrets.SecretBinding{ConnectionID: c.ID, AppID: c.AppID, EnvironmentID: c.EnvironmentID, Provider: c.Provider, Field: field}
 }
 func (s *ChannelConnectionService) snapshot(c *channelconnection.Connection) (*channelconnection.Snapshot, error) {
-	snap := &channelconnection.Snapshot{ConnectionID: c.ID, AppID: c.AppID, EnvironmentID: c.EnvironmentID, Channel: c.Channel, Revision: c.Revision, Provider: c.Provider, CredentialSource: c.CredentialSource, AccountID: c.AccountID, SenderID: c.SenderID, Readiness: c.Readiness, Credentials: map[string]string{}}
+	snap := &channelconnection.Snapshot{ConnectionID: c.ID, AppID: c.AppID, EnvironmentID: c.EnvironmentID, Channel: c.Channel, Revision: c.Revision, Provider: c.Provider, CredentialSource: c.CredentialSource, AccountID: c.AccountID, SenderID: c.SenderID, Readiness: c.Readiness, Exotel: c.Exotel, Credentials: map[string]string{}}
 	if c.CredentialSource == "system" {
 		system := s.System[c.Channel]
 		if system == nil || system.Provider != c.Provider || system.AccountID != c.AccountID {
@@ -241,7 +242,7 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 	if c.Channel == notification.ChannelWhatsApp && c.Provider == "twilio" {
 		c.SenderID = strings.TrimPrefix(c.SenderID, "whatsapp:")
 	}
-	if c.Provider != "meta" && c.Provider != "twilio" && !(c.Provider == "vonage" && c.Channel == notification.ChannelSMS) {
+	if c.Provider != "meta" && c.Provider != "twilio" && !((c.Provider == "vonage" || c.Provider == "exotel") && c.Channel == notification.ChannelSMS) {
 		return nil, fmt.Errorf("unsupported provider")
 	}
 	if c.Provider == "meta" && c.Channel != notification.ChannelWhatsApp {
@@ -250,14 +251,24 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 	if c.CredentialSource != "byoc" && c.CredentialSource != "system" {
 		return nil, fmt.Errorf("invalid credential source")
 	}
+	if c.Provider == "exotel" && c.CredentialSource != "byoc" {
+		return nil, fmt.Errorf("Exotel requires customer credentials")
+	}
 	if old.Provider != "" && old.Provider != c.Provider {
+		c.Exotel = nil
 		credentials = map[string]string{}
+	}
+	if patch.Exotel != nil {
+		if c.Provider != "exotel" {
+			return nil, fmt.Errorf("domestic SMS configuration requires Exotel")
+		}
+		c.Exotel = patch.Exotel
 	}
 	for _, field := range patch.ClearSecrets {
 		delete(credentials, field)
 	}
 	for field, value := range patch.Secrets {
-		if field != "access_token" && field != "auth_token" && field != "app_secret" && !(field == "api_secret" && c.Provider == "vonage") {
+		if field != "access_token" && field != "auth_token" && field != "app_secret" && !(field == "api_secret" && c.Provider == "vonage") && !((field == "api_key" || field == "api_token") && c.Provider == "exotel") {
 			return nil, fmt.Errorf("unsupported secret field")
 		}
 		if strings.TrimSpace(value) != "" && !strings.HasPrefix(value, "****") {

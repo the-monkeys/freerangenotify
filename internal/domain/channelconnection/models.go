@@ -14,6 +14,7 @@ type EncryptedSecret struct {
 	Ciphertext string `json:"ciphertext"`
 }
 type Connection struct {
+	Exotel           *DomesticSMSConfig         `json:"exotel,omitempty"`
 	ID               string                     `json:"id"`
 	AppID            string                     `json:"app_id"`
 	EnvironmentID    string                     `json:"environment_id"`
@@ -30,6 +31,7 @@ type Connection struct {
 	UpdatedAt        time.Time                  `json:"updated_at"`
 }
 type Patch struct {
+	Exotel           *DomesticSMSConfig   `json:"exotel,omitempty"`
 	AppID            string               `json:"-"`
 	EnvironmentID    string               `json:"-"`
 	Channel          notification.Channel `json:"-"`
@@ -42,6 +44,7 @@ type Patch struct {
 	Disconnect       bool                 `json:"disconnect,omitempty"`
 }
 type Snapshot struct {
+	Exotel           *DomesticSMSConfig   `json:"exotel,omitempty"`
 	ConnectionID     string               `json:"connection_id"`
 	AppID            string               `json:"app_id"`
 	EnvironmentID    string               `json:"environment_id"`

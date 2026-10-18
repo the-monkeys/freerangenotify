@@ -87,6 +87,9 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		v1.Post("/billing/webhook", c.PaymentHandler.HandleWebhook)
 	}
 
+	if c.ExotelWebhookHandler != nil {
+		v1.Post("/webhooks/exotel/sms/:id", c.ExotelWebhookHandler.Handle)
+	}
 	// Meta WhatsApp webhooks (public, verified via X-Hub-Signature-256 inside handler)
 	if c.MetaWebhookHandler != nil {
 		metaWH := v1.Group("/webhooks/meta")

@@ -1,6 +1,6 @@
-# Production delivery recovery — Task 6
+# Production delivery recovery â€” Task 6
 
-## WhatsApp/SMS Phase 1 — October 2026
+## WhatsApp/SMS Phase 1 â€” October 2026
 
 Ordinary application, settings, provider-list and environment reads redact
 credentials. The `api_key` field in dashboard reads is a public `dashboard:<app>`
@@ -286,7 +286,7 @@ The OTel overlay pins collector 0.130.0, Tempo 2.8.2, and Grafana 12.0.0 and set
 limit, 160 MiB Go memory target, a first-position memory limiter (200 MiB hard /
 160 MiB soft heap thresholds, checked each second), batches capped at 512 spans,
 a 128-request in-memory exporter queue with two consumers, five-second export
-attempts, and retry backoff of 1–10 seconds limited to 60 seconds per export.
+attempts, and retry backoff of 1â€“10 seconds limited to 60 seconds per export.
 Queues are measured in batches, not bytes. Large spans and process overhead can
 still trigger the container limit; tune based on measured load. Full queues,
 retry exhaustion, and restarts can drop traces. This telemetry queue is not the
@@ -692,7 +692,7 @@ for another intent or environment. Complete the API fleet rollout before enablin
 new clients; an older request already in flight before a claim cannot be locked
 retroactively. Quarantined delivery history explicitly reports `retryable:false`.
 
-## WhatsApp/SMS Phase 2 — local connections and onboarding
+## WhatsApp/SMS Phase 2 â€” local connections and onboarding
 
 Phase 2 adds `channel_connections`, redacted JWT/app-authorized connection reads,
 CAS updates, retained encrypted revisions, provider validation and scoped authoring.
@@ -807,7 +807,7 @@ used. A final added-line credential scan found no high-confidence secrets.
 
 Task 6 binds WhatsApp/SMS to a safe admitted connection reference before enqueue and credit admission. Retained encrypted revisions remain readable; legacy queued sends reject changed account/sender identities rather than selecting a replacement account. All free-form dispatches require the environment/account/sender-scoped customer-service window. Twilio inbound callbacks fetch `date_created` from the signed account's Message resource and verify account, SID and both endpoints before opening a window. Malformed/empty acceptance responses remain unknown outcomes, without synthetic IDs or fallback.
 
-Local tests use mock HTTP endpoints and disposable loopback-only ES/Redis. No production writes, live sends, tariff activation or actual environment edits. Quote/accounting/reply/OTP integration is implemented in Tasks 7–8 below. Encrypted writers remain gated until the entire API/worker fleet can read the new records.
+Local tests use mock HTTP endpoints and disposable loopback-only ES/Redis. No production writes, live sends, tariff activation or actual environment edits. Quote/accounting/reply/OTP integration is implemented in Tasks 7â€“8 below. Encrypted writers remain gated until the entire API/worker fleet can read the new records.
 
 Provider references checked 2026-10-14: [Twilio Message resource](https://www.twilio.com/docs/messaging/api/message-resource), [inbound webhook timestamps](https://help.twilio.com/articles/46569585455003), [SMS segment limits](https://www.twilio.com/docs/glossary/what-sms-character-limit).
 
@@ -835,74 +835,103 @@ Explicit platform Meta payloads retain their configured Meta route, including cr
 
 Conversation history is projected idempotently from stored notification state after worker processing, including failures. Failed projection writes retain the processing item; recovery repairs terminal history without another provider send. Durable callback receipts include conversation projection before acknowledgment. Delivered/read history cannot regress to sent. Vonage definitive HTTP/message rejections carry refund evidence, while network/malformed outcomes stay unknown; raw provider response text is excluded from logs/errors. Twilio rejects unsupported Meta-specific shapes. Recurring occurrences retain environment and receive fresh connection/quote metadata before scheduling.
 
-Final verification passed: all 31 tested packages across the repository-owned Go short suite, 7 channel and 43 reliability browser cases, and the UI production build (existing chunk-size warning). Disposable cross-phase ES/Redis/service/worker checks passed in 45.222s/70.737s/3.087s; the final actual-worker overlap/lease/legacy drain run after compensation passed in 58.630s. Expired-message claim ordering and lost-lease compensation were also reproduced RED→GREEN. Only a known rejected ownership CAS releases a fresh unbound compatibility hold; shared/prior holds and uncertain writes remain quarantined. Added-line high-confidence credential matches: zero; changed files are valid UTF-8 and diff checks pass. New prices, encrypted writers and paid OTP remain operator-gated; no production writes, real `.env` edits, live sends, push or deployment occurred.
+Final verification passed: all 31 tested packages across the repository-owned Go short suite, 7 channel and 43 reliability browser cases, and the UI production build (existing chunk-size warning). Disposable cross-phase ES/Redis/service/worker checks passed in 45.222s/70.737s/3.087s; the final actual-worker overlap/lease/legacy drain run after compensation passed in 58.630s. Expired-message claim ordering and lost-lease compensation were also reproduced REDâ†’GREEN. Only a known rejected ownership CAS releases a fresh unbound compatibility hold; shared/prior holds and uncertain writes remain quarantined. Added-line high-confidence credential matches: zero; changed files are valid UTF-8 and diff checks pass. New prices, encrypted writers and paid OTP remain operator-gated; no production writes, real `.env` edits, live sends, push or deployment occurred.
 
 Deferred minor: quoted journal usage does not yet populate FRN `Currency`; vendor-estimate currency remains separately populated. Phase 5 should add that display/reporting metadata. No charge amount is changed by this omission.
 
 Phase 3 rulings (including all review exclusions), in execution order:
 
-- Pre-flight: Task 4 -> 6: snapshot credentials private; revision zero has no historical record. Ruling: persist safe legacy identity and reject account/sender drift on recovery; encrypted revisions use retained history — avoids silently changing queued accounts — cost: an unmigrated queued send may require operator reconciliation after rotation.
+- Pre-flight: Task 4 -> 6: snapshot credentials private; revision zero has no historical record. Ruling: persist safe legacy identity and reject account/sender drift on recovery; encrypted revisions use retained history â€” avoids silently changing queued accounts â€” cost: an unmigrated queued send may require operator reconciliation after rotation.
 
-- Pre-flight: Task 3 -> 6/8: CSW currently keyed only app/contact. Ruling: bind new windows to environment/provider/account/sender and require a verified provider timestamp; do not trust receipt-time or unscoped legacy windows — cost: legacy free-form sends may temporarily require a template.
+- Pre-flight: Task 3 -> 6/8: CSW currently keyed only app/contact. Ruling: bind new windows to environment/provider/account/sender and require a verified provider timestamp; do not trust receipt-time or unscoped legacy windows â€” cost: legacy free-form sends may temporarily require a template.
 
-- Ruling: reuse current local branch as requested; PowerShell bookkeeping implements shell scripts' ledger contract — cost: none to delivery behavior.
+- Ruling: reuse current local branch as requested; PowerShell bookkeeping implements shell scripts' ledger contract â€” cost: none to delivery behavior.
 
-- Ruling: provider-to-service import cycle required attachment sentinels moved to domain with service aliases and an interface for the existing self-hosted adapter — preserves callers and avoids premature Phase 5 deletion — cost: additional narrow refactor.
+- Ruling: provider-to-service import cycle required attachment sentinels moved to domain with service aliases and an interface for the existing self-hosted adapter â€” preserves callers and avoids premature Phase 5 deletion â€” cost: additional narrow refactor.
 
-- Ruling: full ./... traversal stalled; all repository-owned Go roots passed offline via go test -p 2 -short ./cmd/... ./internal/... ./pkg/... ./sdk/go/... ./tests/... — excludes frontend third-party Go test code — cost: no validation of vendored frontend dependency's incidental Go package.
+- Ruling: full ./... traversal stalled; all repository-owned Go roots passed offline via go test -p 2 -short ./cmd/... ./internal/... ./pkg/... ./sdk/go/... ./tests/... â€” excludes frontend third-party Go test code â€” cost: no validation of vendored frontend dependency's incidental Go package.
 
-- Ruling: client price/free hints are ignored and reserved accounting metadata is stripped rather than rejecting an otherwise compatible payload — server-derived quotes remain authoritative — cost: submitted hints cannot be treated as approved prices.
+- Ruling: client price/free hints are ignored and reserved accounting metadata is stripped rather than rejecting an otherwise compatible payload â€” server-derived quotes remain authoritative â€” cost: submitted hints cannot be treated as approved prices.
 
-- Ruling: legacy Meta settings without WABA use sender-scoped account identity for flat outbound delivery; detailed tariff validation/inbound assignment still needs a validated WABA — preserves old phone/token configurations without another account — cost: revalidation required before detailed pricing/inbound mapping.
+- Ruling: legacy Meta settings without WABA use sender-scoped account identity for flat outbound delivery; detailed tariff validation/inbound assignment still needs a validated WABA â€” preserves old phone/token configurations without another account â€” cost: revalidation required before detailed pricing/inbound mapping.
 
-- Final: Ruling: Exotel, DLT readiness and sender throughput/budgets remain Phase 4 work — existing Twilio/Vonage/Meta paths remain available — cost: no domestic-route or throughput guarantee yet.
+- Final: Ruling: Exotel, DLT readiness and sender throughput/budgets remain Phase 4 work â€” existing Twilio/Vonage/Meta paths remain available â€” cost: no domestic-route or throughput guarantee yet.
 
-- Final: Ruling: Runtime aliases/capabilities, flag consolidation and Graph-version cleanup remain Phase 5 work — legacy configuration remains readable — cost: configuration simplification is still pending.
+- Final: Ruling: Runtime aliases/capabilities, flag consolidation and Graph-version cleanup remain Phase 5 work â€” legacy configuration remains readable â€” cost: configuration simplification is still pending.
 
-- Final: Ruling: Self-hosted adapter deletion and dependencies remain Phase 5 work — only the narrow import-cycle compatibility refactor was needed now — cost: old dependency footprint remains.
+- Final: Ruling: Self-hosted adapter deletion and dependencies remain Phase 5 work â€” only the narrow import-cycle compatibility refactor was needed now â€” cost: old dependency footprint remains.
 
-- Final: Ruling: Linux race-suite completion remains Phase 5 work — Windows short-suite results are not race coverage — cost: concurrent races outside fixture scenarios are not ruled out.
+- Final: Ruling: Linux race-suite completion remains Phase 5 work â€” Windows short-suite results are not race coverage â€” cost: concurrent races outside fixture scenarios are not ruled out.
 
-- Final: Ruling: Live provider approval/readiness, paid behavior and canaries remain operator work — this phase was authorized for local mocked implementation only — cost: production certification is pending.
+- Final: Ruling: Live provider approval/readiness, paid behavior and canaries remain operator work â€” this phase was authorized for local mocked implementation only â€” cost: production certification is pending.
 
-- Final: Ruling: Commercial rates, taxes, currencies, allowances and provider segmentation exceptions need account-specific verification — fixture tariffs remain inactive and are not commercial quotes — cost: no verified cheapest-price claim.
+- Final: Ruling: Commercial rates, taxes, currencies, allowances and provider segmentation exceptions need account-specific verification â€” fixture tariffs remain inactive and are not commercial quotes â€” cost: no verified cheapest-price claim.
 
-- Final: Ruling: Detailed tariff activation and required encrypted writes stay gated — reader-first rollout and explicit operator activation are required — cost: new rates/writes are not activated by these commits.
+- Final: Ruling: Detailed tariff activation and required encrypted writes stay gated â€” reader-first rollout and explicit operator activation are required â€” cost: new rates/writes are not activated by these commits.
 
-- Final: Ruling: Previously copied master-key rotation remains separate operator work — ordinary-read masking does not revoke copied credentials — cost: old copied keys remain valid until rotated.
+- Final: Ruling: Previously copied master-key rotation remains separate operator work â€” ordinary-read masking does not revoke copied credentials â€” cost: old copied keys remain valid until rotated.
 
-- Final: Ruling: Historical balance repair and attribution backfills remain separate audited work — no live database modifications are authorized in this phase — cost: historical discrepancies remain.
+- Final: Ruling: Historical balance repair and attribution backfills remain separate audited work â€” no live database modifications are authorized in this phase â€” cost: historical discrepancies remain.
 
-- Final: Ruling: Queued legacy sends reject account/sender drift after rotation — no historical secret revision exists for revision-zero connections — cost: operator reconciliation can be required.
+- Final: Ruling: Queued legacy sends reject account/sender drift after rotation â€” no historical secret revision exists for revision-zero connections â€” cost: operator reconciliation can be required.
 
-- Final: Ruling: Unscoped old CSW records do not authorize new free-form sends — validated timestamp and app/environment/account/sender scope are required — cost: an approved template may be needed temporarily.
+- Final: Ruling: Unscoped old CSW records do not authorize new free-form sends â€” validated timestamp and app/environment/account/sender scope are required â€” cost: an approved template may be needed temporarily.
 
-- Final: Ruling: Ambiguous external workflow/webhook results are quarantined — replay cannot safely prove whether the external action occurred — cost: manual reconciliation can be required.
+- Final: Ruling: Ambiguous external workflow/webhook results are quarantined â€” replay cannot safely prove whether the external action occurred â€” cost: manual reconciliation can be required.
 
-- Final: Ruling: Client price/free hints are stripped rather than rejecting compatible requests — server-derived immutable quotes alone authorize pricing — cost: client hints do not affect the charged amount.
+- Final: Ruling: Client price/free hints are stripped rather than rejecting compatible requests â€” server-derived immutable quotes alone authorize pricing â€” cost: client hints do not affect the charged amount.
 
-- Final: Ruling: Legacy Meta without WABA retains sender-scoped flat outbound identity — old phone/token integrations remain readable without inventing a WABA — cost: detailed pricing/inbound mapping still needs revalidation.
+- Final: Ruling: Legacy Meta without WABA retains sender-scoped flat outbound identity â€” old phone/token integrations remain readable without inventing a WABA â€” cost: detailed pricing/inbound mapping still needs revalidation.
 
-- Final: Ruling: Automatic replies remain unavailable — permitted by the spec; messages remain in the inbox — cost: replies require an explicit manual action.
+- Final: Ruling: Automatic replies remain unavailable â€” permitted by the spec; messages remain in the inbox â€” cost: replies require an explicit manual action.
 
-- Final: Ruling: General fallback outside the admitted connection remains withheld — customer account identity and unknown-outcome safety take precedence — cost: delivery can fail instead of switching providers.
+- Final: Ruling: General fallback outside the admitted connection remains withheld â€” customer account identity and unknown-outcome safety take precedence â€” cost: delivery can fail instead of switching providers.
 
-- Final: Ruling: Frontend incidental third-party Go packages are excluded from the owned Go suite — all cmd/internal/pkg/sdk/go/tests roots are exercised — cost: no verification of that third-party incidental package.
+- Final: Ruling: Frontend incidental third-party Go packages are excluded from the owned Go suite â€” all cmd/internal/pkg/sdk/go/tests roots are exercised â€” cost: no verification of that third-party incidental package.
 
-- Final: Ruling: Unrelated working edits and sibling scratch content remain excluded — preserve the user's work and other plans — cost: those edits are not reviewed by this phase.
+- Final: Ruling: Unrelated working edits and sibling scratch content remain excluded â€” preserve the user's work and other plans â€” cost: those edits are not reviewed by this phase.
 
-- Final: Ruling: Runbook trailing EOF blank line is normalized as documentation formatting — no delivery behavior is affected — cost: none.
+- Final: Ruling: Runbook trailing EOF blank line is normalized as documentation formatting â€” no delivery behavior is affected â€” cost: none.
 
-- Final: Ruling: pending legacy onboarding is honored while status-less historical settings remain usable — explicit pending is not readiness approval — cost: pending accounts require validation before delivery.
+- Final: Ruling: pending legacy onboarding is honored while status-less historical settings remain usable â€” explicit pending is not readiness approval â€” cost: pending accounts require validation before delivery.
 
-- Final: Ruling: retain the admitted phone exactly and fail closed on profile drift even without billing — prevents queued sends redirecting to another recipient — cost: operator reconciliation/re-admission is required after a destination change.
+- Final: Ruling: retain the admitted phone exactly and fail closed on profile drift even without billing â€” prevents queued sends redirecting to another recipient â€” cost: operator reconciliation/re-admission is required after a destination change.
 
-- Final: Ruling: pre-upgrade reserved holds gain a quote only before settlement, using their original amount/version — durable usage repair needs bound identity, without retrospective re-pricing — cost: a transient persistence outage delays the send until recovery.
+- Final: Ruling: pre-upgrade reserved holds gain a quote only before settlement, using their original amount/version â€” durable usage repair needs bound identity, without retrospective re-pricing â€” cost: a transient persistence outage delays the send until recovery.
 
 Additional recovery rulings:
 
-- Final: Ruling: an unresolved stored reservation ID fails closed — replacing it could orphan or double-charge an earlier admission — cost: reconciliation is needed for damaged/missing receipts.
+- Final: Ruling: an unresolved stored reservation ID fails closed â€” replacing it could orphan or double-charge an earlier admission â€” cost: reconciliation is needed for damaged/missing receipts.
 
-- Final: Ruling: only a known rejected ownership CAS permits compensation of a fresh compatibility hold — shared holds and ambiguous persistence outcomes are not safe refund evidence — cost: ambiguous storage outcomes may require reconciliation.
+- Final: Ruling: only a known rejected ownership CAS permits compensation of a fresh compatibility hold â€” shared holds and ambiguous persistence outcomes are not safe refund evidence â€” cost: ambiguous storage outcomes may require reconciliation.
 
 Phase 3 local task commits: `efd1fda`, `d08aa8a`, `0ec26eb`, followed by the review-correction commit. Phase 4 (Exotel/DLT/sender budgets/throughput fixtures) and Phase 5 (configuration/cleanup/Linux race checks/rollout evidence) remain pending. The quoted-usage currency Minor is explicitly carried into Phase 5.
+
+
+## Phase 4 â€” domestic SMS implementation (2026-10-18, local development)
+
+Exotel is an additive application/environment BYOC SMS connection. Twilio remains the default. The new `FREERANGE_PROVIDERS_EXOTEL_ENABLED` flag defaults to false. Real `.env` values, production state and customer routes were not changed. No live SMS, paid validation or international fallback is part of local development.
+
+Official references inspected on 2026-10-18:
+
+- [Exotel SMS overview](https://developer.exotel.com/docs/sms-api/overview): API key/token Basic authentication, account-specific regional endpoint, documented single-send API ceiling of 200 requests/minute. Campaign capacity is a different API and is not assumed here.
+- [Send SMS](https://developer.exotel.com/api/send-sms): account SID path, From/To/Body, DltEntityId/DltTemplateId, SmsType, StatusCallback and CustomField. SMSMessage.Sid is acceptance identity, not delivery proof.
+- [SMS details](https://developer.exotel.com/docs/sms-api/api-reference/sms-details): authenticated read of one account/message using `/v1/Accounts/<account>/SMS/Messages/<sid>.json`.
+- [DLT template scrubbing](https://support.exotel.com/support/solutions/articles/3000102659-how-to-send-sms-using-exotel-with-dlt-template-scrubbing-): approved entity/header/template and exact rendered body/variable mapping remain customer prerequisites.
+- [SMS delivery status](https://support.exotel.com/support/solutions/articles/48518-how-do-i-find-the-delivery-status-of-the-sms-i-sent-using-exotel-api-): SMS callbacks and authenticated status polling. The inspected SMS v1 documentation does not specify a trusted vendor webhook signing protocol.
+
+Implementation rulings and costs:
+
+- Retain this local branch and existing user edits, per the phase-by-phase same-branch instruction. Cost: no isolated worktree for unrelated changes; explicit staging is required.
+- Callback authentication uses our expiring per-delivery HMAC capability and an authenticated read with the immutable original connection credentials. It is not presented as an Exotel signature. Callbacks are durable before acknowledgement; no callback field alone can mark a delivery successful. Cost: provider status API availability is required for recovery, and callbacks arriving before acceptance identity persistence must retry.
+- No documented non-paid API was found that certifies all DLT approvals and commercial rates. Readiness reads a previously delivered message for account/sender/body identity and records the owner's dated approval and rate references. Cost: the account owner must confirm actual approvals, pricing and route limits before enabling the deployment flag. New accounts without historical evidence remain pending; an intentional provider-console setup send is an operator action outside this implementation.
+- Daily limits reserve conservative estimated provider attempt spend, not a provider invoice or FRN wallet balance. Ambiguous requests retain budget usage; there is no automatic refund or cross-provider retry. Cost: estimates can exceed actual invoiced charges.
+- Rolling account and physical-sender limits are separate from the HTTP request quota. A broadcast remains one HTTP request, while each SMS uses delivery capacity and daily unit/spend budget. Provider API ceilings still constrain completion time.
+- Provider timestamp timezone is unspecified in the inspected examples. Preserve its raw value and use UTC receipt time as status observation time. Cost: this is not a precise provider delivery timestamp.
+
+Account setup in the UI: choose SMS â†’ Exotel, enter account SID, API key/token, region, approved header/entity/template bodies, variable limits, approval reference and a previously delivered SMS SID. Enter verified per-segment cost and daily/rolling limits; save then validate. Saving alone is pending. Zero budgets prevent dispatch. Credentials stay encrypted and are never returned by the API. Valid rendered bodies and Indian mobile destinations are checked before queue admission and again before sending. Existing APIs and legacy provider defaults are retained.
+
+Phase 5 remains pending: environment aliases/runtime public configuration, removal of demonstrably unused code/docs, complete Linux race validation and staged rollout evidence. The Phase 3 Minor for quoted usage FRN currency remains assigned there.
+
+
+Local throughput evidence: the first 6,000-recipient simulation enqueued the real Redis queue in **56.9878 ms**, and dequeued/budgeted/sent/acknowledged 6,000 unique messages through mock HTTP in **38.7639985 seconds**. A virtual rolling clock required **30 batches**, at most 200 requests per capacity window; the first-to-last admission span was **29 minutes plus 29 ms**. The next full window closes around 30 minutes. This is a controlled capacity simulation, not a production send-rate benchmark or handset delivery SLA. Customer approval, SMS segmentation, actual provider queues and delivery reports still determine real completion time. No extra workers can override provider account limits. The application HTTP quota is independently enforced; one broadcast request may create thousands of separately budgeted deliveries.

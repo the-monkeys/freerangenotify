@@ -223,3 +223,15 @@ func TestPhase3ReviewLosingLeaseDoesNotReleaseReusedHold(t *testing.T) {
 		t.Fatal("losing worker released a shared prior hold")
 	}
 }
+
+func TestExotelBudgetWaitPreservesRetryAndCreditState(t *testing.T) {
+	repo := newStubNotifRepo()
+	q := &stubQueue{}
+	n := &notification.Notification{NotificationID: "budget-wait", AppID: "app-1", Channel: notification.ChannelSMS, Status: notification.StatusProcessing, RetryCount: 2}
+	repo.notifications[n.NotificationID] = n
+	p := newProcessorForTest(repo, q, nil, nil, nil, nil)
+	p.deferForChannelBudget(context.Background(), n, makeQueueItem(n.NotificationID), &services.DeliveryBudgetDeferredError{Reason: "sender capacity reached", RetryAfter: time.Minute})
+	if n.Status != notification.StatusQueued || n.RetryCount != 2 || len(q.scheduled) != 1 || n.Metadata["reservation_id"] != nil || n.ErrorMessage != "" {
+		t.Fatal("capacity wait consumed retry or created financial admission")
+	}
+}

@@ -1398,7 +1398,13 @@ export const whatsappAdminAPI = {
   },
 };
 
+export interface DomesticSMSConfig {
+ region:string;entity_id:string;sms_type:string;verification_message_id:string;approval_reference:string;approved_at:string;
+ templates:{id:string;body:string;variable_max_length:number}[];
+ limits:{messages_per_minute:number;units_per_minute:number;daily_units:number;daily_spend_minor:number;cost_minor_per_unit:number;currency:string;max_segments:number;rate_reference:string;rate_verified_at:string};
+}
 export interface ChannelConnectionView {
+ exotel?:DomesticSMSConfig;exotel_enabled?:boolean;
  id: string; app_id: string; environment_id: string; channel: string;
  provider: string; credential_source: string; account_id: string; sender_id: string;
  revision: number; readiness: string; writes_enabled: boolean; inherited?: boolean;

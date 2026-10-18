@@ -61,6 +61,7 @@ type InboundMessage struct {
 
 // DeliveryStatus represents a status webhook event from Meta.
 type DeliveryStatus struct {
+	VendorTimestamp    string    `json:"vendor_timestamp,omitempty"`
 	ConnectionID       string    `json:"connection_id,omitempty"`
 	AppID              string    `json:"app_id,omitempty"`
 	EnvironmentID      string    `json:"environment_id,omitempty"`

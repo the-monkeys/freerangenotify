@@ -205,6 +205,9 @@ type QueueConfig struct {
 
 // ProvidersConfig contains external provider configurations
 type ProvidersConfig struct {
+	Exotel struct {
+		Enabled bool `mapstructure:"enabled"`
+	} `mapstructure:"exotel"`
 	FCM      FCMConfig      `mapstructure:"fcm"`
 	APNS     APNSConfig     `mapstructure:"apns"`
 	SendGrid SendGridConfig `mapstructure:"sendgrid"`
@@ -511,6 +514,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("biz_billing.estimate_prefix", "EST")
 	viper.SetDefault("biz_billing.portal_base_url", "")
 
+	viper.SetDefault("providers.exotel.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")
 	viper.SetDefault("providers.meta_whatsapp.timeout", 15)

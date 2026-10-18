@@ -55,6 +55,8 @@ type Container struct {
 	ChannelDispatch          *services.ChannelDispatchService
 	ChannelConnectionHandler *handlers.ChannelConnectionHandler
 	channelEventCancel       context.CancelFunc
+	exotelEventCancel        context.CancelFunc
+	ExotelWebhookHandler     *handlers.ExotelWebhookHandler
 	// Configuration
 	Config *config.Config
 	Logger *zap.Logger
@@ -262,7 +264,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	container.ChannelConnections = &services.ChannelConnectionService{Apps: repos.Application, Repo: repository.NewChannelConnectionRepository(dbManager.Client.GetClient()), Environments: repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger), Codec: connectionCodec, WritesEnabled: cfg.Connection.WritesEnabled, System: map[notification.Channel]*channelconnection.Snapshot{
+	container.ChannelConnections = &services.ChannelConnectionService{Apps: repos.Application, Repo: repository.NewChannelConnectionRepository(dbManager.Client.GetClient()), Environments: repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger), Codec: connectionCodec, WritesEnabled: cfg.Connection.WritesEnabled, ExotelEnabled: cfg.Providers.Exotel.Enabled, System: map[notification.Channel]*channelconnection.Snapshot{
 		notification.ChannelWhatsApp: {Provider: "twilio", AccountID: cfg.Providers.WhatsApp.AccountSID, SenderID: cfg.Providers.WhatsApp.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.WhatsApp.AuthToken}},
 		notification.ChannelSMS:      {Provider: "twilio", AccountID: cfg.Providers.Twilio.AccountSID, SenderID: cfg.Providers.Twilio.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.Twilio.AuthToken}},
 	}}
@@ -275,7 +277,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.ChannelConnections.System[notification.Channel("meta_whatsapp")] = &channelconnection.Snapshot{Provider: "meta", AccountID: account, SenderID: cfg.Providers.MetaWhatsApp.PhoneNumberID, Credentials: map[string]string{"access_token": cfg.Providers.MetaWhatsApp.AccessToken, "app_secret": cfg.Providers.MetaWhatsApp.AppSecret}}
 	}
 	// Initialize licensing checker
-	container.ChannelDispatch = &services.ChannelDispatchService{Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
+	container.ChannelDispatch = &services.ChannelDispatchService{ExotelEnabled: cfg.Providers.Exotel.Enabled, PublicURL: cfg.Server.PublicURL, Budget: &services.ChannelDeliveryBudget{Redis: container.RedisClient}, Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
 	if cfg.Providers.Twilio.AccountSID == "" && cfg.Providers.Vonage.Enabled {
 		container.ChannelConnections.System[notification.ChannelSMS] = &channelconnection.Snapshot{Provider: "vonage", AccountID: cfg.Providers.Vonage.APIKey, SenderID: cfg.Providers.Vonage.FromNumber, Credentials: map[string]string{"api_secret": cfg.Providers.Vonage.APISecret}}
 	}
@@ -417,7 +419,27 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}
 	// Initialize tenant/organization support (C1)
 	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
-	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
+	smsStatus := &services.ExotelStatusService{Connections: container.ChannelConnections, Notifications: repos.Notification, Events: repository.NewChannelEventRepository(dbManager.Client.GetClient())}
+	container.ExotelWebhookHandler = &handlers.ExotelWebhookHandler{Service: smsStatus}
+	smsCtx, smsCancel := context.WithCancel(context.Background())
+	container.exotelEventCancel = smsCancel
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-smsCtx.Done():
+				return
+			case <-ticker.C:
+				run, finish := context.WithTimeout(smsCtx, 30*time.Second)
+				if e := smsStatus.Recover(run); e != nil {
+					logger.Warn("SMS callback recovery scan deferred")
+				}
+				finish()
+			}
+		}
+	}()
+	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{ExotelEnabled: cfg.Providers.Exotel.Enabled, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 
@@ -1202,6 +1224,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 
 // Close cleans up all resources
 func (c *Container) Close() error {
+	if c.exotelEventCancel != nil {
+		c.exotelEventCancel()
+	}
 	if c.channelEventCancel != nil {
 		c.channelEventCancel()
 	}

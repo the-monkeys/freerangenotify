@@ -748,9 +748,27 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	}
 	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
 
-		if _, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr); e != nil {
+		prepared, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+		if e != nil {
 			p.handleCreditBlocked(ctx, notif, e.Error())
 			return
+		}
+		if prepared.Snapshot.Provider == "exotel" {
+			_, units, unitErr := billing.SMSUnits(notif.Content.Body)
+			if unitErr != nil {
+				p.handleCreditBlocked(ctx, notif, unitErr.Error())
+				return
+			}
+			budgetCtx := services.WithDeliveryBudgetIdentity(ctx, fmt.Sprintf("%s:%d", notif.NotificationID, notif.RetryCount))
+			if e := p.channelDispatch.Budget.AcquireDeliveryBudget(budgetCtx, prepared.Snapshot, units); e != nil {
+				var waiting *services.DeliveryBudgetDeferredError
+				if errors.As(e, &waiting) {
+					p.deferForChannelBudget(ctx, notif, item, waiting)
+					return
+				}
+				p.handleCreditBlocked(ctx, notif, "sender budget policy unavailable")
+				return
+			}
 		}
 	}
 	if p.creditService != nil && reservation == nil {
@@ -2042,5 +2060,23 @@ func (p *NotificationProcessor) creditReservationReaper(ctx context.Context) {
 				p.logger.Info("Credit reservation reaper released holds", zap.Int("count", released))
 			}
 		}
+	}
+}
+
+// Capacity waits happen before financial admission and before provider dispatch.
+func (p *NotificationProcessor) deferForChannelBudget(ctx context.Context, n *notification.Notification, item *queue.NotificationQueueItem, waiting *services.DeliveryBudgetDeferredError) {
+	resume := time.Now().UTC().Add(waiting.RetryAfter)
+	n.Status = notification.StatusQueued
+	if n.Metadata == nil {
+		n.Metadata = map[string]interface{}{}
+	}
+	n.Metadata["delivery_wait_reason"] = waiting.Reason
+	n.Metadata["delivery_resume_at"] = resume.Format(time.RFC3339Nano)
+	if e := p.notifRepo.Update(ctx, n); e != nil {
+		retainNotificationProcessingItem(ctx)
+		return
+	}
+	if e := p.queue.EnqueueScheduled(ctx, *item, resume); e != nil {
+		retainNotificationProcessingItem(ctx)
 	}
 }

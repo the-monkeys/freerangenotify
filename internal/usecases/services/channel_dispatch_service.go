@@ -17,6 +17,9 @@ import (
 )
 
 type ChannelDispatchService struct {
+	ExotelEnabled bool
+	PublicURL     string
+	Budget        *ChannelDeliveryBudget
 	Quotes        *ChannelQuoteService
 	Connections   *ChannelConnectionService
 	Redis         *redis.Client
@@ -83,6 +86,16 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 	case "meta":
 		if n.Channel != notification.ChannelWhatsApp || snap.Credentials["access_token"] == "" {
 			return nil, fmt.Errorf("Meta connection unavailable")
+		}
+	case "exotel":
+		if !s.ExotelEnabled || snap.CredentialSource != "byoc" || snap.Credentials["api_key"] == "" || snap.Credentials["api_token"] == "" {
+			return nil, fmt.Errorf("domestic SMS connection unavailable")
+		}
+		if _, _, e := providers.ValidateExotelMessage(snap, n, u); e != nil {
+			return nil, e
+		}
+		if _, e := ExotelCallbackURL(s.PublicURL, snap, n); e != nil {
+			return nil, e
 		}
 	case "vonage":
 		if n.Channel != notification.ChannelSMS || snap.Credentials["api_secret"] == "" {
@@ -195,6 +208,15 @@ func (s *ChannelDispatchService) DispatchPrepared(ctx context.Context, d *channe
 		} else {
 			p, err = providers.NewWhatsAppProvider(providers.WhatsAppConfig{Config: cfg, AccountSID: snap.AccountID, AuthToken: snap.Credentials["auth_token"], FromNumber: snap.SenderID}, logger)
 		}
+	case "exotel":
+		if !s.ExotelEnabled {
+			return nil, fmt.Errorf("domestic SMS disabled")
+		}
+		callback, e := ExotelCallbackURL(s.PublicURL, snap, d.Notification)
+		if e != nil {
+			return nil, e
+		}
+		p, err = providers.NewExotelProvider(providers.ExotelConfig{Config: cfg, Snapshot: snap, StatusCallback: callback}, logger)
 	case "meta":
 		p, err = providers.NewMetaWhatsAppProvider(providers.MetaWhatsAppConfig{Config: cfg, PhoneNumberID: snap.SenderID, AccessToken: snap.Credentials["access_token"], APIVersion: s.GraphVersion}, logger)
 	case "vonage":

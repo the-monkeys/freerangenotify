@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
 	"io"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 )
 
 type ConnectionValidator struct {
+	ExotelEnabled                      bool
 	Client                             *http.Client
 	GraphVersion, MetaAppID, PublicURL string
 }
@@ -203,6 +206,47 @@ func (v *ConnectionValidator) Validate(ctx context.Context, snap *channelconnect
 			return "ready", facts, nil
 		}
 		return "pending", facts, nil
+	}
+	if snap.Provider == "exotel" {
+		if !v.ExotelEnabled {
+			facts["reason"] = "Domestic SMS is disabled for this deployment"
+			return "pending", facts, nil
+		}
+		if snap.Exotel == nil || snap.Exotel.Validate() != nil || snap.CredentialSource != "byoc" || snap.Credentials["api_key"] == "" || snap.Credentials["api_token"] == "" {
+			facts["reason"] = "Complete credentials, DLT approval and verified budgets required"
+			return "invalid", facts, nil
+		}
+		if _, e := ExotelCallbackURL(v.PublicURL, snap, &notification.Notification{NotificationID: "readiness", AppID: snap.AppID}); e != nil {
+			facts["reason"] = "Public HTTPS callback URL required"
+			return "pending", facts, nil
+		}
+		if snap.Exotel.VerificationMessageID == "" {
+			facts["reason"] = "Previously delivered SMS ID required for a read-only account and sender check"
+			return "pending", facts, nil
+		}
+		msg, e := providers.ReadExotelSMS(ctx, v.Client, snap, snap.Exotel.VerificationMessageID)
+		if e != nil {
+			return "pending", facts, e
+		}
+		matched := false
+		for _, t := range snap.Exotel.Templates {
+			if _, e := snap.Exotel.Match(snap.SenderID, exotelDomesticPhone(msg.To), msg.Body, t.ID); e == nil {
+				matched = true
+				break
+			}
+		}
+		if !matched || !exotelSenderMatches(msg.From, snap.SenderID) || msg.Status != "sent" {
+			facts["reason"] = "Historical SMS must match this sender and an approved DLT body"
+			return "invalid", facts, nil
+		}
+		facts["account_access"] = "yes"
+		facts["sender_owned"] = "yes"
+		facts["sender_registered"] = "historical_delivery_verified"
+		facts["dlt_approval"] = "owner_confirmed"
+		facts["provider_rate"] = "owner_verified"
+		facts["callback_auth"] = "per_delivery_capability_and_authenticated_status_read"
+		facts["reason"] = "Account and historical sender verified; DLT approval and current prices remain the account owner confirmation"
+		return "ready", facts, nil
 	}
 	if snap.Provider != "twilio" {
 		return "invalid", facts, fmt.Errorf("unsupported validation provider")
