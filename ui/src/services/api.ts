@@ -1369,6 +1369,13 @@ export const channelCapabilitiesAPI = {
     try {
       const { data } = await api.get<ApiResponse<ChannelCapabilities>>('/channel-capabilities');
       if (!data.data?.meta) throw new Error('Invalid messaging capabilities');
+      const meta = data.data.meta;
+      // Enabled older deployments may still configure these public IDs in the
+      // frontend. Runtime values win; an explicit disable is authoritative.
+      if (meta.embedded) return { ...data.data, meta: { ...meta,
+        app_id: meta.app_id || (import.meta.env.VITE_META_APP_ID as string | undefined)?.trim() || '',
+        signup_config_id: meta.signup_config_id || (import.meta.env.VITE_META_CONFIG_ID as string | undefined)?.trim(),
+      } };
       return data.data;
     } catch (error: any) {
       // Temporary public-ID fallback only for an older server without the route.

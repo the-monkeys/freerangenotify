@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
@@ -42,7 +43,8 @@ func (s *workflowService) Create(ctx context.Context, appID string, req *workflo
 		zap.String("name", req.Name),
 		zap.String("trigger_id", req.TriggerID))
 
-	// Check for duplicate trigger_id within the same app
+	ctx = channelconnection.WithEnvironment(ctx, req.EnvironmentID)
+	// Check for duplicate trigger_id within the same app/environment
 	existing, _ := s.repo.GetWorkflowByTrigger(ctx, appID, req.TriggerID)
 	if existing != nil {
 		return nil, errors.BadRequest(fmt.Sprintf("trigger_id '%s' already exists in this app", req.TriggerID))
@@ -168,7 +170,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 func (s *workflowService) TriggerWithOutcome(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, bool, error) {
 	// 1. Resolve workflow by trigger_id
 	wf, err := s.repo.GetWorkflowByTrigger(ctx, appID, req.TriggerID)
-	if err != nil || wf == nil {
+	if err != nil || wf == nil || wf.AppID != appID || normalizedWorkflowEnvironment(wf.EnvironmentID) != channelconnection.EnvironmentID(ctx) {
 		return nil, false, errors.NotFound("workflow", req.TriggerID)
 	}
 
@@ -196,6 +198,7 @@ func (s *workflowService) TriggerWithOutcome(ctx context.Context, appID string, 
 		ID:            uuid.New().String(),
 		WorkflowID:    wf.ID,
 		AppID:         appID,
+		EnvironmentID: channelconnection.EnvironmentID(ctx),
 		UserID:        req.UserID,
 		TransactionID: req.TransactionID,
 		CurrentStepID: firstStepID,
@@ -329,4 +332,11 @@ func (s *workflowService) ListExecutions(ctx context.Context, workflowID, appID 
 	}
 
 	return s.repo.ListExecutions(ctx, workflowID, limit, offset)
+}
+
+func normalizedWorkflowEnvironment(id string) string {
+	if id == "" {
+		return "default"
+	}
+	return id
 }

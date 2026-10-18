@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -92,15 +93,48 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 		for _, change := range entry.Changes {
 			secret := h.appSecret
 			if change.Field == "messages" {
-				binding, err := h.senderResolver.ResolveInboundSender(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID)
-				if err != nil {
-					return c.SendStatus(fiber.StatusServiceUnavailable)
+				// Inbound messages use today's sender claim; delivery statuses
+				// use the immutable admitted connection and original key.
+				if len(change.Value.Messages) > 0 || len(change.Value.Statuses) == 0 {
+					binding, err := h.senderResolver.ResolveInboundSender(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID)
+					if err != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					secret = binding.SigningSecret
+					if secret == "" {
+						secret = h.appSecret
+					}
+					if secret == "" {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					if !verifyMetaSignature(secret, rawBody, c.Get("X-Hub-Signature-256")) {
+						return c.SendStatus(fiber.StatusUnauthorized)
+					}
+					c.Locals("meta_binding_"+binding.SenderID, binding)
+					verified = true
 				}
-				secret = binding.SigningSecret
-				if secret == "" {
-					secret = h.appSecret
+				for _, status := range change.Value.Statuses {
+					binding, err := h.senderResolver.ResolveAdmittedStatus(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID, status.ID)
+					if errors.Is(err, services.ErrAdmittedStatusNotFound) {
+						binding, err = h.senderResolver.ResolveInboundSender(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID)
+					}
+					if err != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					secret = binding.SigningSecret
+					if secret == "" {
+						secret = h.appSecret
+					}
+					if secret == "" {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					if !verifyMetaSignature(secret, rawBody, c.Get("X-Hub-Signature-256")) {
+						return c.SendStatus(fiber.StatusUnauthorized)
+					}
+					c.Locals("meta_status_binding_"+entry.ID+"\x00"+change.Value.Metadata.PhoneNumberID+"\x00"+status.ID, binding)
+					verified = true
 				}
-				c.Locals("meta_binding_"+binding.SenderID, binding)
+				continue
 			}
 			if change.Field == "message_template_status_update" {
 				bindings, err := h.senderResolver.ResolveMetaTemplateSenders(c.Context(), entry.ID)
@@ -160,10 +194,13 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 				val := change.Value
 				phoneNumberID := val.Metadata.PhoneNumberID
 				binding, _ := c.Locals("meta_binding_" + phoneNumberID).(*services.InboundSenderBinding)
-				if binding == nil {
+				if binding == nil && len(val.Messages) > 0 {
 					return c.SendStatus(fiber.StatusServiceUnavailable)
 				}
-				appID := binding.AppID
+				appID := ""
+				if binding != nil {
+					appID = binding.AppID
+				}
 				c.Locals("meta_active_binding", binding)
 
 				for i, msg := range val.Messages {
@@ -178,6 +215,11 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 				}
 
 				for _, status := range val.Statuses {
+					statusBinding, _ := c.Locals("meta_status_binding_" + entry.ID + "\x00" + phoneNumberID + "\x00" + status.ID).(*services.InboundSenderBinding)
+					if statusBinding == nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					c.Locals("meta_active_binding", statusBinding)
 					h.handleStatusUpdate(c, &status)
 					if c.Locals("callback_error") != nil {
 						return c.SendStatus(fiber.StatusServiceUnavailable)

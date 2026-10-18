@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
@@ -131,6 +132,18 @@ func (e *Engine) executeStep(ctx context.Context, item *queue.WorkflowQueueItem,
 		return
 	}
 
+	executionEnv := exec.EnvironmentID
+	if executionEnv == "" {
+		executionEnv = "default"
+	}
+	workflowEnv := wf.EnvironmentID
+	if workflowEnv == "" {
+		workflowEnv = "default"
+	}
+	if wf.AppID != exec.AppID || workflowEnv != executionEnv {
+		e.failExecution(ctx, exec, "workflow environment differs from admitted execution; reconcile before retrying")
+		return
+	}
 	// Find the current step
 	var step *workflow.Step
 	for i := range wf.Steps {
@@ -230,13 +243,15 @@ func (e *Engine) executeStep(ctx context.Context, item *queue.WorkflowQueueItem,
 // This is the critical backward compatibility point — we reuse Send() which
 // goes through the exact same validation, queue, and provider pipeline.
 func (e *Engine) executeChannelStep(ctx context.Context, exec *workflow.WorkflowExecution, step *workflow.Step) (string, error) {
+	ctx = channelconnection.WithEnvironment(ctx, exec.EnvironmentID)
 	req := notification.SendRequest{
-		AppID:      exec.AppID,
-		UserID:     exec.UserID,
-		Channel:    notification.Channel(step.Config.Channel),
-		Priority:   notification.PriorityNormal,
-		TemplateID: step.Config.TemplateID,
-		Data:       exec.Payload,
+		AppID:         exec.AppID,
+		EnvironmentID: channelconnection.EnvironmentID(ctx),
+		UserID:        exec.UserID,
+		Channel:       notification.Channel(step.Config.Channel),
+		Priority:      notification.PriorityNormal,
+		TemplateID:    step.Config.TemplateID,
+		Data:          exec.Payload,
 	}
 
 	notif, err := e.notifService.Send(ctx, req)

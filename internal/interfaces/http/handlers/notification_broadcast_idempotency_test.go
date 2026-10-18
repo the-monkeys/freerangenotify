@@ -87,6 +87,7 @@ func TestBroadcastConcurrentRetriesAndReceiptLossNeverRestartOperation(t *testin
 				go func() {
 					defer wg.Done()
 					if err := send(); err != nil {
+						t.Logf("concurrent broadcast request: %v", err)
 						failures.Add(1)
 					}
 				}()

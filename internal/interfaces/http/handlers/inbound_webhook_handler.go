@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -25,10 +26,10 @@ type InboundWebhookRequest struct {
 
 // InboundWebhookHandler handles inbound webhooks from external systems
 type InboundWebhookHandler struct {
-	appService    usecases.ApplicationService
-	userService   usecases.UserService
-	workflowSvc   workflow.Service
-	logger        *zap.Logger
+	appService  usecases.ApplicationService
+	userService usecases.UserService
+	workflowSvc workflow.Service
+	logger      *zap.Logger
 }
 
 // NewInboundWebhookHandler creates a new inbound webhook handler
@@ -42,7 +43,7 @@ func NewInboundWebhookHandler(
 		appService:  appService,
 		userService: userService,
 		workflowSvc: workflowSvc,
-		logger:     logger,
+		logger:      logger,
 	}
 }
 
@@ -120,7 +121,8 @@ func (h *InboundWebhookHandler) Receive(c *fiber.Ctx) error {
 	}
 
 	// Trigger the workflow
-	_, triggerErr := h.workflowSvc.Trigger(c.Context(), appID, &workflow.TriggerRequest{
+	envID, _ := c.Locals("environment_id").(string)
+	_, triggerErr := h.workflowSvc.Trigger(channelconnection.WithEnvironment(c.Context(), envID), appID, &workflow.TriggerRequest{
 		TriggerID: triggerID,
 		UserID:    resolvedUser.UserID,
 		Payload:   payload,

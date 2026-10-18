@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"strings"
 )
@@ -13,12 +16,54 @@ import (
 type InboundSenderBinding = whatsapp.InboundSenderBinding
 type SenderBindingStore = whatsapp.SenderBindingStore
 type ChannelSenderResolver struct {
+	Notifications notification.Repository
 	Connections   *ChannelConnectionService
 	apps          application.Repository
 	bindings      SenderBindingStore
 	MetaSecret    string
 	TwilioAccount string
 	TwilioSecret  string
+}
+
+var ErrAdmittedStatusNotFound = errors.New("admitted status not found")
+
+// ResolveAdmittedStatus authenticates using the original delivery revision;
+// current sender claims may have been disconnected or assigned elsewhere.
+func (r *ChannelSenderResolver) ResolveAdmittedStatus(ctx context.Context, provider, account, sender, message string) (*InboundSenderBinding, error) {
+	lookup, ok := r.Notifications.(interface {
+		FindAdmittedChannelStatus(context.Context, string, string, string, string) (*notification.Notification, error)
+	})
+	if !ok || r.Connections == nil {
+		return nil, ErrAdmittedStatusNotFound
+	}
+	n, err := lookup.FindAdmittedChannelStatus(ctx, provider, account, sender, message)
+	if err != nil {
+		return nil, err
+	}
+	if n == nil {
+		return nil, ErrAdmittedStatusNotFound
+	}
+	var admitted channelconnection.Snapshot
+	b, err := json.Marshal(n.Metadata[channelconnection.DeliveryMetadataKey])
+	if err != nil || json.Unmarshal(b, &admitted) != nil {
+		return nil, fmt.Errorf("invalid admitted callback identity")
+	}
+	if admitted.AppID != n.AppID || admitted.Channel != notification.ChannelWhatsApp || admitted.Provider != provider || admitted.AccountID != account || admitted.SenderID != sender {
+		return nil, fmt.Errorf("admitted callback scope mismatch")
+	}
+	var original *channelconnection.Snapshot
+	if admitted.Revision > 0 {
+		original, err = r.Connections.ResolveRevision(ctx, admitted.ConnectionID, admitted.Revision)
+	} else {
+		original, err = r.Connections.LegacyProviderSnapshot(ctx, n.AppID, n.EnvironmentID, notification.ChannelWhatsApp, provider)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if original.ConnectionID != admitted.ConnectionID || original.AppID != admitted.AppID || original.EnvironmentID != admitted.EnvironmentID || original.Provider != provider || original.AccountID != account || original.SenderID != sender || original.CredentialSource != admitted.CredentialSource {
+		return nil, fmt.Errorf("original callback connection changed")
+	}
+	return &InboundSenderBinding{ID: original.ConnectionID, AppID: n.AppID, EnvironmentID: n.EnvironmentID, Provider: provider, AccountID: account, SenderID: sender, SigningSecret: original.Credentials["app_secret"]}, nil
 }
 
 func NewChannelSenderResolver(apps application.Repository, bindings SenderBindingStore) *ChannelSenderResolver {

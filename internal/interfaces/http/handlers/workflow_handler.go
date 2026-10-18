@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	pkgerrors "github.com/the-monkeys/freerangenotify/pkg/errors"
@@ -298,7 +299,8 @@ func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 		})
 	}
 
-	exec, err := h.service.Trigger(c.Context(), appID, &req)
+	envID, _ := c.Locals("environment_id").(string)
+	exec, err := h.service.Trigger(channelconnection.WithEnvironment(c.Context(), envID), appID, &req)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -341,7 +343,8 @@ func (h *WorkflowHandler) TriggerByTopic(c *fiber.Ctx) error {
 		})
 	}
 
-	result, err := h.service.TriggerByTopic(c.Context(), appID, &req)
+	envID, _ := c.Locals("environment_id").(string)
+	result, err := h.service.TriggerByTopic(channelconnection.WithEnvironment(c.Context(), envID), appID, &req)
 	if err != nil {
 		if appErr, ok := err.(*pkgerrors.AppError); ok {
 			return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{"error": err.Error()})

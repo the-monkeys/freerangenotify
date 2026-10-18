@@ -129,6 +129,8 @@ func (s *whatsappService) processInboundReceipt(ctx context.Context, receipt *wh
 	}
 	msg.ID = receipt.ID
 	msg.AppID = receipt.Event.Binding.AppID
+	msg.EnvironmentID = receipt.Event.Binding.EnvironmentID
+	ctx = channelconnection.WithEnvironment(ctx, msg.EnvironmentID)
 	msg.Direction = whatsapp.DirectionInbound
 	msg.CreatedAt = receipt.CreatedAt
 	if receipt.Steps["stored"] != "done" {

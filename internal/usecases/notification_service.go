@@ -477,7 +477,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 			payload["notification_id"] = notif.NotificationID
 			payload["channel"] = string(req.Channel)
 			payload["template_id"] = req.TemplateID
-			_, err := s.workflowService.Trigger(context.Background(), req.AppID, &workflow.TriggerRequest{
+			_, err := s.workflowService.Trigger(channelconnection.WithEnvironment(context.Background(), req.EnvironmentID), req.AppID, &workflow.TriggerRequest{
 				TriggerID: req.WorkflowTriggerID,
 				UserID:    req.UserID,
 				Payload:   payload,
@@ -892,7 +892,7 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 		if s.workflowService == nil {
 			return nil, fmt.Errorf("workflows feature is not enabled")
 		}
-		result, err := s.workflowService.TriggerForUserIDs(ctx, req.AppID, req.WorkflowTriggerID, allUserIDs, req.Data)
+		result, err := s.workflowService.TriggerForUserIDs(channelconnection.WithEnvironment(ctx, req.EnvironmentID), req.AppID, req.WorkflowTriggerID, allUserIDs, req.Data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to trigger workflows: %w", err)
 		}

@@ -227,6 +227,7 @@ func classifyInboundEvent(msg *whatsapp.InboundMessage) string {
 }
 
 func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID string, msg *whatsapp.InboundMessage) error {
+	ctx = channelconnection.WithEnvironment(ctx, msg.EnvironmentID)
 	if s.workflowSvc == nil || triggerID == "" {
 		return &workflow.BeforeDispatch{Err: fmt.Errorf("workflow trigger unavailable")}
 	}

@@ -145,6 +145,9 @@ func (s *ChannelConnectionService) snapshot(c *channelconnection.Connection) (*c
 	snap := &channelconnection.Snapshot{ConnectionID: c.ID, AppID: c.AppID, EnvironmentID: c.EnvironmentID, Channel: c.Channel, Revision: c.Revision, Provider: c.Provider, CredentialSource: c.CredentialSource, AccountID: c.AccountID, SenderID: c.SenderID, Readiness: c.Readiness, Exotel: c.Exotel, Credentials: map[string]string{}}
 	if c.CredentialSource == "system" {
 		system := s.System[c.Channel]
+		if c.Provider == "meta" && c.Channel == notification.ChannelWhatsApp {
+			system = s.System[notification.Channel("meta_whatsapp")]
+		}
 		if system == nil || system.Provider != c.Provider || system.AccountID != c.AccountID {
 			return nil, fmt.Errorf("system account no longer matches connection")
 		}

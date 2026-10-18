@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"time"
 
 	"github.com/google/uuid"
@@ -165,7 +166,7 @@ func (s *topicService) AddSubscribers(ctx context.Context, topicID, appID string
 	if t.OnSubscribeTriggerID != "" && s.workflowSvc != nil && len(userIDs) > 0 {
 		payload := map[string]any{"topic_id": topicID, "topic_key": t.Key}
 		for _, userID := range userIDs {
-			_, triggerErr := s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
+			_, triggerErr := s.workflowSvc.Trigger(channelconnection.WithEnvironment(ctx, t.EnvironmentID), appID, &workflow.TriggerRequest{
 				TriggerID: t.OnSubscribeTriggerID,
 				UserID:    userID,
 				Payload:   payload,
