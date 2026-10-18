@@ -30,7 +30,7 @@
 
 ## Phase 1 — Security and customer isolation
 
-**Local status:** Tasks 1–3 complete. One independent review found eight blockers; all fixed with regression tests. Phase 2 implemented locally; independent review blockers fixed with RED→GREEN regressions and all final checks passing. Phase 3 Tasks 6–8 complete locally; 13 Important review findings fixed with RED→GREEN regressions and final checks passing. Phases 4–5 remain pending. No production changes or push.
+**Local status:** All five phases are complete and verified locally. Phase 5 runtime configuration commit `5d05e4e`; final review corrections `ae88662`; cleanup/runbook is committed. All four Important final-review findings and the carried currency Minor are fixed. Production rollout is separate; no push or production changes.
 
 **Implementation decisions:** Routing and durable receipt wiring share one task commit so signed callbacks cannot ship without recovery. Unresolved sender mappings fail closed with provider retry; no unauthenticated quarantine payload is stored. Ambiguous external workflow/webhook outcomes are quarantined rather than replayed. SSE refresh signals can repeat. Twilio receipt time cannot open CSW without provider creation time; Phase 3 needs an account-bound timestamp resolver. Details and rollout requirements: documents/production-delivery-recovery-runbook.md.
 
@@ -183,11 +183,13 @@
 
 **Interfaces:** No new public API. Recovery readers continue to support created connections/event receipts/reservations when new admissions/features are rolled back. Operator commands are dry-run by default with explicit apply scopes and no secret output.
 
-- [ ] Confirm constructor/import/reference searches and build inventory before deletion. Run the accumulated regression suite, fresh whole-branch security/correctness review and staged secret scan; inspect every failure rather than declaring earlier evidence sufficient.
-- [ ] Remove only verified unused files/dependencies; preserve remaining providers, docs, user edits and review evidence. Record unavoidable read-response security changes and all operational prerequisites.
-- [ ] Run `go test -short ./...`, relevant disposable ES/Redis integration cases, `npm --prefix ui run build` and both channel/reliability Playwright suites. Run `go test -race` on services/providers/handlers/worker in supported Linux CI; record Windows toolchain limitations rather than treating them as coverage.
-- [ ] Document reader-first deploy, explicit scoped migration, sender/signing validation, connection canaries, detailed tariff activation, rate/spend alerts, dead-letter recovery, key rotation and rollback. Live test sends require explicit recipient/account authorization; historical data/balance repair requires a separate audit.
-- [ ] Commit `chore: remove unused WhatsApp code and document messaging rollout`; open a branch diff for local review. Do not push or deploy as an implicit final step.
+- [x] Confirm constructor/import/reference searches and build inventory before deletion. Run the accumulated regression suite, fresh whole-branch security/correctness review and staged secret scan; inspect every failure rather than declaring earlier evidence sufficient.
+- [x] Remove only verified unused files/dependencies; preserve remaining providers, docs, user edits and review evidence. Record unavoidable read-response security changes and all operational prerequisites.
+- [x] Run `go test -short ./...`, relevant disposable ES/Redis integration cases, `npm --prefix ui run build` and both channel/reliability Playwright suites. Run `go test -race` on services/providers/handlers/worker in supported Linux CI; record Windows toolchain limitations rather than treating them as coverage.
+- [x] Document reader-first deploy, explicit scoped migration, sender/signing validation, connection canaries, detailed tariff activation, rate/spend alerts, dead-letter recovery, key rotation and rollback. Live test sends require explicit recipient/account authorization; historical data/balance repair requires a separate audit.
+- [x] Commit `chore: remove unused WhatsApp code and document messaging rollout`; open a branch diff for local review. Do not push or deploy as an implicit final step.
+
+**Phase 5 checkpoint: complete locally.** Fresh owned Go short suite: 32 tested packages pass with designated disposable channel/credit/OTP/Exotel ES/Redis integration flags; Linux race checks pass five packages including workflow orchestrator; production UI build passes (existing chunk warning); production-preview channel10 plus dedicated legacy/runtime3 and reliability43 browser checks pass. The legacy-build-only case is intentionally skipped in the no-build-ID preview mode and passes in its dedicated fixture. Staged whole-branch credential/UTF-8 scan covers196 text files with zero findings. Full findings, earlier transient test failures, rulings and reader-first rollout/rollback prerequisites are preserved in the production delivery recovery runbook. No deferred code Minor remains; commercial approval, live canaries, hosted CI, key rotation and historical repairs are operational prerequisites.
 
 ## Completion criteria
 
