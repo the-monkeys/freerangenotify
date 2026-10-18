@@ -17,6 +17,7 @@ import (
 )
 
 type ChannelDispatchService struct {
+	MetaEnabled   *bool
 	ExotelEnabled bool
 	PublicURL     string
 	Budget        *ChannelDeliveryBudget
@@ -71,6 +72,10 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 		if err != nil {
 			return nil, err
 		}
+	}
+	// Disable only new admissions. Stored snapshots keep their original recovery path.
+	if snap.Provider == "meta" && s.MetaEnabled != nil && !*s.MetaEnabled && n.Metadata[channelconnection.DeliveryMetadataKey] == nil {
+		return nil, fmt.Errorf("Meta delivery is disabled")
 	}
 	if snap.Revision > 0 && snap.Readiness != "ready" || snap.Revision == 0 && snap.Readiness != "" && snap.Readiness != "connected" && snap.Readiness != "ready" {
 		return nil, fmt.Errorf("messaging connection is not ready")

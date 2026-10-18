@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go, Fiber, Elasticsearch CAS, Redis, React/TypeScript, existing Meta/Twilio/Vonage clients, proposed Exotel HTTP adapter, Go mock HTTP servers and Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–3 approved for local implementation).
+**Spec:** `docs/superpowers/specs/2026-10-13-whatsapp-sms-reliability-design.md` (Phases 1–5 approved for local implementation).
 
 ## Global Constraints
 
@@ -169,11 +169,13 @@
 
 **Interfaces:** `GET /v1/channel-capabilities` returns only available modes, public Meta App/signup IDs, Graph version and safe feature/readiness information; per-app facts require authorization. `FREERANGE_MESSAGING_META_ENABLED` controls both delivery/onboarding when explicitly set; when absent, preserve independent legacy flags, including outbound-only configurations. Shared Twilio account defaults permit channel account/sender overrides.
 
-- [ ] Write `TestChannelEnvironmentCompatibility`: old env names, new shared account, distinct channel overrides, conflicting Meta secrets, false flags with stale credentials, daily-cap toggle, runtime UI without build keys and capability response containing no secrets.
-- [ ] Run `go test ./internal/config ./internal/interfaces/http/handlers -run 'TestChannel(EnvironmentCompatibility|Capabilities)' -count=1`; verify RED.
-- [ ] Implement runtime public config, canonical version/secret/flag resolution and effective daily-cap configuration. Retain old public SDK app/config vars as temporary fallback; remove fixed customer business/WABA/phone defaults. Document actual provider retry/queue policy and remove ineffective options only with compatibility handling. Create placeholder-only env example; do not edit real `.env` files.
-- [ ] Run config/browser tests and `npm --prefix ui run build`. Verify a production-image-style frontend gets onboarding config after build without injecting customer identities or secrets.
-- [ ] Commit `refactor: simplify messaging configuration with legacy compatibility`.
+- [x] Write `TestChannelEnvironmentCompatibility`: old env names, new shared account, distinct channel overrides, conflicting Meta secrets, false flags with stale credentials, daily-cap toggle, runtime UI without build keys and capability response containing no secrets.
+- [x] Run `go test ./internal/config ./internal/interfaces/http/handlers -run 'TestChannel(EnvironmentCompatibility|Capabilities)' -count=1`; verify RED.
+- [x] Implement runtime public config, canonical version/secret/flag resolution and effective daily-cap configuration. Retain old public SDK app/config vars as temporary fallback; remove fixed customer business/WABA/phone defaults. Document actual provider retry/queue policy and remove ineffective options only with compatibility handling. Create placeholder-only env example; do not edit real `.env` files.
+- [x] Run config/browser tests and `npm --prefix ui run build`. Verify a production-image-style frontend gets onboarding config after build without injecting customer identities or secrets.
+- [x] Commit `refactor: simplify messaging configuration with legacy compatibility`.
+
+**Task 10 checkpoint:** complete locally. Owned Go short suite passes; production UI build and 10 channel / 43 reliability browser cases pass against preview without Meta build IDs. Generic connection edit/validation and provider bootstrap honor explicit disable; reads, disconnect and admitted recovery remain supported. Staged credential/UTF-8 scan: 30 code/config/test files, no findings.
 
 ### Task 11: Verified cleanup, whole-branch review and rollout runbook
 

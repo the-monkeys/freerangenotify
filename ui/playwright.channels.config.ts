@@ -4,5 +4,5 @@ export default defineConfig({
  reporter:'list',outputDir:'./test-results/channels',
  expect:{timeout:15000},
  use:{baseURL:'http://127.0.0.1:3105',...devices['Desktop Chrome'],timezoneId:'UTC',screenshot:'only-on-failure'},
- webServer:{command:'npm --prefix ui run dev -- --host 127.0.0.1 --port 3105',cwd:'..',url:'http://127.0.0.1:3105',reuseExistingServer:!process.env.CI,env:{VITE_META_APP_ID:'fixture-sdk-app'}},
+ webServer:{command:process.env.FRN_CHANNEL_PREVIEW === '1' ? 'npm --prefix ui run preview -- --host 127.0.0.1 --port 3105' : 'npm --prefix ui run dev -- --host 127.0.0.1 --port 3105',cwd:'..',url:'http://127.0.0.1:3105',reuseExistingServer:!process.env.CI,env:{VITE_META_APP_ID:'',VITE_META_CONFIG_ID:''}},
 });

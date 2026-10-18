@@ -14,6 +14,7 @@ import (
 )
 
 type ChannelConnectionService struct {
+	MetaEnabled   *bool
 	Repo          channelconnection.Repository
 	Apps          application.Repository
 	Environments  environment.Repository
@@ -244,6 +245,9 @@ func (s *ChannelConnectionService) UpdateConnection(ctx context.Context, id stri
 	}
 	if c.Provider != "meta" && c.Provider != "twilio" && !((c.Provider == "vonage" || c.Provider == "exotel") && c.Channel == notification.ChannelSMS) {
 		return nil, fmt.Errorf("unsupported provider")
+	}
+	if c.Provider == "meta" && !patch.Disconnect && s.MetaEnabled != nil && !*s.MetaEnabled {
+		return nil, fmt.Errorf("Meta onboarding is disabled")
 	}
 	if c.Provider == "meta" && c.Channel != notification.ChannelWhatsApp {
 		return nil, fmt.Errorf("Meta is only available for WhatsApp")

@@ -225,3 +225,7 @@ licensing:
     public_key_pem: ""
     license_server_url: ""
     verify_interval_seconds: 300
+
+# Optional canonical messaging aliases are documented in messaging.env.example.
+# Do not set meta_enabled here: absence preserves independent legacy flags.
+# The public /v1/channel-capabilities endpoint configures onboarding at runtime.

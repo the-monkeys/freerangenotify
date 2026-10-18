@@ -55,6 +55,22 @@ jobs:
           path: unit-coverage.out
           retention-days: 7
 
+  messaging-race:
+    name: Messaging race regressions (Linux)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run messaging race checks
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -short ./internal/usecases/services ./internal/infrastructure/providers ./internal/interfaces/http/handlers ./cmd/worker
+
   # ── Integration Tests ──────────────────────────────────────
   integration-tests:
     name: Integration Tests

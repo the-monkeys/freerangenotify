@@ -36,6 +36,7 @@ type CreditUsageSnapshot struct {
 }
 
 type CreditService struct {
+	disableFreeTierDailyCap     bool
 	balanceRepo                 billing.CreditBalanceRepository
 	ledgerRepo                  billing.CreditLedgerRepository
 	subRepo                     license.Repository
@@ -83,6 +84,12 @@ func NewCreditService(
 		legacyPending:              make(map[string]int64),
 		legacyHoldKeyByReservation: make(map[string]string),
 	}
+}
+
+// SetEnforceFreeTierDailyCap controls new admissions; existing refunds retain
+// their original counter key when the policy is disabled during a rollback.
+func (s *CreditService) SetEnforceFreeTierDailyCap(enabled bool) {
+	s.disableFreeTierDailyCap = !enabled
 }
 
 // EnableReservationJournal controls new admissions only. Journal IDs always
@@ -701,6 +708,9 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 }
 
 func (s *CreditService) acquireDailyCap(ctx context.Context, tenantID, channel string) (string, error) {
+	if s.disableFreeTierDailyCap {
+		return "", nil
+	}
 	if s.redisClient == nil {
 		return "", nil
 	}

@@ -59,7 +59,7 @@ func (h *ChannelConnectionHandler) view(c *channelconnection.Connection, inherit
 	for field := range c.Secrets {
 		configured[field] = true
 	}
-	return fiber.Map{"id": c.ID, "app_id": c.AppID, "environment_id": c.EnvironmentID, "channel": c.Channel, "provider": c.Provider, "credential_source": c.CredentialSource, "account_id": c.AccountID, "sender_id": c.SenderID, "revision": revision, "effective_revision": c.Revision, "readiness": c.Readiness, "facts": c.Facts, "secret_configured": configured, "inherited": inherited, "writes_enabled": h.Service.WritesEnabled, "exotel": c.Exotel, "exotel_enabled": h.Service.ExotelEnabled}
+	return fiber.Map{"id": c.ID, "app_id": c.AppID, "environment_id": c.EnvironmentID, "channel": c.Channel, "provider": c.Provider, "credential_source": c.CredentialSource, "account_id": c.AccountID, "sender_id": c.SenderID, "revision": revision, "effective_revision": c.Revision, "readiness": c.Readiness, "facts": c.Facts, "secret_configured": configured, "inherited": inherited, "writes_enabled": h.Service.WritesEnabled, "meta_enabled": h.Service.MetaEnabled == nil || *h.Service.MetaEnabled, "exotel": c.Exotel, "exotel_enabled": h.Service.ExotelEnabled}
 }
 func (h *ChannelConnectionHandler) Get(c *fiber.Ctx) error {
 	app, env, ch, err := h.scope(c, false)

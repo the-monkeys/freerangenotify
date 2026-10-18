@@ -15,6 +15,7 @@ import (
 )
 
 type ConnectionValidator struct {
+	MetaEnabled                        *bool
 	APIBudget                          ExotelReadBudget
 	ExotelEnabled                      bool
 	Client                             *http.Client
@@ -66,6 +67,9 @@ func (v *ConnectionValidator) version() string {
 // Pagination uses only the cursor on the same trusted Graph endpoint; next URLs
 // returned by a vendor are never followed with customer credentials.
 func (v *ConnectionValidator) MetaPhones(ctx context.Context, waba, token string) ([]MetaPhone, error) {
+	if v.MetaEnabled != nil && !*v.MetaEnabled {
+		return nil, fmt.Errorf("Meta onboarding is disabled")
+	}
 	var phones []MetaPhone
 	after := ""
 	for page := 0; page < 100; page++ {
@@ -97,6 +101,9 @@ func (v *ConnectionValidator) MetaPhones(ctx context.Context, waba, token string
 	return nil, fmt.Errorf("provider phone list exceeds safe limit")
 }
 func (v *ConnectionValidator) Validate(ctx context.Context, snap *channelconnection.Snapshot) (string, map[string]string, error) {
+	if snap.Provider == "meta" && v.MetaEnabled != nil && !*v.MetaEnabled {
+		return "disabled", nil, fmt.Errorf("Meta onboarding is disabled")
+	}
 	facts := map[string]string{"account_access": "unknown", "sender_owned": "unknown", "sender_registered": "unknown", "callback_subscription": "unknown", "billing_status": "not_exposed"}
 	if snap.AccountID == "" || snap.Provider != "meta" && snap.SenderID == "" {
 		facts["reason"] = "Account and sender are required"

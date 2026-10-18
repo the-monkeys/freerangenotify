@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/container"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 )
 
@@ -35,6 +36,7 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 // setupPublicRoutes configures public routes
 func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
+	v1.Get("/channel-capabilities", (&handlers.ChannelCapabilitiesHandler{Config: c.Config}).Get)
 	// Authentication routes (public)
 	auth := v1.Group("/auth")
 	if c.Config.Security.RateLimitEnabled {

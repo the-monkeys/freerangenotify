@@ -10,6 +10,7 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
+	Messaging         MessagingConfig         `mapstructure:"messaging"`
 	PhoneVerification PhoneVerificationConfig `mapstructure:"phone_verification"`
 	Connection        ConnectionConfig        `mapstructure:"connection"`
 	App               AppConfig               `mapstructure:"app"`
@@ -27,6 +28,17 @@ type Config struct {
 	Licensing         LicensingConfig         `mapstructure:"licensing"`
 	Filestore         FilestoreConfig         `mapstructure:"filestore"`
 	BizBilling        BizBillingConfig        `mapstructure:"biz_billing"`
+}
+
+// MetaEnabled is optional: an absent switch preserves independent legacy gates.
+type MessagingConfig struct {
+	MetaEnabled        *bool  `mapstructure:"meta_enabled"`
+	MetaAppID          string `mapstructure:"meta_app_id"`
+	MetaSignupConfigID string `mapstructure:"meta_signup_config_id"`
+	MetaGraphVersion   string `mapstructure:"meta_graph_version"`
+	MetaAppSecret      string `mapstructure:"meta_app_secret"`
+	TwilioAccountSID   string `mapstructure:"twilio_account_sid"`
+	TwilioAuthToken    string `mapstructure:"twilio_auth_token"`
 }
 
 type PhoneVerificationConfig struct {
@@ -424,6 +436,7 @@ type OIDCConfig struct {
 
 // Load loads configuration from various sources
 func Load() (*Config, error) {
+	bindMessagingEnvironment()
 	viper.SetDefault("phone_verification.allowed_prefixes", []string{})
 	viper.SetDefault("phone_verification.daily_budget_minor", 0)
 	viper.SetDefault("phone_verification.cost_minor_per_segment", 0)
@@ -587,6 +600,9 @@ func Load() (*Config, error) {
 		if overrides.FailMode != "" {
 			config.Licensing.FailMode = overrides.FailMode
 		}
+	}
+	if err := config.resolveMessaging(); err != nil {
+		return nil, err
 	}
 
 	return &config, nil

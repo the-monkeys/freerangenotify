@@ -264,12 +264,12 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	container.ChannelConnections = &services.ChannelConnectionService{Apps: repos.Application, Repo: repository.NewChannelConnectionRepository(dbManager.Client.GetClient()), Environments: repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger), Codec: connectionCodec, WritesEnabled: cfg.Connection.WritesEnabled, ExotelEnabled: cfg.Providers.Exotel.Enabled, System: map[notification.Channel]*channelconnection.Snapshot{
+	container.ChannelConnections = &services.ChannelConnectionService{MetaEnabled: cfg.Messaging.MetaEnabled, Apps: repos.Application, Repo: repository.NewChannelConnectionRepository(dbManager.Client.GetClient()), Environments: repository.NewEnvironmentRepository(dbManager.Client.GetClient(), logger), Codec: connectionCodec, WritesEnabled: cfg.Connection.WritesEnabled, ExotelEnabled: cfg.Providers.Exotel.Enabled, System: map[notification.Channel]*channelconnection.Snapshot{
 		notification.ChannelWhatsApp: {Provider: "twilio", AccountID: cfg.Providers.WhatsApp.AccountSID, SenderID: cfg.Providers.WhatsApp.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.WhatsApp.AuthToken}},
 		notification.ChannelSMS:      {Provider: "twilio", AccountID: cfg.Providers.Twilio.AccountSID, SenderID: cfg.Providers.Twilio.FromNumber, Credentials: map[string]string{"auth_token": cfg.Providers.Twilio.AuthToken}},
 	}}
 
-	if cfg.Providers.MetaWhatsApp.Enabled {
+	if cfg.Providers.MetaWhatsApp.Enabled || cfg.Messaging.MetaEnabled != nil {
 		account := cfg.Providers.MetaWhatsApp.WABAID
 		if account == "" && cfg.Providers.MetaWhatsApp.PhoneNumberID != "" {
 			account = "phone:" + cfg.Providers.MetaWhatsApp.PhoneNumberID
@@ -277,7 +277,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.ChannelConnections.System[notification.Channel("meta_whatsapp")] = &channelconnection.Snapshot{Provider: "meta", AccountID: account, SenderID: cfg.Providers.MetaWhatsApp.PhoneNumberID, Credentials: map[string]string{"access_token": cfg.Providers.MetaWhatsApp.AccessToken, "app_secret": cfg.Providers.MetaWhatsApp.AppSecret}}
 	}
 	// Initialize licensing checker
-	container.ChannelDispatch = &services.ChannelDispatchService{ExotelEnabled: cfg.Providers.Exotel.Enabled, PublicURL: cfg.Server.PublicURL, Budget: &services.ChannelDeliveryBudget{Redis: container.RedisClient}, Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
+	container.ChannelDispatch = &services.ChannelDispatchService{MetaEnabled: cfg.Messaging.MetaEnabled, ExotelEnabled: cfg.Providers.Exotel.Enabled, PublicURL: cfg.Server.PublicURL, Budget: &services.ChannelDeliveryBudget{Redis: container.RedisClient}, Connections: container.ChannelConnections, Redis: container.RedisClient, Logger: logger, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion}
 	if cfg.Providers.Twilio.AccountSID == "" && cfg.Providers.Vonage.Enabled {
 		container.ChannelConnections.System[notification.ChannelSMS] = &channelconnection.Snapshot{Provider: "vonage", AccountID: cfg.Providers.Vonage.APIKey, SenderID: cfg.Providers.Vonage.FromNumber, Credentials: map[string]string{"api_secret": cfg.Providers.Vonage.APISecret}}
 	}
@@ -439,7 +439,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			}
 		}
 	}()
-	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{APIBudget: container.ChannelDispatch.Budget, ExotelEnabled: cfg.Providers.Exotel.Enabled, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
+	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{MetaEnabled: cfg.Messaging.MetaEnabled, APIBudget: container.ChannelDispatch.Budget, ExotelEnabled: cfg.Providers.Exotel.Enabled, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 
@@ -868,6 +868,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			cfg.Billing.EnforceCreditChecks,
 		)
 		container.CreditService.EnableReservationJournal(cfg.Billing.ReservationJournalEnabled)
+		container.CreditService.SetEnforceFreeTierDailyCap(cfg.Billing.EnforceFreeTierDailyCap)
 		container.CreditService.SetReservationNotificationRepository(repos.Notification)
 
 		container.BillingHandler.SetUsageRepo(usageRepo, true)
@@ -977,7 +978,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	})
 	container.SSEBroadcaster.SetRedis(redisClient)
 	// ── WhatsApp Meta Tech Provider (feature-gated) ──
-	if cfg.Features.WhatsAppMetaEnabled {
+	{ // Readers/recovery remain available independently of new onboarding.
 		senderResolver := services.NewChannelSenderResolver(repos.Application, repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient()))
 		senderResolver.MetaSecret = cfg.Providers.MetaWhatsApp.AppSecret
 		senderResolver.Connections = container.ChannelConnections
@@ -1139,7 +1140,21 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 				container.WhatsAppRichTemplateService.EnableClickTracking(signer, cfg.Server.PublicURL)
 			}
 		}
-		logger.Info("WhatsApp Meta integration enabled (webhook receiver, inbound messaging, embedded signup, template management, inbox)")
+		if !cfg.Features.WhatsAppMetaEnabled {
+			container.WhatsAppAdminHandler = nil
+			container.WhatsAppTemplateHandler = nil
+			container.WhatsAppRichTemplateHandler = nil
+			container.WhatsAppConversationHandler = nil
+			// Preserve the legacy outbound-only route surface when the canonical
+			// switch is absent. Explicit rollback keeps signed callback readers.
+			if cfg.Messaging.MetaEnabled == nil {
+				container.ClickRedirectHandler = nil
+				container.MetaWebhookHandler = nil
+				container.TwilioInboundWebhookHandler = nil
+				container.TwilioContentStatusHandler = nil
+			}
+		}
+		logger.Info("Messaging callback recovery initialized")
 	}
 
 	// ── Twilio Content Templates ──

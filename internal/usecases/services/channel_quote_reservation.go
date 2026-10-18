@@ -66,6 +66,9 @@ func quotedReservationID(subscription, notif string, attempt int) string {
 }
 
 func (s *CreditService) acquireQuotedDailyCap(ctx context.Context, tenant, ch, id string) (string, error) {
+	if s.disableFreeTierDailyCap {
+		return "", nil
+	}
 	if s.redisClient == nil {
 		return "", fmt.Errorf("quoted admission budget store unavailable")
 	}
@@ -107,5 +110,5 @@ func (s *CreditService) recordQuotedUsage(ctx context.Context, res *billing.Cred
 		return fmt.Errorf("quoted settlement usage repository unavailable")
 	}
 	q := res.Quote
-	return s.usageRepo.Store(ctx, &billing.UsageEvent{ID: billing.CreditTransitionLedgerID(res.ID, res.Status), TenantID: res.TenantID, AppID: res.AppID, NotificationID: res.NotificationID, Channel: res.Channel, Provider: q.Connection.Provider, CredentialSource: q.Connection.CredentialSource, MessageType: q.Category, CreditsUsed: res.CreditsReserved, RateCardVersion: res.RateCardVersion, Status: "charged", Timestamp: res.UpdatedAt, Quote: q})
+	return s.usageRepo.Store(ctx, &billing.UsageEvent{ID: billing.CreditTransitionLedgerID(res.ID, res.Status), TenantID: res.TenantID, AppID: res.AppID, NotificationID: res.NotificationID, Channel: res.Channel, Provider: q.Connection.Provider, CredentialSource: q.Connection.CredentialSource, MessageType: q.Category, CreditsUsed: res.CreditsReserved, RateCardVersion: res.RateCardVersion, Currency: "INR", Status: "charged", Timestamp: res.UpdatedAt, Quote: q})
 }

@@ -1274,7 +1274,7 @@ func init() {
 		enabled, _ := cfg["enabled"].(bool)
 		phoneNumberID, _ := cfg["phone_number_id"].(string)
 
-		if !enabled && phoneNumberID == "" {
+		if !enabled {
 			return nil, fmt.Errorf("meta_whatsapp: provider disabled")
 		}
 

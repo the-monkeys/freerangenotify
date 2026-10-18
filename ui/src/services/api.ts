@@ -1360,6 +1360,26 @@ export const twilioTemplatesAPI = {
   },
 };
 
+export interface ChannelCapabilities {
+  meta: { delivery?: boolean; manual: boolean; embedded: boolean; app_id: string; signup_config_id?: string; graph_version: string };
+  sms?: { providers: string[]; exotel: boolean };
+}
+export const channelCapabilitiesAPI = {
+  get: async (): Promise<ChannelCapabilities> => {
+    try {
+      const { data } = await api.get<ApiResponse<ChannelCapabilities>>('/channel-capabilities');
+      if (!data.data?.meta) throw new Error('Invalid messaging capabilities');
+      return data.data;
+    } catch (error: any) {
+      // Temporary public-ID fallback only for an older server without the route.
+      // Explicitly disabled capabilities and network/server errors never bypass it.
+      if (error.response?.status !== 404) throw error;
+      const appId = (import.meta.env.VITE_META_APP_ID as string | undefined)?.trim() || '';
+      return { meta: { manual: true, embedded: !!appId, app_id: appId, signup_config_id: (import.meta.env.VITE_META_CONFIG_ID as string | undefined)?.trim(), graph_version: 'v23.0' } };
+    }
+  },
+};
+
 // ============= WhatsApp Admin APIs (JWT-protected) =============
 export const whatsappAdminAPI = {
   getStatus: async (appId: string) => {
@@ -1404,7 +1424,7 @@ export interface DomesticSMSConfig {
  limits:{messages_per_minute:number;units_per_minute:number;daily_units:number;daily_spend_minor:number;cost_minor_per_unit:number;currency:string;max_segments:number;rate_reference:string;rate_verified_at:string};
 }
 export interface ChannelConnectionView {
- exotel?:DomesticSMSConfig;exotel_enabled?:boolean;
+ exotel?:DomesticSMSConfig;exotel_enabled?:boolean;meta_enabled?:boolean;
  id: string; app_id: string; environment_id: string; channel: string;
  provider: string; credential_source: string; account_id: string; sender_id: string;
  revision: number; readiness: string; writes_enabled: boolean; inherited?: boolean;
