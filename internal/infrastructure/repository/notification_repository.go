@@ -24,6 +24,7 @@ func NewNotificationRepository(client *elasticsearch.Client, logger *zap.Logger)
 
 // Create creates a new notification
 func (r *NotificationRepository) Create(ctx context.Context, n *notification.Notification) error {
+	syncProviderMessageID(n)
 	n.CreatedAt = time.Now()
 	n.UpdatedAt = time.Now()
 	return r.BaseRepository.Create(ctx, n.NotificationID, n)
@@ -33,6 +34,7 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 func (r *NotificationRepository) BulkCreateResults(ctx context.Context, rows []*notification.Notification) ([]error, error) {
 	docs := make([]BulkDocument, len(rows))
 	for i, row := range rows {
+		syncProviderMessageID(row)
 		docs[i] = BulkDocument{ID: row.NotificationID, Document: row}
 	}
 	return r.BaseRepository.BulkCreateResults(ctx, docs)
@@ -55,6 +57,7 @@ func (r *NotificationRepository) GetByID(ctx context.Context, notificationID str
 
 // Update updates an existing notification
 func (r *NotificationRepository) Update(ctx context.Context, n *notification.Notification) error {
+	syncProviderMessageID(n)
 	n.UpdatedAt = time.Now()
 	return r.updateWithProcessingClaim(ctx, n.NotificationID, n)
 }
@@ -89,9 +92,16 @@ func (r *NotificationRepository) Delete(ctx context.Context, notificationID stri
 
 // List lists notifications with pagination and filtering
 func (r *NotificationRepository) List(ctx context.Context, filter *notification.NotificationFilter) ([]*notification.Notification, error) {
+	if filter != nil && filter.ProviderMessageID != "" && filter.AppID == "" && len(filter.AppIDs) == 0 {
+		return nil, fmt.Errorf("provider lookup requires application scope")
+	}
 	query := r.buildNotificationQuery(filter)
-
 	result, err := r.BaseRepository.Search(ctx, query)
+	// Pre-upgrade accepted messages have identity only inside unindexed metadata.
+	// Fall back within the authorized app/channel scope; new writes use the index.
+	if err == nil && len(result.Hits) == 0 && filter != nil && filter.ProviderMessageID != "" {
+		result, err = r.BaseRepository.Search(ctx, r.legacyProviderQuery(filter))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +323,7 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 		qb.Term("metadata.digest_key", filter.DigestKey)
 	}
 	if filter.ProviderMessageID != "" {
-		qb.Term("metadata.provider_message_id", filter.ProviderMessageID)
+		qb.filters = append(qb.filters, map[string]interface{}{"bool": map[string]interface{}{"minimum_should_match": 1, "should": []interface{}{map[string]interface{}{"term": map[string]interface{}{"provider_message_id": filter.ProviderMessageID}}, map[string]interface{}{"term": map[string]interface{}{"provider_message_id.keyword": filter.ProviderMessageID}}, map[string]interface{}{"term": map[string]interface{}{"metadata.provider_message_id": filter.ProviderMessageID}}}}})
 	}
 	if filter.FromDate != nil {
 		qb.Range("created_at", map[string]interface{}{"gte": filter.FromDate.Format(time.RFC3339)})
@@ -350,11 +360,27 @@ func (r *NotificationRepository) buildNotificationQuery(filter *notification.Not
 // Count returns the number of notifications matching a filter
 func (r *NotificationRepository) Count(ctx context.Context, filter *notification.NotificationFilter) (int64, error) {
 	query := r.buildNotificationQuery(filter)
+	if filter != nil && filter.ProviderMessageID != "" {
+		if filter.AppID == "" && len(filter.AppIDs) == 0 {
+			return 0, fmt.Errorf("provider lookup requires application scope")
+		}
+		query = r.legacyProviderQuery(filter)
+	}
 	// Remove pagination from count query
 	delete(query, "from")
 	delete(query, "size")
 	delete(query, "sort")
-
+	if filter != nil && filter.ProviderMessageID != "" {
+		// The Count API does not accept runtime_mappings. Search with size zero
+		// preserves the legacy source lookup and returns an exact total.
+		query["size"] = 0
+		query["track_total_hits"] = true
+		result, e := r.BaseRepository.Search(ctx, query)
+		if e != nil {
+			return 0, e
+		}
+		return result.Total, nil
+	}
 	return r.BaseRepository.Count(ctx, query)
 }
 
@@ -476,4 +502,17 @@ func (r *NotificationRepository) ClearDeliveryFailure(ctx context.Context, id st
 			}},
 		},
 	})
+}
+
+func syncProviderMessageID(n *notification.Notification) {
+	n.ProviderMessageID, _ = n.Metadata["provider_message_id"].(string)
+}
+func (r *NotificationRepository) legacyProviderQuery(filter *notification.NotificationFilter) map[string]interface{} {
+	scoped := *filter
+	scoped.ProviderMessageID = ""
+	query := r.buildNotificationQuery(&scoped)
+	query["runtime_mappings"] = map[string]interface{}{"frn_legacy_provider_id": map[string]interface{}{"type": "keyword", "script": map[string]interface{}{"source": `def id=params._source['provider_message_id'];if(id==null || id==''){def metadata=params._source['metadata'];if(metadata!=null){id=metadata['provider_message_id'];}}if(id instanceof String){emit(id);}`}}}
+	b := query["query"].(map[string]interface{})["bool"].(map[string]interface{})
+	b["filter"] = append(b["filter"].([]map[string]interface{}), map[string]interface{}{"term": map[string]interface{}{"frn_legacy_provider_id": filter.ProviderMessageID}})
+	return query
 }

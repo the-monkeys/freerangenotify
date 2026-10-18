@@ -103,3 +103,34 @@ func TestExotelDeliveryNetworkUnknown(t *testing.T) {
 		t.Fatal("network loss must remain unknown")
 	}
 }
+
+func TestExotelUnsendableMessage(t *testing.T) {
+	for _, which := range []string{"rolling units", "daily units", "daily spend"} {
+		t.Run(which, func(t *testing.T) {
+			snap := exotelFixtureSnapshot()
+			snap.Exotel.Templates[0].VariableMaxLength = 200
+			switch which {
+			case "rolling units":
+				snap.Exotel.Limits.UnitsPerMinute = 1
+			case "daily units":
+				snap.Exotel.Limits.DailyUnits = 1
+			case "daily spend":
+				snap.Exotel.Limits.DailySpendMinor = 15
+			}
+			_, _, e := ValidateExotelMessage(snap, &notification.Notification{Content: notification.Content{Body: "Hello " + strings.Repeat("a", 160) + " from FRN"}}, &user.User{Phone: "+919876543210"})
+			if e == nil {
+				t.Fatal("message that cannot ever fit sender policy was admitted")
+			}
+		})
+	}
+}
+
+func TestExotelMultipartPackingSegmentCap(t *testing.T) {
+	snap := exotelFixtureSnapshot()
+	body := strings.Repeat("^", 153)
+	snap.Exotel.Templates[0].Body = body
+	snap.Exotel.Limits.MaxSegments = 2
+	if _, _, e := ValidateExotelMessage(snap, &notification.Notification{Content: notification.Content{Body: body}}, &user.User{Phone: "+919876543210"}); e == nil {
+		t.Fatal("three actual SMS segments passed a two-segment cap")
+	}
+}

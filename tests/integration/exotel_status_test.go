@@ -6,10 +6,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/database"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/secrets"
 	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
@@ -76,7 +79,9 @@ func TestExotelStatusRealES(t *testing.T) {
 	}))
 	defer server.Close()
 	events := repository.NewChannelEventRepository(client)
-	svc := &services.ExotelStatusService{Connections: connections, Notifications: notifs, Events: events, Client: &http.Client{Transport: exotelStatusTransport(server.URL)}}
+	rc := redis.NewClient(&redis.Options{Addr: "127.0.0.1:16388"})
+	defer rc.Close()
+	svc := &services.ExotelStatusService{APIBudget: &services.ChannelDeliveryBudget{Redis: rc}, Connections: connections, Notifications: notifs, Events: events, Client: &http.Client{Transport: exotelStatusTransport(server.URL)}}
 	private, e := connections.ResolveRevision(ctx, id, 1)
 	if e != nil {
 		t.Fatal(e)
@@ -153,5 +158,73 @@ func TestExotelStatusRealES(t *testing.T) {
 	stored, e = notifs.GetByID(ctx, n.NotificationID)
 	if e != nil || stored.Status != notification.StatusDelivered {
 		t.Fatal("late failure regressed delivery")
+	}
+}
+
+type exotelSchemaTransport struct{ index string }
+
+func (t exotelSchemaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	copy := r.Clone(r.Context())
+	if strings.HasPrefix(copy.URL.Path, "/channel_connections") {
+		copy.URL.Path = "/" + t.index + strings.TrimPrefix(copy.URL.Path, "/channel_connections")
+		copy.URL.RawPath = ""
+	}
+	return http.DefaultTransport.RoundTrip(copy)
+}
+func TestExotelDraftEditsRealES(t *testing.T) {
+	_ = channelFixture(t) // explicit disposable endpoint guard
+	ctx := context.Background()
+	index := "phase4-schema-" + uuid.NewString() + "-channel_connections"
+	client, e := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{"http://127.0.0.1:19219"}, Transport: exotelSchemaTransport{index}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	mapping, _ := json.Marshal((&database.IndexTemplates{}).GetChannelConnectionsTemplate())
+	res, e := client.Indices.Create(index, client.Indices.Create.WithBody(strings.NewReader(string(mapping))))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if res.IsError() {
+		t.Fatal("schema fixture creation failed")
+	}
+	res.Body.Close()
+	defer func() {
+		res, e := client.Indices.Delete([]string{index})
+		if e == nil {
+			res.Body.Close()
+		}
+	}()
+	repo := repository.NewChannelConnectionRepository(client)
+	id := uuid.NewString()
+	c := &channelconnection.Connection{ID: id, AppID: "draft-app", EnvironmentID: "default", Channel: notification.ChannelSMS, Provider: "exotel", AccountID: "draft-account", Revision: 1, Exotel: &channelconnection.DomesticSMSConfig{Region: "mumbai", ApprovedAt: "2026-10-01T00:00:00Z", Templates: []channelconnection.DLTTemplate{{ID: "1234567890", Body: "2026-10-18"}}}}
+	if e = repo.Save(ctx, c, 0); e != nil {
+		t.Fatal(e)
+	}
+	c, e = repo.Get(ctx, id)
+	if e != nil || c.Exotel == nil || c.Exotel.ApprovedAt == "" {
+		t.Fatal("confirmed policy not readable", e)
+	}
+	c.Exotel.ApprovedAt = ""
+	c.Exotel.Templates[0].Body = "Hello {#var#}"
+	c.Revision = 2
+	if e = repo.Save(ctx, c, 1); e != nil {
+		t.Fatal("editing approved policy into a draft must remain possible", e)
+	}
+	current, e := repo.Get(ctx, id)
+	if e != nil || current.Exotel == nil || current.Exotel.ApprovedAt != "" || current.Exotel.Templates[0].Body != "Hello {#var#}" {
+		t.Fatal("edited draft not readable", e)
+	}
+	old, e := repo.GetRevision(ctx, id, 1)
+	if e != nil || old.Exotel == nil || old.Exotel.Templates[0].Body != "2026-10-18" {
+		t.Fatal("old admitted policy changed", e)
+	}
+	res, e = client.Indices.Refresh(client.Indices.Refresh.WithIndex(index))
+	if e != nil {
+		t.Fatal(e)
+	}
+	res.Body.Close()
+	rows, e := repo.FindAccount(ctx, "exotel", "draft-account")
+	if e != nil || len(rows) != 1 || rows[0].Exotel == nil || rows[0].Exotel.Templates[0].Body != "Hello {#var#}" {
+		t.Fatal("account lookup lost policy", e)
 	}
 }

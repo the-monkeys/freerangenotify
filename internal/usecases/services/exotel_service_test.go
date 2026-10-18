@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -108,10 +109,15 @@ func TestExotelCallbackCapabilityAndRecovery(t *testing.T) {
 	n := &notification.Notification{NotificationID: "n", AppID: "a", Channel: notification.ChannelSMS, Status: notification.StatusSent, Content: notification.Content{Body: "Hello Asha from FRN"}, Metadata: map[string]interface{}{"provider_message_id": "sms-1", "channel_destination": "+919876543210", channelconnection.DeliveryMetadataKey: payload}}
 	repo := &channelStatusRepo{row: n}
 	events := &channelMemoryEvents{rows: map[string]*whatsapp.EventReceipt{}}
-	available := false
+	available, throttled := false, true
 	reads := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reads++
+		if throttled {
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(429)
+			return
+		}
 		key, token, _ := r.BasicAuth()
 		if key != "fixture-key" || token != "fixture-token" {
 			t.Error("wrong status credentials")
@@ -123,7 +129,8 @@ func TestExotelCallbackCapabilityAndRecovery(t *testing.T) {
 		fmt.Fprint(w, `{"SMSMessage":{"Sid":"sms-1","AccountSid":"account","From":"FRNAPP","To":"+919876543210","Body":"Hello Asha from FRN","Status":"sent","DateUpdated":"2026-10-18 12:30:00"}}`)
 	}))
 	defer server.Close()
-	svc := &ExotelStatusService{Connections: c, Notifications: repo, Events: events, Client: &http.Client{Transport: dispatchTransport{server.URL}}}
+	gate := &exotelTestReadBudget{err: &DeliveryBudgetDeferredError{"capacity", time.Minute}}
+	svc := &ExotelStatusService{APIBudget: gate, Connections: c, Notifications: repo, Events: events, Client: &http.Client{Transport: dispatchTransport{server.URL}}}
 	expires := time.Now().Add(time.Hour).Unix()
 	proof := ExotelCallbackProof(snap, n, expires)
 	if _, e := svc.AcceptCallback(context.Background(), "n", "sms-1", "sent", expires, "forged"); e == nil {
@@ -136,6 +143,18 @@ func TestExotelCallbackCapabilityAndRecovery(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	if e = svc.Process(context.Background(), id); e == nil || reads != 0 || events.rows[id].State != "pending" || events.rows[id].Attempts != 0 {
+		t.Fatal("request capacity wait consumed recovery attempts or queried vendor")
+	}
+	gate.err = nil
+	for i := 0; i < 6; i++ {
+		events.rows[id].NextAttempt = time.Time{}
+		if e = svc.Process(context.Background(), id); e == nil || events.rows[id].Attempts != 0 || events.rows[id].State != "pending" {
+			t.Fatal("vendor429 consumed callback recovery attempts")
+		}
+	}
+	throttled = false
+	events.rows[id].NextAttempt = time.Time{}
 	if e = svc.Process(context.Background(), id); e == nil || n.Status != notification.StatusSent {
 		t.Fatal("unknown vendor outcome trusted callback status")
 	}
@@ -175,7 +194,7 @@ func TestExotelQuoteAndReadiness(t *testing.T) {
 		fmt.Fprint(w, `{"SMSMessage":{"Sid":"sms-probe","AccountSid":"account","From":"VN/FRNAPP","To":"9876543210","Body":"Hello Asha from FRN","Status":"sent"}}`)
 	}))
 	defer server.Close()
-	v := &ConnectionValidator{PublicURL: "https://notify.example.test", Client: &http.Client{Transport: dispatchTransport{server.URL}}}
+	v := &ConnectionValidator{APIBudget: &exotelTestReadBudget{}, PublicURL: "https://notify.example.test", Client: &http.Client{Transport: dispatchTransport{server.URL}}}
 	state, _, e := v.Validate(context.Background(), snap)
 	if e != nil || state != "pending" || reads != 0 {
 		t.Fatal("disabled route queried vendor")
@@ -216,9 +235,16 @@ func TestExotelDelivery6000Queue(t *testing.T) {
 	now := time.Now().UTC()
 	start := now
 	budget := &ChannelDeliveryBudget{Redis: c, Now: func() time.Time { return now }}
-	var accepted int
+	var accepted, lookups int
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			lookups++
+			parts := strings.Split(r.URL.Path, "/")
+			id := strings.TrimSuffix(parts[len(parts)-1], ".json")
+			fmt.Fprintf(w, `{"SMSMessage":{"Sid":"%s","AccountSid":"%s","Status":"sent","From":"FRNAPP","To":"+919876543210","Body":"Hello Asha from FRN"}}`, id, snap.AccountID)
+			return
+		}
 		r.ParseForm()
 		id := r.FormValue("CustomField")
 		if seen[id] {
@@ -271,13 +297,66 @@ func TestExotelDelivery6000Queue(t *testing.T) {
 		if e != nil || result == nil || !result.Success {
 			t.Fatal("mock dispatch failed", e)
 		}
+		if e = budget.AcquireProviderRead(ctx, snap); e != nil {
+			var deferred *DeliveryBudgetDeferredError
+			if !errors.As(e, &deferred) {
+				t.Fatal(e)
+			}
+			now = now.Add(deferred.RetryAfter)
+			windowCount = 0
+			windows++
+			if e = budget.AcquireProviderRead(ctx, snap); e != nil {
+				t.Fatal(e)
+			}
+		}
+		if _, e = providers.ReadExotelSMS(ctx, &http.Client{Transport: dispatchTransport{server.URL}}, snap, item.NotificationID); e != nil {
+			t.Fatal(e)
+		}
 		windowCount++
 		if e = q.Acknowledge(ctx, *item); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if accepted != total || len(seen) != total || windows != 30 || now.Sub(start) < 29*time.Minute {
+	if accepted != total || len(seen) != total || lookups != total || windows != 60 || now.Sub(start) < 59*time.Minute {
 		t.Fatalf("wrong capacity simulation: accepted=%d windows=%d elapsed=%s", accepted, windows, now.Sub(start))
 	}
-	t.Logf("6000 real Redis queue / mock HTTP sends: prepare=%s processing=%s; virtual capacity=%s in %d batches of at most 200; no live delivery measured", prepTime, time.Since(processing), now.Sub(start), windows)
+	t.Logf("6000 real Redis queue / mock HTTP sends plus 6000 authenticated status reads: prepare=%s processing=%s; virtual capacity=%s in %d batches of at most 200; no live delivery measured", prepTime, time.Since(processing), now.Sub(start), windows)
+}
+
+func TestExotelAPIReadsShareAccountCapacity(t *testing.T) {
+	c := phase4Redis(t)
+	ctx := context.Background()
+	snap := domesticFixture()
+	snap.AccountID = uuid.NewString()
+	now := time.Now().UTC()
+	b := &ChannelDeliveryBudget{Redis: c, Now: func() time.Time { return now }}
+	for i := 0; i < 199; i++ {
+		if e := b.AcquireProviderRead(ctx, snap); e != nil {
+			t.Fatal("provider read rejected below account capacity", e)
+		}
+	}
+	if e := b.AcquireDeliveryBudget(ctx, snap, 1); e != nil {
+		t.Fatal(e)
+	}
+	if e := b.AcquireProviderRead(ctx, snap); e == nil {
+		t.Fatal("authenticated status GET bypassed provider account ceiling")
+	}
+	if e := b.AcquireDeliveryBudget(ctx, snap, 1); e == nil {
+		t.Fatal("SMS send ignored status GET consumption")
+	}
+	other := *snap
+	other.AccountID = uuid.NewString()
+	if e := b.AcquireProviderRead(ctx, &other); e != nil {
+		t.Fatal("one account exhausted another account", e)
+	}
+	now = now.Add(61 * time.Second)
+	if e := b.AcquireProviderRead(ctx, snap); e != nil {
+		t.Fatal("provider read did not resume", e)
+	}
+}
+
+type exotelTestReadBudget struct{ err error }
+
+func (b *exotelTestReadBudget) AcquireProviderRead(context.Context, *channelconnection.Snapshot) error {
+	return b.err
 }

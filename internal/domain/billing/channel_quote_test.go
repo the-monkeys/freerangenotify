@@ -29,3 +29,20 @@ func TestChannelQuoteSMSSegments(t *testing.T) {
 		}
 	}
 }
+
+func TestSMSMultipartPackingKeepsEncodedCharactersWhole(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want int64
+	}{
+		{strings.Repeat("^", 153), 3}, {strings.Repeat("^", 306), 5},
+		{strings.Repeat("😀", 67), 3}, {strings.Repeat("😀", 134), 5},
+		{strings.Repeat("^", 76) + "a" + strings.Repeat("^", 76), 2},
+		{strings.Repeat("😀", 33) + "界" + strings.Repeat("😀", 33), 2},
+	} {
+		_, got, e := SMSUnits(tc.body)
+		if e != nil || got != tc.want {
+			t.Errorf("multipart character packing got %d want %d: %v", got, tc.want, e)
+		}
+	}
+}

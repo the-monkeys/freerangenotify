@@ -419,7 +419,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 	}
 	// Initialize tenant/organization support (C1)
 	container.TenantService = services.NewTenantService(tenantRepo, tenantMemberRepo, authRepo, repos.Subscription, dashboardNotifier, logger)
-	smsStatus := &services.ExotelStatusService{Connections: container.ChannelConnections, Notifications: repos.Notification, Events: repository.NewChannelEventRepository(dbManager.Client.GetClient())}
+	smsStatus := &services.ExotelStatusService{APIBudget: container.ChannelDispatch.Budget, Connections: container.ChannelConnections, Notifications: repos.Notification, Events: repository.NewChannelEventRepository(dbManager.Client.GetClient())}
 	container.ExotelWebhookHandler = &handlers.ExotelWebhookHandler{Service: smsStatus}
 	smsCtx, smsCancel := context.WithCancel(context.Background())
 	container.exotelEventCancel = smsCancel
@@ -439,7 +439,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			}
 		}
 	}()
-	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{ExotelEnabled: cfg.Providers.Exotel.Enabled, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
+	container.ChannelConnectionHandler = &handlers.ChannelConnectionHandler{Service: container.ChannelConnections, Validator: &services.ConnectionValidator{APIBudget: container.ChannelDispatch.Budget, ExotelEnabled: cfg.Providers.Exotel.Enabled, GraphVersion: cfg.Providers.MetaWhatsApp.APIVersion, PublicURL: cfg.Server.PublicURL}, Members: container.MembershipRepo, Tenants: container.TenantService, SenderBindings: repository.NewChannelSenderBindingRepository(dbManager.Client.GetClient())}
 	container.TenantHandler = handlers.NewTenantHandler(container.TenantService, container.Validator, logger)
 	container.DashboardNotificationHandler = handlers.NewDashboardNotificationHandler(repos.DashboardNotification, logger)
 

@@ -15,6 +15,7 @@ import (
 )
 
 type ConnectionValidator struct {
+	APIBudget                          ExotelReadBudget
 	ExotelEnabled                      bool
 	Client                             *http.Client
 	GraphVersion, MetaAppID, PublicURL string
@@ -222,6 +223,10 @@ func (v *ConnectionValidator) Validate(ctx context.Context, snap *channelconnect
 		}
 		if snap.Exotel.VerificationMessageID == "" {
 			facts["reason"] = "Previously delivered SMS ID required for a read-only account and sender check"
+			return "pending", facts, nil
+		}
+		if e := acquireExotelRead(ctx, v.APIBudget, snap); e != nil {
+			facts["reason"] = "Provider request capacity unavailable; retry readiness later"
 			return "pending", facts, nil
 		}
 		msg, e := providers.ReadExotelSMS(ctx, v.Client, snap, snap.Exotel.VerificationMessageID)

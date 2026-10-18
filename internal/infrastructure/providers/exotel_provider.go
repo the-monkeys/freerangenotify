@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,6 +66,10 @@ func ValidateExotelMessage(s *channelconnection.Snapshot, n *notification.Notifi
 	_, units, e := billing.SMSUnits(n.Content.Body)
 	if e != nil || units > s.Exotel.Limits.MaxSegments {
 		return nil, 0, fmt.Errorf("SMS segment cap exceeded")
+	}
+	limits := s.Exotel.Limits
+	if units > limits.UnitsPerMinute || units > limits.DailyUnits || units > limits.DailySpendMinor/limits.CostMinorPerUnit {
+		return nil, 0, fmt.Errorf("SMS cannot fit sender unit or spend policy")
 	}
 	return t, units, nil
 }
@@ -155,6 +160,13 @@ func ReadExotelSMS(ctx context.Context, client *http.Client, s *channelconnectio
 		return nil, fmt.Errorf("Exotel status unavailable")
 	}
 	defer response.Body.Close()
+	if response.StatusCode == 429 {
+		wait := time.Minute
+		if seconds, e := strconv.ParseInt(response.Header.Get("Retry-After"), 10, 64); e == nil && seconds > 0 && seconds <= 3600 {
+			wait = time.Duration(seconds) * time.Second
+		}
+		return nil, &ExotelReadThrottledError{RetryAfter: wait}
+	}
 	if response.StatusCode != 200 {
 		return nil, fmt.Errorf("Exotel status unavailable (%d)", response.StatusCode)
 	}
@@ -184,3 +196,7 @@ func init() {
 		return NewExotelProvider(ExotelConfig{Snapshot: s}, logger)
 	})
 }
+
+type ExotelReadThrottledError struct{ RetryAfter time.Duration }
+
+func (e *ExotelReadThrottledError) Error() string { return "Exotel status read throttled" }

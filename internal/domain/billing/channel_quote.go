@@ -83,13 +83,23 @@ func SMSUnits(body string) (string, int64, error) {
 		if units <= 160 {
 			return "GSM-7", 1, nil
 		}
-		return "GSM-7", (units + 152) / 153, nil
+		return "GSM-7", packSMSSegments(body, 153, func(r rune) int64 {
+			if strings.ContainsRune(ext, r) {
+				return 2
+			}
+			return 1
+		}), nil
 	}
 	units = int64(len(utf16.Encode([]rune(body))))
 	if units <= 70 {
 		return "UCS-2", 1, nil
 	}
-	return "UCS-2", (units + 66) / 67, nil
+	return "UCS-2", packSMSSegments(body, 67, func(r rune) int64 {
+		if r > 0xFFFF {
+			return 2
+		}
+		return 1
+	}), nil
 }
 
 // Publication is an operator decision, backed by dated provider/account rates.
@@ -118,4 +128,19 @@ func (c *RateCard) ValidatePublication() error {
 		seen[key] = true
 	}
 	return nil
+}
+
+// Extension escapes and UTF-16 surrogate pairs are indivisible. Summing code
+// units and dividing can place half a character across two segment boundaries.
+func packSMSSegments(body string, capacity int64, width func(rune) int64) int64 {
+	segments, used := int64(1), int64(0)
+	for _, r := range body {
+		cost := width(r)
+		if used+cost > capacity {
+			segments++
+			used = 0
+		}
+		used += cost
+	}
+	return segments
 }

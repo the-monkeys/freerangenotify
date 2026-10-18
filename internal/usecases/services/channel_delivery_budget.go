@@ -81,10 +81,9 @@ func (b *ChannelDeliveryBudget) AcquireDeliveryBudget(ctx context.Context, s *ch
 	if identity == "" {
 		identity = uuid.NewString()
 	}
-	account := fmt.Sprintf("%x", sha256.Sum256([]byte(s.Provider+"\x00"+s.Exotel.Region+"\x00"+s.AccountID)))
 	sender := fmt.Sprintf("%x", sha256.Sum256([]byte(s.SenderID)))
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(s.AppID+"\x00"+identity)))
-	prefix := "frn:delivery:{" + account + "}:"
+	prefix := exotelAccountBudgetPrefix(s)
 	day := now.Format("2006-01-02")
 	keys := []string{prefix + "account", prefix + sender + ":minute", prefix + sender + ":" + day, prefix + sender + ":" + day + ":" + id}
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, time.UTC)
@@ -97,4 +96,38 @@ func (b *ChannelDeliveryBudget) AcquireDeliveryBudget(ctx context.Context, s *ch
 		return deferError("sender delivery capacity or daily budget reached", time.Duration(wait)*time.Millisecond)
 	}
 	return nil
+}
+
+// ExotelReadBudget is shared by onboarding and durable status recovery.
+type ExotelReadBudget interface {
+	AcquireProviderRead(context.Context, *channelconnection.Snapshot) error
+}
+
+func exotelAccountBudgetPrefix(s *channelconnection.Snapshot) string {
+	account := fmt.Sprintf("%x", sha256.Sum256([]byte(s.Provider+"\x00"+s.Exotel.Region+"\x00"+s.AccountID)))
+	return "frn:delivery:{" + account + "}:"
+}
+func (b *ChannelDeliveryBudget) AcquireProviderRead(ctx context.Context, s *channelconnection.Snapshot) error {
+	if b == nil || b.Redis == nil || s == nil || s.Exotel == nil || s.Provider != "exotel" || s.AccountID == "" {
+		return &DeliveryBudgetDeferredError{"provider request capacity unavailable", time.Minute}
+	}
+	now := time.Now().UTC()
+	if b.Now != nil {
+		now = b.Now().UTC()
+	}
+	const script = `local now=tonumber(ARGV[1]);redis.call('ZREMRANGEBYSCORE',KEYS[1],'-inf',now-60000);if redis.call('ZCARD',KEYS[1])>=200 then local first=redis.call('ZRANGE',KEYS[1],0,0,'WITHSCORES');return math.max(1,tonumber(first[2])+60001-now) end;redis.call('ZADD',KEYS[1],now,ARGV[2]);redis.call('PEXPIRE',KEYS[1],120000);return 0`
+	wait, e := b.Redis.Eval(ctx, script, []string{exotelAccountBudgetPrefix(s) + "account"}, now.UnixMilli(), "read:"+uuid.NewString()).Int64()
+	if e != nil {
+		return &DeliveryBudgetDeferredError{"provider request capacity unavailable", time.Minute}
+	}
+	if wait > 0 {
+		return &DeliveryBudgetDeferredError{"provider account request capacity reached", time.Duration(wait) * time.Millisecond}
+	}
+	return nil
+}
+func acquireExotelRead(ctx context.Context, b ExotelReadBudget, s *channelconnection.Snapshot) error {
+	if b == nil {
+		return &DeliveryBudgetDeferredError{"provider request capacity unavailable", time.Minute}
+	}
+	return b.AcquireProviderRead(ctx, s)
 }

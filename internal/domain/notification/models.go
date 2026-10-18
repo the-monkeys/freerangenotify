@@ -207,6 +207,7 @@ func (s Status) IsFinal() bool {
 
 // Notification represents a notification entity
 type Notification struct {
+	ProviderMessageID    string                 `json:"provider_message_id" es:"provider_message_id"`
 	NotificationID       string                 `json:"notification_id" es:"notification_id"`
 	AppID                string                 `json:"app_id" es:"app_id"`
 	EnvironmentID        string                 `json:"environment_id,omitempty" es:"environment_id"`

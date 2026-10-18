@@ -42,6 +42,7 @@ func (r *ChannelConnectionRepository) load(ctx context.Context, id string) (*con
 	if err = json.NewDecoder(res.Body).Decode(&out); err != nil {
 		return nil, 0, 0, fmt.Errorf("invalid connection document")
 	}
+	hydrateConnectionPolicy(&out.Source)
 	return &out.Source, out.Sequence, out.Term, nil
 }
 func (r *ChannelConnectionRepository) Get(ctx context.Context, id string) (*channelconnection.Connection, error) {
@@ -81,6 +82,9 @@ func (r *ChannelConnectionRepository) Save(ctx context.Context, c *channelconnec
 		term = t
 	}
 	doc.Current = *c
+	// Provider policy is not searchable. Keep it in the existing unindexed
+	// immutable history to prevent dynamic date inference from breaking drafts.
+	doc.Current.Exotel = nil
 	doc.History[strconv.FormatInt(c.Revision, 10)] = *c
 	raw, err := json.Marshal(doc)
 	if err != nil {
@@ -143,6 +147,7 @@ func (r *ChannelConnectionRepository) find(ctx context.Context, provider, accoun
 	}
 	var rows []*channelconnection.Connection
 	for _, h := range out.Hits.Hits {
+		hydrateConnectionPolicy(&h.Source)
 		c := h.Source.Current
 		rows = append(rows, &c)
 	}
@@ -153,4 +158,10 @@ func (r *ChannelConnectionRepository) FindSender(ctx context.Context, provider, 
 }
 func (r *ChannelConnectionRepository) FindAccount(ctx context.Context, provider, account string) ([]*channelconnection.Connection, error) {
 	return r.find(ctx, provider, account, "")
+}
+
+func hydrateConnectionPolicy(doc *connectionDocument) {
+	if doc.Current.Exotel == nil {
+		doc.Current.Exotel = doc.History[strconv.FormatInt(doc.Current.Revision, 10)].Exotel
+	}
 }

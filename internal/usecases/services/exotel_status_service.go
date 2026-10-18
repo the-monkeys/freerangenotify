@@ -23,6 +23,7 @@ import (
 var ErrExotelCallbackAuth = errors.New("invalid SMS callback capability")
 
 type ExotelStatusService struct {
+	APIBudget     ExotelReadBudget
 	Connections   *ChannelConnectionService
 	Notifications notification.Repository
 	Events        whatsapp.EventRepository
@@ -112,7 +113,11 @@ func (s *ExotelStatusService) Process(ctx context.Context, id string) error {
 		r.LastError = "authenticated SMS status recovery unavailable"
 		r.State = "pending"
 		r.NextAttempt = time.Now().UTC().Add(time.Duration(r.Attempts) * 10 * time.Second)
-		if r.Attempts >= 5 {
+		var waiting *DeliveryBudgetDeferredError
+		if errors.As(e, &waiting) {
+			r.Attempts--
+			r.NextAttempt = time.Now().UTC().Add(waiting.RetryAfter)
+		} else if r.Attempts >= 5 {
 			r.State = "dead_letter"
 		}
 	} else {
@@ -144,8 +149,15 @@ func (s *ExotelStatusService) project(ctx context.Context, r *whatsapp.EventRece
 	if n.Metadata["provider_message_id"] != status.MetaMessageID || r.Event.Binding.ID != snap.ConnectionID || r.Event.Binding.AppID != snap.AppID || r.Event.Binding.EnvironmentID != snap.EnvironmentID || r.Event.Binding.AccountID != snap.AccountID || r.Event.Binding.SenderID != snap.SenderID {
 		return fmt.Errorf("SMS status binding mismatch")
 	}
+	if e := acquireExotelRead(ctx, s.APIBudget, snap); e != nil {
+		return e
+	}
 	msg, e := providers.ReadExotelSMS(ctx, s.Client, snap, status.MetaMessageID)
 	if e != nil {
+		var throttled *providers.ExotelReadThrottledError
+		if errors.As(e, &throttled) {
+			return &DeliveryBudgetDeferredError{Reason: "provider status request rate limited", RetryAfter: throttled.RetryAfter}
+		}
 		return e
 	}
 	destination, _ := n.Metadata["channel_destination"].(string)
@@ -170,6 +182,7 @@ func (s *ExotelStatusService) project(ctx context.Context, r *whatsapp.EventRece
 	// Vendor local timestamps have no documented zone. Preserve the raw value;
 	// receipt UTC is the observation time, not a fabricated provider sent time.
 	status.VendorTimestamp = msg.DateUpdated
+	status.Status = string(state)
 	_, e = projection.ApplyProviderDeliveryStatus(ctx, n.NotificationID, n.AppID, msg.Sid, state, r.CreatedAt)
 	return e
 }
