@@ -74,6 +74,7 @@ var (
 // Request is the persisted OTP envelope. CodeHash and Salt together let us
 // verify a code in constant time without ever storing the plaintext.
 type Request struct {
+	Revision      uint64     `json:"revision,omitempty"`
 	EnvironmentID string     `json:"environment_id,omitempty"`
 	RequestID     string     `json:"request_id"`
 	AppID         string     `json:"app_id"`
@@ -97,6 +98,7 @@ type Request struct {
 //   - Recipient: raw email / E.164 phone (no user lookup; auto-creates a user)
 //   - UserID:    internal FRN user_id (UUID); the channel address is read off the record
 //   - ExternalID: caller-owned user identifier; resolved via the users index
+//
 // When UserID or ExternalID is used, the contact field corresponding to the
 // channel is read from the user record (Email for email; Phone for sms/whatsapp).
 // Validation lives on the DTO layer (interfaces/http/dto/otp_dto.go) so the

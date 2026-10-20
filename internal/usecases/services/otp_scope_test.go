@@ -39,7 +39,7 @@ func TestOTPScopedOperations(t *testing.T) {
 			for _, operation := range []string{"verify", "resend"} {
 				t.Run(operation, func(t *testing.T) {
 					svc, repo, sender, _, _ := newServiceForTest(t)
-					original := &otp.Request{RequestID: "otp-scope", AppID: "app-a", EnvironmentID: tc.storedEnv, Channel: otp.ChannelEmail, Recipient: "alice@example.test", CodeHash: hashCode("123456", "salt"), Salt: "salt", MaxAttempts: 5, Length: 6, LastSentAt: time.Now().Add(-2 * time.Minute), ExpiresAt: time.Now().Add(time.Minute)}
+					original := &otp.Request{RequestID: "otp-scope", AppID: "app-a", EnvironmentID: tc.storedEnv, Channel: otp.ChannelEmail, Recipient: "alice@example.test", CodeHash: hashCode("123456", "salt"), Salt: "salt", MaxAttempts: 5, Length: 6, LastSentAt: time.Now().UTC().Add(-2 * time.Minute), ExpiresAt: time.Now().UTC().Add(time.Minute)}
 					require.NoError(t, repo.Create(context.Background(), original))
 					ctx := otp.WithScope(context.Background(), otp.Scope{AppID: tc.app, EnvironmentID: tc.env})
 					var err error
