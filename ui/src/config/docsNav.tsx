@@ -33,6 +33,8 @@ export const NAV_SECTIONS: DocNavSection[] = [
         title: 'GUIDES',
         items: [
             { label: 'Getting Started', to: '/docs/getting-started', icon: <Rocket className="h-4 w-4" /> },
+            { label: 'Authentication', to: '/docs/authentication', icon: <KeyRound className="h-4 w-4" /> },
+            { label: 'Users', to: '/docs/users', icon: <Inbox className="h-4 w-4" /> },
             { label: 'Templates', to: '/docs/templates', icon: <FileText className="h-4 w-4" /> },
             { label: 'Workflows', to: '/docs/workflows', icon: <Workflow className="h-4 w-4" /> },
             { label: 'Topics', to: '/docs/topics', icon: <Tag className="h-4 w-4" /> },

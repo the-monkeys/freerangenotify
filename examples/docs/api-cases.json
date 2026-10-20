@@ -1,0 +1,157 @@
+[
+  {
+    "id": "create-app",
+    "method": "POST",
+    "path": "/apps",
+    "auth": "jwt",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "api_key": "${API_KEY}",
+        "app_name": "My App"
+      }
+    },
+    "request": {
+      "app_name": "My App",
+      "description": "Production notifications"
+    },
+    "capture": {
+      "APP_ID": "data.app_id",
+      "API_KEY": "data.api_key"
+    }
+  },
+  {
+    "id": "create-user",
+    "method": "POST",
+    "path": "/users",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "external_id": "alice",
+        "email": "alice@example.test"
+      }
+    },
+    "request": {
+      "email": "alice@example.test",
+      "external_id": "alice",
+      "full_name": "Alice"
+    },
+    "capture": {
+      "USER_ID": "data.user_id"
+    }
+  },
+  {
+    "id": "get-user",
+    "method": "GET",
+    "path": "/users/${USER_ID}",
+    "auth": "x-api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "external_id": "alice"
+      }
+    }
+  },
+  {
+    "id": "update-user",
+    "method": "PUT",
+    "path": "/users/${USER_ID}",
+    "auth": "api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "full_name": "Alice Example"
+      }
+    },
+    "request": {
+      "full_name": "Alice Example"
+    }
+  },
+  {
+    "id": "create-template",
+    "method": "POST",
+    "path": "/templates",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "id": "${TEMPLATE_ID}",
+      "name": "welcome_email",
+      "version": 1
+    },
+    "request": {
+      "app_id": "${APP_ID}",
+      "name": "welcome_email",
+      "channel": "email",
+      "subject": "Welcome, {{.name}}",
+      "body": "Hello {{.name}}",
+      "variables": [
+        "name"
+      ],
+      "locale": "en"
+    },
+    "capture": {
+      "TEMPLATE_ID": "id"
+    }
+  },
+  {
+    "id": "send-template",
+    "method": "POST",
+    "path": "/notifications",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 202,
+    "response": {
+      "notification_id": "${NOTIFICATION_ID}",
+      "status": "queued",
+      "template_id": "${TEMPLATE_ID}"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "template_id": "${TEMPLATE_ID}",
+      "channel": "email",
+      "data": {
+        "name": "Alice"
+      }
+    },
+    "capture": {
+      "NOTIFICATION_ID": "notification_id"
+    }
+  },
+  {
+    "id": "get-notification",
+    "method": "GET",
+    "path": "/notifications/${NOTIFICATION_ID}",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 200,
+    "response": {
+      "notification_id": "${NOTIFICATION_ID}",
+      "status": "queued"
+    }
+  },
+  {
+    "id": "delete-user",
+    "method": "DELETE",
+    "path": "/users/${USER_ID}",
+    "auth": "api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true
+    }
+  }
+]
