@@ -59,6 +59,14 @@ func NewTwilioInboundWebhookHandler(
 }
 
 // Handle implements POST /v1/webhooks/twilio/whatsapp.
+// @Summary Handle
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags TwilioInboundWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/twilio/whatsapp [post]
 func (h *TwilioInboundWebhookHandler) Handle(c *fiber.Ctx) error {
 	if hasRepeatedFormFields(c) {
 		return c.SendStatus(fiber.StatusBadRequest)

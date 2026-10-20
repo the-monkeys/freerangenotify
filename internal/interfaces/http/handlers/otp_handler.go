@@ -38,8 +38,11 @@ func NewOTPHandler(service otp.Service, v *validator.Validator, logger *zap.Logg
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 429 {object} map[string]interface{}
+// @Failure 409 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/send [post]
 func (h *OTPHandler) Send(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -89,8 +92,11 @@ func (h *OTPHandler) Send(c *fiber.Ctx) error {
 // @Failure 400 {object} dto.OTPVerifyResponse
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} dto.OTPVerifyResponse
+// @Failure 409 {object} dto.OTPVerifyResponse
+// @Failure 503 {object} dto.OTPVerifyResponse
 // @Failure 410 {object} dto.OTPVerifyResponse
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/verify [post]
 func (h *OTPHandler) Verify(c *fiber.Ctx) error {
 	if appID, ok := c.Locals("app_id").(string); !ok || appID == "" {
@@ -126,6 +132,7 @@ func (h *OTPHandler) Verify(c *fiber.Ctx) error {
 // @Failure 409 {object} map[string]interface{}
 // @Failure 429 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/resend [post]
 func (h *OTPHandler) Resend(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)

@@ -75,8 +75,8 @@ type registerCustomProviderRequest struct {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -172,8 +172,8 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers [get]
+// @Security BearerAuth
 func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -249,6 +249,17 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 
 // Test sends a synthetic notification to a registered provider endpoint.
 // POST /v1/apps/:id/providers/:provider_id/test — requires admin or owner role
+// @Summary Test
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags CustomProvider
+// @Produce json
+// @Param id path string true "id"
+// @Param provider_id path string true "provider_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/providers/{provider_id}/test [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Test(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -326,6 +337,17 @@ func (h *CustomProviderHandler) Test(c *fiber.Ctx) error {
 
 // RotateSigningKey rotates a provider signing key and returns the new key once.
 // POST /v1/apps/:id/providers/:provider_id/rotate — requires admin or owner role
+// @Summary Rotate Signing Key
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags CustomProvider
+// @Produce json
+// @Param id path string true "id"
+// @Param provider_id path string true "provider_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/providers/{provider_id}/rotate [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) RotateSigningKey(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -388,8 +410,8 @@ func (h *CustomProviderHandler) RotateSigningKey(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers/{provider_id} [delete]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")

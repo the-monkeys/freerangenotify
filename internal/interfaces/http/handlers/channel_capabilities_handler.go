@@ -9,6 +9,14 @@ type ChannelCapabilitiesHandler struct{ Config *config.Config }
 
 // Get is public and intentionally constructs an allowlist, never serializing
 // provider config. Account-specific readiness belongs to authenticated app APIs.
+// @Summary Get
+// @Description Public capability discovery. No API key is required; reports enabled operator features without credentials.
+// @Tags ChannelCapabilities
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/channel-capabilities [get]
 func (h *ChannelCapabilitiesHandler) Get(c *fiber.Ctx) error {
 	cfg := h.Config
 	meta := cfg.Providers.MetaWhatsApp

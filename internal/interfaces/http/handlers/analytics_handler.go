@@ -90,8 +90,8 @@ func (h *AnalyticsHandler) getAdminAppIDs(c *fiber.Ctx) ([]string, error) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/analytics/summary [get]
+// @Security BearerAuth
 func (h *AnalyticsHandler) GetSummary(c *fiber.Ctx) error {
 	// Scope all data to the authenticated admin's applications
 	appIDs, err := h.getAdminAppIDs(c)

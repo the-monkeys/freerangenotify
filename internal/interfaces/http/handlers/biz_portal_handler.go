@@ -54,6 +54,15 @@ func (h *BizPortalHandler) handleError(c *fiber.Ctx, err error) error {
 }
 
 // Overview handles GET /v1/portal/:token — statement summary + open invoices.
+// @Summary Overview
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token} [get]
 func (h *BizPortalHandler) Overview(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -87,6 +96,15 @@ func (h *BizPortalHandler) Overview(c *fiber.Ctx) error {
 }
 
 // ListInvoices handles GET /v1/portal/:token/invoices
+// @Summary List Invoices
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/invoices [get]
 func (h *BizPortalHandler) ListInvoices(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -106,6 +124,16 @@ func (h *BizPortalHandler) ListInvoices(c *fiber.Ctx) error {
 }
 
 // GetInvoice handles GET /v1/portal/:token/invoices/:id
+// @Summary Get Invoice
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/invoices/{id} [get]
 func (h *BizPortalHandler) GetInvoice(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -121,6 +149,16 @@ func (h *BizPortalHandler) GetInvoice(c *fiber.Ctx) error {
 
 // PayInvoice handles POST /v1/portal/:token/invoices/:id/pay — returns
 // gateway checkout parameters for a payable invoice.
+// @Summary Pay Invoice
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/invoices/{id}/pay [post]
 func (h *BizPortalHandler) PayInvoice(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -147,6 +185,15 @@ func (h *BizPortalHandler) PayInvoice(c *fiber.Ctx) error {
 }
 
 // ListEstimates handles GET /v1/portal/:token/estimates
+// @Summary List Estimates
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/estimates [get]
 func (h *BizPortalHandler) ListEstimates(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -163,7 +210,28 @@ func (h *BizPortalHandler) ListEstimates(c *fiber.Ctx) error {
 }
 
 // DecideEstimate handles POST /v1/portal/:token/estimates/:id/accept|reject.
+// @Summary Accept Estimate
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/estimates/{id}/accept [post]
 func (h *BizPortalHandler) AcceptEstimate(c *fiber.Ctx) error { return h.decideEstimate(c, true) }
+
+// @Summary Reject Estimate
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/estimates/{id}/reject [post]
 func (h *BizPortalHandler) RejectEstimate(c *fiber.Ctx) error { return h.decideEstimate(c, false) }
 
 func (h *BizPortalHandler) decideEstimate(c *fiber.Ctx, accepted bool) error {
@@ -180,6 +248,16 @@ func (h *BizPortalHandler) decideEstimate(c *fiber.Ctx, accepted bool) error {
 }
 
 // AcceptContract handles POST /v1/portal/:token/contracts/:id/accept
+// @Summary Accept Contract
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/contracts/{id}/accept [post]
 func (h *BizPortalHandler) AcceptContract(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -194,6 +272,15 @@ func (h *BizPortalHandler) AcceptContract(c *fiber.Ctx) error {
 }
 
 // GetStatement handles GET /v1/portal/:token/statement
+// @Summary Get Statement
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/statement [get]
 func (h *BizPortalHandler) GetStatement(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {
@@ -208,6 +295,15 @@ func (h *BizPortalHandler) GetStatement(c *fiber.Ctx) error {
 }
 
 // GetUsage handles GET /v1/portal/:token/usage — current-month usage.
+// @Summary Get Usage
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags BizPortal
+// @Produce json
+// @Param token path string true "token"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/portal/{token}/usage [get]
 func (h *BizPortalHandler) GetUsage(c *fiber.Ctx) error {
 	appID, userID, err := h.resolve(c)
 	if err != nil {

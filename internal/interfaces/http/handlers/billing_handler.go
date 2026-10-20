@@ -45,6 +45,15 @@ func (h *BillingHandler) SetRateCardManager(manager billing.RateCardManager) {
 
 // GetUsage handles GET /v1/billing/usage
 // Returns current period usage for the authenticated user's personal workspace.
+// @Summary Get Usage
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/usage [get]
+// @Security BearerAuth
 func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -147,6 +156,15 @@ func (h *BillingHandler) GetUsage(c *fiber.Ctx) error {
 }
 
 // GetSubscription handles GET /v1/billing/subscription
+// @Summary Get Subscription
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/subscription [get]
+// @Security BearerAuth
 func (h *BillingHandler) GetSubscription(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -174,6 +192,15 @@ func (h *BillingHandler) GetSubscription(c *fiber.Ctx) error {
 
 // AcceptTrial handles POST /v1/billing/accept-trial
 // Marks the trial as accepted by the user (sets trial_accepted_at in metadata).
+// @Summary Accept Trial
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/accept-trial [post]
+// @Security BearerAuth
 func (h *BillingHandler) AcceptTrial(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -261,6 +288,15 @@ func cloneInt64MapLocal(src map[string]int64) map[string]int64 {
 // GetUsageBreakdown handles GET /v1/billing/usage/breakdown
 // Returns per-channel, per-credential-source usage totals for the current billing period.
 // Returns {"billing_enabled": false} when billing is disabled — no error.
+// @Summary Get Usage Breakdown
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/usage/breakdown [get]
+// @Security BearerAuth
 func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 	if !h.billingEnabled || h.usageRepo == nil {
 		return c.JSON(fiber.Map{"billing_enabled": false})
@@ -392,6 +428,15 @@ func (h *BillingHandler) GetUsageBreakdown(c *fiber.Ctx) error {
 
 // GetRates handles GET /v1/billing/rates
 // Returns the active rate-card version and canonical channel credit costs.
+// @Summary Get Rates
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/rates [get]
+// @Security BearerAuth
 func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 	var active *billing.RateCard
 	if h.rateCardMgr != nil {
@@ -429,6 +474,15 @@ func (h *BillingHandler) GetRates(c *fiber.Ctx) error {
 }
 
 // AdminGetRates handles GET /v1/admin/billing/rates
+// @Summary Admin Get Rates
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/rates [get]
+// @Security BearerAuth
 func (h *BillingHandler) AdminGetRates(c *fiber.Ctx) error {
 	if h.rateCardMgr == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
@@ -449,6 +503,15 @@ func (h *BillingHandler) AdminGetRates(c *fiber.Ctx) error {
 }
 
 // AdminSetRate handles POST /v1/admin/billing/rates/set
+// @Summary Admin Set Rate
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/rates/set [post]
+// @Security BearerAuth
 func (h *BillingHandler) AdminSetRate(c *fiber.Ctx) error {
 	if h.rateCardMgr == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
@@ -476,6 +539,15 @@ func (h *BillingHandler) AdminSetRate(c *fiber.Ctx) error {
 }
 
 // AdminActivateRate handles POST /v1/admin/billing/rates/activate
+// @Summary Admin Activate Rate
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/rates/activate [post]
+// @Security BearerAuth
 func (h *BillingHandler) AdminActivateRate(c *fiber.Ctx) error {
 	if h.rateCardMgr == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
@@ -502,12 +574,30 @@ func (h *BillingHandler) AdminActivateRate(c *fiber.Ctx) error {
 }
 
 // AdminRollbackRate handles POST /v1/admin/billing/rates/rollback
+// @Summary Admin Rollback Rate
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/rates/rollback [post]
+// @Security BearerAuth
 func (h *BillingHandler) AdminRollbackRate(c *fiber.Ctx) error {
 	// Rollback is activate-by-version, with explicit endpoint for operational intent clarity.
 	return h.AdminActivateRate(c)
 }
 
 // GetPlans handles GET /v1/billing/plans
+// @Summary Get Plans
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/plans [get]
+// @Security BearerAuth
 func (h *BillingHandler) GetPlans(c *fiber.Ctx) error {
 	if h.rateCardMgr == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
@@ -526,11 +616,31 @@ func (h *BillingHandler) GetPlans(c *fiber.Ctx) error {
 }
 
 // AdminGetPlans handles GET /v1/admin/billing/plans
+// @Summary Admin Get Plans
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/plans [get]
+// @Security BearerAuth
 func (h *BillingHandler) AdminGetPlans(c *fiber.Ctx) error {
 	return h.GetPlans(c)
 }
 
 // AdminSetPlan handles POST /v1/admin/billing/plans/set
+// @Summary Admin Set Plan
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/billing/plans/set [post]
+// @Security BearerAuth
+// @Accept json
+// @Param body body billing.PlanBundle true "Request body"
 func (h *BillingHandler) AdminSetPlan(c *fiber.Ctx) error {
 	if h.rateCardMgr == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "rate card service not configured"})
@@ -553,6 +663,14 @@ func (h *BillingHandler) AdminSetPlan(c *fiber.Ctx) error {
 // endpoint that serves the marketing site. Returns the same data shape as
 // GetPlans + GetRates combined so the public page renders one round-trip and
 // always shows the live active rate card.
+// @Summary Get Public Pricing
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags Billing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/public/billing/pricing [get]
 func (h *BillingHandler) GetPublicPricing(c *fiber.Ctx) error {
 	var active *billing.RateCard
 	var plans []billing.PlanBundle

@@ -34,6 +34,14 @@ type integrationChannelSamples struct {
 }
 
 // GetCodeSamples returns backend examples with placeholder credentials only.
+// @Summary Get integration code samples
+// @Description Requires an account JWT and application ownership or team access. Returned credentials are placeholders.
+// @Tags Applications
+// @Produce json
+// @Param id path string true "Application ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/apps/{id}/code-samples [get]
 func (h *ApplicationHandler) GetCodeSamples(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	if userID == "" {

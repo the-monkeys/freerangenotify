@@ -38,8 +38,8 @@ func NewEnvironmentHandler(service environment.Service, v *validator.Validator, 
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/environments [post]
+// @Security BearerAuth
 func (h *EnvironmentHandler) Create(c *fiber.Ctx) error {
 	if err := h.authorize(c, true); err != nil {
 		return err
@@ -81,8 +81,8 @@ func (h *EnvironmentHandler) Create(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/environments [get]
+// @Security BearerAuth
 func (h *EnvironmentHandler) List(c *fiber.Ctx) error {
 	if err := h.authorize(c, false); err != nil {
 		return err
@@ -114,8 +114,8 @@ func (h *EnvironmentHandler) List(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/environments/{envId} [get]
+// @Security BearerAuth
 func (h *EnvironmentHandler) Get(c *fiber.Ctx) error {
 	if err := h.authorize(c, false); err != nil {
 		return err
@@ -150,8 +150,8 @@ func (h *EnvironmentHandler) Get(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/environments/{envId} [delete]
+// @Security BearerAuth
 func (h *EnvironmentHandler) Delete(c *fiber.Ctx) error {
 	if err := h.authorize(c, true); err != nil {
 		return err
@@ -190,8 +190,8 @@ func (h *EnvironmentHandler) Delete(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/environments/promote [post]
+// @Security BearerAuth
 func (h *EnvironmentHandler) Promote(c *fiber.Ctx) error {
 	if err := h.authorize(c, true); err != nil {
 		return err
@@ -262,6 +262,17 @@ func safeEnvironments(envs []environment.Environment) []*environment.Environment
 	return out
 }
 
+// @Summary Reveal Key
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Environment
+// @Produce json
+// @Param id path string true "id"
+// @Param envId path string true "envId"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/environments/{envId}/reveal-key [post]
+// @Security BearerAuth
 func (h *EnvironmentHandler) RevealKey(c *fiber.Ctx) error {
 	if err := h.authorize(c, true); err != nil {
 		return err

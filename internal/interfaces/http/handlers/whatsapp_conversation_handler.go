@@ -24,6 +24,16 @@ func NewWhatsAppConversationHandler(svc whatsapp.Service, logger *zap.Logger) *W
 }
 
 // ListConversations handles GET /v1/whatsapp/conversations
+// @Summary List Conversations
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations [get]
 func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -49,6 +59,17 @@ func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 }
 
 // GetMessages handles GET /v1/whatsapp/conversations/:contact_id/messages
+// @Summary Get Messages
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/messages [get]
 func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -89,6 +110,19 @@ type replyRequest struct {
 }
 
 // Reply handles POST /v1/whatsapp/conversations/:contact_id/reply
+// @Summary Reply
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/reply [post]
+// @Accept json
+// @Param body body replyRequest true "Request body"
 func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -136,6 +170,17 @@ func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 }
 
 // MarkRead handles POST /v1/whatsapp/conversations/:contact_id/read
+// @Summary Mark Read
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/read [post]
 func (h *WhatsAppConversationHandler) MarkRead(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {

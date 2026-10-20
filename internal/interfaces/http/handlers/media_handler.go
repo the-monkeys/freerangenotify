@@ -46,6 +46,16 @@ func NewMediaHandler(publicURL string, logger *zap.Logger) *MediaHandler {
 }
 
 // Upload handles POST /v1/media/upload (multipart/form-data with "file" field).
+// @Summary Upload
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Media
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/media/upload [post]
 func (h *MediaHandler) Upload(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 	if err != nil {

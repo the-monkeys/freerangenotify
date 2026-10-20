@@ -282,6 +282,15 @@ func metaInt64(meta map[string]interface{}, key string, defaultVal int64) int64 
 
 // CreateOrder handles POST /v1/billing/checkout
 // Creates a Razorpay order for subscription payment.
+// @Summary Create Order
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Payment
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/checkout [post]
+// @Security BearerAuth
 func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 	if !h.billingEnabled {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -439,6 +448,17 @@ func (h *PaymentHandler) CreateOrder(c *fiber.Ctx) error {
 
 // VerifyPayment handles POST /v1/billing/verify-payment
 // Verifies Razorpay payment signature and activates the subscription.
+// @Summary Verify Payment
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Payment
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/verify-payment [post]
+// @Security BearerAuth
+// @Accept json
+// @Param body body billing.PaymentVerification true "Request body"
 func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 	if !h.billingEnabled {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -552,6 +572,14 @@ func (h *PaymentHandler) VerifyPayment(c *fiber.Ctx) error {
 // HandleWebhook handles POST /v1/billing/webhook
 // Processes Razorpay webhook events (payment.captured, payment.failed, etc.)
 // This endpoint does NOT require JWT auth — it uses webhook signature verification.
+// @Summary Handle Webhook
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags Payment
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/billing/webhook [post]
 func (h *PaymentHandler) HandleWebhook(c *fiber.Ctx) error {
 	signature := c.Get("X-Razorpay-Signature")
 	if signature == "" {

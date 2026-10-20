@@ -42,6 +42,7 @@ func NewWorkflowHandler(service workflow.Service, v *validator.Validator, logger
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows [post]
 func (h *WorkflowHandler) Create(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -88,6 +89,7 @@ func (h *WorkflowHandler) Create(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows [get]
 func (h *WorkflowHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -129,6 +131,7 @@ func (h *WorkflowHandler) List(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/{id} [get]
 func (h *WorkflowHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -160,6 +163,7 @@ func (h *WorkflowHandler) Get(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/{id} [put]
 func (h *WorkflowHandler) Update(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -195,6 +199,7 @@ func (h *WorkflowHandler) Update(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/{id} [delete]
 func (h *WorkflowHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -281,6 +286,7 @@ func (h *WorkflowHandler) Delete(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/trigger [post]
 func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -325,6 +331,7 @@ func (h *WorkflowHandler) Trigger(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/trigger-by-topic [post]
 func (h *WorkflowHandler) TriggerByTopic(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -370,6 +377,7 @@ func (h *WorkflowHandler) TriggerByTopic(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/executions [get]
 func (h *WorkflowHandler) ListExecutions(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -401,6 +409,7 @@ func (h *WorkflowHandler) ListExecutions(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/executions/{id} [get]
 func (h *WorkflowHandler) GetExecution(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -429,6 +438,7 @@ func (h *WorkflowHandler) GetExecution(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/workflows/executions/{id}/cancel [post]
 func (h *WorkflowHandler) CancelExecution(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)

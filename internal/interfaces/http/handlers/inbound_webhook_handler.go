@@ -48,6 +48,18 @@ func NewInboundWebhookHandler(
 }
 
 // Receive handles POST /v1/webhooks/inbound
+// @Summary Receive
+// @Description Application workflow event ingestion. Requires the application API key and any configured webhook HMAC secret. Distinct from provider delivery callbacks.
+// @Accept json
+// @Param body body InboundWebhookRequest true "Workflow event"
+// @Tags InboundWebhook
+// @Produce json
+// @Success 202 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/inbound [post]
+// @Security ApiKeyAuth
+// @Security BearerAuth
 func (h *InboundWebhookHandler) Receive(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {

@@ -1,321 +1,3640 @@
-# OTP-as-a-Service — OpenAPI Fragment
-#
-# Documents the public OTP API exposed under /v1/otp/*. The endpoints are
-# protected by the standard X-API-Key middleware (tenant is derived server-side
-# from the key, never from the request body).
-#
-# Endpoints:
-#   POST /v1/otp/send    — generate + dispatch a code via SMS, WhatsApp, or email
-#   POST /v1/otp/verify  — verify a code against a request_id (constant-time)
-#   POST /v1/otp/resend  — re-issue a fresh code for an existing request_id
-#
-# Implementation notes (for reviewers, not for API consumers):
-#   - Codes are persisted as SHA-256(code + per-record salt); plaintext is
-#     discarded immediately after dispatch and never logged.
-#   - Verify uses crypto/subtle constant-time compare and atomic Redis
-#     WATCH/MULTI attempt-increments to prevent brute-force races.
-#   - Send reuses the standard notification pipeline (templates, providers,
-#     credit billing) — there is no separate OTP rate card.
-openapi: 3.0.3
-info:
-  title: FreeRangeNotify — OTP as a Service
-  version: "1.0.0"
-  description: |
-    Programmatic one-time-passcode delivery and verification over SMS,
-    WhatsApp, and email. Designed for sign-in, sign-up, step-up auth,
-    and transaction confirmation flows.
-
-servers:
-  - url: http://localhost:8080/v1
-    description: Local development
-
-security:
-  - ApiKeyAuth: []
-
-paths:
-  /otp/send:
-    post:
-      summary: Send an OTP
-      description: |
-        Generates a one-time passcode, hashes it for storage, and dispatches
-        it to the recipient through the requested channel. The response
-        returns a `request_id` that the client must echo back to
-        `POST /otp/verify`. The plaintext code is never returned by the API.
-
-        Subject to the configured per-recipient rate limit (default: 5 sends
-        per app/recipient per 10 minutes).
-      operationId: sendOTP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OTPSendRequest" }
-            examples:
-              sms:
-                summary: SMS, defaults
-                value:
-                  channel: sms
-                  recipient: "+14155551212"
-              whatsapp:
-                summary: WhatsApp with custom body
-                value:
-                  channel: whatsapp
-                  recipient: "+14155551212"
-                  template_body: "Your verification code is {{code}}. Expires in {{ttl}} minutes."
-              email_alpha:
-                summary: Email, 8-char alphanumeric, 10-min TTL
-                value:
-                  channel: email
-                  recipient: "user@example.com"
-                  length: 8
-                  alphanumeric: true
-                  ttl_seconds: 600
-                  template_data: { app_name: "Acme" }
-              by_external_id:
-                summary: Email to a known user, identified by external_id
-                value:
-                  channel: email
-                  external_id: "customer_ext_42"
-              by_user_id:
-                summary: SMS to a known user, identified by internal user_id
-                value:
-                  channel: sms
-                  user_id: "11111111-2222-3333-4444-555555555555"
-      responses:
-        "202":
-          description: OTP queued for delivery
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPSendResponse" }
-        "400": { $ref: "#/components/responses/ValidationError" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-        "500": { $ref: "#/components/responses/InternalError" }
-
-  /otp/verify:
-    post:
-      summary: Verify an OTP
-      description: |
-        Verifies a code against the `request_id` returned by `/otp/send`.
-        Comparison is constant-time and the attempt counter is incremented
-        atomically. Returns `200` on success and on a recoverable invalid
-        attempt (with `verified=false` and `attempts_remaining` in the body)
-        so clients can render UX without an extra round-trip. Hard failures
-        (expired, not_found) return `4xx`.
-      operationId: verifyOTP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OTPVerifyRequest" }
-      responses:
-        "200":
-          description: Verification succeeded
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
-        "400":
-          description: Invalid code or attempts exhausted
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404":
-          description: request_id not found
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
-        "410":
-          description: OTP expired
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPVerifyResponse" }
-
-  /otp/resend:
-    post:
-      summary: Resend an OTP
-      description: |
-        Mints a **new** code for the same `request_id`, invalidates the
-        previous code, and resets the attempt counter. Subject to a 60-second
-        cooldown per request_id.
-      operationId: resendOTP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OTPResendRequest" }
-      responses:
-        "202":
-          description: New OTP queued for delivery
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OTPSendResponse" }
-        "400": { $ref: "#/components/responses/ValidationError" }
-        "401": { $ref: "#/components/responses/Unauthorized" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          description: Already verified or still in cooldown
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "410": { $ref: "#/components/responses/Gone" }
-        "429": { $ref: "#/components/responses/RateLimited" }
-
 components:
-  securitySchemes:
-    ApiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-
-  schemas:
-    Channel:
-      type: string
-      enum: [sms, whatsapp, email]
-      description: Delivery channel for the OTP.
-
-    OTPSendRequest:
-      type: object
-      required: [channel]
-      description: |
-        The recipient is identified by EXACTLY ONE of `recipient`, `user_id`,
-        or `external_id`. When `user_id` / `external_id` is supplied, the
-        channel-appropriate contact field on the resolved user record (email
-        for `email`; phone for `sms`/`whatsapp`) is used as the destination.
-      properties:
-        channel: { $ref: "#/components/schemas/Channel" }
-        recipient:
-          type: string
-          description: |
-            Raw E.164 phone number for `sms`/`whatsapp` (e.g. `+14155551212`)
-            or a valid email address for `email`. Mutually exclusive with
-            `user_id` and `external_id`.
-          example: "+14155551212"
-        user_id:
-          type: string
-          description: |
-            Internal FreeRangeNotify `user_id` (UUID). When set, the channel
-            address is read from the user record. Mutually exclusive with
-            `recipient` and `external_id`.
-          example: "11111111-2222-3333-4444-555555555555"
-        external_id:
-          type: string
-          description: |
-            Caller-owned user identifier resolved via the users index.
-            Mutually exclusive with `recipient` and `user_id`.
-          example: "customer_ext_42"
-        length:
-          type: integer
-          minimum: 4
-          maximum: 10
-          default: 6
-          description: Number of characters in the code.
-        alphanumeric:
-          type: boolean
-          default: false
-          description: |
-            If `true`, codes are drawn from a lookalike-free alphabet
-            (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`) instead of digits 0–9.
-        ttl_seconds:
-          type: integer
-          minimum: 30
-          maximum: 900
-          default: 300
-          description: Code lifetime in seconds (max 15 minutes).
-        max_attempts:
-          type: integer
-          minimum: 1
-          maximum: 10
-          default: 5
-          description: Maximum number of verify attempts before lockout.
-        template_body:
-          type: string
-          description: |
-            Optional message body. Must contain a `{{code}}` placeholder.
-            May also reference `{{ttl}}` (TTL in minutes) and any keys from
-            `template_data`. If omitted, a channel-appropriate default is used.
-        template_data:
-          type: object
-          additionalProperties: true
-          description: Extra variables for `template_body` (e.g. `{ "app_name": "Acme" }`).
-
-    OTPSendResponse:
-      type: object
-      properties:
-        request_id:        { type: string, example: "550e8400-e29b-41d4-a716-446655440000" }
-        notification_id:   { type: string, example: "abc123" }
-        channel:           { $ref: "#/components/schemas/Channel" }
-        expires_at:        { type: string, format: date-time }
-        ttl_seconds:       { type: integer, example: 300 }
-        max_attempts:      { type: integer, example: 5 }
-
-    OTPVerifyRequest:
-      type: object
-      required: [request_id, code]
-      properties:
-        request_id: { type: string }
-        code:
-          type: string
-          minLength: 4
-          maxLength: 10
-          example: "482913"
-
-    OTPVerifyResponse:
-      type: object
-      properties:
-        verified:           { type: boolean }
-        request_id:         { type: string }
-        verified_at:
-          type: string
-          format: date-time
-          nullable: true
-        attempts_remaining:
-          type: integer
-          description: Present on `invalid_code`. Omitted on success.
-        error:
-          type: string
-          enum: [invalid_code, attempts_exhausted, expired, not_found, internal_error]
-          description: Present only when `verified=false`.
-
-    OTPResendRequest:
-      type: object
-      required: [request_id]
-      properties:
-        request_id: { type: string }
-
-    Error:
-      type: object
-      properties:
-        error: { type: string }
-
-  responses:
-    ValidationError:
-      description: Request payload failed validation
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    Unauthorized:
-      description: Missing or invalid API key
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    NotFound:
-      description: request_id not found
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    Gone:
-      description: OTP expired
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    RateLimited:
-      description: Per-recipient rate limit exceeded
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
-    InternalError:
-      description: Server-side failure
-      content:
-        application/json:
-          schema: { $ref: "#/components/schemas/Error" }
+    schemas:
+        CreateTemplateRequest:
+            properties:
+                app_id:
+                    type: string
+                body:
+                    type: string
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                        - slack
+                        - discord
+                        - whatsapp
+                    type: string
+                created_by:
+                    type: string
+                description:
+                    type: string
+                locale:
+                    maxLength: 10
+                    minLength: 2
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                subject:
+                    type: string
+                variables:
+                    items:
+                        type: string
+                    type: array
+                webhook_target:
+                    type: string
+            required:
+                - app_id
+                - body
+                - channel
+                - name
+            type: object
+        CreateVersionRequest:
+            properties:
+                body:
+                    type: string
+                created_by:
+                    type: string
+                description:
+                    type: string
+                locale:
+                    maxLength: 10
+                    minLength: 2
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                subject:
+                    type: string
+                variables:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - body
+            type: object
+        ListTemplatesResponse:
+            properties:
+                limit:
+                    type: integer
+                offset:
+                    type: integer
+                templates:
+                    items:
+                        $ref: '#/components/schemas/TemplateResponse'
+                    type: array
+                total:
+                    type: integer
+            type: object
+        RenderTemplateRequest:
+            properties:
+                data:
+                    additionalProperties: true
+                    type: object
+                editable:
+                    type: boolean
+            required:
+                - data
+            type: object
+        RenderTemplateResponse:
+            properties:
+                attribute_variables:
+                    items:
+                        $ref: '#/components/schemas/template.AttributeVar'
+                    type: array
+                rendered_body:
+                    type: string
+            type: object
+        RollbackRequest:
+            properties:
+                target_version:
+                    minimum: 1
+                    type: integer
+                updated_by:
+                    type: string
+                version:
+                    minimum: 1
+                    type: integer
+            type: object
+        SendTestRequest:
+            properties:
+                sample_data:
+                    additionalProperties: true
+                    type: object
+                to_email:
+                    type: string
+            required:
+                - to_email
+            type: object
+        TemplateResponse:
+            properties:
+                app_id:
+                    type: string
+                body:
+                    type: string
+                channel:
+                    type: string
+                control_values:
+                    $ref: '#/components/schemas/template.ControlValues'
+                controls:
+                    items:
+                        $ref: '#/components/schemas/template.TemplateControl'
+                    type: array
+                created_at:
+                    type: string
+                created_by:
+                    type: string
+                description:
+                    type: string
+                id:
+                    type: string
+                locale:
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    type: string
+                status:
+                    type: string
+                subject:
+                    type: string
+                updated_at:
+                    type: string
+                updated_by:
+                    type: string
+                variables:
+                    items:
+                        type: string
+                    type: array
+                version:
+                    type: integer
+                webhook_target:
+                    type: string
+            type: object
+        UpdateTemplateRequest:
+            properties:
+                body:
+                    type: string
+                description:
+                    type: string
+                locale:
+                    maxLength: 10
+                    minLength: 2
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                status:
+                    enum:
+                        - active
+                        - inactive
+                        - archived
+                    type: string
+                subject:
+                    type: string
+                updated_by:
+                    type: string
+                variables:
+                    items:
+                        type: string
+                    type: array
+                webhook_target:
+                    type: string
+            type: object
+        application.CustomProviderConfig:
+            properties:
+                active:
+                    type: boolean
+                channel:
+                    type: string
+                created_at:
+                    type: string
+                headers:
+                    additionalProperties:
+                        type: string
+                    type: object
+                kind:
+                    type: string
+                name:
+                    type: string
+                provider_id:
+                    type: string
+                signature_version:
+                    type: string
+                signing_key:
+                    type: string
+                webhook_url:
+                    type: string
+            type: object
+        application.DefaultPreferences:
+            properties:
+                discord_enabled:
+                    description: Phase 3
+                    type: boolean
+                email_enabled:
+                    type: boolean
+                push_enabled:
+                    type: boolean
+                slack_enabled:
+                    description: Phase 3
+                    type: boolean
+                sms_enabled:
+                    type: boolean
+                whatsapp_enabled:
+                    description: Phase 3
+                    type: boolean
+            type: object
+        application.DiscordAppConfig:
+            properties:
+                webhook_url:
+                    type: string
+            type: object
+        application.EmailConfig:
+            properties:
+                provider_type:
+                    description: '"smtp", "sendgrid", "system"'
+                    type: string
+                sendgrid:
+                    $ref: '#/components/schemas/application.SendGridConfig'
+                smtp:
+                    $ref: '#/components/schemas/application.SMTPConfig'
+            type: object
+        application.InboundWebhookConfig:
+            properties:
+                event_mapping:
+                    additionalProperties:
+                        type: string
+                    description: event name -> workflow trigger_id
+                    type: object
+                secret:
+                    type: string
+            type: object
+        application.ProviderFallback:
+            properties:
+                channel:
+                    description: e.g. "email", "push", "sms"
+                    type: string
+                providers:
+                    description: 'Ordered: ["sendgrid", "smtp"]'
+                    items:
+                        type: string
+                    type: array
+            type: object
+        application.SMSAppConfig:
+            properties:
+                account_sid:
+                    type: string
+                auth_token:
+                    type: string
+                from_number:
+                    type: string
+            type: object
+        application.SMTPConfig:
+            properties:
+                from_email:
+                    type: string
+                from_name:
+                    type: string
+                host:
+                    type: string
+                password:
+                    type: string
+                port:
+                    type: integer
+                username:
+                    type: string
+            type: object
+        application.SendGridConfig:
+            properties:
+                api_key:
+                    type: string
+                from_email:
+                    type: string
+                from_name:
+                    type: string
+            type: object
+        application.Settings:
+            properties:
+                custom_providers:
+                    description: Phase 3
+                    items:
+                        $ref: '#/components/schemas/application.CustomProviderConfig'
+                    type: array
+                daily_email_limit:
+                    type: integer
+                default_preferences:
+                    $ref: '#/components/schemas/application.DefaultPreferences'
+                default_template:
+                    description: default template ID
+                    type: string
+                discord:
+                    allOf:
+                        - $ref: '#/components/schemas/application.DiscordAppConfig'
+                    description: Phase 3
+                email_config:
+                    $ref: '#/components/schemas/application.EmailConfig'
+                enable_analytics:
+                    description: analytics tracking
+                    type: boolean
+                enable_webhooks:
+                    description: webhook notifications
+                    type: boolean
+                inbound_webhook_config:
+                    allOf:
+                        - $ref: '#/components/schemas/application.InboundWebhookConfig'
+                    description: 'Phase 7: inbound webhook config (secret, event mapping)'
+                on_user_created_trigger_id:
+                    description: 'Phase 5: workflow to trigger on user create'
+                    type: string
+                provider_fallbacks:
+                    items:
+                        $ref: '#/components/schemas/application.ProviderFallback'
+                    type: array
+                rate_limit:
+                    description: requests per hour
+                    type: integer
+                retry_attempts:
+                    description: max retry attempts
+                    type: integer
+                slack:
+                    allOf:
+                        - $ref: '#/components/schemas/application.SlackAppConfig'
+                    description: Phase 3
+                sms_config:
+                    allOf:
+                        - $ref: '#/components/schemas/application.SMSAppConfig'
+                    description: 'Billing: per-app SMS creds'
+                subscriber_throttle:
+                    additionalProperties:
+                        $ref: '#/components/schemas/application.SubscriberThrottleConfig'
+                    description: Phase 2
+                    type: object
+                validation_config:
+                    $ref: '#/components/schemas/application.ValidationConfig'
+                validation_url:
+                    type: string
+                whatsapp_config:
+                    allOf:
+                        - $ref: '#/components/schemas/application.WhatsAppAppConfig'
+                    description: Phase 3
+                whatsapp_inbound:
+                    allOf:
+                        - $ref: '#/components/schemas/whatsapp.InboundConfig'
+                    description: WhatsApp Meta inbound config
+            type: object
+        application.SlackAppConfig:
+            properties:
+                bot_token:
+                    type: string
+                webhook_url:
+                    type: string
+            type: object
+        application.SubscriberThrottleConfig:
+            properties:
+                max_per_day:
+                    type: integer
+                max_per_hour:
+                    type: integer
+            type: object
+        application.ValidationConfig:
+            properties:
+                method:
+                    description: GET, POST
+                    type: string
+                static_headers:
+                    additionalProperties:
+                        type: string
+                    type: object
+                token_key:
+                    description: e.g. "Authorization", "access_token"
+                    type: string
+                token_placement:
+                    description: header, cookie, query, body_json, body_form
+                    type: string
+            type: object
+        application.WhatsAppAppConfig:
+            properties:
+                account_sid:
+                    description: Twilio fields (used when Provider == "" or "twilio")
+                    type: string
+                auth_token:
+                    type: string
+                connected_at:
+                    type: string
+                connection_status:
+                    description: connected, disconnected, pending
+                    type: string
+                display_phone_number:
+                    type: string
+                from_number:
+                    type: string
+                meta_access_token:
+                    type: string
+                meta_app_secret:
+                    type: string
+                meta_business_id:
+                    description: Embedded Signup metadata (populated during OAuth connect flow)
+                    type: string
+                meta_phone_number_id:
+                    description: Meta Cloud API fields (used when Provider == "meta")
+                    type: string
+                meta_waba_id:
+                    type: string
+                provider:
+                    description: '"twilio" (default) or "meta"'
+                    type: string
+                quality_rating:
+                    type: string
+            type: object
+        auth.InviteMemberRequest:
+            properties:
+                email:
+                    type: string
+                role:
+                    $ref: '#/components/schemas/auth.Role'
+            required:
+                - email
+                - role
+            type: object
+        auth.Role:
+            enum:
+                - owner
+                - admin
+                - editor
+                - viewer
+            type: string
+            x-enum-varnames:
+                - RoleOwner
+                - RoleAdmin
+                - RoleEditor
+                - RoleViewer
+        auth.UpdateMemberRoleRequest:
+            properties:
+                role:
+                    $ref: '#/components/schemas/auth.Role'
+            required:
+                - role
+            type: object
+        billing.PaymentVerification:
+            properties:
+                razorpay_order_id:
+                    type: string
+                razorpay_payment_id:
+                    type: string
+                razorpay_signature:
+                    type: string
+            required:
+                - razorpay_order_id
+                - razorpay_payment_id
+                - razorpay_signature
+            type: object
+        billing.PlanBundle:
+            properties:
+                active:
+                    type: boolean
+                amount_paisa:
+                    type: integer
+                credits_included:
+                    type: integer
+                currency:
+                    type: string
+                display_order:
+                    type: integer
+                id:
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    type: string
+                validity_days:
+                    type: integer
+            type: object
+        bizbilling.AdjustBalanceRequest:
+            properties:
+                amount_paisa:
+                    type: integer
+                reason:
+                    type: string
+            required:
+                - amount_paisa
+            type: object
+        bizbilling.AmendContractRequest:
+            properties:
+                description:
+                    type: string
+                effective_date:
+                    type: string
+            required:
+                - description
+                - effective_date
+            type: object
+        bizbilling.ApplyCouponRequest:
+            properties:
+                code:
+                    type: string
+            required:
+                - code
+            type: object
+        bizbilling.BillingCycle:
+            enum:
+                - weekly
+                - monthly
+                - quarterly
+                - half_yearly
+                - yearly
+                - custom
+            type: string
+            x-enum-comments:
+                BillingCycleCustom: Uses CycleDays field
+            x-enum-descriptions:
+                - ""
+                - ""
+                - ""
+                - ""
+                - ""
+                - Uses CycleDays field
+            x-enum-varnames:
+                - BillingCycleWeekly
+                - BillingCycleMonthly
+                - BillingCycleQuarterly
+                - BillingCycleHalfYearly
+                - BillingCycleYearly
+                - BillingCycleCustom
+        bizbilling.BulkGenerateCouponsRequest:
+            properties:
+                count:
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                prefix:
+                    type: string
+                rules:
+                    $ref: '#/components/schemas/bizbilling.CreateCouponRequest'
+            required:
+                - count
+                - rules
+            type: object
+        bizbilling.CreateConnectorRequest:
+            properties:
+                app_id:
+                    type: string
+                event_mappings:
+                    additionalProperties: true
+                    type: object
+                provider:
+                    type: string
+                webhook_secret:
+                    type: string
+            required:
+                - app_id
+                - provider
+            type: object
+        bizbilling.CreateContractRequest:
+            properties:
+                auto_renew:
+                    type: boolean
+                end_date:
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                start_date:
+                    type: string
+                subscription_id:
+                    type: string
+                terms:
+                    type: string
+                user_id:
+                    type: string
+                value_paisa:
+                    type: integer
+            required:
+                - end_date
+                - start_date
+                - user_id
+            type: object
+        bizbilling.CreateCouponRequest:
+            properties:
+                applicable_plan_ids:
+                    items:
+                        type: string
+                    type: array
+                code:
+                    type: string
+                discount_type:
+                    $ref: '#/components/schemas/bizbilling.DiscountType'
+                discount_value:
+                    type: integer
+                max_uses:
+                    type: integer
+                max_uses_per_user:
+                    type: integer
+                stackable:
+                    type: boolean
+                valid_from:
+                    type: string
+                valid_until:
+                    type: string
+            required:
+                - code
+                - discount_type
+                - discount_value
+            type: object
+        bizbilling.CreateCreditNoteRequest:
+            properties:
+                amount_paisa:
+                    type: integer
+                invoice_id:
+                    type: string
+                reason:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - amount_paisa
+                - user_id
+            type: object
+        bizbilling.CreateEstimateRequest:
+            properties:
+                currency:
+                    type: string
+                line_items:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
+                    minItems: 1
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    type: object
+                notes:
+                    type: string
+                terms:
+                    type: string
+                user_id:
+                    type: string
+                valid_until:
+                    type: string
+            required:
+                - line_items
+                - user_id
+            type: object
+        bizbilling.CreateExpenseRequest:
+            properties:
+                amount_paisa:
+                    type: integer
+                billable:
+                    type: boolean
+                billed_to_user:
+                    type: string
+                category:
+                    type: string
+                date:
+                    description: defaults to now
+                    type: string
+                description:
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                receipt_file_id:
+                    type: string
+                recurrence_cycle:
+                    type: string
+                recurring:
+                    type: boolean
+                vendor:
+                    type: string
+            required:
+                - amount_paisa
+                - category
+            type: object
+        bizbilling.CreateInvoiceRequest:
+            properties:
+                currency:
+                    type: string
+                line_items:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
+                    minItems: 1
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    type: object
+                notes:
+                    type: string
+                payment_terms:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - currency
+                - line_items
+                - user_id
+            type: object
+        bizbilling.CreatePlanAddonRequest:
+            properties:
+                amount_paisa:
+                    minimum: 1
+                    type: integer
+                billing_cycle:
+                    allOf:
+                        - $ref: '#/components/schemas/bizbilling.BillingCycle'
+                    description: Defaults to parent plan's cycle
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+            required:
+                - amount_paisa
+                - name
+            type: object
+        bizbilling.CreatePlanRequest:
+            properties:
+                amount_paisa:
+                    minimum: 0
+                    type: integer
+                billing_cycle:
+                    $ref: '#/components/schemas/bizbilling.BillingCycle'
+                currency:
+                    description: Defaults to "INR"
+                    type: string
+                cycle_days:
+                    minimum: 0
+                    type: integer
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                pricing_model:
+                    allOf:
+                        - $ref: '#/components/schemas/bizbilling.PricingModel'
+                    description: Defaults to "flat"
+                product_id:
+                    type: string
+                setup_fee_paisa:
+                    minimum: 0
+                    type: integer
+                tax_inclusive:
+                    type: boolean
+                tiers:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.PricingTier'
+                    type: array
+                trial_days:
+                    maximum: 365
+                    minimum: 0
+                    type: integer
+            required:
+                - billing_cycle
+                - name
+                - product_id
+            type: object
+        bizbilling.CreateProductRequest:
+            properties:
+                description:
+                    maxLength: 1000
+                    type: string
+                hsn_code:
+                    maxLength: 8
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                tax_rate:
+                    maximum: 28
+                    minimum: 0
+                    type: integer
+                unit:
+                    maxLength: 50
+                    type: string
+            required:
+                - name
+            type: object
+        bizbilling.CreateRetainerRequest:
+            properties:
+                amount_paisa:
+                    type: integer
+                notes:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - amount_paisa
+                - user_id
+            type: object
+        bizbilling.CreateSubscriptionRequest:
+            properties:
+                addon_ids:
+                    items:
+                        type: string
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    type: object
+                plan_id:
+                    type: string
+                quantity:
+                    minimum: 1
+                    type: integer
+                trial_days:
+                    type: integer
+                user_id:
+                    type: string
+            required:
+                - plan_id
+                - user_id
+            type: object
+        bizbilling.CreateUsageMeterRequest:
+            properties:
+                aggregation:
+                    description: defaults to sum
+                    type: string
+                name:
+                    type: string
+                unit:
+                    type: string
+            required:
+                - name
+            type: object
+        bizbilling.DiscountType:
+            enum:
+                - percentage
+                - fixed
+            type: string
+            x-enum-comments:
+                DiscountTypeFixed: DiscountValue = paisa
+                DiscountTypePercentage: DiscountValue = percent (e.g. 10 for 10%)
+            x-enum-descriptions:
+                - DiscountValue = percent (e.g. 10 for 10%)
+                - DiscountValue = paisa
+            x-enum-varnames:
+                - DiscountTypePercentage
+                - DiscountTypeFixed
+        bizbilling.InvoiceLineItem:
+            properties:
+                amount_paisa:
+                    description: (Quantity * UnitPrice) - Discount
+                    type: integer
+                description:
+                    type: string
+                discount_paisa:
+                    type: integer
+                hsn_code:
+                    type: string
+                quantity:
+                    type: integer
+                tax_rate:
+                    description: e.g., 18 for 18%
+                    type: integer
+                unit_price:
+                    description: in paisa
+                    type: integer
+            type: object
+        bizbilling.PricingModel:
+            enum:
+                - flat
+                - per_unit
+                - tiered
+                - volume
+            type: string
+            x-enum-comments:
+                PricingModelFlat: Fixed price per cycle
+                PricingModelPerUnit: Price × quantity (e.g., per seat)
+                PricingModelTiered: Different price per tier (all units in each tier)
+                PricingModelVolume: Single price based on total volume
+            x-enum-descriptions:
+                - Fixed price per cycle
+                - Price × quantity (e.g., per seat)
+                - Different price per tier (all units in each tier)
+                - Single price based on total volume
+            x-enum-varnames:
+                - PricingModelFlat
+                - PricingModelPerUnit
+                - PricingModelTiered
+                - PricingModelVolume
+        bizbilling.PricingTier:
+            properties:
+                flat_paisa:
+                    description: Optional flat fee for this tier
+                    type: integer
+                unit_paisa:
+                    description: Price per unit in paisa
+                    type: integer
+                up_to:
+                    description: Upper bound of this tier (0 = unlimited / last tier)
+                    type: integer
+            type: object
+        bizbilling.RecordPaymentRequest:
+            properties:
+                amount_paisa:
+                    minimum: 0
+                    type: integer
+                gateway_txn_id:
+                    type: string
+                method:
+                    description: cash | bank_transfer | cheque | card | upi | gateway
+                    type: string
+                notes:
+                    type: string
+                tds_paisa:
+                    minimum: 0
+                    type: integer
+            required:
+                - method
+            type: object
+        bizbilling.RefundPaymentRequest:
+            properties:
+                amount_paisa:
+                    minimum: 0
+                    type: integer
+                reason:
+                    type: string
+            type: object
+        bizbilling.ReportUsageEvent:
+            properties:
+                meter_id:
+                    type: string
+                quantity:
+                    type: integer
+                subscription_id:
+                    type: string
+                timestamp:
+                    description: defaults to now
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - meter_id
+                - quantity
+                - user_id
+            type: object
+        bizbilling.ReportUsageRequest:
+            properties:
+                events:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.ReportUsageEvent'
+                    maxItems: 500
+                    minItems: 1
+                    type: array
+            required:
+                - events
+            type: object
+        bizbilling.UpdateConnectorRequest:
+            properties:
+                active:
+                    type: boolean
+                event_mappings:
+                    additionalProperties: true
+                    type: object
+                webhook_secret:
+                    type: string
+            type: object
+        bizbilling.UpdateContractRequest:
+            properties:
+                auto_renew:
+                    type: boolean
+                end_date:
+                    type: string
+                start_date:
+                    type: string
+                terms:
+                    type: string
+                value_paisa:
+                    type: integer
+            type: object
+        bizbilling.UpdateCouponRequest:
+            properties:
+                active:
+                    type: boolean
+                applicable_plan_ids:
+                    items:
+                        type: string
+                    type: array
+                discount_value:
+                    type: integer
+                max_uses:
+                    type: integer
+                max_uses_per_user:
+                    type: integer
+                stackable:
+                    type: boolean
+                valid_from:
+                    type: string
+                valid_until:
+                    type: string
+            type: object
+        bizbilling.UpdateEstimateRequest:
+            properties:
+                line_items:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    type: object
+                notes:
+                    type: string
+                terms:
+                    type: string
+                valid_until:
+                    type: string
+            type: object
+        bizbilling.UpdateExpenseRequest:
+            properties:
+                amount_paisa:
+                    type: integer
+                billable:
+                    type: boolean
+                billed_to_user:
+                    type: string
+                category:
+                    type: string
+                date:
+                    type: string
+                description:
+                    type: string
+                receipt_file_id:
+                    type: string
+                vendor:
+                    type: string
+            type: object
+        bizbilling.UpdateInvoiceRequest:
+            properties:
+                line_items:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    type: object
+                notes:
+                    type: string
+                payment_terms:
+                    type: string
+            type: object
+        bizbilling.UpdatePlanRequest:
+            properties:
+                active:
+                    type: boolean
+                amount_paisa:
+                    minimum: 0
+                    type: integer
+                billing_cycle:
+                    $ref: '#/components/schemas/bizbilling.BillingCycle'
+                currency:
+                    type: string
+                cycle_days:
+                    minimum: 0
+                    type: integer
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                pricing_model:
+                    $ref: '#/components/schemas/bizbilling.PricingModel'
+                setup_fee_paisa:
+                    minimum: 0
+                    type: integer
+                tax_inclusive:
+                    type: boolean
+                tiers:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.PricingTier'
+                    type: array
+                trial_days:
+                    maximum: 365
+                    minimum: 0
+                    type: integer
+            type: object
+        bizbilling.UpdateProductRequest:
+            properties:
+                active:
+                    type: boolean
+                description:
+                    maxLength: 1000
+                    type: string
+                hsn_code:
+                    maxLength: 8
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                tax_rate:
+                    maximum: 28
+                    minimum: 0
+                    type: integer
+                unit:
+                    maxLength: 50
+                    type: string
+            type: object
+        bizbilling.UpdateSubscriptionRequest:
+            properties:
+                addon_ids:
+                    items:
+                        type: string
+                    type: array
+                cancel_at_period_end:
+                    type: boolean
+                metadata:
+                    additionalProperties: true
+                    type: object
+                non_renewing:
+                    type: boolean
+                plan_id:
+                    type: string
+                quantity:
+                    type: integer
+            type: object
+        digest.CreateRequest:
+            properties:
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                    type: string
+                digest_key:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+                environment_id:
+                    type: string
+                max_batch:
+                    type: integer
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                template_id:
+                    type: string
+                window:
+                    type: string
+            required:
+                - channel
+                - digest_key
+                - name
+                - template_id
+                - window
+            type: object
+        digest.UpdateRequest:
+            properties:
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                    type: string
+                digest_key:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+                max_batch:
+                    type: integer
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                status:
+                    enum:
+                        - active
+                        - inactive
+                    type: string
+                template_id:
+                    type: string
+                window:
+                    type: string
+            type: object
+        dto.AddDeviceRequest:
+            properties:
+                platform:
+                    enum:
+                        - ios
+                        - android
+                        - web
+                    type: string
+                token:
+                    type: string
+            required:
+                - platform
+                - token
+            type: object
+        dto.AdminUserResponse:
+            properties:
+                created_at:
+                    type: string
+                email:
+                    type: string
+                full_name:
+                    type: string
+                is_active:
+                    type: boolean
+                last_login_at:
+                    type: string
+                phone:
+                    type: string
+                phone_verified:
+                    type: boolean
+                updated_at:
+                    type: string
+                user_id:
+                    type: string
+            type: object
+        dto.AuthResponse:
+            properties:
+                access_token:
+                    type: string
+                expires_at:
+                    type: string
+                refresh_token:
+                    type: string
+                require_trial_welcome:
+                    type: boolean
+                user:
+                    $ref: '#/components/schemas/dto.AdminUserResponse'
+            type: object
+        dto.BatchCancelRequest:
+            properties:
+                notification_ids:
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+            required:
+                - notification_ids
+            type: object
+        dto.BatchSendNotificationRequest:
+            properties:
+                notifications:
+                    items:
+                        $ref: '#/components/schemas/dto.SendNotificationRequest'
+                    minItems: 1
+                    type: array
+            required:
+                - notifications
+            type: object
+        dto.BroadcastNotificationRequest:
+            properties:
+                actions:
+                    items:
+                        $ref: '#/components/schemas/notification.Action'
+                    type: array
+                attachments:
+                    description: Rich webhook content (Phase 7).
+                    items:
+                        $ref: '#/components/schemas/notification.Attachment'
+                    type: array
+                body:
+                    type: string
+                category:
+                    type: string
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                        - whatsapp
+                    type: string
+                data:
+                    additionalProperties: true
+                    type: object
+                fields:
+                    items:
+                        $ref: '#/components/schemas/notification.Field'
+                    type: array
+                mentions:
+                    items:
+                        $ref: '#/components/schemas/notification.Mention'
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    description: 'Digest: {"digest_key": "rule_key"}'
+                    type: object
+                poll:
+                    $ref: '#/components/schemas/notification.Poll'
+                priority:
+                    enum:
+                        - low
+                        - normal
+                        - high
+                        - critical
+                    type: string
+                scheduled_at:
+                    type: string
+                style:
+                    $ref: '#/components/schemas/notification.Style'
+                template_id:
+                    description: required when workflow_trigger_id is empty
+                    type: string
+                title:
+                    type: string
+                topic_key:
+                    description: 'Phase 2: limit to topic subscribers'
+                    type: string
+                webhook_target:
+                    type: string
+                webhook_url:
+                    type: string
+                workflow_trigger_id:
+                    description: 'Phase 2: trigger workflow for each recipient'
+                    type: string
+            required:
+                - channel
+                - priority
+            type: object
+        dto.BulkArchiveRequest:
+            properties:
+                notification_ids:
+                    items:
+                        type: string
+                    maxItems: 100
+                    minItems: 1
+                    type: array
+                user_id:
+                    type: string
+            required:
+                - notification_ids
+                - user_id
+            type: object
+        dto.BulkCreateUserRequest:
+            properties:
+                skip_existing:
+                    type: boolean
+                upsert:
+                    type: boolean
+                users:
+                    items:
+                        $ref: '#/components/schemas/dto.CreateUserRequest'
+                    maxItems: 1000
+                    minItems: 1
+                    type: array
+            required:
+                - users
+            type: object
+        dto.BulkCreateUserResponse:
+            properties:
+                created:
+                    type: integer
+                errors:
+                    items:
+                        $ref: '#/components/schemas/dto.BulkUserError'
+                    type: array
+                skipped:
+                    type: integer
+                total:
+                    type: integer
+                updated:
+                    type: integer
+            type: object
+        dto.BulkSendNotificationRequest:
+            properties:
+                actions:
+                    items:
+                        $ref: '#/components/schemas/notification.Action'
+                    type: array
+                attachments:
+                    description: Rich webhook content (Phase 7).
+                    items:
+                        $ref: '#/components/schemas/notification.Attachment'
+                    type: array
+                body:
+                    type: string
+                category:
+                    type: string
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - whatsapp
+                    type: string
+                data:
+                    additionalProperties: true
+                    type: object
+                fields:
+                    items:
+                        $ref: '#/components/schemas/notification.Field'
+                    type: array
+                media_url:
+                    type: string
+                mentions:
+                    items:
+                        $ref: '#/components/schemas/notification.Mention'
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    description: 'Digest: {"digest_key": "rule_key"}'
+                    type: object
+                poll:
+                    $ref: '#/components/schemas/notification.Poll'
+                priority:
+                    enum:
+                        - low
+                        - normal
+                        - high
+                        - critical
+                    type: string
+                scheduled_at:
+                    type: string
+                style:
+                    $ref: '#/components/schemas/notification.Style'
+                template_id:
+                    type: string
+                title:
+                    type: string
+                user_ids:
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+            required:
+                - channel
+                - priority
+                - user_ids
+            type: object
+        dto.BulkSendResponse:
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/dto.NotificationResponse'
+                    type: array
+                not_attempted:
+                    type: integer
+                operation_id:
+                    type: string
+                outcomes:
+                    items:
+                        $ref: '#/components/schemas/notification.BroadcastRecipientOutcome'
+                    type: array
+                outcomes_truncated:
+                    type: boolean
+                partial:
+                    type: boolean
+                rejected:
+                    type: integer
+                retryable:
+                    type: boolean
+                sent:
+                    type: integer
+                skipped:
+                    type: integer
+                total:
+                    type: integer
+                unknown:
+                    type: integer
+            type: object
+        dto.BulkUserError:
+            properties:
+                email:
+                    type: string
+                index:
+                    type: integer
+                message:
+                    type: string
+            type: object
+        dto.ChangePasswordRequest:
+            properties:
+                new_password:
+                    minLength: 8
+                    type: string
+                old_password:
+                    type: string
+            required:
+                - new_password
+                - old_password
+            type: object
+        dto.CreateApplicationRequest:
+            properties:
+                app_name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                description:
+                    maxLength: 500
+                    type: string
+                settings:
+                    $ref: '#/components/schemas/application.Settings'
+                tenant_id:
+                    type: string
+                webhook_url:
+                    type: string
+                webhooks:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - app_name
+            type: object
+        dto.CreateTwilioTemplateRequest:
+            properties:
+                friendly_name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                language:
+                    maxLength: 5
+                    minLength: 2
+                    type: string
+                types:
+                    additionalProperties: true
+                    type: object
+                variables:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - friendly_name
+                - language
+                - types
+            type: object
+        dto.CreateUserRequest:
+            properties:
+                balance_paisa:
+                    minimum: 0
+                    type: integer
+                billing_address:
+                    $ref: '#/components/schemas/user.BillingAddress'
+                billing_meta:
+                    additionalProperties: true
+                    type: object
+                email:
+                    type: string
+                external_id:
+                    type: string
+                full_name:
+                    type: string
+                gstin:
+                    maxLength: 15
+                    type: string
+                language:
+                    type: string
+                phone:
+                    type: string
+                preferences:
+                    $ref: '#/components/schemas/user.Preferences'
+                timezone:
+                    type: string
+                user_id:
+                    type: string
+                webhook_url:
+                    type: string
+            type: object
+        dto.DefaultPreferencesDTO:
+            properties:
+                email_enabled:
+                    type: boolean
+                push_enabled:
+                    type: boolean
+                sms_enabled:
+                    type: boolean
+                whatsapp_enabled:
+                    type: boolean
+            type: object
+        dto.DeleteAccountRequest:
+            properties:
+                confirm_text:
+                    type: string
+                password:
+                    minLength: 8
+                    type: string
+            required:
+                - confirm_text
+                - password
+            type: object
+        dto.FileListResponse:
+            properties:
+                files:
+                    items:
+                        $ref: '#/components/schemas/dto.FileResponse'
+                    type: array
+                total:
+                    type: integer
+            type: object
+        dto.FileResponse:
+            properties:
+                created_at:
+                    type: string
+                expires_at:
+                    type: string
+                file_id:
+                    type: string
+                mime_type:
+                    type: string
+                name:
+                    type: string
+                sha256:
+                    type: string
+                size:
+                    type: integer
+            type: object
+        dto.ForgotPasswordRequest:
+            properties:
+                email:
+                    type: string
+            required:
+                - email
+            type: object
+        dto.LoginRequest:
+            properties:
+                email:
+                    type: string
+                password:
+                    minLength: 8
+                    type: string
+            required:
+                - email
+                - password
+            type: object
+        dto.MarkAllReadRequest:
+            properties:
+                category:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - user_id
+            type: object
+        dto.MessageResponse:
+            properties:
+                message:
+                    type: string
+            type: object
+        dto.NotificationContentResponse:
+            properties:
+                actions:
+                    items:
+                        $ref: '#/components/schemas/notification.Action'
+                    type: array
+                attachments:
+                    description: Rich webhook content (Phase 7).
+                    items:
+                        $ref: '#/components/schemas/notification.Attachment'
+                    type: array
+                body:
+                    type: string
+                data:
+                    additionalProperties: true
+                    type: object
+                fields:
+                    items:
+                        $ref: '#/components/schemas/notification.Field'
+                    type: array
+                media_url:
+                    type: string
+                mentions:
+                    items:
+                        $ref: '#/components/schemas/notification.Mention'
+                    type: array
+                notification:
+                    type: string
+                poll:
+                    $ref: '#/components/schemas/notification.Poll'
+                style:
+                    $ref: '#/components/schemas/notification.Style'
+                title:
+                    type: string
+            type: object
+        dto.NotificationListResponse:
+            properties:
+                notifications:
+                    items:
+                        $ref: '#/components/schemas/dto.NotificationResponse'
+                    type: array
+                page:
+                    type: integer
+                page_size:
+                    type: integer
+                total:
+                    type: integer
+            type: object
+        dto.NotificationResponse:
+            properties:
+                app_id:
+                    type: string
+                channel:
+                    type: string
+                content:
+                    $ref: '#/components/schemas/dto.NotificationContentResponse'
+                created_at:
+                    type: string
+                delivered_at:
+                    type: string
+                error_message:
+                    type: string
+                failed_at:
+                    type: string
+                notification_id:
+                    type: string
+                priority:
+                    type: string
+                read_at:
+                    type: string
+                retry_count:
+                    type: integer
+                scheduled_at:
+                    type: string
+                sent_at:
+                    type: string
+                status:
+                    type: string
+                template_id:
+                    type: string
+                updated_at:
+                    type: string
+                user_id:
+                    type: string
+            type: object
+        dto.OTPResendRequest:
+            properties:
+                request_id:
+                    type: string
+            required:
+                - request_id
+            type: object
+        dto.OTPResponse:
+            properties:
+                expires_in:
+                    type: integer
+                message:
+                    type: string
+            type: object
+        dto.OTPSendRequest:
+            properties:
+                alphanumeric:
+                    description: default false (numeric)
+                    type: boolean
+                channel:
+                    enum:
+                        - sms
+                        - whatsapp
+                        - email
+                    type: string
+                external_id:
+                    description: caller-owned user identifier
+                    type: string
+                length:
+                    description: 4-10, default 6
+                    type: integer
+                max_attempts:
+                    description: 1-10, default 5
+                    type: integer
+                recipient:
+                    description: raw email / E.164 phone
+                    type: string
+                template_body:
+                    description: optional BYO body with {{code}}
+                    type: string
+                template_data:
+                    additionalProperties: true
+                    type: object
+                ttl_seconds:
+                    description: 30-900, default 300
+                    type: integer
+                user_id:
+                    description: internal FRN user_id (UUID)
+                    type: string
+            required:
+                - channel
+            type: object
+        dto.OTPSendResponse:
+            properties:
+                channel:
+                    type: string
+                expires_at:
+                    type: string
+                max_attempts:
+                    type: integer
+                notification_id:
+                    type: string
+                request_id:
+                    type: string
+                ttl_seconds:
+                    type: integer
+            type: object
+        dto.OTPVerifyRequest:
+            properties:
+                code:
+                    maxLength: 10
+                    minLength: 4
+                    type: string
+                request_id:
+                    type: string
+            required:
+                - code
+                - request_id
+            type: object
+        dto.OTPVerifyResponse:
+            properties:
+                attempts_remaining:
+                    type: integer
+                error:
+                    type: string
+                request_id:
+                    type: string
+                verified:
+                    type: boolean
+                verified_at:
+                    type: string
+            type: object
+        dto.PhoneOTPRequest:
+            properties:
+                phone:
+                    type: string
+            required:
+                - phone
+            type: object
+        dto.PhoneVerifyRequest:
+            properties:
+                otp_code:
+                    type: string
+                phone:
+                    type: string
+            required:
+                - otp_code
+                - phone
+            type: object
+        dto.PreviewTwilioTemplateRequest:
+            properties:
+                variables:
+                    additionalProperties:
+                        type: string
+                    type: object
+            required:
+                - variables
+            type: object
+        dto.QuickSendRequest:
+            properties:
+                actions:
+                    items:
+                        $ref: '#/components/schemas/notification.Action'
+                    type: array
+                attachments:
+                    description: |-
+                        Rich webhook content. All optional. Only honored when the resolved
+                        channel is webhook-like (webhook, discord, slack, teams). Per-provider
+                        rendering capabilities are documented in API_DOCUMENTATION.md.
+                    items:
+                        $ref: '#/components/schemas/notification.Attachment'
+                    type: array
+                body:
+                    type: string
+                channel:
+                    description: |-
+                        Channel: push, email, sms, webhook, in_app, sse, whatsapp, discord, slack, teams.
+                        Optional if Template is specified (inferred from template).
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                        - whatsapp
+                        - discord
+                        - slack
+                        - teams
+                    type: string
+                data:
+                    additionalProperties: true
+                    description: Template variables (used when Template is specified).
+                    type: object
+                digest_key:
+                    description: 'Optional: digest rule key — notifications with this key are batched by the matching digest rule'
+                    type: string
+                fields:
+                    items:
+                        $ref: '#/components/schemas/notification.Field'
+                    type: array
+                mentions:
+                    items:
+                        $ref: '#/components/schemas/notification.Mention'
+                    type: array
+                poll:
+                    $ref: '#/components/schemas/notification.Poll'
+                priority:
+                    description: 'Priority: low, normal, high, critical. Defaults to "normal".'
+                    type: string
+                scheduled_at:
+                    description: Optional scheduling
+                    type: string
+                style:
+                    $ref: '#/components/schemas/notification.Style'
+                subject:
+                    description: Inline content (used when Template is empty).
+                    type: string
+                template:
+                    description: |-
+                        Template reference: name (string) or UUID.
+                        Optional if Subject+Body are provided (inline content).
+                    type: string
+                to:
+                    description: |-
+                        Recipient: email address, external user ID, or internal UUID.
+                        If recipient doesn't exist as a user, auto-creates one (email only).
+                        Optional for webhook-like channels (webhook, discord, slack, teams).
+                    type: string
+                webhook_target:
+                    description: |-
+                        Optional: name of a registered custom webhook provider on the app
+                        (e.g. "Slack Alerts"). When set, the worker dispatches through that
+                        provider — which knows its kind (slack/discord/teams/generic) and
+                        renders the channel-specific payload shape. Prefer this over
+                        WebhookURL when the destination is a registered provider, so the
+                        message is posted in a shape the destination accepts.
+                    type: string
+                webhook_url:
+                    description: 'Optional: explicit webhook URL (for webhook channel without user)'
+                    type: string
+            type: object
+        dto.RecurrenceRequest:
+            properties:
+                count:
+                    type: integer
+                cron_expression:
+                    type: string
+                end_date:
+                    type: string
+            required:
+                - cron_expression
+            type: object
+        dto.RefreshTokenRequest:
+            properties:
+                refresh_token:
+                    type: string
+            required:
+                - refresh_token
+            type: object
+        dto.RegisterRequest:
+            properties:
+                email:
+                    type: string
+                full_name:
+                    minLength: 2
+                    type: string
+                password:
+                    minLength: 8
+                    type: string
+            required:
+                - email
+                - full_name
+                - password
+            type: object
+        dto.ResendOTPRequest:
+            properties:
+                email:
+                    type: string
+            required:
+                - email
+            type: object
+        dto.ResetPasswordRequest:
+            properties:
+                new_password:
+                    minLength: 8
+                    type: string
+                token:
+                    type: string
+            required:
+                - new_password
+                - token
+            type: object
+        dto.SeedTemplateEntry:
+            properties:
+                body:
+                    type: string
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                        - slack
+                        - discord
+                        - whatsapp
+                    type: string
+                description:
+                    type: string
+                locale:
+                    maxLength: 10
+                    minLength: 2
+                    type: string
+                metadata:
+                    additionalProperties: true
+                    type: object
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                subject:
+                    type: string
+                variables:
+                    items:
+                        type: string
+                    type: array
+            required:
+                - body
+                - channel
+                - name
+            type: object
+        dto.SeedTemplatesRequest:
+            properties:
+                templates:
+                    items:
+                        $ref: '#/components/schemas/dto.SeedTemplateEntry'
+                    minItems: 1
+                    type: array
+            required:
+                - templates
+            type: object
+        dto.SendNotificationRequest:
+            properties:
+                actions:
+                    items:
+                        $ref: '#/components/schemas/notification.Action'
+                    type: array
+                attachments:
+                    description: |-
+                        Rich webhook content (Phase 7 — Webhook channel expansion).
+                        Domain types are reused so existing client SDKs serialize identically.
+                    items:
+                        $ref: '#/components/schemas/notification.Attachment'
+                    type: array
+                body:
+                    type: string
+                category:
+                    type: string
+                channel:
+                    enum:
+                        - push
+                        - email
+                        - sms
+                        - webhook
+                        - in_app
+                        - sse
+                        - whatsapp
+                    type: string
+                data:
+                    additionalProperties: true
+                    type: object
+                fields:
+                    items:
+                        $ref: '#/components/schemas/notification.Field'
+                    type: array
+                media_url:
+                    type: string
+                mentions:
+                    items:
+                        $ref: '#/components/schemas/notification.Mention'
+                    type: array
+                metadata:
+                    additionalProperties: true
+                    description: 'Digest: {"digest_key": "rule_key"} routes to digest batching'
+                    type: object
+                poll:
+                    $ref: '#/components/schemas/notification.Poll'
+                priority:
+                    enum:
+                        - low
+                        - normal
+                        - high
+                        - critical
+                    type: string
+                recurrence:
+                    $ref: '#/components/schemas/dto.RecurrenceRequest'
+                scheduled_at:
+                    type: string
+                style:
+                    $ref: '#/components/schemas/notification.Style'
+                template_id:
+                    description: Optional when body/direct channel content is supplied; template sends use a stored template ID.
+                    type: string
+                title:
+                    type: string
+                user_id:
+                    description: Required for recipient channels; webhook destinations may omit this.
+                    type: string
+                webhook_target:
+                    type: string
+                webhook_url:
+                    type: string
+                workflow_trigger_id:
+                    description: 'Phase 3: trigger workflow after send'
+                    type: string
+            type: object
+        dto.SignedURLResponse:
+            properties:
+                expires_at:
+                    type: string
+                url:
+                    type: string
+            type: object
+        dto.SnoozeRequest:
+            properties:
+                duration:
+                    description: e.g. "2h", "30m", "1d"
+                    type: string
+                until:
+                    type: string
+            type: object
+        dto.SubmitTwilioApprovalRequest:
+            properties:
+                category:
+                    enum:
+                        - UTILITY
+                        - MARKETING
+                        - AUTHENTICATION
+                    type: string
+                name:
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+            required:
+                - category
+                - name
+            type: object
+        dto.TokenPairResponse:
+            properties:
+                access_token:
+                    type: string
+                expires_at:
+                    type: string
+                refresh_token:
+                    type: string
+            type: object
+        dto.UpdateApplicationRequest:
+            properties:
+                app_name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                description:
+                    maxLength: 500
+                    type: string
+                settings:
+                    $ref: '#/components/schemas/application.Settings'
+                tenant_id:
+                    type: string
+                webhook_url:
+                    type: string
+                webhooks:
+                    additionalProperties:
+                        type: string
+                    type: object
+            type: object
+        dto.UpdatePreferencesRequest:
+            properties:
+                categories:
+                    additionalProperties:
+                        $ref: '#/components/schemas/user.CategoryPreference'
+                    type: object
+                daily_limit:
+                    type: integer
+                discord_enabled:
+                    description: Phase 5
+                    type: boolean
+                dnd:
+                    type: boolean
+                email_enabled:
+                    type: boolean
+                push_enabled:
+                    type: boolean
+                quiet_hours:
+                    $ref: '#/components/schemas/user.QuietHours'
+                slack_enabled:
+                    description: Phase 5
+                    type: boolean
+                sms_enabled:
+                    type: boolean
+                whatsapp_enabled:
+                    description: Phase 5
+                    type: boolean
+            type: object
+        dto.UpdateSettingsRequest:
+            properties:
+                clear_secrets:
+                    items:
+                        type: string
+                    type: array
+                daily_email_limit:
+                    minimum: 0
+                    type: integer
+                default_preferences:
+                    $ref: '#/components/schemas/dto.DefaultPreferencesDTO'
+                default_template:
+                    type: string
+                email_config:
+                    $ref: '#/components/schemas/application.EmailConfig'
+                enable_analytics:
+                    type: boolean
+                enable_webhooks:
+                    type: boolean
+                inbound_webhook_config:
+                    allOf:
+                        - $ref: '#/components/schemas/application.InboundWebhookConfig'
+                    description: 'Phase 7: inbound webhook (secret, event mapping)'
+                on_user_created_trigger_id:
+                    description: 'Phase 5: workflow to trigger on user create'
+                    type: string
+                rate_limit:
+                    minimum: 1
+                    type: integer
+                retry_attempts:
+                    maximum: 10
+                    minimum: 0
+                    type: integer
+                settings_revision:
+                    type: string
+                sms_config:
+                    $ref: '#/components/schemas/application.SMSAppConfig'
+                validation_config:
+                    $ref: '#/components/schemas/application.ValidationConfig'
+                validation_url:
+                    type: string
+                whatsapp_config:
+                    $ref: '#/components/schemas/application.WhatsAppAppConfig'
+            type: object
+        dto.UpdateStatusRequest:
+            properties:
+                error_message:
+                    type: string
+                status:
+                    enum:
+                        - pending
+                        - queued
+                        - processing
+                        - sent
+                        - delivered
+                        - read
+                        - failed
+                        - cancelled
+                    type: string
+            required:
+                - status
+            type: object
+        dto.UpdateUserRequest:
+            properties:
+                balance_paisa:
+                    minimum: 0
+                    type: integer
+                billing_address:
+                    $ref: '#/components/schemas/user.BillingAddress'
+                billing_meta:
+                    additionalProperties: true
+                    type: object
+                email:
+                    type: string
+                external_id:
+                    type: string
+                full_name:
+                    type: string
+                gstin:
+                    maxLength: 15
+                    type: string
+                language:
+                    type: string
+                phone:
+                    type: string
+                preferences:
+                    $ref: '#/components/schemas/user.Preferences'
+                timezone:
+                    type: string
+                webhook_url:
+                    type: string
+            type: object
+        dto.UserResponse:
+            properties:
+                app_id:
+                    type: string
+                balance_paisa:
+                    type: integer
+                billing_address:
+                    $ref: '#/components/schemas/user.BillingAddress'
+                billing_meta:
+                    additionalProperties: true
+                    type: object
+                created_at:
+                    type: string
+                devices:
+                    items:
+                        $ref: '#/components/schemas/user.Device'
+                    type: array
+                email:
+                    type: string
+                external_id:
+                    type: string
+                full_name:
+                    type: string
+                gstin:
+                    type: string
+                language:
+                    type: string
+                phone:
+                    type: string
+                preferences:
+                    $ref: '#/components/schemas/user.Preferences'
+                timezone:
+                    type: string
+                updated_at:
+                    type: string
+                user_id:
+                    type: string
+                webhook_url:
+                    type: string
+            type: object
+        dto.VerifyOTPRequest:
+            properties:
+                email:
+                    type: string
+                otp_code:
+                    type: string
+            required:
+                - email
+                - otp_code
+            type: object
+        environment.CreateRequest:
+            properties:
+                app_id:
+                    type: string
+                name:
+                    enum:
+                        - development
+                        - staging
+                        - production
+                    type: string
+            required:
+                - app_id
+                - name
+            type: object
+        environment.PromoteRequest:
+            properties:
+                resources:
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+                source_env_id:
+                    type: string
+                target_env_id:
+                    type: string
+            required:
+                - resources
+                - source_env_id
+                - target_env_id
+            type: object
+        handlers.CheckInRequest:
+            properties:
+                dynamic_url:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - user_id
+            type: object
+        handlers.InboundWebhookRequest:
+            properties:
+                event:
+                    type: string
+                payload:
+                    additionalProperties: true
+                    type: object
+                user_id:
+                    type: string
+            required:
+                - event
+                - user_id
+            type: object
+        handlers.RichDraftSubmitRequest:
+            properties:
+                revision:
+                    type: string
+            type: object
+        handlers.RichDraftUpdateRequest:
+            properties:
+                revision:
+                    type: string
+                template:
+                    $ref: '#/components/schemas/whatsapp.RichTemplate'
+            type: object
+        handlers.SSETokenResponseDoc:
+            properties:
+                expires_in:
+                    type: integer
+                sse_token:
+                    type: string
+                user_id:
+                    type: string
+            type: object
+        handlers.connectRequest:
+            properties:
+                app_id:
+                    description: FRN app to associate
+                    type: string
+                code:
+                    type: string
+                phone_number_id:
+                    type: string
+                revision:
+                    type: integer
+                waba_id:
+                    type: string
+            required:
+                - app_id
+                - code
+            type: object
+        handlers.createTokenRequest:
+            properties:
+                user_id:
+                    description: external_id or internal UUID
+                    type: string
+            required:
+                - user_id
+            type: object
+        handlers.registerCustomProviderRequest:
+            properties:
+                channel:
+                    maxLength: 50
+                    minLength: 1
+                    type: string
+                headers:
+                    additionalProperties:
+                        type: string
+                    type: object
+                kind:
+                    enum:
+                        - generic
+                        - discord
+                        - slack
+                        - teams
+                    type: string
+                name:
+                    maxLength: 50
+                    minLength: 1
+                    type: string
+                signature_version:
+                    enum:
+                        - v1
+                        - v2
+                    type: string
+                webhook_url:
+                    type: string
+            required:
+                - channel
+                - name
+                - webhook_url
+            type: object
+        handlers.replyRequest:
+            properties:
+                idempotency_key:
+                    type: string
+                template_name:
+                    type: string
+                text:
+                    type: string
+            type: object
+        notification.Action:
+            properties:
+                label:
+                    type: string
+                style:
+                    description: primary | danger | default
+                    type: string
+                type:
+                    description: link | submit | dismiss
+                    type: string
+                url:
+                    type: string
+                value:
+                    type: string
+            type: object
+        notification.Attachment:
+            properties:
+                alt_text:
+                    type: string
+                content_base64:
+                    description: |-
+                        New optional fields (file-attachments feature). All omitempty —
+                        callers using only URL continue to work unchanged.
+                    type: string
+                content_id:
+                    description: RFC 2392 cid:* token for inline HTML email embed
+                    type: string
+                disposition:
+                    description: '"attachment" (default) | "inline"'
+                    type: string
+                file_id:
+                    type: string
+                mime_type:
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: integer
+                type:
+                    description: image | video | file | audio
+                    type: string
+                url:
+                    type: string
+            type: object
+        notification.BroadcastRecipientOutcome:
+            properties:
+                notification_id:
+                    type: string
+                outcome:
+                    type: string
+                user_id:
+                    type: string
+            type: object
+        notification.Field:
+            properties:
+                inline:
+                    type: boolean
+                key:
+                    type: string
+                value:
+                    type: string
+            type: object
+        notification.Mention:
+            properties:
+                display:
+                    type: string
+                platform:
+                    description: discord | slack | teams
+                    type: string
+                platform_id:
+                    type: string
+            type: object
+        notification.Poll:
+            properties:
+                choices:
+                    items:
+                        $ref: '#/components/schemas/notification.PollChoice'
+                    type: array
+                duration_hours:
+                    type: integer
+                multi_select:
+                    type: boolean
+                question:
+                    type: string
+            type: object
+        notification.PollChoice:
+            properties:
+                emoji:
+                    type: string
+                label:
+                    type: string
+            type: object
+        notification.Style:
+            properties:
+                color:
+                    description: hex override, e.g. "#3498DB"
+                    type: string
+                severity:
+                    description: info | success | warning | danger
+                    type: string
+            type: object
+        resourcelink.ImportRequest:
+            properties:
+                resources:
+                    items:
+                        $ref: '#/components/schemas/resourcelink.ResourceType'
+                    minItems: 1
+                    type: array
+                source_app_id:
+                    type: string
+            required:
+                - resources
+                - source_app_id
+            type: object
+        resourcelink.ResourceType:
+            enum:
+                - users
+                - templates
+                - workflows
+                - digest_rules
+                - topics
+                - providers
+            type: string
+            x-enum-varnames:
+                - TypeUser
+                - TypeTemplate
+                - TypeWorkflow
+                - TypeDigest
+                - TypeTopic
+                - TypeProvider
+        schedule.CreateRequest:
+            properties:
+                cron:
+                    type: string
+                environment_id:
+                    type: string
+                name:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+                payload:
+                    additionalProperties: {}
+                    type: object
+                target_type:
+                    allOf:
+                        - $ref: '#/components/schemas/schedule.TargetType'
+                    enum:
+                        - all
+                        - topic
+                timezone:
+                    description: IANA timezone; empty = UTC
+                    type: string
+                topic_id:
+                    description: Required when target_type=topic
+                    type: string
+                workflow_trigger_id:
+                    type: string
+            required:
+                - cron
+                - name
+                - target_type
+                - workflow_trigger_id
+            type: object
+        schedule.TargetType:
+            enum:
+                - all
+                - topic
+            type: string
+            x-enum-comments:
+                TargetAll: All app users
+                TargetTopic: Topic subscribers
+            x-enum-descriptions:
+                - All app users
+                - Topic subscribers
+            x-enum-varnames:
+                - TargetAll
+                - TargetTopic
+        schedule.UpdateRequest:
+            properties:
+                cron:
+                    type: string
+                name:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+                payload:
+                    additionalProperties: {}
+                    type: object
+                status:
+                    enum:
+                        - active
+                        - inactive
+                    type: string
+                target_type:
+                    $ref: '#/components/schemas/schedule.TargetType'
+                timezone:
+                    type: string
+                topic_id:
+                    type: string
+                workflow_trigger_id:
+                    type: string
+            type: object
+        template.AttributeVar:
+            properties:
+                name:
+                    type: string
+                type:
+                    description: '"image", "url", "attribute"'
+                    type: string
+            type: object
+        template.ControlValues:
+            additionalProperties: true
+            type: object
+        template.TemplateControl:
+            properties:
+                default:
+                    description: Default value
+                    type: string
+                group:
+                    description: UI grouping (e.g., "Hero", "CTA", "Footer")
+                    type: string
+                help_text:
+                    description: Tooltip/description
+                    type: string
+                key:
+                    description: Variable name (e.g., "button_text")
+                    type: string
+                label:
+                    description: UI label (e.g., "Call to Action Text")
+                    type: string
+                options:
+                    description: For "select" type
+                    items:
+                        type: string
+                    type: array
+                placeholder:
+                    description: Input placeholder
+                    type: string
+                required:
+                    description: Whether the field is required
+                    type: boolean
+                type:
+                    description: Control type
+                    enum:
+                        - text
+                        - textarea
+                        - url
+                        - color
+                        - image
+                        - number
+                        - boolean
+                        - select
+                    type: string
+            required:
+                - type
+            type: object
+        tenant.CreateRequest:
+            properties:
+                name:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+            required:
+                - name
+            type: object
+        tenant.InviteMemberRequest:
+            properties:
+                email:
+                    type: string
+                role:
+                    enum:
+                        - admin
+                        - member
+                    type: string
+            required:
+                - email
+                - role
+            type: object
+        tenant.UpdateMemberRoleRequest:
+            properties:
+                role:
+                    enum:
+                        - owner
+                        - admin
+                        - member
+                    type: string
+            required:
+                - role
+            type: object
+        tenant.UpdateRequest:
+            properties:
+                name:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+            type: object
+        topic.AddSubscribersRequest:
+            properties:
+                user_ids:
+                    items:
+                        type: string
+                    minItems: 1
+                    type: array
+            required:
+                - user_ids
+            type: object
+        topic.CreateRequest:
+            properties:
+                description:
+                    maxLength: 1024
+                    type: string
+                environment_id:
+                    type: string
+                key:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                on_subscribe_trigger_id:
+                    description: 'Phase 4: workflow to trigger on subscribe'
+                    type: string
+            required:
+                - key
+                - name
+            type: object
+        topic.UpdateRequest:
+            properties:
+                description:
+                    maxLength: 1024
+                    type: string
+                name:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                on_subscribe_trigger_id:
+                    description: 'Phase 4: workflow to trigger on subscribe'
+                    type: string
+            type: object
+        user.BillingAddress:
+            properties:
+                city:
+                    type: string
+                country:
+                    type: string
+                line1:
+                    type: string
+                line2:
+                    type: string
+                pincode:
+                    type: string
+                state:
+                    type: string
+            type: object
+        user.CategoryPreference:
+            properties:
+                enabled:
+                    type: boolean
+                enabled_channels:
+                    items:
+                        type: string
+                    type: array
+            type: object
+        user.Device:
+            properties:
+                active:
+                    type: boolean
+                device_id:
+                    type: string
+                last_seen:
+                    type: string
+                platform:
+                    description: ios, android, web
+                    type: string
+                registered_at:
+                    type: string
+                token:
+                    type: string
+            type: object
+        user.Preferences:
+            properties:
+                categories:
+                    additionalProperties:
+                        $ref: '#/components/schemas/user.CategoryPreference'
+                    description: Category-specific preferences
+                    type: object
+                daily_limit:
+                    description: Max notifications per day
+                    type: integer
+                discord_enabled:
+                    description: Phase 3
+                    type: boolean
+                dnd:
+                    description: Global Do Not Disturb
+                    type: boolean
+                email_enabled:
+                    type: boolean
+                push_enabled:
+                    type: boolean
+                quiet_hours:
+                    $ref: '#/components/schemas/user.QuietHours'
+                slack_enabled:
+                    description: Phase 3
+                    type: boolean
+                sms_enabled:
+                    type: boolean
+                throttle:
+                    additionalProperties:
+                        $ref: '#/components/schemas/user.ThrottleConfig'
+                    description: Per-channel throttle overrides (Phase 2)
+                    type: object
+                whatsapp_enabled:
+                    description: Phase 3
+                    type: boolean
+            type: object
+        user.QuietHours:
+            properties:
+                enabled:
+                    type: boolean
+                end:
+                    description: 'Format: "HH:MM"'
+                    type: string
+                start:
+                    description: 'Format: "HH:MM"'
+                    type: string
+            type: object
+        user.ThrottleConfig:
+            properties:
+                max_per_day:
+                    type: integer
+                max_per_hour:
+                    type: integer
+            type: object
+        whatsapp.ApprovalState:
+            enum:
+                - draft
+                - pending
+                - partially_submitted
+                - approved
+                - rejected
+                - disabled
+            type: string
+            x-enum-comments:
+                ApprovalApproved: approved by at least one configured provider
+                ApprovalDisabled: approved then disabled by provider (rare)
+                ApprovalDraft: never submitted
+                ApprovalPartiallySubmitted: submitted to one provider, the other failed
+                ApprovalPending: submitted, awaiting at least one provider
+                ApprovalRejected: rejected by all configured providers
+            x-enum-descriptions:
+                - never submitted
+                - submitted, awaiting at least one provider
+                - submitted to one provider, the other failed
+                - approved by at least one configured provider
+                - rejected by all configured providers
+                - approved then disabled by provider (rare)
+            x-enum-varnames:
+                - ApprovalDraft
+                - ApprovalPending
+                - ApprovalPartiallySubmitted
+                - ApprovalApproved
+                - ApprovalRejected
+                - ApprovalDisabled
+        whatsapp.Button:
+            properties:
+                coupon_code:
+                    type: string
+                example:
+                    description: required by Meta for URL with {{n}}
+                    type: string
+                payload:
+                    type: string
+                phone_number:
+                    type: string
+                text:
+                    type: string
+                track_clicks:
+                    type: boolean
+                type:
+                    $ref: '#/components/schemas/whatsapp.ButtonType'
+                url:
+                    type: string
+            type: object
+        whatsapp.ButtonType:
+            enum:
+                - QUICK_REPLY
+                - URL
+                - PHONE_NUMBER
+                - COPY_CODE
+            type: string
+            x-enum-varnames:
+                - ButtonQuickReply
+                - ButtonURL
+                - ButtonPhone
+                - ButtonCopyCode
+        whatsapp.CarouselCard:
+            properties:
+                body:
+                    description: ≤160 chars
+                    type: string
+                buttons:
+                    description: 1..2 per card
+                    items:
+                        $ref: '#/components/schemas/whatsapp.Button'
+                    type: array
+                header_image_url:
+                    type: string
+                header_video_url:
+                    type: string
+                variables:
+                    description: names matching {{1}}..{{n}}
+                    items:
+                        type: string
+                    type: array
+            type: object
+        whatsapp.Header:
+            properties:
+                document_url:
+                    type: string
+                image_url:
+                    type: string
+                text:
+                    type: string
+                video_url:
+                    type: string
+            type: object
+        whatsapp.InboundConfig:
+            properties:
+                auto_reply_template_id:
+                    type: string
+                auto_reply_text:
+                    type: string
+                enabled:
+                    type: boolean
+                route_action:
+                    $ref: '#/components/schemas/whatsapp.InboundRouteAction'
+                webhook_forward_url:
+                    type: string
+                workflow_trigger_id:
+                    type: string
+            type: object
+        whatsapp.InboundRouteAction:
+            enum:
+                - auto_reply
+                - workflow_trigger
+                - webhook_forward
+                - inbox
+            type: string
+            x-enum-varnames:
+                - RouteAutoReply
+                - RouteWorkflow
+                - RouteWebhookForward
+                - RouteInbox
+        whatsapp.ListRow:
+            properties:
+                description:
+                    description: ≤72 chars
+                    type: string
+                id:
+                    description: returned as ReplyID on tap
+                    type: string
+                title:
+                    description: ≤24 chars
+                    type: string
+            type: object
+        whatsapp.ListSection:
+            properties:
+                rows:
+                    description: 1..10 per section
+                    items:
+                        $ref: '#/components/schemas/whatsapp.ListRow'
+                    type: array
+                title:
+                    type: string
+            type: object
+        whatsapp.MetaBinding:
+            properties:
+                reason:
+                    type: string
+                status:
+                    description: APPROVED | PENDING | REJECTED | DISABLED
+                    type: string
+                submitted_at:
+                    type: string
+                template_id:
+                    type: string
+                template_name:
+                    type: string
+                updated_at:
+                    type: string
+            type: object
+        whatsapp.ProviderBindings:
+            properties:
+                meta:
+                    $ref: '#/components/schemas/whatsapp.MetaBinding'
+                twilio:
+                    $ref: '#/components/schemas/whatsapp.TwilioBinding'
+            type: object
+        whatsapp.RichTemplate:
+            properties:
+                app_id:
+                    type: string
+                approval_state:
+                    $ref: '#/components/schemas/whatsapp.ApprovalState'
+                body:
+                    description: |-
+                        Authoring payload (provider-agnostic). Optional per kind:
+                          carousel:     Cards (required, 2..10)
+                          coupon_code:  Body, CouponCode
+                          cta_url:      Body, Buttons (1 URL button)
+                          quick_reply:  Body, Buttons (1..3 QUICK_REPLY buttons)
+                          list:         Body, ListSections, ListButtonText
+                    type: string
+                buttons:
+                    items:
+                        $ref: '#/components/schemas/whatsapp.Button'
+                    type: array
+                cards:
+                    items:
+                        $ref: '#/components/schemas/whatsapp.CarouselCard'
+                    type: array
+                category:
+                    description: MARKETING | UTILITY | AUTHENTICATION
+                    type: string
+                connection_id:
+                    type: string
+                connection_revision:
+                    type: integer
+                coupon_code:
+                    type: string
+                created_at:
+                    type: string
+                environment_id:
+                    type: string
+                footer:
+                    type: string
+                header:
+                    $ref: '#/components/schemas/whatsapp.Header'
+                id:
+                    description: FRN-internal ID (frn_tpl_*)
+                    type: string
+                kind:
+                    $ref: '#/components/schemas/whatsapp.RichTemplateKind'
+                language:
+                    description: BCP-47, e.g. en_US
+                    type: string
+                list_button_text:
+                    type: string
+                list_sections:
+                    items:
+                        $ref: '#/components/schemas/whatsapp.ListSection'
+                    type: array
+                name:
+                    description: snake_case, unique per app
+                    type: string
+                provider_account_id:
+                    type: string
+                provider_type:
+                    type: string
+                providers:
+                    allOf:
+                        - $ref: '#/components/schemas/whatsapp.ProviderBindings'
+                    description: Provider linkage (filled after submission).
+                tenant_id:
+                    type: string
+                updated_at:
+                    type: string
+            type: object
+        whatsapp.RichTemplateKind:
+            enum:
+                - carousel
+                - coupon_code
+                - cta_url
+                - quick_reply
+                - list
+                - single_product
+                - multi_product
+                - catalog
+            type: string
+            x-enum-varnames:
+                - KindCarousel
+                - KindCouponCode
+                - KindCTAURL
+                - KindQuickReply
+                - KindList
+                - KindSingleProduct
+                - KindMultiProduct
+                - KindCatalog
+        whatsapp.TwilioBinding:
+            properties:
+                approval_sid:
+                    type: string
+                content_sid:
+                    type: string
+                reason:
+                    type: string
+                status:
+                    description: approved | pending | rejected | unsubmitted
+                    type: string
+                submitted_at:
+                    type: string
+                updated_at:
+                    type: string
+            type: object
+        workflow.Condition:
+            properties:
+                field:
+                    type: string
+                operator:
+                    $ref: '#/components/schemas/workflow.ConditionOperator'
+                value: {}
+            type: object
+        workflow.ConditionOperator:
+            enum:
+                - eq
+                - neq
+                - contains
+                - gt
+                - lt
+                - exists
+                - not_read
+            type: string
+            x-enum-varnames:
+                - OpEquals
+                - OpNotEquals
+                - OpContains
+                - OpGreaterThan
+                - OpLessThan
+                - OpExists
+                - OpNotRead
+        workflow.CreateRequest:
+            properties:
+                description:
+                    type: string
+                environment_id:
+                    type: string
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                status:
+                    $ref: '#/components/schemas/workflow.WorkflowStatus'
+                steps:
+                    items:
+                        $ref: '#/components/schemas/workflow.Step'
+                    minItems: 1
+                    type: array
+                trigger_id:
+                    maxLength: 100
+                    minLength: 1
+                    type: string
+            required:
+                - name
+                - steps
+                - trigger_id
+            type: object
+        workflow.Step:
+            properties:
+                config:
+                    $ref: '#/components/schemas/workflow.StepConfig'
+                id:
+                    type: string
+                metadata:
+                    additionalProperties: {}
+                    type: object
+                name:
+                    type: string
+                on_failure:
+                    type: string
+                on_success:
+                    type: string
+                order:
+                    type: integer
+                skip_if:
+                    $ref: '#/components/schemas/workflow.Condition'
+                type:
+                    $ref: '#/components/schemas/workflow.StepType'
+            type: object
+        workflow.StepConfig:
+            properties:
+                channel:
+                    description: Channel step
+                    type: string
+                condition:
+                    allOf:
+                        - $ref: '#/components/schemas/workflow.Condition'
+                    description: Condition step
+                digest_key:
+                    description: Digest step
+                    type: string
+                duration:
+                    description: Delay step
+                    type: string
+                max_batch:
+                    type: integer
+                provider:
+                    type: string
+                template_id:
+                    type: string
+                window:
+                    type: string
+            type: object
+        workflow.StepType:
+            enum:
+                - channel
+                - delay
+                - digest
+                - condition
+            type: string
+            x-enum-comments:
+                StepTypeChannel: Deliver via a channel
+                StepTypeCondition: Branch based on a condition
+                StepTypeDelay: Wait for a duration
+                StepTypeDigest: Aggregate events over a window
+            x-enum-descriptions:
+                - Deliver via a channel
+                - Wait for a duration
+                - Aggregate events over a window
+                - Branch based on a condition
+            x-enum-varnames:
+                - StepTypeChannel
+                - StepTypeDelay
+                - StepTypeDigest
+                - StepTypeCondition
+        workflow.TriggerByTopicRequest:
+            properties:
+                payload:
+                    additionalProperties: {}
+                    type: object
+                topic_id:
+                    type: string
+                trigger_id:
+                    type: string
+            required:
+                - topic_id
+                - trigger_id
+            type: object
+        workflow.TriggerRequest:
+            properties:
+                overrides:
+                    additionalProperties: {}
+                    type: object
+                payload:
+                    additionalProperties: {}
+                    type: object
+                transaction_id:
+                    type: string
+                trigger_id:
+                    type: string
+                user_id:
+                    type: string
+            required:
+                - trigger_id
+                - user_id
+            type: object
+        workflow.UpdateRequest:
+            properties:
+                description:
+                    type: string
+                name:
+                    maxLength: 100
+                    minLength: 3
+                    type: string
+                status:
+                    $ref: '#/components/schemas/workflow.WorkflowStatus'
+                steps:
+                    items:
+                        $ref: '#/components/schemas/workflow.Step'
+                    minItems: 1
+                    type: array
+            type: object
+        workflow.WorkflowStatus:
+            enum:
+                - draft
+                - active
+                - inactive
+            type: string
+            x-enum-varnames:
+                - WorkflowStatusDraft
+                - WorkflowStatusActive
+                - WorkflowStatusInactive
+    securitySchemes:
+        ApiKeyAuth:
+            description: Application API key for tenant-facing endpoints
+            in: header
+            name: X-API-Key
+            type: apiKey
+        BearerAuth:
+            description: 'Authorization: Bearer APP_API_KEY for application routes; account JWT for dashboard management routes.'
+            in: header
+            name: Authorization
+            type: apiKey
+info:
+    contact:
+        email: support@freerangenotify.com
+        name: API Support
+    description: High-performance notification service with multi-channel delivery support
+    license:
+        name: MIT
+        url: https://opensource.org/licenses/MIT
+    termsOfService: http://swagger.io/terms/
+    title: FreeRangeNotify API
+    version: 1.0.15
+openapi: 3.0.3
+paths:
+    /v1/otp/resend:
+        post:
+            description: Re-issues a new code for an existing request_id (subject to 60s cooldown). The previous code is invalidated and attempt counter is reset.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/dto.OTPResendRequest'
+                description: OTP resend request
+                required: true
+                x-originalParamName: body
+            responses:
+                "202":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPSendResponse'
+                    description: Accepted
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "429":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Too Many Requests
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Resend an OTP
+            tags:
+                - OTP
+            x-contract-example:
+                request:
+                    request_id: ${OTP_REQUEST_ID}
+                response:
+                    error: 'otp: resend cooldown in effect'
+            x-feature-prerequisites: Requires this deployment's optional otp feature and its configured service/provider.
+    /v1/otp/send:
+        post:
+            description: Generates a one-time passcode and dispatches it through SMS, WhatsApp, or email via the standard notification pipeline. Subject to standard per-channel credit billing.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/dto.OTPSendRequest'
+                description: OTP send request
+                required: true
+                x-originalParamName: body
+            responses:
+                "202":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPSendResponse'
+                    description: Accepted
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "429":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Too Many Requests
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Internal Server Error
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Send an OTP
+            tags:
+                - OTP
+            x-contract-example:
+                request:
+                    channel: email
+                    recipient: alice@example.test
+                    ttl_seconds: 300
+                response:
+                    channel: email
+                    max_attempts: 5
+                    notification_id: ${OTP_NOTIFICATION_ID}
+                    request_id: ${OTP_REQUEST_ID}
+            x-feature-prerequisites: Requires this deployment's optional otp feature and its configured service/provider.
+    /v1/otp/verify:
+        post:
+            description: Verifies a code against a previously-issued request_id. Uses constant-time comparison and atomic attempt counting.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/dto.OTPVerifyRequest'
+                description: OTP verify request
+                required: true
+                x-originalParamName: body
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: Conflict
+                "410":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: Gone
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/dto.OTPVerifyResponse'
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Verify an OTP
+            tags:
+                - OTP
+            x-contract-example:
+                request:
+                    code: WRONG_CODE
+                    request_id: ${OTP_REQUEST_ID}
+                response:
+                    attempts_remaining: 4
+                    error: invalid_code
+                    request_id: ${OTP_REQUEST_ID}
+                    verified: false
+            x-feature-prerequisites: Requires this deployment's optional otp feature and its configured service/provider.
+servers:
+    - url: /

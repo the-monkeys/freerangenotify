@@ -18,6 +18,16 @@ func channelAccess(ctx context.Context, app *application.Application, userID str
 }
 
 // RevealAPIKey is explicit and owner-only; routine reads carry no SDK credential.
+// @Summary RevealAPI Key
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Application
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/reveal-key [post]
+// @Security BearerAuth
 func (h *ApplicationHandler) RevealAPIKey(c *fiber.Ctx) error {
 	userID, _ := c.Locals("user_id").(string)
 	app, role, err := h.authorizeAppAccess(c, c.Params("id"), userID)

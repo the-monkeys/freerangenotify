@@ -23,6 +23,18 @@ func NewScheduleHandler(service schedule.Service, v *validator.Validator, logger
 }
 
 // Create handles POST /v1/workflows/schedules
+// @Summary Create
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Schedule
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/workflows/schedules [post]
+// @Accept json
+// @Param body body schedule.CreateRequest true "Request body"
 func (h *ScheduleHandler) Create(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -48,6 +60,16 @@ func (h *ScheduleHandler) Create(c *fiber.Ctx) error {
 }
 
 // List handles GET /v1/workflows/schedules
+// @Summary List
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Schedule
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/workflows/schedules [get]
 func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	limit, _ := strconv.Atoi(c.Query("limit", "20"))
@@ -65,6 +87,17 @@ func (h *ScheduleHandler) List(c *fiber.Ctx) error {
 }
 
 // Get handles GET /v1/workflows/schedules/:id
+// @Summary Get
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Schedule
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/workflows/schedules/{id} [get]
 func (h *ScheduleHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -83,6 +116,19 @@ func (h *ScheduleHandler) Get(c *fiber.Ctx) error {
 }
 
 // Update handles PUT /v1/workflows/schedules/:id
+// @Summary Update
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Schedule
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/workflows/schedules/{id} [put]
+// @Accept json
+// @Param body body schedule.UpdateRequest true "Request body"
 func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")
@@ -112,6 +158,17 @@ func (h *ScheduleHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE /v1/workflows/schedules/:id
+// @Summary Delete
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Schedule
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/workflows/schedules/{id} [delete]
 func (h *ScheduleHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	id := c.Params("id")

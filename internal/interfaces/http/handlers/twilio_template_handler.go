@@ -95,6 +95,18 @@ func (h *TwilioTemplateHandler) resolveTwilioConfig(ctx context.Context, appID s
 
 // CreateTemplate handles POST /v1/twilio/templates
 // Creates a new Twilio Content Template.
+// @Summary Create Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Accept json
+// @Param body body dto.CreateTwilioTemplateRequest true "Request"
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates [post]
 func (h *TwilioTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	var req dto.CreateTwilioTemplateRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -155,6 +167,16 @@ func (h *TwilioTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 
 // ListTemplates handles GET /v1/twilio/templates
 // Lists all Twilio Content Templates with their approval status.
+// @Summary List Templates
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates [get]
 func (h *TwilioTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 	pageSize := c.Query("page_size", "50")
 	search := c.Query("search")
@@ -188,6 +210,17 @@ func (h *TwilioTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 // GetTemplate handles GET /v1/twilio/templates/:content_sid
 // Fetches a single Twilio Content Template by its SID.
+// @Summary Get Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid} [get]
 func (h *TwilioTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -218,6 +251,17 @@ func (h *TwilioTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 
 // UpdateTemplate handles PUT /v1/twilio/templates/:content_sid
 // Updates a Twilio Content Template (only before WhatsApp approval submission).
+// @Summary Update Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid} [put]
 func (h *TwilioTemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -257,6 +301,17 @@ func (h *TwilioTemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 
 // DeleteTemplate handles DELETE /v1/twilio/templates/:content_sid
 // Deletes a Twilio Content Template.
+// @Summary Delete Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid} [delete]
 func (h *TwilioTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -285,6 +340,19 @@ func (h *TwilioTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 
 // SubmitApproval handles POST /v1/twilio/templates/:content_sid/approve
 // Submits a template for WhatsApp approval.
+// @Summary Submit Approval
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Accept json
+// @Param body body dto.SubmitTwilioApprovalRequest true "Request"
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid}/approve [post]
 func (h *TwilioTemplateHandler) SubmitApproval(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -341,6 +409,17 @@ func (h *TwilioTemplateHandler) SubmitApproval(c *fiber.Ctx) error {
 
 // GetApprovalStatus handles GET /v1/twilio/templates/:content_sid/approval
 // Fetches the current WhatsApp approval status.
+// @Summary Get Approval Status
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid}/approval [get]
 func (h *TwilioTemplateHandler) GetApprovalStatus(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -372,6 +451,17 @@ func (h *TwilioTemplateHandler) GetApprovalStatus(c *fiber.Ctx) error {
 
 // SyncTemplate handles POST /v1/twilio/templates/:content_sid/sync
 // Fetches latest approval status and broadcasts via SSE.
+// @Summary Sync Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid}/sync [post]
 func (h *TwilioTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {
@@ -432,6 +522,19 @@ func (h *TwilioTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 
 // PreviewTemplate handles POST /v1/twilio/templates/:content_sid/preview
 // Fetches the template and renders it with provided variable values.
+// @Summary Preview Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags TwilioTemplate
+// @Produce json
+// @Param content_sid path string true "content_sid"
+// @Accept json
+// @Param body body dto.PreviewTwilioTemplateRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/twilio/templates/{content_sid}/preview [post]
 func (h *TwilioTemplateHandler) PreviewTemplate(c *fiber.Ctx) error {
 	contentSid := c.Params("content_sid")
 	if contentSid == "" {

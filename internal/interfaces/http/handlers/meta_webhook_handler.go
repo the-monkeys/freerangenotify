@@ -63,6 +63,14 @@ func NewMetaWebhookHandler(
 }
 
 // VerifyWebhook handles GET /v1/webhooks/meta/whatsapp — Meta webhook verification (hub.challenge).
+// @Summary Verify Webhook
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags MetaWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/meta/whatsapp [get]
 func (h *MetaWebhookHandler) VerifyWebhook(c *fiber.Ctx) error {
 	mode := c.Query("hub.mode")
 	token := c.Query("hub.verify_token")
@@ -81,6 +89,14 @@ func (h *MetaWebhookHandler) VerifyWebhook(c *fiber.Ctx) error {
 
 // HandleWebhook handles POST /v1/webhooks/meta/whatsapp — inbound messages and status updates.
 // Meta requires a 200 OK response within 5 seconds; processing is kept lightweight.
+// @Summary Handle Webhook
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags MetaWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/meta/whatsapp [post]
 func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 	rawBody := c.Body()
 

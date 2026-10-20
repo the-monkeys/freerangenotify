@@ -57,6 +57,16 @@ func NewWhatsAppTemplateHandler(
 
 // CreateTemplate handles POST /v1/whatsapp/templates
 // Submits a new template to Meta for approval.
+// @Summary Create Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppTemplate
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/templates [post]
 func (h *WhatsAppTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	wa, appID, err := h.resolveMetaConfig(c)
 	if err != nil {
@@ -127,6 +137,16 @@ func (h *WhatsAppTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 
 // ListTemplates handles GET /v1/whatsapp/templates
 // Lists all templates for the app's WABA with their approval status.
+// @Summary List Templates
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppTemplate
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/templates [get]
 func (h *WhatsAppTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 	wa, _, err := h.resolveMetaConfig(c)
 	if err != nil {
@@ -170,6 +190,17 @@ func (h *WhatsAppTemplateHandler) ListTemplates(c *fiber.Ctx) error {
 
 // GetTemplate handles GET /v1/whatsapp/templates/:name
 // Gets details for a specific template by name.
+// @Summary Get Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppTemplate
+// @Produce json
+// @Param name path string true "name"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/templates/{name} [get]
 func (h *WhatsAppTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 	wa, _, err := h.resolveMetaConfig(c)
 	if err != nil {
@@ -219,6 +250,17 @@ func (h *WhatsAppTemplateHandler) GetTemplate(c *fiber.Ctx) error {
 }
 
 // DeleteTemplate handles DELETE /v1/whatsapp/templates/:name
+// @Summary Delete Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppTemplate
+// @Produce json
+// @Param name path string true "name"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/templates/{name} [delete]
 func (h *WhatsAppTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	wa, appID, err := h.resolveMetaConfig(c)
 	if err != nil {
@@ -267,6 +309,17 @@ func (h *WhatsAppTemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 
 // SyncTemplate handles POST /v1/whatsapp/templates/:name/sync
 // Force-refreshes template status from Meta.
+// @Summary Sync Template
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppTemplate
+// @Produce json
+// @Param name path string true "name"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/templates/{name}/sync [post]
 func (h *WhatsAppTemplateHandler) SyncTemplate(c *fiber.Ctx) error {
 	wa, appID, err := h.resolveMetaConfig(c)
 	if err != nil {

@@ -61,6 +61,18 @@ func (h *ChannelConnectionHandler) view(c *channelconnection.Connection, inherit
 	}
 	return fiber.Map{"id": c.ID, "app_id": c.AppID, "environment_id": c.EnvironmentID, "channel": c.Channel, "provider": c.Provider, "credential_source": c.CredentialSource, "account_id": c.AccountID, "sender_id": c.SenderID, "revision": revision, "effective_revision": c.Revision, "readiness": c.Readiness, "facts": c.Facts, "secret_configured": configured, "inherited": inherited, "writes_enabled": h.Service.WritesEnabled, "meta_enabled": h.Service.MetaEnabled == nil || *h.Service.MetaEnabled, "exotel": c.Exotel, "exotel_enabled": h.Service.ExotelEnabled}
 }
+
+// @Summary Get
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags ChannelConnection
+// @Produce json
+// @Param id path string true "id"
+// @Param channel path string true "channel"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/channel-connections/{channel} [get]
+// @Security BearerAuth
 func (h *ChannelConnectionHandler) Get(c *fiber.Ctx) error {
 	app, env, ch, err := h.scope(c, false)
 	if err != nil {
@@ -119,6 +131,18 @@ func connectionHTTPError(err error) error {
 	}
 	return pkgerrors.BadRequest("Connection update rejected; check account, sender and encryption configuration")
 }
+
+// @Summary Update
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags ChannelConnection
+// @Produce json
+// @Param id path string true "id"
+// @Param channel path string true "channel"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/channel-connections/{channel} [put]
+// @Security BearerAuth
 func (h *ChannelConnectionHandler) Update(c *fiber.Ctx) error {
 	app, env, ch, err := h.scope(c, true)
 	if err != nil {
@@ -148,6 +172,18 @@ func (h *ChannelConnectionHandler) Update(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"success": true, "data": h.view(row, false, row.Revision)})
 }
+
+// @Summary Validate
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags ChannelConnection
+// @Produce json
+// @Param id path string true "id"
+// @Param channel path string true "channel"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/channel-connections/{channel}/validate [post]
+// @Security BearerAuth
 func (h *ChannelConnectionHandler) Validate(c *fiber.Ctx) error {
 	app, env, ch, err := h.scope(c, true)
 	if err != nil {

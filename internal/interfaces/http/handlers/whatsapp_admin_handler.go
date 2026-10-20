@@ -61,6 +61,16 @@ func NewWhatsAppAdminHandler(
 }
 
 // GetStatus handles GET /v1/admin/whatsapp/:app_id/status
+// @Summary Get Status
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags WhatsAppAdmin
+// @Produce json
+// @Param app_id path string true "app_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/whatsapp/{app_id}/status [get]
+// @Security BearerAuth
 func (h *WhatsAppAdminHandler) GetStatus(c *fiber.Ctx) error {
 	app, err := h.authorize(c)
 	if err != nil {
@@ -118,6 +128,17 @@ type connectRequest struct {
 
 // Connect handles POST /v1/admin/whatsapp/connect
 // Exchanges the OAuth code for a token, fetches WABA + phone info, and stores credentials.
+// @Summary Connect
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags WhatsAppAdmin
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/whatsapp/connect [post]
+// @Security BearerAuth
+// @Accept json
+// @Param body body connectRequest true "Request body"
 func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -206,6 +227,16 @@ func (h *WhatsAppAdminHandler) Connect(c *fiber.Ctx) error {
 }
 
 // Disconnect handles POST /v1/admin/whatsapp/:app_id/disconnect
+// @Summary Disconnect
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags WhatsAppAdmin
+// @Produce json
+// @Param app_id path string true "app_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/whatsapp/{app_id}/disconnect [post]
+// @Security BearerAuth
 func (h *WhatsAppAdminHandler) Disconnect(c *fiber.Ctx) error {
 	app, err := h.authorize(c)
 	if err != nil {
@@ -250,6 +281,16 @@ func (h *WhatsAppAdminHandler) Disconnect(c *fiber.Ctx) error {
 
 // SubscribeWebhooks handles POST /v1/admin/whatsapp/:app_id/subscribe-webhooks
 // Subscribes the app's WABA to our webhook endpoint in Meta.
+// @Summary Subscribe Webhooks
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags WhatsAppAdmin
+// @Produce json
+// @Param app_id path string true "app_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/whatsapp/{app_id}/subscribe-webhooks [post]
+// @Security BearerAuth
 func (h *WhatsAppAdminHandler) SubscribeWebhooks(c *fiber.Ctx) error {
 	app, err := h.authorize(c)
 	if err != nil {
@@ -305,6 +346,15 @@ func (h *WhatsAppAdminHandler) SubscribeWebhooks(c *fiber.Ctx) error {
 
 // ManualConnect handles POST /v1/admin/whatsapp/manual-connect
 // Allows connecting a WABA using a pre-existing System User Access Token instead of Embedded Signup.
+// @Summary Manual Connect
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags WhatsAppAdmin
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/whatsapp/manual-connect [post]
+// @Security BearerAuth
 func (h *WhatsAppAdminHandler) ManualConnect(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {

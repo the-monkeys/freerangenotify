@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"github.com/swaggo/swag"
+	_ "github.com/the-monkeys/freerangenotify/docs"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,6 +16,14 @@ import (
 func SetupRoutes(app *fiber.App, c *container.Container) {
 	// API v1 group
 	v1 := app.Group("/v1")
+	v1.Get("/swagger/doc.json", func(ctx *fiber.Ctx) error {
+		raw, err := swag.ReadDoc()
+		if err != nil {
+			return ctx.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		ctx.Type("json")
+		return ctx.SendString(raw)
+	})
 
 	// ── Phase 2: Audit middleware (feature-gated) ──
 	// Applied globally so all state-changing requests are captured.

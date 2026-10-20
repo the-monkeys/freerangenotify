@@ -40,14 +40,13 @@ import (
 // @license.name MIT
 // @license.url https://opensource.org/licenses/MIT
 
-// @host localhost:8080
 // @BasePath /
 // @schemes http https
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and your API key
+// @description Authorization: Bearer APP_API_KEY for application routes; account JWT for dashboard management routes.
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header

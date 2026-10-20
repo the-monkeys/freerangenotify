@@ -96,8 +96,8 @@ func (h *ApplicationHandler) authorizeAppAccess(c *fiber.Ctx, appID, userID stri
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps [post]
+// @Security BearerAuth
 func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
@@ -165,8 +165,8 @@ func (h *ApplicationHandler) Create(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id} [get]
+// @Security BearerAuth
 func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -204,8 +204,8 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id} [put]
+// @Security BearerAuth
 func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -301,8 +301,8 @@ func (h *ApplicationHandler) Update(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id} [delete]
+// @Security BearerAuth
 func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -343,8 +343,8 @@ func (h *ApplicationHandler) Delete(c *fiber.Ctx) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps [get]
+// @Security BearerAuth
 func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 	// Get admin user ID from JWT context
 	userID, ok := c.Locals("user_id").(string)
@@ -455,8 +455,8 @@ func (h *ApplicationHandler) List(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/regenerate-key [post]
+// @Security BearerAuth
 func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -502,8 +502,8 @@ func (h *ApplicationHandler) RegenerateAPIKey(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/settings [put]
+// @Security BearerAuth
 func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -579,8 +579,8 @@ func (h *ApplicationHandler) UpdateSettings(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/settings [get]
+// @Security BearerAuth
 func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -606,14 +606,3 @@ func (h *ApplicationHandler) GetSettings(c *fiber.Ctx) error {
 		"data":    dto.ToSafeApplicationSettings(*settings),
 	})
 }
-
-// GetCodeSamples handles GET /v1/apps/:id/code-samples
-// @Summary Get dynamic code samples
-// @Description Get boilerplate integration code for the application with real credentials pre-filled
-// @Tags Applications
-// @Produce json
-// @Param id path string true "Application ID"
-// @Param language query string false "Specific language (go, python, java, js, cpp, rust, ruby). Defaults to all."
-// @Success 200 {object} map[string]string
-// @Security BearerAuth
-// @Router /v1/apps/{id}/code-samples [get]

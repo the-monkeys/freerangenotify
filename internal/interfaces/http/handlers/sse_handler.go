@@ -92,6 +92,18 @@ type createTokenRequest struct {
 //
 // Response:
 // { "sse_token": "sset_abc123...", "user_id": "<resolved internal UUID>", "expires_in": 900 }
+// @Summary Create Token
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags SSE
+// @Accept json
+// @Produce json
+// @Param body body createTokenRequest true "Registered recipient ID or external identifier"
+// @Success 201 {object} SSETokenResponseDoc
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/sse/tokens [post]
 func (h *SSEHandler) CreateToken(c *fiber.Ctx) error {
 	if h.redisClient == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -175,6 +187,17 @@ func (h *SSEHandler) CreateToken(c *fiber.Ctx) error {
 // Legacy flow (still supported for backward compatibility):
 //
 //	GET /v1/sse?user_id=user002&token=frn_xxx
+// @Summary Connect
+// @Description Connect with a short-lived sse_token issued by POST /v1/sse/tokens. Named notification events; reconnect with a fresh token after expiry.
+// @Tags SSE
+// @Produce text/event-stream
+// @Param sse_token query string false "Short-lived token from POST /v1/sse/tokens (recommended)"
+// @Param user_id query string false "Legacy recipient identifier"
+// @Param token query string false "Legacy API key; prefer token exchange from your backend"
+// @Success 200 {string} string "Named notification events in an SSE stream"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/sse [get]
 func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 	identity := sse.ClientIdentity{}
 	sseToken := c.Query("sse_token")
@@ -289,6 +312,15 @@ func (h *SSEHandler) Connect(c *fiber.Ctx) error {
 //
 // The frontend uses this token to connect to GET /v1/sse?sse_token=sset_... for real-time
 // dashboard notifications (e.g. org invites).
+// @Summary Create Dashboard Token
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags SSE
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/sse/token [post]
+// @Security BearerAuth
 func (h *SSEHandler) CreateDashboardToken(c *fiber.Ctx) error {
 	if h.redisClient == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
@@ -328,6 +360,15 @@ func (h *SSEHandler) CreateDashboardToken(c *fiber.Ctx) error {
 
 // AdminActivityFeed streams real-time notification status events to admin
 // dashboards via SSE. Subscribes to "notification:activity" Redis pub/sub channel.
+// @Summary Admin Activity Feed
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags SSE
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/activity-feed [get]
+// @Security BearerAuth
 func (h *SSEHandler) AdminActivityFeed(c *fiber.Ctx) error {
 	if h.redisClient == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{

@@ -35,6 +35,14 @@ func NewTwilioContentStatusHandler(svc services.WhatsAppRichTemplateService, log
 // Handle implements POST /v1/webhooks/twilio/content-status. Returns 200
 // even when the ContentSid is unknown to avoid Twilio retries flooding the
 // log for templates created outside FRN.
+// @Summary Handle
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags TwilioContentStatus
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/twilio/content-status [post]
 func (h *TwilioContentStatusHandler) Handle(c *fiber.Ctx) error {
 	if hasRepeatedFormFields(c) {
 		return c.SendStatus(fiber.StatusBadRequest)
