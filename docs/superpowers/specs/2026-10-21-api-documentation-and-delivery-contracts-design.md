@@ -4,7 +4,7 @@ Date: 2026-10-21
 
 Branch: `codex/whatsapp-sms-reliability`
 
-Status: Four-phase scope approved; this written design awaits review. Product implementation has not started.
+Status: Written design approved on 2026-10-21. The four-phase implementation plan is prepared and awaits review and execution-method selection. Product implementation has not started.
 
 ## Outcome and scope
 
@@ -158,6 +158,6 @@ Provider references checked on 2026-10-21: [Twilio carousel](https://www.twilio.
 - [x] Present the four-phase approach and obtain scope approval.
 - [x] Write the design with explicit behavior and phase acceptance criteria.
 - [x] Complete the inline specification self-review for placeholders, consistency, scope and ambiguity.
-- [ ] Obtain review of this written specification.
-- [ ] Write the detailed implementation plan after specification approval.
+- [x] Obtain review of this written specification.
+- [x] Write the detailed implementation plan after specification approval.
 - [ ] Obtain implementation-plan review and execution-method selection before product changes.
