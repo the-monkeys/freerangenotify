@@ -149,7 +149,17 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 					if e != nil || json.Unmarshal(b, &resolved) != nil {
 						return nil, fmt.Errorf("invalid resolved payload")
 					}
-					n.Content.Data["whatsapp_rich"] = resolved
+					switch resolved["kind"] {
+					case "list":
+						delete(n.Content.Data, "whatsapp_rich")
+						n.Content.Data["whatsapp_interactive"] = resolved["interactive"]
+						n.Content.Body, _ = resolved["body"].(string)
+					case "cta_url", "quick_reply":
+						delete(n.Content.Data, "whatsapp_rich")
+						n.Content.Data["whatsapp_template"] = map[string]interface{}{"name": resolved["template_name"], "language": resolved["language"], "components": resolved["components"]}
+					default:
+						n.Content.Data["whatsapp_rich"] = resolved
+					}
 				} else {
 					delete(n.Content.Data, "whatsapp_rich")
 					for key, value := range resolved {

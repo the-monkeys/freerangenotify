@@ -974,6 +974,9 @@ func (p *MetaWhatsAppProvider) buildRichMessage(rich map[string]interface{}, toN
 	}
 
 	switch kind {
+	case "cta_url", "quick_reply":
+		return p.buildTemplateMessage(map[string]interface{}{"name": templateName, "language": language, "components": rich["components"]}, toNumber), true
+
 	case "carousel":
 		cards, ok := buildCarouselCards(rich["cards"])
 		if !ok {

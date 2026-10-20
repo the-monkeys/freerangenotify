@@ -184,7 +184,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId,bindingKey="lega
                 <div>
                     <h3 className="text-lg font-semibold">WhatsApp Rich Templates</h3>
                     <p className="text-sm text-muted-foreground">
-                        Save and edit local drafts, then explicitly submit to the selected provider for approval.
+                        Save and edit local drafts, then explicitly submit to the selected provider for approval. Stored lists require an open WhatsApp service window. CTA and quick-reply templates require provider approval.
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -390,7 +390,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId,bindingKey="lega
                                         )}
                                     </div>
                                     <div className="flex flex-wrap gap-1 pt-2">
-                                        {t.approval_state==='draft'&&<><Button size="sm" variant="outline" onClick={()=>{setEditingTemplate(t);setKind(t.kind);setDraft({name:t.name,category:t.category,language:t.language,body:t.body||'',coupon_code:t.coupon_code||'',cards:(t.cards||[]).map((c:any)=>({header_image_url:c.header_image_url,body:c.body,button_text:c.buttons?.[0]?.text||'View',button_url:c.buttons?.[0]?.url||''}))});setShowCreate(true);}}>Edit draft</Button><Button size="sm" onClick={async()=>{try{await whatsappRichTemplatesAPI.submitDraft(apiKey,t.id,t.updated_at);toast.success('Template submitted for provider approval');refetch();}catch{toast.error('Submission failed. Check connection readiness and reconcile any pending provider submission.')}}}>Submit for approval</Button></>}
+                                        {t.approval_state==='draft'&&<>{['carousel','coupon_code'].includes(t.kind)&&<Button size="sm" variant="outline" onClick={()=>{setEditingTemplate(t);setKind(t.kind);setDraft({name:t.name,category:t.category,language:t.language,body:t.body||'',coupon_code:t.coupon_code||'',cards:(t.cards||[]).map((c:any)=>({header_image_url:c.header_image_url,body:c.body,button_text:c.buttons?.[0]?.text||'View',button_url:c.buttons?.[0]?.url||''}))});setShowCreate(true);}}>Edit draft</Button>}<Button size="sm" onClick={async()=>{try{await whatsappRichTemplatesAPI.submitDraft(apiKey,t.id,t.updated_at);toast.success('Template submitted for provider approval');refetch();}catch{toast.error('Submission failed. Check connection readiness and reconcile any pending provider submission.')}}}>Submit for approval</Button></>}
                                         <Button size="sm" variant="outline" onClick={() => handlePreview(t.id)}>
                                             <Eye className="h-3.5 w-3.5 mr-1" /> Preview
                                         </Button>

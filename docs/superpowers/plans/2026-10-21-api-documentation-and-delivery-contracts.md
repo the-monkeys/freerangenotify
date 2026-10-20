@@ -166,11 +166,11 @@ For every task: inspect the scoped diff, run `git diff --check`, stage only its 
 
 **Interfaces:** Preserve `ResolveSendPayload(ctx context.Context, appID, notificationID string, payload whatsapp.SendPayload) (map[string]interface{}, error)` and existing public authoring models. Keep its resolved-map return shape; the admission wrapper translates resolved `kind: list` to the working `data.whatsapp_interactive` input and approved CTA/quick reply to `data.whatsapp_template`/components usable by the existing Meta renderer. Keep `providers.WhatsAppPayloadKind` output `text` for window-governed interactive lists and `template` for approved templates.
 
-- [ ] **1. Add `TestStoredWhatsAppRichDeliveryContract` over create/load/resolve/admit/render:** a stored list works in an open window without a fictional Meta binding, fails closed outside it; approved CTA/quick reply retain template identity/components and work outside the window; draft/rejected/unbound and cross-app/environment templates cannot dispatch. Compare the historical raw payload path and assert identical route/quote identity for equivalent content.
-- [ ] **2. Run RED:** `go test -p 2 ./internal/usecases/services ./internal/infrastructure/providers -run 'TestStoredWhatsAppRich|TestWhatsAppPayload' -count=1`.
-- [ ] **3. Implement translation into the working payload paths before classification; retain approval, connection ownership, destination integrity, provider selection and billing checks.** Add explicit rendering where required rather than returning a fallback kind that silently loses buttons. Update the UI capability/error state for unsupported combinations.
-- [ ] **4. Run GREEN:** targeted and existing raw/rich/CSW/quote tests pass. Check configured-version payload details against official Meta docs before updating strict mock fixtures; a mock pass is not a live approval or send.
-- [ ] **5. Commit:** `fix: complete stored Meta interactive and button delivery`.
+- [x] **1. Add `TestStoredWhatsAppRichDeliveryContract` over create/load/resolve/admit/render:** a stored list works in an open window without a fictional Meta binding, fails closed outside it; approved CTA/quick reply retain template identity/components and work outside the window; draft/rejected/unbound and cross-app/environment templates cannot dispatch. Compare the historical raw payload path and assert identical route/quote identity for equivalent content.
+- [x] **2. Run RED:** `go test -p 2 ./internal/usecases/services ./internal/infrastructure/providers -run 'TestStoredWhatsAppRich|TestWhatsAppPayload' -count=1`.
+- [x] **3. Implement translation into the working payload paths before classification; retain approval, connection ownership, destination integrity, provider selection and billing checks.** Add explicit rendering where required rather than returning a fallback kind that silently loses buttons. Update the UI capability/error state for unsupported combinations.
+- [x] **4. Run GREEN:** targeted and existing raw/rich/CSW/quote tests pass. Check configured-version payload details against official Meta docs before updating strict mock fixtures; a mock pass is not a live approval or send.
+- [x] **5. Commit:** `fix: complete stored Meta interactive and button delivery`.
 
 ### Task 10: Correct Twilio carousel and copy-code authoring
 

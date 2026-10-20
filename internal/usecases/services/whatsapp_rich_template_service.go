@@ -245,7 +245,9 @@ func (s *whatsappRichTemplateService) Create(ctx context.Context, tpl *whatsapp.
 		}
 	}
 
-	tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+	if tpl.Kind != whatsapp.KindList {
+		tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+	}
 	if err := s.repo.Create(ctx, tpl); err != nil {
 		return nil, fmt.Errorf("persist template: %w", err)
 	}
@@ -521,8 +523,35 @@ func (s *whatsappRichTemplateService) ResolveSendPayload(ctx context.Context, ap
 	if err != nil {
 		return nil, err
 	}
+	if tpl.Kind == whatsapp.KindList {
+		// Older runtime-only Create records were incorrectly aggregated as draft.
+		legacyRuntime := tpl.ApprovalState == whatsapp.ApprovalDraft && tpl.Providers.Meta != nil && tpl.Providers.Meta.TemplateName == "" && tpl.Providers.Meta.Status == ""
+		if tpl.ApprovalState != whatsapp.ApprovalApproved && !legacyRuntime {
+			return nil, fmt.Errorf("list draft is not ready for delivery")
+		}
+		sections := []map[string]interface{}{}
+		for _, section := range tpl.ListSections {
+			rows := []map[string]interface{}{}
+			for _, row := range section.Rows {
+				rows = append(rows, map[string]interface{}{"id": row.ID, "title": renderRichVariables(row.Title, payload.Variables), "description": renderRichVariables(row.Description, payload.Variables)})
+			}
+			sections = append(sections, map[string]interface{}{"title": renderRichVariables(section.Title, payload.Variables), "rows": rows})
+		}
+		interactive := map[string]interface{}{"type": "list", "action": map[string]interface{}{"button": firstNonEmpty(tpl.ListButtonText, "Menu"), "sections": sections}}
+		if tpl.Footer != "" {
+			interactive["footer"] = map[string]interface{}{"text": renderRichVariables(tpl.Footer, payload.Variables)}
+		}
+		if tpl.Header != nil && tpl.Header.Text != "" {
+			interactive["header"] = map[string]interface{}{"type": "text", "text": renderRichVariables(tpl.Header.Text, payload.Variables)}
+		}
+		return map[string]interface{}{"kind": "list", "body": renderRichVariables(tpl.Body, payload.Variables), "interactive": interactive}, nil
+	}
 	if tpl.Providers.Meta == nil || tpl.Providers.Meta.TemplateName == "" {
 		return nil, fmt.Errorf("template %s has no Meta binding (not submitted)", payload.TemplateID)
+	}
+
+	if !strings.EqualFold(tpl.Providers.Meta.Status, "APPROVED") {
+		return nil, fmt.Errorf("Meta template is not approved")
 	}
 
 	rich := map[string]interface{}{
@@ -539,6 +568,35 @@ func (s *whatsappRichTemplateService) ResolveSendPayload(ctx context.Context, ap
 	switch tpl.Kind {
 	case whatsapp.KindCarousel:
 		rich["cards"] = s.resolveCarouselCards(tpl, payload, notificationID)
+	case whatsapp.KindCTAURL, whatsapp.KindQuickReply:
+		components := []map[string]interface{}{}
+		if vars := orderedVariableValues(tpl.Body, payload.Variables); len(vars) > 0 {
+			parameters := []map[string]interface{}{}
+			for _, value := range vars {
+				parameters = append(parameters, map[string]interface{}{"type": "text", "text": value})
+			}
+			components = append(components, map[string]interface{}{"type": "body", "parameters": parameters})
+		}
+		for index, button := range tpl.Buttons {
+			var parameter map[string]interface{}
+			subType := "quick_reply"
+			if button.Type == whatsapp.ButtonQuickReply {
+				parameter = map[string]interface{}{"type": "payload", "payload": renderRichVariables(button.Payload, payload.Variables)}
+			} else if button.Type == whatsapp.ButtonURL {
+				subType = "url"
+				values := orderedVariableValues(button.URL, payload.Variables)
+				if len(values) == 0 {
+					continue
+				}
+				value := values[0]
+				resolved := s.resolveButton(button, index, value, notificationID, tpl.AppID)
+				parameter = map[string]interface{}{"type": "text", "text": resolved["text"]}
+			} else {
+				return nil, fmt.Errorf("unsupported approved template button")
+			}
+			components = append(components, map[string]interface{}{"type": "button", "sub_type": subType, "index": fmt.Sprint(index), "parameters": []map[string]interface{}{parameter}})
+		}
+		rich["components"] = components
 	case whatsapp.KindCouponCode:
 		if tpl.CouponCode != "" {
 			rich["coupon_code"] = tpl.CouponCode
@@ -1030,4 +1088,12 @@ func (s *whatsappRichTemplateService) ResolveTwilioSendPayload(ctx context.Conte
 		out["content_variables"] = contentVars
 	}
 	return out, nil
+}
+
+func renderRichVariables(text string, variables map[string]string) string {
+	pairs := []string{}
+	for key, value := range variables {
+		pairs = append(pairs, "{{"+key+"}}", value)
+	}
+	return strings.NewReplacer(pairs...).Replace(text)
 }
