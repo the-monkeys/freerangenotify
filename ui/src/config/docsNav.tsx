@@ -40,6 +40,7 @@ export const NAV_SECTIONS: DocNavSection[] = [
             { label: 'Workflows', to: '/docs/workflows', icon: <Workflow className="h-4 w-4" /> },
             { label: 'Topics', to: '/docs/topics', icon: <Tag className="h-4 w-4" /> },
             { label: 'Channels', to: '/docs/channels', icon: <Radio className="h-4 w-4" /> },
+            { label: 'Webhooks', to: '/docs/webhooks', icon: <Globe className="h-4 w-4" /> },
             { label: 'File Attachments', to: '/docs/file-attachments', icon: <Paperclip className="h-4 w-4" /> },
             { label: 'OTP (Auth Codes)', to: '/docs/otp', icon: <KeyRound className="h-4 w-4" /> },
             { label: 'SSE (Real-time)', to: '/docs/sse', icon: <Zap className="h-4 w-4" /> },

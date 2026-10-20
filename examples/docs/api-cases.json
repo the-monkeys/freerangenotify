@@ -597,6 +597,250 @@
     }
   },
   {
+    "id": "email-attachments",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "file-attachments",
+    "auth": "api-key",
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Report",
+      "body": "<img src=\"cid:logo-image\">",
+      "attachments": [
+        {
+          "type": "image",
+          "name": "logo.png",
+          "mime_type": "image/png",
+          "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+          "content_id": "logo-image",
+          "disposition": "inline"
+        },
+        {
+          "type": "file",
+          "file_id": "${FILE_ID}",
+          "name": "report.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "attachments": [
+          {
+            "type": "image",
+            "name": "logo.png",
+            "mime_type": "image/png",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+            "content_id": "logo-image",
+            "disposition": "inline"
+          },
+          {
+            "type": "file",
+            "file_id": "${FILE_ID}",
+            "name": "report.pdf"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "missing-file-acceptance",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "file-attachments",
+    "auth": "api-key",
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Report",
+      "body": "See attached",
+      "attachments": [
+        {
+          "type": "file",
+          "file_id": "file_missing",
+          "name": "missing.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued"
+    }
+  },
+  {
+    "id": "generic-webhook",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "webhooks",
+    "auth": "api-key",
+    "request": {
+      "channel": "webhook",
+      "title": "Order ready",
+      "body": "Ready for collection",
+      "webhook_url": "https://receiver.example.test/events",
+      "attachments": [
+        {
+          "type": "file",
+          "url": "https://cdn.example.test/report.pdf",
+          "name": "report.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "attachments": [
+          {
+            "type": "file",
+            "url": "https://cdn.example.test/report.pdf",
+            "name": "report.pdf"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "custom-webhook-poll",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "webhooks",
+    "auth": "api-key",
+    "request": {
+      "channel": "webhook",
+      "title": "Choose a time",
+      "body": "Team planning",
+      "webhook_target": "registered-slack",
+      "poll": {
+        "question": "When?",
+        "choices": [
+          {
+            "label": "Morning"
+          },
+          {
+            "label": "Afternoon"
+          }
+        ],
+        "duration_hours": 24
+      }
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "poll": {
+          "question": "When?"
+        }
+      }
+    }
+  },
+  {
+    "id": "otp-email",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "email",
+      "recipient": "alice@example.test",
+      "ttl_seconds": 300
+    },
+    "status": 202,
+    "response": {
+      "request_id": "${OTP_REQUEST_ID}",
+      "notification_id": "${OTP_NOTIFICATION_ID}",
+      "channel": "email",
+      "max_attempts": 5
+    },
+    "capture": {
+      "OTP_REQUEST_ID": "request_id",
+      "OTP_NOTIFICATION_ID": "notification_id"
+    }
+  },
+  {
+    "id": "otp-invalid-code",
+    "method": "POST",
+    "path": "/otp/verify",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "request_id": "${OTP_REQUEST_ID}",
+      "code": "WRONG_CODE"
+    },
+    "status": 400,
+    "response": {
+      "verified": false,
+      "request_id": "${OTP_REQUEST_ID}",
+      "error": "invalid_code",
+      "attempts_remaining": 4
+    }
+  },
+  {
+    "id": "otp-cooldown",
+    "method": "POST",
+    "path": "/otp/resend",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "request_id": "${OTP_REQUEST_ID}"
+    },
+    "status": 409,
+    "response": {
+      "error": "otp: resend cooldown in effect"
+    }
+  },
+  {
+    "id": "otp-sms",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "sms",
+      "recipient": "+14155551234"
+    },
+    "status": 202,
+    "response": {
+      "channel": "sms",
+      "max_attempts": 5
+    }
+  },
+  {
+    "id": "otp-whatsapp",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "whatsapp",
+      "recipient": "+14155551234",
+      "template_data": {
+        "whatsapp_template": {
+          "name": "approved_authentication",
+          "language": "en_US",
+          "components": [
+            {
+              "type": "body",
+              "parameters": [
+                {
+                  "type": "text",
+                  "text": "{{code}}"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "status": 202,
+    "response": {
+      "channel": "whatsapp",
+      "max_attempts": 5
+    }
+  },
+  {
     "id": "delete-user",
     "method": "DELETE",
     "path": "/users/${USER_ID}",

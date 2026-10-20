@@ -133,7 +133,7 @@ const AppFiles: React.FC<AppFilesProps> = ({ apiKey }) => {
                     <CardTitle>Files</CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
                         Managed files. Reference any row's <code className="font-mono">file_id</code> from a notification's
-                        attachments, or share via a short-lived signed download URL.
+                        attachments, or share via a short-lived signed download URL. Upload and provider limits apply. <a href="/docs/file-attachments" className="underline">File guide</a>.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">

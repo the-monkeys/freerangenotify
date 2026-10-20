@@ -1221,6 +1221,7 @@ const AppDetail: React.FC = () => {
                         <Card>
                             <CardHeader>
                                 <CardTitle>API Credentials</CardTitle>
+                                <p className="text-sm text-muted-foreground">Keep API keys on your backend. The app ID identifies your app; it does not authenticate requests. <a href="/docs/getting-started" className="underline">Integration guide</a></p>
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-2 mb-6">

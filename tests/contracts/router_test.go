@@ -29,6 +29,8 @@ type exampleApps struct {
 }
 
 func (r *exampleApps) Create(_ context.Context, a *application.Application) error {
+	a.Settings.WhatsApp = &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: "fixture-waba", MetaPhoneNumberID: "fixture-phone", MetaAccessToken: "fixture-token"}
+	a.Settings.SMS = &application.SMSAppConfig{AccountSID: "fixture-account", AuthToken: "fixture-token", FromNumber: "+14155550000"}
 	r.apps[a.AppID] = a
 	return nil
 }
@@ -153,6 +155,7 @@ func newExampleRouter(t *testing.T) *fiber.App {
 	lifecycle := lifecycleRoutes(app, ah, th, nh, tr, logger)
 	v1 := app.Group("/v1", middleware.APIKeyAuth(as, logger))
 	lifecycle(v1)
+	richRoutes(v1, ns, ar, ur, logger)
 	v1.Post("/users", uh.Create)
 	v1.Get("/users/:id", uh.GetByID)
 	v1.Put("/users/:id", uh.Update)

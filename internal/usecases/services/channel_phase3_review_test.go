@@ -118,6 +118,8 @@ func TestPhase3ReviewResolvedCarouselAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Delivery requires the provider callback to approve the submitted template.
+	tpl.Providers.Meta.Status = "APPROVED"
 	c := connectionTestService()
 	c.Apps.(*connectionApps).app = &application.Application{AppID: "app-1", Settings: application.Settings{WhatsApp: &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: "waba", MetaPhoneNumberID: "phone", MetaAccessToken: "fixture"}}}
 	s := &ChannelDispatchService{Connections: c, RichTemplates: svc}

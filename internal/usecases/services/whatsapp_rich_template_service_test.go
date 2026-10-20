@@ -20,8 +20,8 @@ import (
 // Keeps assertions about persistence (was Create called? was Update called?)
 // in the same package, instead of wiring the real Elasticsearch backend.
 type memRichRepo struct {
-	mu    sync.Mutex
-	byID  map[string]*whatsapp.RichTemplate
+	mu   sync.Mutex
+	byID map[string]*whatsapp.RichTemplate
 }
 
 func newMemRichRepo() *memRichRepo {
@@ -104,8 +104,8 @@ func (r *richStubAppRepo) List(context.Context, application.ApplicationFilter) (
 	}
 	return []*application.Application{r.app}, nil
 }
-func (r *richStubAppRepo) Delete(context.Context, string) error                          { return nil }
-func (r *richStubAppRepo) RegenerateAPIKey(context.Context, string) (string, error)      { return "", nil }
+func (r *richStubAppRepo) Delete(context.Context, string) error                     { return nil }
+func (r *richStubAppRepo) RegenerateAPIKey(context.Context, string) (string, error) { return "", nil }
 
 // newServiceWithMockMeta wires up the service with an httptest server that
 // captures the inbound POST body so each test can assert what JSON we sent
@@ -578,6 +578,8 @@ func TestResolveSendPayload_CarouselSignsTrackedURLs(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
+	// Delivery requires the provider callback to approve the submitted template.
+	tpl.Providers.Meta.Status = "APPROVED"
 	resolved, err := svc.ResolveSendPayload(context.Background(), "app-1", "notif-7", whatsapp.SendPayload{
 		TemplateID: tpl.ID,
 		Variables:  map[string]string{"1": "Asha"},

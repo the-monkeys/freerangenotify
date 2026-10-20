@@ -591,7 +591,8 @@ func (n *Notification) Validate() error {
 		}
 
 		// If no explicit URL, we must have a TemplateID which can resolve via provider config
-		if !hasURL && n.TemplateID == "" {
+		target, _ := n.Content.Data["webhook_target"].(string)
+		if !hasURL && strings.TrimSpace(target) == "" && n.TemplateID == "" {
 			return ErrInvalidUserID
 		}
 	}
