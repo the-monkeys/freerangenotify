@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,4 +72,39 @@ func TestRichAuthoringReference(t *testing.T) {
 		}
 		require.True(t, found, "missing rich request schema %s", path)
 	}
+}
+
+func TestConfigurationRequestReference(t *testing.T) {
+	raw, e := os.ReadFile("../../docs/swagger.json")
+	require.NoError(t, e)
+	var doc map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	paths := doc["paths"].(map[string]interface{})
+	defs := doc["definitions"].(map[string]interface{})
+	for _, tc := range []struct {
+		path, method string
+		required     []string
+	}{{"/v1/apps/{id}/channel-connections/{channel}", "put", []string{"revision"}}, {"/v1/whatsapp/templates", "post", []string{"name", "category", "components"}}} {
+		t.Run(tc.path, func(t *testing.T) {
+			op := paths[tc.path].(map[string]interface{})[tc.method].(map[string]interface{})
+			var schema map[string]interface{}
+			if params, ok := op["parameters"].([]interface{}); ok {
+				for _, p := range params {
+					p := p.(map[string]interface{})
+					if p["in"] == "body" {
+						schema = p["schema"].(map[string]interface{})
+					}
+				}
+			}
+			require.NotNil(t, schema, "missing mandatory request body")
+			ref := schema["$ref"].(string)
+			model := defs[strings.TrimPrefix(ref, "#/definitions/")].(map[string]interface{})
+			for _, key := range tc.required {
+				require.Contains(t, model["required"], key)
+			}
+			require.Contains(t, op["consumes"], "application/json")
+		})
+	}
+	draft := paths["/v1/whatsapp/rich-templates/drafts"].(map[string]interface{})["post"].(map[string]interface{})
+	require.Contains(t, draft["responses"], "201")
 }

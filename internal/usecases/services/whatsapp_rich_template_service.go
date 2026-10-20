@@ -570,6 +570,24 @@ func (s *whatsappRichTemplateService) ResolveSendPayload(ctx context.Context, ap
 		rich["cards"] = s.resolveCarouselCards(tpl, payload, notificationID)
 	case whatsapp.KindCTAURL, whatsapp.KindQuickReply:
 		components := []map[string]interface{}{}
+		if tpl.Header != nil {
+			parameters := []map[string]interface{}{}
+			if values := orderedVariableValues(tpl.Header.Text, payload.Variables); len(values) > 0 {
+				for _, value := range values {
+					parameters = append(parameters, map[string]interface{}{"type": "text", "text": value})
+				}
+			} else {
+				for _, media := range []struct{ kind, url string }{{"image", tpl.Header.ImageURL}, {"video", tpl.Header.VideoURL}, {"document", tpl.Header.DocumentURL}} {
+					if media.url != "" {
+						parameters = append(parameters, map[string]interface{}{"type": media.kind, media.kind: map[string]interface{}{"link": renderRichVariables(media.url, payload.Variables)}})
+						break
+					}
+				}
+			}
+			if len(parameters) > 0 {
+				components = append(components, map[string]interface{}{"type": "header", "parameters": parameters})
+			}
+		}
 		if vars := orderedVariableValues(tpl.Body, payload.Variables); len(vars) > 0 {
 			parameters := []map[string]interface{}{}
 			for _, value := range vars {

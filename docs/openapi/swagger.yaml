@@ -1159,6 +1159,57 @@ components:
                 quantity:
                     type: integer
             type: object
+        channelconnection.DLTTemplate:
+            properties:
+                body:
+                    type: string
+                id:
+                    type: string
+                variable_max_length:
+                    type: integer
+            type: object
+        channelconnection.DeliveryLimits:
+            properties:
+                cost_minor_per_unit:
+                    type: integer
+                currency:
+                    type: string
+                daily_spend_minor:
+                    type: integer
+                daily_units:
+                    type: integer
+                max_segments:
+                    type: integer
+                messages_per_minute:
+                    type: integer
+                rate_reference:
+                    type: string
+                rate_verified_at:
+                    type: string
+                units_per_minute:
+                    type: integer
+            type: object
+        channelconnection.DomesticSMSConfig:
+            properties:
+                approval_reference:
+                    type: string
+                approved_at:
+                    type: string
+                entity_id:
+                    type: string
+                limits:
+                    $ref: '#/components/schemas/channelconnection.DeliveryLimits'
+                region:
+                    type: string
+                sms_type:
+                    type: string
+                templates:
+                    items:
+                        $ref: '#/components/schemas/channelconnection.DLTTemplate'
+                    type: array
+                verification_message_id:
+                    type: string
+            type: object
         digest.CreateRequest:
             properties:
                 channel:
@@ -2406,6 +2457,34 @@ components:
                 - source_env_id
                 - target_env_id
             type: object
+        handlers.ChannelConnectionUpdateRequest:
+            properties:
+                account_id:
+                    type: string
+                clear_secrets:
+                    items:
+                        type: string
+                    type: array
+                credential_source:
+                    type: string
+                disconnect:
+                    type: boolean
+                exotel:
+                    $ref: '#/components/schemas/channelconnection.DomesticSMSConfig'
+                provider:
+                    type: string
+                revision:
+                    minimum: 0
+                    type: integer
+                secrets:
+                    additionalProperties:
+                        type: string
+                    type: object
+                sender_id:
+                    type: string
+            required:
+                - revision
+            type: object
         handlers.CheckInRequest:
             properties:
                 dynamic_url:
@@ -2427,6 +2506,29 @@ components:
             required:
                 - event
                 - user_id
+            type: object
+        handlers.MetaTemplateCreateRequestDoc:
+            properties:
+                category:
+                    enum:
+                        - AUTHENTICATION
+                        - MARKETING
+                        - UTILITY
+                    type: string
+                components:
+                    items:
+                        additionalProperties: true
+                        type: object
+                    type: array
+                language:
+                    default: en_US
+                    type: string
+                name:
+                    type: string
+            required:
+                - category
+                - components
+                - name
             type: object
         handlers.RichDraftSubmitRequest:
             properties:
@@ -5343,6 +5445,14 @@ paths:
                   required: true
                   schema:
                     type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/handlers.ChannelConnectionUpdateRequest'
+                description: Flat connection patch; revision is required and nonnegative
+                required: true
+                x-originalParamName: body
             responses:
                 "200":
                     content:
@@ -5365,6 +5475,13 @@ paths:
                                 additionalProperties: true
                                 type: object
                     description: Unauthorized
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Revision conflict
             security:
                 - BearerAuth: []
             summary: Update
@@ -16578,7 +16695,7 @@ paths:
                 required: true
                 x-originalParamName: body
             responses:
-                "200":
+                "201":
                     content:
                         application/json:
                             schema:
@@ -16640,6 +16757,14 @@ paths:
             x-feature-prerequisites: Requires this deployment's optional whatsapp feature and its configured service/provider.
         post:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/handlers.MetaTemplateCreateRequestDoc'
+                description: Meta template authoring payload; additional provider fields pass through unchanged
+                required: true
+                x-originalParamName: body
             responses:
                 "201":
                     content:

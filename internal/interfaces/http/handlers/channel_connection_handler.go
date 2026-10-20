@@ -18,6 +18,12 @@ import (
 	"time"
 )
 
+// ChannelConnectionUpdateRequest preserves the flat connection patch wire format.
+type ChannelConnectionUpdateRequest struct {
+	channelconnection.Patch
+	Revision *int64 `json:"revision" validate:"required,min=0" minimum:"0"`
+}
+
 type ChannelConnectionHandler struct {
 	Service        *services.ChannelConnectionService
 	Validator      *services.ConnectionValidator
@@ -143,15 +149,15 @@ func connectionHTTPError(err error) error {
 // @Failure 401 {object} map[string]interface{}
 // @Router /v1/apps/{id}/channel-connections/{channel} [put]
 // @Security BearerAuth
+// @Accept json
+// @Param body body ChannelConnectionUpdateRequest true "Flat connection patch; revision is required and nonnegative"
+// @Failure 409 {object} map[string]interface{} "Revision conflict"
 func (h *ChannelConnectionHandler) Update(c *fiber.Ctx) error {
 	app, env, ch, err := h.scope(c, true)
 	if err != nil {
 		return err
 	}
-	var body struct {
-		channelconnection.Patch
-		Revision *int64 `json:"revision"`
-	}
+	var body ChannelConnectionUpdateRequest
 	if c.BodyParser(&body) != nil || body.Revision == nil || *body.Revision < 0 {
 		return pkgerrors.BadRequest("Connection revision required")
 	}

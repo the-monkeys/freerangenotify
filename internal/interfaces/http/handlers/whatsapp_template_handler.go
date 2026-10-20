@@ -55,6 +55,15 @@ func NewWhatsAppTemplateHandler(
 	}
 }
 
+// MetaTemplateCreateRequestDoc describes the public Meta passthrough request.
+// The handler retains the map body so existing provider-specific fields survive.
+type MetaTemplateCreateRequestDoc struct {
+	Name       string                   `json:"name" validate:"required"`
+	Category   string                   `json:"category" validate:"required" enums:"AUTHENTICATION,MARKETING,UTILITY"`
+	Language   string                   `json:"language,omitempty" default:"en_US"`
+	Components []map[string]interface{} `json:"components" validate:"required"`
+}
+
 // CreateTemplate handles POST /v1/whatsapp/templates
 // Submits a new template to Meta for approval.
 // @Summary Create Template
@@ -67,6 +76,8 @@ func NewWhatsAppTemplateHandler(
 // @Security ApiKeyAuth
 // @Security BearerAuth
 // @Router /v1/whatsapp/templates [post]
+// @Accept json
+// @Param body body MetaTemplateCreateRequestDoc true "Meta template authoring payload; additional provider fields pass through unchanged"
 func (h *WhatsAppTemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	wa, appID, err := h.resolveMetaConfig(c)
 	if err != nil {

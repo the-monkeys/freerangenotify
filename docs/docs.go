@@ -1701,6 +1701,84 @@ const docTemplate = `{
             },
             "type": "object"
         },
+        "channelconnection.DLTTemplate": {
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "variable_max_length": {
+                    "type": "integer"
+                }
+            },
+            "type": "object"
+        },
+        "channelconnection.DeliveryLimits": {
+            "properties": {
+                "cost_minor_per_unit": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "daily_spend_minor": {
+                    "type": "integer"
+                },
+                "daily_units": {
+                    "type": "integer"
+                },
+                "max_segments": {
+                    "type": "integer"
+                },
+                "messages_per_minute": {
+                    "type": "integer"
+                },
+                "rate_reference": {
+                    "type": "string"
+                },
+                "rate_verified_at": {
+                    "type": "string"
+                },
+                "units_per_minute": {
+                    "type": "integer"
+                }
+            },
+            "type": "object"
+        },
+        "channelconnection.DomesticSMSConfig": {
+            "properties": {
+                "approval_reference": {
+                    "type": "string"
+                },
+                "approved_at": {
+                    "type": "string"
+                },
+                "entity_id": {
+                    "type": "string"
+                },
+                "limits": {
+                    "$ref": "#/definitions/channelconnection.DeliveryLimits"
+                },
+                "region": {
+                    "type": "string"
+                },
+                "sms_type": {
+                    "type": "string"
+                },
+                "templates": {
+                    "items": {
+                        "$ref": "#/definitions/channelconnection.DLTTemplate"
+                    },
+                    "type": "array"
+                },
+                "verification_message_id": {
+                    "type": "string"
+                }
+            },
+            "type": "object"
+        },
         "digest.CreateRequest": {
             "properties": {
                 "channel": {
@@ -3479,6 +3557,48 @@ const docTemplate = `{
             ],
             "type": "object"
         },
+        "handlers.ChannelConnectionUpdateRequest": {
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "clear_secrets": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "credential_source": {
+                    "type": "string"
+                },
+                "disconnect": {
+                    "type": "boolean"
+                },
+                "exotel": {
+                    "$ref": "#/definitions/channelconnection.DomesticSMSConfig"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "revision": {
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "secrets": {
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "type": "object"
+                },
+                "sender_id": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "revision"
+            ],
+            "type": "object"
+        },
         "handlers.CheckInRequest": {
             "properties": {
                 "dynamic_url": {
@@ -3509,6 +3629,38 @@ const docTemplate = `{
             "required": [
                 "event",
                 "user_id"
+            ],
+            "type": "object"
+        },
+        "handlers.MetaTemplateCreateRequestDoc": {
+            "properties": {
+                "category": {
+                    "enum": [
+                        "AUTHENTICATION",
+                        "MARKETING",
+                        "UTILITY"
+                    ],
+                    "type": "string"
+                },
+                "components": {
+                    "items": {
+                        "additionalProperties": true,
+                        "type": "object"
+                    },
+                    "type": "array"
+                },
+                "language": {
+                    "default": "en_US",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "category",
+                "components",
+                "name"
             ],
             "type": "object"
         },
@@ -7424,6 +7576,9 @@ const docTemplate = `{
                 "x-feature-prerequisites": "Requires this deployment's optional apps feature and its configured service/provider."
             },
             "put": {
+                "consumes": [
+                    "application/json"
+                ],
                 "description": "Requires an account JWT and permission for the selected application or tenant.",
                 "parameters": [
                     {
@@ -7439,6 +7594,15 @@ const docTemplate = `{
                         "name": "channel",
                         "required": true,
                         "type": "string"
+                    },
+                    {
+                        "description": "Flat connection patch; revision is required and nonnegative",
+                        "in": "body",
+                        "name": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ChannelConnectionUpdateRequest"
+                        }
                     }
                 ],
                 "produces": [
@@ -7461,6 +7625,13 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Revision conflict",
                         "schema": {
                             "additionalProperties": true,
                             "type": "object"
@@ -22187,7 +22358,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "responses": {
-                    "200": {
+                    "201": {
                         "description": "Response; see the operation guide for the resource envelope",
                         "schema": {
                             "additionalProperties": true,
@@ -22608,7 +22779,21 @@ const docTemplate = `{
                 "x-feature-prerequisites": "Requires this deployment's optional whatsapp feature and its configured service/provider."
             },
             "post": {
+                "consumes": [
+                    "application/json"
+                ],
                 "description": "Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.",
+                "parameters": [
+                    {
+                        "description": "Meta template authoring payload; additional provider fields pass through unchanged",
+                        "in": "body",
+                        "name": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.MetaTemplateCreateRequestDoc"
+                        }
+                    }
+                ],
                 "produces": [
                     "application/json"
                 ],

@@ -527,9 +527,9 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	var tmpl *template.Template
 	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
 	if notif.TemplateID != "" && notif.Metadata["channel_content_prepared"] != true {
-		var tmpl *template.Template
 
 		// Try by UUID first; if that fails and it's not a valid UUID, resolve by name
 		if _, parseErr := uuid.Parse(notif.TemplateID); parseErr == nil {
@@ -595,84 +595,85 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					zap.String("template_id", notif.TemplateID))
 			}
 
-			// Webhook Routing Logic: Resolve target from Application config if Template specifies it
-			// Resolve webhook target URL if applicable
-			target := ""
-			if tmpl != nil && tmpl.WebhookTarget != "" {
-				target = tmpl.WebhookTarget
-			}
+		}
+	}
 
-			// Allow override or manual target from data
-			if notif.Content.Data != nil {
-				if val, ok := notif.Content.Data["webhook_target"].(string); ok && val != "" {
-					target = val
-				}
-			}
+	// Resolve a named webhook target independently of optional template enrichment.
+	// Resolve webhook target URL if applicable
+	target := ""
+	if tmpl != nil && tmpl.WebhookTarget != "" {
+		target = tmpl.WebhookTarget
+	}
 
-			if notification.IsWebhookLikeChannel(notif.Channel) && target != "" {
-				app, err := p.appRepo.GetByID(ctx, notif.AppID)
-				if err != nil {
-					logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
-				} else if app != nil {
-					resolved := false
+	// Allow override or manual target from data
+	if notif.Content.Data != nil {
+		if val, ok := notif.Content.Data["webhook_target"].(string); ok && val != "" {
+			target = val
+		}
+	}
 
-					// 1. Try legacy app.Webhooks map first
-					if app.Webhooks != nil {
-						if url, ok := app.Webhooks[target]; ok {
-							if notif.Metadata == nil {
-								notif.Metadata = make(map[string]interface{})
-							}
-							if _, exists := notif.Metadata["webhook_url"]; !exists {
-								notif.Metadata["webhook_url"] = url
-								logger.Info("Resolved webhook target from application webhooks map",
-									zap.String("notification_id", notif.NotificationID),
-									zap.String("target_name", target),
-									zap.String("url", url))
-								resolved = true
-							}
-						}
+	if notification.IsWebhookLikeChannel(notif.Channel) && target != "" {
+		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		if err != nil {
+			logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
+		} else if app != nil {
+			resolved := false
+
+			// 1. Try legacy app.Webhooks map first
+			if app.Webhooks != nil {
+				if url, ok := app.Webhooks[target]; ok {
+					if notif.Metadata == nil {
+						notif.Metadata = make(map[string]interface{})
 					}
-
-					// 2. Try custom providers (the current storage mechanism)
-					if !resolved {
-						for _, cp := range app.Settings.CustomProviders {
-							if cp.Name == target && cp.Channel == string(notif.Channel) && cp.Active {
-								if notif.Metadata == nil {
-									notif.Metadata = make(map[string]interface{})
-								}
-								notif.Metadata["webhook_url"] = cp.WebhookURL
-								// Record the resolved custom provider name so the send
-								// path can dispatch directly to it. Without this the
-								// notification would first be routed through the generic
-								// WebhookProvider — which posts FRN's envelope shape and
-								// is rejected by Slack/Discord/Teams — and the fallback
-								// loop iterates ALL custom providers in registration
-								// order. That caused Slack-targeted notifications to
-								// land in Discord when Discord Alerts was the first
-								// provider on the app.
-								notif.Metadata["custom_provider_name"] = cp.Name
-								logger.Info("Resolved webhook target from custom provider",
-									zap.String("notification_id", notif.NotificationID),
-									zap.String("target_name", target),
-									zap.String("url", cp.WebhookURL))
-								resolved = true
-								break
-							}
-						}
-					}
-
-					if !resolved {
-						logger.Error("Webhook target not found in application config or custom providers",
+					if _, exists := notif.Metadata["webhook_url"]; !exists {
+						notif.Metadata["webhook_url"] = url
+						logger.Info("Resolved webhook target from application webhooks map",
 							zap.String("notification_id", notif.NotificationID),
 							zap.String("target_name", target),
-							zap.Int("custom_providers_count", len(app.Settings.CustomProviders)))
+							zap.String("url", url))
+						resolved = true
 					}
-				} else {
-					logger.Error("Application not found for webhook routing",
-						zap.String("notification_id", notif.NotificationID),
-						zap.String("app_id", notif.AppID))
 				}
 			}
+
+			// 2. Try custom providers (the current storage mechanism)
+			if !resolved {
+				for _, cp := range app.Settings.CustomProviders {
+					if cp.Name == target && cp.Channel == string(notif.Channel) && cp.Active {
+						if notif.Metadata == nil {
+							notif.Metadata = make(map[string]interface{})
+						}
+						notif.Metadata["webhook_url"] = cp.WebhookURL
+						// Record the resolved custom provider name so the send
+						// path can dispatch directly to it. Without this the
+						// notification would first be routed through the generic
+						// WebhookProvider — which posts FRN's envelope shape and
+						// is rejected by Slack/Discord/Teams — and the fallback
+						// loop iterates ALL custom providers in registration
+						// order. That caused Slack-targeted notifications to
+						// land in Discord when Discord Alerts was the first
+						// provider on the app.
+						notif.Metadata["custom_provider_name"] = cp.Name
+						logger.Info("Resolved webhook target from custom provider",
+							zap.String("notification_id", notif.NotificationID),
+							zap.String("target_name", target),
+							zap.String("url", cp.WebhookURL))
+						resolved = true
+						break
+					}
+				}
+			}
+
+			if !resolved {
+				logger.Error("Webhook target not found in application config or custom providers",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("target_name", target),
+					zap.Int("custom_providers_count", len(app.Settings.CustomProviders)))
+			}
+		} else {
+			logger.Error("Application not found for webhook routing",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("app_id", notif.AppID))
 		}
 	}
 

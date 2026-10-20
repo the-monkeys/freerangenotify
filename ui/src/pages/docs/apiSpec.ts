@@ -4,10 +4,10 @@ export interface SwaggerSchema {
     items?: SwaggerSchema; allOf?: SwaggerSchema[]; enum?: unknown[]; example?: unknown;
     additionalProperties?: boolean | SwaggerSchema;
 }
-export interface SwaggerParameter extends SwaggerSchema { name: string; in: string; required?: never; schema?: SwaggerSchema }
+export type SwaggerParameter = Omit<SwaggerSchema, 'required'> & {name:string; in:string; required?:boolean; schema?:SwaggerSchema};
 export interface SwaggerOperation {
     summary?: string; description?: string; tags?: string[];
-    parameters?: Array<Omit<SwaggerParameter, 'required'> & { required?: boolean }>;
+    parameters?: SwaggerParameter[];
     responses?: Record<string, { description?: string; schema?: SwaggerSchema }>;
     security?: Record<string, string[]>[];
     'x-feature-prerequisites'?: string;
@@ -18,14 +18,41 @@ export interface SwaggerSpec {
     basePath?: string; paths: Record<string, Record<string, SwaggerOperation>>;
     definitions?: Record<string, SwaggerSchema>; securityDefinitions?: Record<string, unknown>;
 }
+function isRecord(value:unknown): value is Record<string,unknown> {return !!value && typeof value==='object' && !Array.isArray(value);}
+function strings(value:unknown): value is string[] {return Array.isArray(value) && value.every(v=>typeof v==='string');}
 export function validateSwagger2(value: unknown): SwaggerSpec {
-    if (!value || typeof value !== 'object' || (value as SwaggerSpec).swagger !== '2.0' ||
-        !(value as SwaggerSpec).paths || typeof (value as SwaggerSpec).paths !== 'object' || Array.isArray((value as SwaggerSpec).paths)) throw new Error('Invalid Swagger 2 specification');
-    for (const methods of Object.values((value as SwaggerSpec).paths)) {
-        if (!methods || typeof methods !== 'object' || Array.isArray(methods)) throw new Error('Invalid path operations');
-        for (const [method, operation] of Object.entries(methods)) if (['get','post','put','patch','delete','head','options'].includes(method) && (!operation || typeof operation !== 'object' || Array.isArray(operation))) throw new Error('Invalid operation');
+    const invalid=()=>{throw new Error('Invalid Swagger 2 specification');};
+    if(!isRecord(value) || value.swagger!=='2.0' || !isRecord(value.paths))return invalid();
+    if(value.info!==undefined && (!isRecord(value.info) || ['title','description','version'].some(k=>value.info && isRecord(value.info) && value.info[k]!==undefined && typeof value.info[k]!=='string')))return invalid();
+    if(value.definitions!==undefined && !isRecord(value.definitions))return invalid();
+    const definitions=isRecord(value.definitions)?value.definitions:{};
+    let nodes=0;
+    const schema=(v:unknown,depth=0):void=>{
+        if(!isRecord(v) || depth>32 || ++nodes>10000)return invalid();
+        for(const key of ['type','format','description','$ref'])if(v[key]!==undefined && typeof v[key]!=='string')return invalid();
+        if(v.$ref!==undefined){const ref=v.$ref as string;const prefix='#/definitions/';const key=ref.slice(prefix.length).replace(/~1/g,'/').replace(/~0/g,'~');if(!ref.startsWith(prefix)||!Object.prototype.hasOwnProperty.call(definitions,key))return invalid();}
+        if(v.required!==undefined && !strings(v.required))return invalid();
+        if(v.enum!==undefined && !Array.isArray(v.enum))return invalid();
+        if(v.properties!==undefined){if(!isRecord(v.properties))return invalid();for(const child of Object.values(v.properties))schema(child,depth+1);}
+        if(v.items!==undefined)schema(v.items,depth+1);
+        if(v.allOf!==undefined){if(!Array.isArray(v.allOf))return invalid();for(const child of v.allOf)schema(child,depth+1);}
+        if(v.additionalProperties!==undefined && typeof v.additionalProperties!=='boolean')schema(v.additionalProperties,depth+1);
+    };
+    for(const definition of Object.values(definitions))schema(definition);
+    for(const methods of Object.values(value.paths)) {
+        if(!isRecord(methods))return invalid();
+        for(const [method,op] of Object.entries(methods)) {
+            if(!['get','post','put','patch','delete','head','options'].includes(method))continue;
+            if(!isRecord(op))return invalid();
+            for(const key of ['summary','description','x-feature-prerequisites'])if(op[key]!==undefined && typeof op[key]!=='string')return invalid();
+            if(op.tags!==undefined && !strings(op.tags))return invalid();
+            if(op.parameters!==undefined){if(!Array.isArray(op.parameters))return invalid();for(const p of op.parameters){if(!isRecord(p)||typeof p.name!=='string'||typeof p.in!=='string'||(p.required!==undefined && typeof p.required!=='boolean'))return invalid();if(p.schema!==undefined)schema(p.schema);if(p.items!==undefined)schema(p.items);}}
+            if(!isRecord(op.responses)||!Object.keys(op.responses).length)return invalid();
+            for(const response of Object.values(op.responses)){if(!isRecord(response)||(response.description!==undefined && typeof response.description!=='string'))return invalid();if(response.schema!==undefined)schema(response.schema);}
+            if(op.security!==undefined){if(!Array.isArray(op.security))return invalid();for(const entry of op.security){if(!isRecord(entry)||Object.values(entry).some(v=>!strings(v)))return invalid();}}
+        }
     }
-    return value as SwaggerSpec;
+    return value as unknown as SwaggerSpec;
 }
 export async function loadApiSpec(url: string, fallbackURL: string, signal?: AbortSignal): Promise<SwaggerSpec> {
     async function load(target: string) { const response=await fetch(target,{signal}); if(!response.ok)throw new Error('Specification unavailable'); return validateSwagger2(await response.json()); }
