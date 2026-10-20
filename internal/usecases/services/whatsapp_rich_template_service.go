@@ -727,6 +727,9 @@ func orderedVariableValues(body string, vars map[string]string) []string {
 // requests WhatsApp approval. Returns the TwilioBinding populated with the
 // content_sid and approval_sid.
 func (s *whatsappRichTemplateService) submitToTwilio(ctx context.Context, tpl *whatsapp.RichTemplate, wa *application.WhatsAppAppConfig) (*whatsapp.TwilioBinding, error) {
+	if err := validateTwilioRichAuthoring(tpl); err != nil {
+		return nil, err
+	}
 	payload := twilioContentPayload(tpl)
 	body, _ := json.Marshal(payload)
 

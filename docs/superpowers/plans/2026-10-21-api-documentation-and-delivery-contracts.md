@@ -178,11 +178,11 @@ For every task: inspect the scoped diff, run `git diff --check`, stage only its 
 
 **Interfaces:** Keep `twilioContentPayload(*whatsapp.RichTemplate) map[string]interface{}`, `twilioCarouselType(*whatsapp.RichTemplate) map[string]interface{}` and FRN's stored model. New authoring emits carousel `body`, per-card `body`, string `media`, supported ordered actions and provider limits. Coupon buttons use `COPY_CODE` on the supported call-to-action route instead of silent quick-reply degradation.
 
-- [ ] **1. Add `TestTwilioRichAuthoringSchema`:** strict mock HTTP server rejects array media/missing card body/invalid action shapes and asserts actual serialized HTTP JSON, not only the helper map. Assert historical ContentSid sends and authoring-model JSON remain unchanged, and edits do not auto-resubmit existing bindings.
-- [ ] **2. Run RED:** `go test -p 2 ./internal/usecases/services -run 'TestTwilioRichAuthoringSchema' -count=1`.
-- [ ] **3. Correct serialization and validation against the official Twilio carousel/call-to-action contracts cited in the design.** Keep runtime values/variables and customer account routing; introduce no automatic vendor mutation/migration.
-- [ ] **4. Run GREEN:** the strict fixture and existing Twilio content/draft/snapshot tests pass. Record tested provider contract version/date.
-- [ ] **5. Commit:** `fix: correct Twilio rich content authoring payloads`.
+- [x] **1. Add `TestTwilioRichAuthoringSchema`:** strict mock HTTP server rejects array media/missing card body/invalid action shapes and asserts actual serialized HTTP JSON, not only the helper map. Assert historical ContentSid sends and authoring-model JSON remain unchanged, and edits do not auto-resubmit existing bindings.
+- [x] **2. Run RED:** `go test -p 2 ./internal/usecases/services -run 'TestTwilioRichAuthoringSchema' -count=1`.
+- [x] **3. Correct serialization and validation against the official Twilio carousel/call-to-action contracts cited in the design.** Keep runtime values/variables and customer account routing; introduce no automatic vendor mutation/migration.
+- [x] **4. Run GREEN:** the strict fixture and existing Twilio content/draft/snapshot tests pass. Record tested provider contract version/date.
+- [x] **5. Commit:** `fix: correct Twilio rich content authoring payloads`.
 
 ### Task 11: Preserve inline images and verify email attachment adapters
 

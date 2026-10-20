@@ -1,7 +1,9 @@
 package services
 
 import (
+	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 )
@@ -38,16 +40,12 @@ func twilioContentPayload(t *whatsapp.RichTemplate) map[string]interface{} {
 			"twilio/carousel": twilioCarouselType(t),
 		}
 	case whatsapp.KindCouponCode:
-		// Twilio represents coupon codes as a quick-reply with a single
-		// COPY_CODE-style action. The closest first-class type today is
-		// twilio/call-to-action with body + a single text action; FRN
-		// emits this minimally so the binding round-trips. UI may evolve
-		// to use Twilio's coupon component once GA.
+		// Twilio call-to-action supports a first-class copy-code button.
 		out["types"] = map[string]interface{}{
 			"twilio/call-to-action": map[string]interface{}{
 				"body": t.Body,
 				"actions": []map[string]interface{}{
-					{"type": "QUICK_REPLY", "title": "Copy " + t.CouponCode, "id": "copy_code"},
+					{"type": "COPY_CODE", "title": "Copy code", "code": t.CouponCode},
 				},
 			},
 		}
@@ -87,27 +85,16 @@ func twilioContentPayload(t *whatsapp.RichTemplate) map[string]interface{} {
 	return out
 }
 
-// twilioCarouselType emits the twilio/carousel type body with one card per
-// authored CarouselCard. Twilio's per-card schema:
-//
-//	{
-//	  "title": "Polo {{1}} {{2}}",
-//	  "media": ["https://cdn/.../1.jpg"],
-//	  "actions": [{"type":"URL","title":"View","url":"https://shop/p/1"}]
-//	}
-//
-// Twilio doesn't separate header from body the way Meta does — the card
-// "title" carries the body text and the optional "media" array provides
-// the header image/video URL.
+// twilioCarouselType keeps card body separate and emits one media URL string.
 func twilioCarouselType(t *whatsapp.RichTemplate) map[string]interface{} {
 	cards := make([]map[string]interface{}, 0, len(t.Cards))
 	for _, c := range t.Cards {
-		card := map[string]interface{}{"title": c.Body}
+		card := map[string]interface{}{"body": c.Body}
 		switch {
 		case c.HeaderImageURL != "":
-			card["media"] = []string{c.HeaderImageURL}
+			card["media"] = c.HeaderImageURL
 		case c.HeaderVideoURL != "":
-			card["media"] = []string{c.HeaderVideoURL}
+			card["media"] = c.HeaderVideoURL
 		}
 		card["actions"] = twilioActionsFromButtons(c.Buttons)
 		cards = append(cards, card)
@@ -118,9 +105,7 @@ func twilioCarouselType(t *whatsapp.RichTemplate) map[string]interface{} {
 	}
 }
 
-// twilioActionsFromButtons converts FRN Button slice to Twilio's action
-// schema. Twilio uses uppercase action types matching Meta's button
-// taxonomy except for COPY_CODE (no first-class equivalent yet).
+// twilioActionsFromButtons preserves supported provider action types.
 func twilioActionsFromButtons(buttons []whatsapp.Button) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(buttons))
 	for _, b := range buttons {
@@ -138,11 +123,9 @@ func twilioActionsFromButtons(buttons []whatsapp.Button) []map[string]interface{
 				a["id"] = b.Payload
 			}
 		case whatsapp.ButtonCopyCode:
-			// Twilio doesn't yet expose a first-class COPY_CODE action;
-			// degrade to QUICK_REPLY with the code surfaced in the title.
-			a["type"] = "QUICK_REPLY"
-			a["id"] = "copy_code"
-			a["title"] = "Copy " + b.CouponCode
+			a["type"] = "COPY_CODE"
+			a["code"] = b.CouponCode
+
 		}
 		out = append(out, a)
 	}
@@ -181,4 +164,44 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// Validate only at explicit authoring; existing ContentSid bindings are untouched.
+func validateTwilioRichAuthoring(t *whatsapp.RichTemplate) error {
+	if t.Kind == whatsapp.KindCouponCode || t.Kind == whatsapp.KindCTAURL {
+		if t.Body == "" || utf8.RuneCountInString(t.Body) > 640 {
+			return fmt.Errorf("Twilio call-to-action requires a body of at most 640 characters")
+		}
+	}
+	if t.Kind == whatsapp.KindCarousel {
+		if len(t.Cards) < 2 || len(t.Cards) > 10 {
+			return fmt.Errorf("Twilio carousel requires 2 to 10 cards")
+		}
+		for _, card := range t.Cards {
+			if card.Body == "" || utf8.RuneCountInString(card.Body) > 160 {
+				return fmt.Errorf("Twilio carousel card body must contain 1 to 160 characters")
+			}
+			if (card.HeaderImageURL == "") == (card.HeaderVideoURL == "") {
+				return fmt.Errorf("Twilio carousel card requires one image or video URL")
+			}
+			if len(card.Buttons) < 1 || len(card.Buttons) > 2 {
+				return fmt.Errorf("Twilio carousel card requires one or two actions")
+			}
+			for index, button := range card.Buttons {
+				if index >= len(t.Cards[0].Buttons) || button.Type != t.Cards[0].Buttons[index].Type {
+					return fmt.Errorf("Twilio carousel actions must use the same order on every card")
+				}
+				if button.Type != whatsapp.ButtonURL && button.Type != whatsapp.ButtonQuickReply && button.Type != whatsapp.ButtonPhone {
+					return fmt.Errorf("unsupported Twilio carousel action")
+				}
+				if utf8.RuneCountInString(button.Text) > 25 {
+					return fmt.Errorf("Twilio carousel action title exceeds 25 characters")
+				}
+			}
+			if len(card.Buttons) != len(t.Cards[0].Buttons) {
+				return fmt.Errorf("Twilio carousel actions must use the same count on every card")
+			}
+		}
+	}
+	return nil
 }
