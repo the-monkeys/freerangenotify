@@ -241,7 +241,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	if c.FileHandler != nil {
 		files := v1.Group("/files")
 		applyAuth(files)
-		files.Post("/", c.FileHandler.Upload)
+		files.Post("/", middleware.NonUploadBodyLimit(16<<20), c.FileHandler.Upload)
 		files.Get("/", c.FileHandler.List)
 		files.Get("/:id", c.FileHandler.Get)
 		files.Delete("/:id", c.FileHandler.Delete)

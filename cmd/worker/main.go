@@ -10,6 +10,7 @@ import (
 
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/container"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/filestore"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/orchestrator"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
@@ -369,7 +370,7 @@ func main() {
 		baseURL := cfg.Server.PublicURL
 		processor.SetFileDownloadURL(func(appID, fileID string) string {
 			exp, sig := signer.Sign(appID, fileID)
-			return fmt.Sprintf("%s/v1/files/download/%s?exp=%d&sig=%s", baseURL, fileID, exp, sig)
+			return filestore.BuildSignedDownloadURL(baseURL, appID, fileID, exp, sig)
 		})
 		logger.Info("File download URL signer wired into worker")
 	}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/filestore"
 	"github.com/the-monkeys/freerangenotify/internal/version"
 )
 
@@ -610,6 +611,9 @@ func Load() (*Config, error) {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if err := filestore.ValidatePublicURL(c.Server.PublicURL); err != nil {
+		return err
+	}
 	if c.App.Name == "" {
 		return fmt.Errorf("app.name is required")
 	}

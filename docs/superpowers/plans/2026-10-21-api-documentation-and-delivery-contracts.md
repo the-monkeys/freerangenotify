@@ -114,11 +114,11 @@ For every task: inspect the scoped diff, run `git diff --check`, stage only its 
 
 **Interfaces:** Add `BuildSignedDownloadURL(baseURL, appID, fileID string, exp int64, sig string) string`, using escaped path segments/query parameters and a normalized deployment prefix. Validate configured absolute public URL at startup; empty base produces a relative handler link. Add `UploadTransportLimit(maxFileBytes int64) int` and `NonUploadBodyLimit(limit int) fiber.Handler`. Effective file cap is the existing configured/default file-service maximum (hard cap 50 MiB), transport overhead allowance is 1 MiB, ordinary JSON remains capped at 16 MiB. The global transport ceiling is `max(16 MiB, effectiveFileCap + 1 MiB)` so a small configured file cap cannot reduce the existing JSON ceiling.
 
-- [ ] **1. Write `TestFileGeneratedURLRoundTrip` using actual handler/signer and a temporary file store:** a prefixed base URL and app ID with reserved query characters round-trip; tampering/missing app/expiry/signature fail. `TestUploadBodyBoundaries` posts a valid 17 MiB multipart file successfully under a 50 MiB service cap, rejects a file over the configured cap and rejects ordinary JSON over 16 MiB. With a 1 MiB file cap, assert transport still admits existing 15 MiB JSON while file admission still rejects oversized uploads.
-- [ ] **2. Run RED:** `go test -p 2 ./internal/infrastructure/filestore ./internal/interfaces/http/middleware ./internal/interfaces/http/handlers -run 'TestFileGenerated|TestUploadBody' -count=1`.
-- [ ] **3. Use the shared builder in both handler and worker.** Set Fiber's transport ceiling from the effective file cap plus allowance; exempt only authenticated `POST /v1/files` (and its accepted trailing-slash form) with multipart content from the ordinary request-size admission guard. Retain existing media endpoint limits, file-byte validation, ownership, signatures and expiry.
-- [ ] **4. Run GREEN:** rerun targeted tests and existing file-service/signed-URL tests; verify no tenant retention or expiry-deletion behavior was invented. Append actual Phase 1 checks/commits below; mark the phase complete only with all required checks executed.
-- [ ] **5. Commit:** `fix: align file links and upload request limits`.
+- [x] **1. Write `TestFileGeneratedURLRoundTrip` using actual handler/signer and a temporary file store:** a prefixed base URL and app ID with reserved query characters round-trip; tampering/missing app/expiry/signature fail. `TestUploadBodyBoundaries` posts a valid 17 MiB multipart file successfully under a 50 MiB service cap, rejects a file over the configured cap and rejects ordinary JSON over 16 MiB. With a 1 MiB file cap, assert transport still admits existing 15 MiB JSON while file admission still rejects oversized uploads.
+- [x] **2. Run RED:** `go test -p 2 ./internal/infrastructure/filestore ./internal/interfaces/http/middleware ./internal/interfaces/http/handlers -run 'TestFileGenerated|TestUploadBody' -count=1`.
+- [x] **3. Use the shared builder in both handler and worker.** Set Fiber's transport ceiling from the effective file cap plus allowance; exempt only authenticated `POST /v1/files` (and its accepted trailing-slash form) with multipart content from the ordinary request-size admission guard. Retain existing media endpoint limits, file-byte validation, ownership, signatures and expiry.
+- [x] **4. Run GREEN:** rerun targeted tests and existing file-service/signed-URL tests; verify no tenant retention or expiry-deletion behavior was invented. Append actual Phase 1 checks/commits below; mark the phase complete only with all required checks executed.
+- [x] **5. Commit:** `fix: align file links and upload request limits`.
 
 ## Phase 2 — Onboarding and CRUD Documentation
 
@@ -265,3 +265,9 @@ For every task: inspect the scoped diff, run `git diff --check`, stage only its 
 Recommended execution: native execution in this session, with local phase commits and one fresh whole-change reviewer. OTP service/repository/worker tasks and the later documentation fixtures/reference generator share interfaces, so one implementer can integrate them with less coordination overhead. Subagent-driven execution remains available if the user prefers a fresh implementer/reviewer per task.
 
 Dependency reference checked on 2026-10-21: [kin-openapi v0.151.0 source module](https://github.com/getkin/kin-openapi/blob/v0.151.0/go.mod) declares Go 1.25 and [openapi2conv](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi2conv) supplies the Swagger/OpenAPI conversion. The existing Go 1.26.1 floor is sufficient; the dependency is for generation/validation, not a new HTTP runtime framework.
+
+### Phase 1 execution evidence (2026-10-21)
+
+Commits: `9e59347`, `406ce80`, `e472494`, `8eecdf5`, and the file-link/upload commit containing this record.
+
+Passed: `go test -p 2 -short -count=1 ./cmd/... ./internal/... ./pkg/... ./sdk/go/... ./tests/...`, with `FRN_OTP_REDIS_ADDR=127.0.0.1:16390` pointing to an isolated Redis fixture. Includes billing, SSE, worker, OTP, file URL/download and multipart boundary regressions. JavaScript SDK tests: 5/5. No production calls or data changes.

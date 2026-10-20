@@ -4,7 +4,7 @@ Date: 2026-10-21
 
 Branch: `codex/whatsapp-sms-reliability`
 
-Status: Written design approved on 2026-10-21. The four-phase implementation plan is prepared and awaits review and execution-method selection. Product implementation has not started.
+Status: Design and implementation plan approved on 2026-10-21 for native execution of all four phases on the existing branch. Phase 1 verified locally; later phases in progress.
 
 ## Outcome and scope
 

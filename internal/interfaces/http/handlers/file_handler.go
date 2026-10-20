@@ -220,11 +220,7 @@ func (h *FileHandler) DownloadURL(c *fiber.Ctx) error {
 		return h.mapServiceError(c, err, "download-url")
 	}
 	exp, sig := h.signer.Sign(appID, id)
-	relPath := fmt.Sprintf("/v1/files/download/%s?app_id=%s&exp=%d&sig=%s", id, appID, exp, sig)
-	url := relPath
-	if h.publicURL != "" {
-		url = h.publicURL + relPath
-	}
+	url := filestore.BuildSignedDownloadURL(h.publicURL, appID, id, exp, sig)
 	return c.JSON(dto.SignedURLResponse{
 		URL:       url,
 		ExpiresAt: time.Unix(exp, 0).UTC(),
