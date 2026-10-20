@@ -94,14 +94,10 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 		}
 	}
 
-	body := c.Body()
-	h.logger.Debug("Raw request body", zap.String("body", string(body)), zap.String("app_id", appID))
-
 	var req dto.SendNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
 		h.logger.Error("Failed to parse notification request body",
 			zap.Error(err),
-			zap.String("body", string(body)),
 			zap.String("app_id", appID))
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "invalid request body",
@@ -112,8 +108,7 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 		zap.String("user_id", req.UserID),
 		zap.String("template_id", req.TemplateID),
 		zap.String("channel", req.Channel),
-		zap.String("priority", req.Priority),
-		zap.Any("data", req.Data))
+		zap.String("priority", req.Priority))
 
 	// Convert to domain request
 	sendReq := req.ToSendRequest(appID)

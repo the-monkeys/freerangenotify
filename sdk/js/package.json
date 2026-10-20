@@ -10,7 +10,8 @@
     ],
     "scripts": {
         "build": "tsc",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm run build",
+        "test": "node scripts/test.mjs"
     },
     "keywords": [
         "notifications",

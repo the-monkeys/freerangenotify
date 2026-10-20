@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
@@ -155,6 +156,10 @@ func (h *OTPHandler) Resend(c *fiber.Ctx) error {
 //   - 429 for rate limit
 //   - 400 for validation / invalid recipient
 func (h *OTPHandler) writeSendError(c *fiber.Ctx, appID string, err error) error {
+	var admission *notification.AdmissionError
+	if errors.As(err, &admission) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": admission.Error()})
+	}
 	switch {
 	case errors.Is(err, otp.ErrNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})

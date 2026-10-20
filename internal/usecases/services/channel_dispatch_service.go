@@ -160,7 +160,7 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 		}
 		kind, err = providers.WhatsAppPayloadKind(n, snap.Provider)
 		if err != nil {
-			return nil, err
+			return nil, &notification.AdmissionError{Message: "invalid WhatsApp message payload", Cause: err}
 		}
 
 		if kind == "text" {
@@ -169,7 +169,7 @@ func (s *ChannelDispatchService) PrepareChannelDelivery(ctx context.Context, n *
 			}
 			key := channelconnection.WindowKey(n.AppID, n.EnvironmentID, snap.Provider, snap.AccountID, snap.SenderID, u.Phone)
 			if s.Redis.Exists(ctx, key).Val() != 1 {
-				return nil, fmt.Errorf("WhatsApp window closed; approved template required")
+				return nil, &notification.AdmissionError{Message: "WhatsApp window closed; approved template required"}
 			}
 		}
 	}

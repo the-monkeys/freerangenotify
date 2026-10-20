@@ -588,8 +588,7 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					zap.String("notification_id", notif.NotificationID),
 					zap.String("template_id", notif.TemplateID),
 					zap.String("template_name", tmpl.Name),
-					zap.String("title", notif.Content.Title),
-					zap.String("body", notif.Content.Body))
+					zap.String("template_id", notif.TemplateID))
 			} else {
 				logger.Warn("Template is NIL in processor, skipping template enrichment",
 					zap.String("notification_id", notif.NotificationID),
@@ -1771,9 +1770,7 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 		return "", nil
 	}
 
-	p.logger.Debug("Rendering template",
-		zap.String("template_string", tmplStr),
-		zap.Any("rendering_data", data))
+	p.logger.Debug("Rendering template")
 
 	tmplStr = usecases.NormalizeTemplateBody(tmplStr)
 	tmpl, err := stdtemplate.New("notification").Parse(tmplStr)
@@ -1788,8 +1785,7 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 	}
 
 	result := buf.String()
-	p.logger.Debug("Template rendered successfully",
-		zap.String("result", result))
+	p.logger.Debug("Template rendered successfully")
 
 	return result, nil
 }

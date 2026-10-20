@@ -175,8 +175,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("user_id", req.UserID),
 		zap.String("template_id", req.TemplateID),
 		zap.String("channel", string(req.Channel)),
-		zap.String("priority", string(req.Priority)),
-		zap.Any("data", req.Data))
+		zap.String("priority", string(req.Priority)))
 
 	// ── Phase 2: Topic fan-out ──
 	// If TopicID is set, resolve subscribers and delegate to SendBulk.
@@ -220,9 +219,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 		s.logger.Debug("Template loaded for notification",
 			zap.String("template_id", req.TemplateID),
-			zap.String("template_name", tmpl.Name),
-			zap.String("title", title),
-			zap.String("body", body))
+			zap.String("template_name", tmpl.Name))
 	} else {
 		title = req.Title
 		body = req.Body

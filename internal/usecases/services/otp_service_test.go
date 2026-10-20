@@ -346,8 +346,8 @@ func TestSend_Happy_EmailCreatesUserAndDispatches(t *testing.T) {
 	if len(users.created) != 1 {
 		t.Errorf("expected 1 user created, got %d", len(users.created))
 	}
-	if len(tmpls.calls) != 1 {
-		t.Errorf("expected 1 transient template, got %d", len(tmpls.calls))
+	if len(tmpls.calls) != 0 {
+		t.Errorf("expected no permanent OTP templates, got %d", len(tmpls.calls))
 	}
 	// Persisted record must NOT contain the plaintext code anywhere.
 	for _, r := range repo.store {

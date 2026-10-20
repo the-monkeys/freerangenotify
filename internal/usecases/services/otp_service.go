@@ -38,7 +38,7 @@ type userResolver interface {
 }
 
 // templateCreator is the narrow slice of usecases.TemplateService the OTP
-// service uses to materialise a transient template per send.
+// service previously used for templates. Retained for constructor compatibility.
 type templateCreator interface {
 	Create(ctx context.Context, req *templateDomain.CreateRequest) (*templateDomain.Template, error)
 }
@@ -164,9 +164,8 @@ func channelAddressForUser(u *user.User, channel otp.Channel) (string, error) {
 	return "", otp.ErrInvalidChannel
 }
 
-// dispatchNotification resolves the recipient to an internal user (auto-
-// creating an ephemeral record when needed), creates a transient template
-// with the rendered OTP body, and delegates to notification.Service.Send.
+// dispatchNotification resolves the recipient when necessary and sends rendered
+// direct content without creating a permanent per-code template.
 // Returns the notification ID. Code plaintext stays scoped to this function.
 //
 // If preResolvedUserID is non-empty, the recipient-lookup step is skipped —
@@ -193,19 +192,6 @@ func (s *OTPService) dispatchNotification(
 	subject := "Your verification code"
 
 	channelString := channelToNotificationChannel(req.Channel)
-	tmplName := fmt.Sprintf("_otp_%s", uuid.NewString()[:8])
-	tmpl, err := s.templateService.Create(ctx, &templateDomain.CreateRequest{
-		AppID:     req.AppID,
-		Name:      tmplName,
-		Channel:   channelString,
-		Subject:   subject,
-		Body:      body,
-		Locale:    "en",
-		CreatedBy: "system:otp",
-	})
-	if err != nil {
-		return "", fmt.Errorf("otp: create transient template: %w", err)
-	}
 
 	data := map[string]interface{}{}
 	for k, v := range templateData {
@@ -216,6 +202,12 @@ func (s *OTPService) dispatchNotification(
 	// raw code into structured fields like Notification.Content.Data that
 	// might be persisted long-term beyond Body rendering.
 	data["code"] = code
+	body = renderOTPVariables(body, data).(string)
+	for k, v := range data {
+		if k != "code" {
+			data[k] = renderOTPVariables(v, data)
+		}
+	}
 
 	sendReq := notification.SendRequest{
 		AppID:         req.AppID,
@@ -223,7 +215,8 @@ func (s *OTPService) dispatchNotification(
 		UserID:        userID,
 		Channel:       notification.Channel(channelString),
 		Priority:      notification.PriorityHigh, // OTPs are time-sensitive
-		TemplateID:    tmpl.ID,
+		Title:         subject,
+		Body:          body,
 		Data:          data,
 		Metadata: map[string]interface{}{
 			"otp_request_id":   req.RequestID,
@@ -452,4 +445,35 @@ func otpRequestInScope(ctx context.Context, req *otp.Request) bool {
 		return true
 	} // Backward-compatible trusted internal service calls.
 	return scope.AppID != "" && req.AppID == scope.AppID && (req.EnvironmentID == "" || req.EnvironmentID == scope.EnvironmentID)
+}
+
+// Render each string once so structured WhatsApp parameters remain typed.
+func renderOTPVariables(value interface{}, data map[string]interface{}) interface{} {
+	pairs := []string{}
+	for k, v := range data {
+		switch v.(type) {
+		case string, float64, int, bool:
+			for _, key := range []string{"{{" + k + "}}", "{{ " + k + " }}", "{{." + k + "}}"} {
+				pairs = append(pairs, key, fmt.Sprint(v))
+			}
+		}
+	}
+	switch x := value.(type) {
+	case string:
+		return strings.NewReplacer(pairs...).Replace(x)
+	case map[string]interface{}:
+		out := map[string]interface{}{}
+		for k, v := range x {
+			out[k] = renderOTPVariables(v, data)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(x))
+		for i, v := range x {
+			out[i] = renderOTPVariables(v, data)
+		}
+		return out
+	default:
+		return value
+	}
 }
