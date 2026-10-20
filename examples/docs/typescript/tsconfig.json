@@ -1,0 +1,15 @@
+{
+ "compilerOptions": {
+  "target":"ES2020", "module":"ESNext", "moduleResolution":"node", "jsx":"react-jsx",
+  "strict":true, "noEmit":true, "esModuleInterop":true, "skipLibCheck":true,
+  "baseUrl":"../../..",
+  "paths":{
+   "@freerangenotify/sdk":["sdk/js/src/index.ts"],
+   "@freerangenotify/react":["sdk/react/src/index.tsx"],
+   "react":["sdk/react/node_modules/@types/react"],
+   "react/jsx-runtime":["sdk/react/node_modules/@types/react/jsx-runtime"]
+  },
+  "lib":["ES2020","DOM"]
+ },
+ "include":["./client.ts","./react.tsx"]
+}

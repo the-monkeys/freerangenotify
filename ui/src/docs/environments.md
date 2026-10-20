@@ -119,4 +119,3 @@ HTTP 200; relevant response fields:
   }
 }
 ```
-

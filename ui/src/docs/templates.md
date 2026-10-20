@@ -169,4 +169,3 @@ HTTP 201; relevant response fields:
   "body": "Hi {{.name}}"
 }
 ```
-

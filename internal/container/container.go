@@ -487,6 +487,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.Validator,
 		logger,
 	)
+	if err := container.ApplicationHandler.SetCodeSampleBaseURL(cfg.Server.PublicURL); err != nil {
+		return nil, err
+	}
 	container.UserHandler = handlers.NewUserHandler(
 		container.UserService,
 		container.Validator,

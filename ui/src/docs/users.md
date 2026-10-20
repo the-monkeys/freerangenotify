@@ -84,7 +84,7 @@ HTTP 200; relevant response fields (other fields omitted):
 
 ## List, preferences and devices
 
-`GET /users?page=1&page_size=20` returns `data`, `total`, `page` and `page_size`. Filter by email, timezone or language. Use `GET /users/USER_ID/preferences` and `PUT /users/USER_ID/preferences` for channel opt-in, DND and quiet hours.
+`GET /users?page=1&page_size=20` returns a success envelope whose `data` contains `users`, `total_count`, `page` and `page_size`. Filter by email, timezone or language. Use `GET /users/USER_ID/preferences` and `PUT /users/USER_ID/preferences` for channel opt-in, DND and quiet hours.
 
 Use `POST /users/USER_ID/devices` to register a push device, `GET` to list, and `DELETE /users/USER_ID/devices/DEVICE_ID` to remove it. Supply the platform and provider token required by your configuration; see [API reference](/docs/api).
 
