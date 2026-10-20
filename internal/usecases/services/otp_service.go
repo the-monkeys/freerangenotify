@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	templateDomain "github.com/the-monkeys/freerangenotify/internal/domain/template"
@@ -87,6 +88,15 @@ var e164Re = regexp.MustCompile(`^\+[1-9]\d{7,14}$`)
 // Send creates a new OTP, dispatches it through the notification pipeline,
 // and persists the hashed record.
 func (s *OTPService) Send(ctx context.Context, in otp.SendInput) (*otp.SendResult, error) {
+	if scope, ok := otp.ScopeFromContext(ctx); ok {
+		if scope.AppID == "" || scope.AppID != in.AppID {
+			return nil, otp.ErrNotFound
+		}
+		in.EnvironmentID = scope.EnvironmentID
+	}
+	if in.EnvironmentID != "" {
+		ctx = channelconnection.WithEnvironment(ctx, in.EnvironmentID)
+	}
 	if err := s.validateSendInput(&in); err != nil {
 		return nil, err
 	}
@@ -133,19 +143,20 @@ func (s *OTPService) Send(ctx context.Context, in otp.SendInput) (*otp.SendResul
 	}
 
 	req := &otp.Request{
-		RequestID:    "otp_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		AppID:        in.AppID,
-		Channel:      in.Channel,
-		Recipient:    in.Recipient,
-		CodeHash:     codeHash,
-		Salt:         salt,
-		Length:       in.Length,
-		Alphanumeric: in.Alphanumeric,
-		Attempts:     0,
-		MaxAttempts:  maxAttempts,
-		ExpiresAt:    now.Add(time.Duration(ttlSec) * time.Second),
-		LastSentAt:   now,
-		CreatedAt:    now,
+		RequestID:     "otp_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		EnvironmentID: in.EnvironmentID,
+		AppID:         in.AppID,
+		Channel:       in.Channel,
+		Recipient:     in.Recipient,
+		CodeHash:      codeHash,
+		Salt:          salt,
+		Length:        in.Length,
+		Alphanumeric:  in.Alphanumeric,
+		Attempts:      0,
+		MaxAttempts:   maxAttempts,
+		ExpiresAt:     now.Add(time.Duration(ttlSec) * time.Second),
+		LastSentAt:    now,
+		CreatedAt:     now,
 	}
 
 	notif, err := s.dispatchNotification(ctx, req, resolvedUserID, code, in.TemplateBody, in.TemplateData)
@@ -197,12 +208,20 @@ func (s *OTPService) Verify(ctx context.Context, in otp.VerifyInput) (*otp.Verif
 	if err != nil {
 		return nil, err
 	}
+	if !otpRequestInScope(ctx, req) {
+		return nil, otp.ErrNotFound
+	}
 	if time.Now().UTC().After(req.ExpiresAt) {
 		return nil, otp.ErrExpired
 	}
 
 	if req.Verified {
-		// Idempotent: return prior success without consuming an attempt.
+		expected, decodeErr := hex.DecodeString(req.CodeHash)
+		actual := sha256.Sum256([]byte(code + req.Salt))
+		if decodeErr != nil || subtle.ConstantTimeCompare(expected, actual[:]) != 1 {
+			return nil, otp.ErrInvalidCode
+		}
+		// Idempotent only for the same correct code, without consuming an attempt.
 		return &otp.VerifyResult{
 			Verified:          true,
 			AttemptsRemaining: req.MaxAttempts - req.Attempts,
@@ -265,6 +284,9 @@ func (s *OTPService) Resend(ctx context.Context, requestID string) (*otp.SendRes
 	req, err := s.repo.Get(ctx, requestID)
 	if err != nil {
 		return nil, err
+	}
+	if !otpRequestInScope(ctx, req) {
+		return nil, otp.ErrNotFound
 	}
 	if req.Verified {
 		return nil, otp.ErrAlreadyVerified
@@ -445,12 +467,13 @@ func (s *OTPService) dispatchNotification(
 	data["code"] = code
 
 	sendReq := notification.SendRequest{
-		AppID:      req.AppID,
-		UserID:     userID,
-		Channel:    notification.Channel(channelString),
-		Priority:   notification.PriorityHigh, // OTPs are time-sensitive
-		TemplateID: tmpl.ID,
-		Data:       data,
+		AppID:         req.AppID,
+		EnvironmentID: req.EnvironmentID,
+		UserID:        userID,
+		Channel:       notification.Channel(channelString),
+		Priority:      notification.PriorityHigh, // OTPs are time-sensitive
+		TemplateID:    tmpl.ID,
+		Data:          data,
 		Metadata: map[string]interface{}{
 			"otp_request_id": req.RequestID,
 			"otp_expires_at": req.ExpiresAt.UTC().Format(time.RFC3339Nano),
@@ -667,3 +690,11 @@ func channelToNotificationChannel(c otp.Channel) string {
 
 // Ensure interface compliance at compile time.
 var _ otp.Service = (*OTPService)(nil)
+
+func otpRequestInScope(ctx context.Context, req *otp.Request) bool {
+	scope, scoped := otp.ScopeFromContext(ctx)
+	if !scoped {
+		return true
+	} // Backward-compatible trusted internal service calls.
+	return scope.AppID != "" && req.AppID == scope.AppID && (req.EnvironmentID == "" || req.EnvironmentID == scope.EnvironmentID)
+}
