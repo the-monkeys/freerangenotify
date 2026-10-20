@@ -4,28 +4,15 @@ import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { ChevronDown, ChevronRight, Search } from 'lucide-react';
 
-interface SwaggerSpec {
-    info?: { title?: string; description?: string; version?: string };
-    basePath?: string;
-    paths?: Record<string, Record<string, SwaggerOperation>>;
-}
+import {buildApiUrl} from '../../services/api';
+import {loadApiSpec,resolveSchema,schemaExample,type SwaggerSpec,type SwaggerOperation,type SwaggerSchema} from './apiSpec';
 
-interface SwaggerOperation {
-    summary?: string;
-    description?: string;
-    tags?: string[];
-    parameters?: SwaggerParameter[];
-    responses?: Record<string, { description?: string }>;
-    security?: Record<string, string[]>[];
-}
-
-interface SwaggerParameter {
-    name: string;
-    in: string;
-    type?: string;
-    description?: string;
-    required?: boolean;
-    schema?: { type?: string; properties?: Record<string, any> };
+function SchemaDetails({spec,schema,label,example}:{spec:SwaggerSpec;schema:SwaggerSchema;label:string;example?:unknown}) {
+ const resolved=schema.$ref ? resolveSchema(spec,schema.$ref) : schema;
+ return <section className="space-y-2 min-w-0"><h3 className="text-xs font-semibold">{label}</h3>
+ {resolved?.required?.length ? <p className="text-xs">Required fields: {resolved.required.join(', ')}</p>:null}
+ {Object.entries(resolved?.properties||{}).map(([name,field])=><p className="text-xs break-words" key={name}><code>{name}</code> ({field.type || (field.$ref ? resolveSchema(spec,field.$ref)?.type : undefined) || 'object'}) {field.description}</p>)}
+ <pre className="overflow-x-auto text-xs p-3 rounded bg-background border border-border max-h-80">{JSON.stringify(example===undefined?schemaExample(spec,schema):example,null,2)}</pre></section>;
 }
 
 interface EndpointEntry {
@@ -51,27 +38,11 @@ const ApiReferencePage: React.FC = () => {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
     useEffect(() => {
-        // Try fetching from the API server first, fallback to bundled static copy
-        fetch('/v1/swagger/doc.json')
-            .then(r => {
-                if (!r.ok) throw new Error('not found');
-                return r.json();
-            })
-            .catch(() =>
-                fetch('/swagger.json').then(r => {
-                    if (!r.ok) throw new Error('fallback not found');
-                    return r.json();
-                })
-            )
-            .then(data => {
-                setSpec(data);
-                setLoading(false);
-            })
-            .catch(err => {
-                setError('Failed to load API specification');
-                setLoading(false);
-                console.error('Swagger load error:', err);
-            });
+        const controller=new AbortController();
+        loadApiSpec(buildApiUrl('/swagger/doc.json'),'/swagger.json',controller.signal)
+            .then(data=>{if(!controller.signal.aborted){setSpec(data);setLoading(false);}})
+            .catch(()=>{if(!controller.signal.aborted){setError('Failed to load API specification');setLoading(false);}});
+        return ()=>controller.abort();
     }, []);
 
     const endpoints = useMemo((): EndpointEntry[] => {
@@ -196,7 +167,7 @@ const ApiReferencePage: React.FC = () => {
                                     >
                                         {e.method}
                                     </Badge>
-                                    <code className="text-sm font-mono flex-1 text-foreground">{e.path}</code>
+                                    <code className="text-sm font-mono flex-1 min-w-0 break-all text-foreground">{e.path}</code>
                                     <span className="text-xs text-muted-foreground hidden sm:inline truncate max-w-[200px]">
                                         {e.operation.summary}
                                     </span>
@@ -214,6 +185,10 @@ const ApiReferencePage: React.FC = () => {
                                             <p className="text-xs text-muted-foreground">{e.operation.description}</p>
                                         )}
 
+                                        {e.operation['x-feature-prerequisites'] && <p className="text-xs">{e.operation['x-feature-prerequisites']}</p>}
+                                        <p className="text-xs text-muted-foreground">Application routes accept X-API-Key or Authorization: Bearer APP_API_KEY. Account routes require your account JWT. Public links and provider callbacks use their own token/signature. Keep keys on your backend.</p>
+                                        {spec && e.operation.parameters?.filter(p=>p.in==='body' && p.schema).map((p,i)=><SchemaDetails key={i} spec={spec} schema={p.schema!} label="Request example" example={e.operation['x-contract-example']?.request}/>)}
+                                        {spec && Object.entries(e.operation.responses||{}).filter(([,r])=>r.schema).map(([code,r])=><SchemaDetails key={code} spec={spec} schema={r.schema!} label={'Response '+code} example={code.startsWith('2')?e.operation['x-contract-example']?.response:undefined}/>)}
                                         {/* Auth */}
                                         {e.operation.security && e.operation.security.length > 0 && (
                                             <div>
