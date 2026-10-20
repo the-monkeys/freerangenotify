@@ -190,11 +190,11 @@ For every task: inspect the scoped diff, run `git diff --check`, stage only its 
 
 **Interfaces:** Keep `Provider.Send`; Resend JSON attachment objects add `content_id` only for inline attachments with a valid content ID. Ordinary attachments remain unchanged. Consume the existing attachment resolver and provider fixture transports.
 
-- [ ] **1. Replace `TestResendProvider_Send_InlineDegradesToRegular` with `TestResendProvider_Send_InlineEmitsContentID`:** captured JSON has `content_id: logo-image` paired with HTML `cid:logo-image`; ordinary file attachments omit it. Add byte/source/error fixtures for SMTP, SES, SendGrid, Mailgun, Postmark and Resend using URL/base64/file-ID sources and multiple attachments; assert each advertised CID behavior at its actual wire boundary.
-- [ ] **2. Run RED:** `go test -p 2 ./internal/infrastructure/providers -run 'Test.*(Inline|AttachmentContract)' -count=1`.
-- [ ] **3. Forward Resend content ID and make only reproducible adapter corrections found by those fixtures.** Keep provider-specific size limits and close resolver streams. Unsupported combinations must have accurate capability descriptions rather than a fabricated success.
-- [ ] **4. Run GREEN:** targeted and existing attachment tests pass; no remote provider or paid send is used.
-- [ ] **5. Commit:** `fix: preserve inline content IDs in email attachments`.
+- [x] **1. Replace `TestResendProvider_Send_InlineDegradesToRegular` with `TestResendProvider_Send_InlineEmitsContentID`:** captured JSON has `content_id: logo-image` paired with HTML `cid:logo-image`; ordinary file attachments omit it. Add byte/source/error fixtures for SMTP, SES, SendGrid, Mailgun, Postmark and Resend using URL/base64/file-ID sources and multiple attachments; assert each advertised CID behavior at its actual wire boundary.
+- [x] **2. Run RED:** `go test -p 2 ./internal/infrastructure/providers -run 'Test.*(Inline|AttachmentContract)' -count=1`.
+- [x] **3. Forward Resend content ID and make only reproducible adapter corrections found by those fixtures.** Keep provider-specific size limits and close resolver streams. Unsupported combinations must have accurate capability descriptions rather than a fabricated success.
+- [x] **4. Run GREEN:** targeted and existing attachment tests pass; no remote provider or paid send is used.
+- [x] **5. Commit:** `fix: preserve inline content IDs in email attachments`.
 
 ### Task 12: Publish accurate channel, file, webhook and poll recipes
 
