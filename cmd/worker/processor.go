@@ -19,6 +19,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
@@ -52,24 +53,25 @@ type ProcessorConfig struct {
 
 // NotificationProcessor processes notifications from the queue
 type NotificationProcessor struct {
-	channelDispatch  *services.ChannelDispatchService
-	channelInbox     whatsapp.Repository
-	queue            queue.Queue
-	notifRepo        notification.Repository
-	userRepo         user.Repository
-	appRepo          application.Repository
-	templateRepo     template.Repository
-	authService      auth.Service
-	licensingChecker license.Checker
-	providerManager  *providers.Manager
-	creditService    *services.CreditService
-	redisClient      *redis.Client
-	logger           *zap.Logger
-	config           ProcessorConfig
-	metrics          *metrics.NotificationMetrics
-	digestManager    *orchestrator.DigestManager          // Phase 1: optional digest support
-	throttle         *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
-	richTplService   services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
+	otpDeliveryAuthorizer otp.DeliveryAuthorizer
+	channelDispatch       *services.ChannelDispatchService
+	channelInbox          whatsapp.Repository
+	queue                 queue.Queue
+	notifRepo             notification.Repository
+	userRepo              user.Repository
+	appRepo               application.Repository
+	templateRepo          template.Repository
+	authService           auth.Service
+	licensingChecker      license.Checker
+	providerManager       *providers.Manager
+	creditService         *services.CreditService
+	redisClient           *redis.Client
+	logger                *zap.Logger
+	config                ProcessorConfig
+	metrics               *metrics.NotificationMetrics
+	digestManager         *orchestrator.DigestManager          // Phase 1: optional digest support
+	throttle              *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
+	richTplService        services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
 
 	// attachmentResolver materialises notification.Attachment specs
 	// (URL / inline base64 / file_id) for provider adapters. Optional —
@@ -446,6 +448,16 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		defer cancel()
 	}
 	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
+	if err := p.authorizeOTPDelivery(ctx, notif); err != nil {
+		if errors.Is(err, otp.ErrStateUnavailable) || errors.Is(err, otp.ErrConflict) {
+			retainNotificationProcessingItem(ctx)
+			logger.Warn("OTP delivery authority unavailable")
+			return
+		}
+		// A stale or invalid operation cannot reach billing or the provider.
 		p.handleExpiredNotification(ctx, notif)
 		return
 	}

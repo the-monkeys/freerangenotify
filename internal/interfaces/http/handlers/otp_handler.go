@@ -160,7 +160,9 @@ func (h *OTPHandler) writeSendError(c *fiber.Ctx, appID string, err error) error
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, otp.ErrExpired):
 		return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": err.Error()})
-	case errors.Is(err, otp.ErrAlreadyVerified), errors.Is(err, otp.ErrResendCooldown):
+	case errors.Is(err, otp.ErrStateUnavailable):
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": otp.ErrStateUnavailable.Error()})
+	case errors.Is(err, otp.ErrOperationPending), errors.Is(err, otp.ErrAlreadyVerified), errors.Is(err, otp.ErrResendCooldown):
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, otp.ErrRateLimited):
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": err.Error()})
@@ -195,6 +197,12 @@ func (h *OTPHandler) writeVerifyOutcome(c *fiber.Ctx, requestID string, res *otp
 
 	resp := dto.OTPVerifyResponse{Verified: false, RequestID: requestID}
 	switch {
+	case errors.Is(err, otp.ErrOperationPending):
+		resp.Error = "operation_pending"
+		return c.Status(fiber.StatusConflict).JSON(resp)
+	case errors.Is(err, otp.ErrStateUnavailable):
+		resp.Error = "state_unavailable"
+		return c.Status(fiber.StatusServiceUnavailable).JSON(resp)
 	case errors.Is(err, otp.ErrInvalidCode):
 		resp.Error = "invalid_code"
 		if res != nil {

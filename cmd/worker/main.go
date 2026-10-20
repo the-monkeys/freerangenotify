@@ -263,6 +263,7 @@ func main() {
 	processorCtx, processorCancel := context.WithCancel(ctx)
 	defer processorCancel()
 
+	processor.SetOTPDeliveryAuthorizer(c.OTPService)
 	processor.SetChannelDispatch(c.ChannelDispatch)
 	processor.SetChannelInbox(repository.NewWhatsAppRepository(c.DatabaseManager.Client.GetClient(), logger))
 	if err := processor.Start(processorCtx); err != nil {

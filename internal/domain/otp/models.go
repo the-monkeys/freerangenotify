@@ -74,23 +74,27 @@ var (
 // Request is the persisted OTP envelope. CodeHash and Salt together let us
 // verify a code in constant time without ever storing the plaintext.
 type Request struct {
-	Revision      uint64     `json:"revision,omitempty"`
-	EnvironmentID string     `json:"environment_id,omitempty"`
-	RequestID     string     `json:"request_id"`
-	AppID         string     `json:"app_id"`
-	Channel       Channel    `json:"channel"`
-	Recipient     string     `json:"recipient"` // E.164 phone or RFC-5322 email
-	CodeHash      string     `json:"code_hash"` // hex-encoded SHA-256(code || salt)
-	Salt          string     `json:"salt"`      // hex-encoded random 16 bytes
-	Length        int        `json:"length"`
-	Alphanumeric  bool       `json:"alphanumeric"`
-	Attempts      int        `json:"attempts"`
-	MaxAttempts   int        `json:"max_attempts"`
-	ExpiresAt     time.Time  `json:"expires_at"`
-	LastSentAt    time.Time  `json:"last_sent_at"`
-	Verified      bool       `json:"verified"`
-	VerifiedAt    *time.Time `json:"verified_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ResolvedUserID string                 `json:"resolved_user_id,omitempty"`
+	TemplateBody   string                 `json:"template_body,omitempty"`
+	TemplateData   map[string]interface{} `json:"template_data,omitempty"`
+	Delivery       *DeliveryOperation     `json:"delivery,omitempty"`
+	Revision       uint64                 `json:"revision,omitempty"`
+	EnvironmentID  string                 `json:"environment_id,omitempty"`
+	RequestID      string                 `json:"request_id"`
+	AppID          string                 `json:"app_id"`
+	Channel        Channel                `json:"channel"`
+	Recipient      string                 `json:"recipient"` // E.164 phone or RFC-5322 email
+	CodeHash       string                 `json:"code_hash"` // hex-encoded SHA-256(code || salt)
+	Salt           string                 `json:"salt"`      // hex-encoded random 16 bytes
+	Length         int                    `json:"length"`
+	Alphanumeric   bool                   `json:"alphanumeric"`
+	Attempts       int                    `json:"attempts"`
+	MaxAttempts    int                    `json:"max_attempts"`
+	ExpiresAt      time.Time              `json:"expires_at"`
+	LastSentAt     time.Time              `json:"last_sent_at"`
+	Verified       bool                   `json:"verified"`
+	VerifiedAt     *time.Time             `json:"verified_at,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 // SendInput is the use-case input for OTPService.Send. The caller must

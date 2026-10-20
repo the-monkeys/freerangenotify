@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -16,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	templateDomain "github.com/the-monkeys/freerangenotify/internal/domain/template"
@@ -88,264 +86,17 @@ var e164Re = regexp.MustCompile(`^\+[1-9]\d{7,14}$`)
 // Send creates a new OTP, dispatches it through the notification pipeline,
 // and persists the hashed record.
 func (s *OTPService) Send(ctx context.Context, in otp.SendInput) (*otp.SendResult, error) {
-	if scope, ok := otp.ScopeFromContext(ctx); ok {
-		if scope.AppID == "" || scope.AppID != in.AppID {
-			return nil, otp.ErrNotFound
-		}
-		in.EnvironmentID = scope.EnvironmentID
-	}
-	if in.EnvironmentID != "" {
-		ctx = channelconnection.WithEnvironment(ctx, in.EnvironmentID)
-	}
-	if err := s.validateSendInput(&in); err != nil {
-		return nil, err
-	}
-
-	// Resolve the recipient up-front so rate limiting, persistence, and the
-	// notification dispatch all key off the SAME channel address. When the
-	// caller passes user_id / external_id, the channel-appropriate field on
-	// the user record (email or phone) becomes the canonical Recipient.
-	resolvedUserID, resolvedAddress, err := s.resolveRecipient(ctx, &in)
-	if err != nil {
-		return nil, err
-	}
-	in.Recipient = resolvedAddress
-
-	// Rate-limit per app+recipient (default 5 sends / hour). Hits before any
-	// expensive work so abusive callers don't burn credits or fill Redis.
-	if count, err := s.repo.RecipientRateLimit(ctx, in.AppID, in.Recipient, 3600); err != nil {
-		s.logger.Warn("otp: rate-limit check failed (allowing)", zap.Error(err))
-	} else if count > s.recipientLimitPerHr {
-		return nil, otp.ErrRateLimited
-	}
-
-	// Generate the plaintext code, hash it, and forget the plaintext on
-	// return (we render it once into the notification body below). The code
-	// itself never lands in any log line.
-	code, err := generateCode(in.Length, in.Alphanumeric)
-	if err != nil {
-		return nil, fmt.Errorf("otp: generate code: %w", err)
-	}
-	salt, err := randomHex(16)
-	if err != nil {
-		return nil, fmt.Errorf("otp: generate salt: %w", err)
-	}
-	codeHash := hashCode(code, salt)
-
-	now := time.Now().UTC()
-	ttlSec := in.TTLSeconds
-	if ttlSec == 0 {
-		ttlSec = otp.DefaultTTLSeconds
-	}
-	maxAttempts := in.MaxAttempts
-	if maxAttempts == 0 {
-		maxAttempts = otp.DefaultMaxAttempts
-	}
-
-	req := &otp.Request{
-		RequestID:     "otp_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		EnvironmentID: in.EnvironmentID,
-		AppID:         in.AppID,
-		Channel:       in.Channel,
-		Recipient:     in.Recipient,
-		CodeHash:      codeHash,
-		Salt:          salt,
-		Length:        in.Length,
-		Alphanumeric:  in.Alphanumeric,
-		Attempts:      0,
-		MaxAttempts:   maxAttempts,
-		ExpiresAt:     now.Add(time.Duration(ttlSec) * time.Second),
-		LastSentAt:    now,
-		CreatedAt:     now,
-	}
-
-	notif, err := s.dispatchNotification(ctx, req, resolvedUserID, code, in.TemplateBody, in.TemplateData)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Create(ctx, req); err != nil {
-		// Code already left the building via the notification pipeline. Best
-		// we can do is log and surface the error so the caller knows verify
-		// will fail.
-		s.logger.Error("otp: persist after dispatch failed",
-			zap.String("request_id", req.RequestID),
-			zap.String("notification_id", notif),
-			zap.Error(err))
-		return nil, fmt.Errorf("otp: persist: %w", err)
-	}
-
-	s.logger.Info("otp: sent",
-		zap.String("request_id", req.RequestID),
-		zap.String("notification_id", notif),
-		zap.String("channel", string(req.Channel)),
-		zap.Int("ttl_seconds", ttlSec),
-		zap.Int("max_attempts", maxAttempts),
-		// recipient is intentionally NOT logged at info level — it's PII.
-	)
-
-	return &otp.SendResult{
-		RequestID:      req.RequestID,
-		NotificationID: notif,
-		Channel:        req.Channel,
-		ExpiresAt:      req.ExpiresAt,
-		TTLSeconds:     ttlSec,
-		MaxAttempts:    maxAttempts,
-	}, nil
+	return s.sendOTP(ctx, in)
 }
 
-// Verify checks a code against the stored hash with attempt counting and
-// constant-time comparison. Idempotent: a second successful verify for an
-// already-verified request returns success without re-incrementing attempts.
+// Verify atomically consumes an attempt and records verification.
 func (s *OTPService) Verify(ctx context.Context, in otp.VerifyInput) (*otp.VerifyResult, error) {
-	requestID := strings.TrimSpace(in.RequestID)
-	code := strings.TrimSpace(in.Code)
-	if requestID == "" || code == "" {
-		return nil, otp.ErrInvalidCode
-	}
-
-	req, err := s.repo.Get(ctx, requestID)
-	if err != nil {
-		return nil, err
-	}
-	if !otpRequestInScope(ctx, req) {
-		return nil, otp.ErrNotFound
-	}
-	if time.Now().UTC().After(req.ExpiresAt) {
-		return nil, otp.ErrExpired
-	}
-
-	if req.Verified {
-		expected, decodeErr := hex.DecodeString(req.CodeHash)
-		actual := sha256.Sum256([]byte(code + req.Salt))
-		if decodeErr != nil || subtle.ConstantTimeCompare(expected, actual[:]) != 1 {
-			return nil, otp.ErrInvalidCode
-		}
-		// Idempotent only for the same correct code, without consuming an attempt.
-		return &otp.VerifyResult{
-			Verified:          true,
-			AttemptsRemaining: req.MaxAttempts - req.Attempts,
-			VerifiedAt:        req.VerifiedAt,
-		}, nil
-	}
-
-	// Atomically increment first — this prevents brute-force races where
-	// concurrent verifies would otherwise share a single attempt budget.
-	attempts, err := s.repo.IncrementAttempts(ctx, requestID)
-	if err != nil {
-		return nil, err
-	}
-	if attempts > req.MaxAttempts {
-		// Burn the record on exhaustion so the same request_id cannot be
-		// retried after recovering somehow.
-		_ = s.repo.Delete(ctx, requestID)
-		return nil, otp.ErrAttemptsExhausted
-	}
-
-	expectedHash, err := hex.DecodeString(req.CodeHash)
-	if err != nil {
-		return nil, fmt.Errorf("otp: corrupt hash: %w", err)
-	}
-	actualHash := sha256.Sum256([]byte(code + req.Salt))
-
-	if subtle.ConstantTimeCompare(expectedHash, actualHash[:]) != 1 {
-		return &otp.VerifyResult{
-			Verified:          false,
-			AttemptsRemaining: req.MaxAttempts - attempts,
-		}, otp.ErrInvalidCode
-	}
-
-	now := time.Now().UTC()
-	if err := s.repo.MarkVerified(ctx, requestID, now); err != nil {
-		s.logger.Error("otp: mark verified failed", zap.String("request_id", requestID), zap.Error(err))
-		return nil, fmt.Errorf("otp: persist verify: %w", err)
-	}
-
-	s.logger.Info("otp: verified",
-		zap.String("request_id", requestID),
-		zap.String("channel", string(req.Channel)),
-	)
-
-	return &otp.VerifyResult{
-		Verified:          true,
-		AttemptsRemaining: req.MaxAttempts - attempts,
-		VerifiedAt:        &now,
-	}, nil
+	return s.verifyOTP(ctx, in)
 }
 
-// Resend dispatches the SAME code through a fresh notification. Re-issuing
-// a new code on resend would invalidate any prior delivery and double-charge
-// the customer; instead we reset the attempt counter and re-render.
+// Resend replaces the code only after a fenced delivery is accepted.
 func (s *OTPService) Resend(ctx context.Context, requestID string) (*otp.SendResult, error) {
-	requestID = strings.TrimSpace(requestID)
-	if requestID == "" {
-		return nil, otp.ErrNotFound
-	}
-	req, err := s.repo.Get(ctx, requestID)
-	if err != nil {
-		return nil, err
-	}
-	if !otpRequestInScope(ctx, req) {
-		return nil, otp.ErrNotFound
-	}
-	if req.Verified {
-		return nil, otp.ErrAlreadyVerified
-	}
-	if time.Now().UTC().After(req.ExpiresAt) {
-		return nil, otp.ErrExpired
-	}
-	cooldownEnd := req.LastSentAt.Add(time.Duration(s.resendCooldownSec) * time.Second)
-	if time.Now().UTC().Before(cooldownEnd) {
-		return nil, otp.ErrResendCooldown
-	}
-
-	// Resend uses the same code — but the plaintext was discarded after the
-	// initial send. We cannot recover it; the only safe path is to abort.
-	// To support true "resend same code" semantics we would need to keep the
-	// plaintext (or a reversible encryption of it) until expiry, which
-	// materially weakens the security posture. Instead resend mints a fresh
-	// code while preserving the request_id — most providers (Twilio Verify,
-	// Auth0, Firebase) work this way.
-	code, err := generateCode(req.Length, req.Alphanumeric)
-	if err != nil {
-		return nil, fmt.Errorf("otp: generate code: %w", err)
-	}
-	salt, err := randomHex(16)
-	if err != nil {
-		return nil, fmt.Errorf("otp: generate salt: %w", err)
-	}
-	req.CodeHash = hashCode(code, salt)
-	req.Salt = salt
-	req.Attempts = 0
-	req.LastSentAt = time.Now().UTC()
-
-	notifID, err := s.dispatchNotification(ctx, req, "", code, "", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.Update(ctx, req); err != nil {
-		s.logger.Error("otp: resend persist failed",
-			zap.String("request_id", req.RequestID),
-			zap.String("notification_id", notifID),
-			zap.Error(err))
-		return nil, fmt.Errorf("otp: persist: %w", err)
-	}
-
-	s.logger.Info("otp: resent",
-		zap.String("request_id", req.RequestID),
-		zap.String("notification_id", notifID),
-		zap.String("channel", string(req.Channel)),
-	)
-
-	return &otp.SendResult{
-		RequestID:      req.RequestID,
-		NotificationID: notifID,
-		Channel:        req.Channel,
-		ExpiresAt:      req.ExpiresAt,
-		TTLSeconds:     int(time.Until(req.ExpiresAt).Seconds()),
-		MaxAttempts:    req.MaxAttempts,
-	}, nil
+	return s.resendOTP(ctx, requestID)
 }
 
 // resolveRecipient turns the SendInput's identifier triple (recipient /
@@ -475,13 +226,17 @@ func (s *OTPService) dispatchNotification(
 		TemplateID:    tmpl.ID,
 		Data:          data,
 		Metadata: map[string]interface{}{
-			"otp_request_id": req.RequestID,
-			"otp_expires_at": req.ExpiresAt.UTC().Format(time.RFC3339Nano),
+			"otp_request_id":   req.RequestID,
+			"otp_operation_id": req.Delivery.ID,
+			"otp_expires_at":   req.ExpiresAt.UTC().Format(time.RFC3339Nano),
 		},
 	}
-	notif, err := s.notificationSvc.Send(ctx, sendReq)
+	notif, err := s.notificationSvc.Send(notification.WithDispatchIdentity(ctx, req.Delivery.NotificationID), sendReq)
 	if err != nil {
 		return "", fmt.Errorf("otp: dispatch notification: %w", err)
+	}
+	if notif == nil {
+		return "", otp.ErrInvalidRecipient
 	}
 	return notif.NotificationID, nil
 }

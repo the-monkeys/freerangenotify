@@ -376,6 +376,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		UpdatedAt:   time.Now(),
 	}
 
+	if identity, ok := notification.DispatchIdentityFromContext(ctx); ok {
+		notif.NotificationID = identity
+	}
+
 	// Move webhook_url from Data to Metadata if present
 	if req.Data != nil {
 		if url, ok := req.Data["webhook_url"].(string); ok {
@@ -457,6 +461,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 	if err := s.queue.Enqueue(ctx, queueItem); err != nil {
 		s.logger.Error("Failed to enqueue notification", zap.Error(err))
+		if _, trusted := notification.DispatchIdentityFromContext(ctx); trusted {
+			return nil, &notification.DispatchError{NotificationID: notif.NotificationID, MayBeEnqueued: true, Cause: err}
+		}
 		// Update status to failed
 		s.notificationRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
 		return nil, fmt.Errorf("failed to enqueue notification: %w", err)

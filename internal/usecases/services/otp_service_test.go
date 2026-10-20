@@ -115,7 +115,7 @@ type fakeSender struct {
 	failNext bool
 }
 
-func (s *fakeSender) Send(_ context.Context, req notification.SendRequest) (*notification.Notification, error) {
+func (s *fakeSender) Send(ctx context.Context, req notification.SendRequest) (*notification.Notification, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failNext {
@@ -124,7 +124,8 @@ func (s *fakeSender) Send(_ context.Context, req notification.SendRequest) (*not
 	}
 	s.calls = append(s.calls, req)
 	s.nextID++
-	return &notification.Notification{NotificationID: "notif-test"}, nil
+	id, _ := notification.DispatchIdentityFromContext(ctx)
+	return &notification.Notification{NotificationID: id}, nil
 }
 
 // fakeUserRepo only implements the methods the OTP service uses (userResolver).
@@ -333,7 +334,7 @@ func TestSend_Happy_EmailCreatesUserAndDispatches(t *testing.T) {
 	if res.RequestID == "" || !strings.HasPrefix(res.RequestID, "otp_") {
 		t.Errorf("unexpected request_id %q", res.RequestID)
 	}
-	if res.NotificationID != "notif-test" {
+	if res.NotificationID == "" {
 		t.Errorf("notification_id = %q", res.NotificationID)
 	}
 	if res.TTLSeconds != otp.DefaultTTLSeconds {
