@@ -1,81 +1,82 @@
-# Topics & Subscriptions
+# Topics and subscriptions
 
-Topics enable fan-out notifications — send one message and deliver it to all subscribed users. This is ideal for announcements, feature updates, and broadcast alerts.
+Topics group recipients inside one app/environment. The deployment must enable topics. Use an application API key, not a dashboard JWT. Create recipients first using [Users](/docs/users).
 
-## Creating Topics
+Creation requires **`key`**. Save the returned `data.id` as `TOPIC_ID`. The send/broadcast selector is named `topic_key`; it is a different field in a different DTO.
 
-Topics are identified by a unique `topic_key` and belong to an application.
+## Create topic
 
+Create a topic and save `data.id` as `TOPIC_ID`.
+
+<!-- api-example:create-topic:request -->
+```json
+{
+  "name": "Product updates",
+  "key": "product-updates"
+}
+```
+
+<!-- api-example:create-topic:curl -->
 ```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/topics/ \
-  -H "X-API-Key: YOUR_API_KEY" \
+curl -sS -X POST "$BASE_URL/topics" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "topic_key": "product_updates",
-    "name": "Product Updates",
-    "description": "New features and release announcements"
-  }'
+  --data @- <<JSON
+{
+  "name": "Product updates",
+  "key": "product-updates"
+}
+JSON
 ```
 
-## Managing Subscriptions
+HTTP 201; relevant response fields:
 
-### Subscribe a User
+<!-- api-example:create-topic:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "id": "${TOPIC_ID}",
+    "key": "product-updates"
+  }
+}
+```
 
+## Subscribe topic
+
+Subscribe one or more users with an array named `user_ids`.
+
+<!-- api-example:subscribe-topic:request -->
+```json
+{
+  "user_ids": [
+    "${USER_ID}"
+  ]
+}
+```
+
+<!-- api-example:subscribe-topic:curl -->
 ```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers \
-  -H "X-API-Key: YOUR_API_KEY" \
+curl -sS -X POST "$BASE_URL/topics/${TOPIC_ID}/subscribers" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"user_id": "YOUR_USER_ID"}'
+  --data @- <<JSON
+{
+  "user_ids": [
+    "${USER_ID}"
+  ]
+}
+JSON
 ```
 
-### Unsubscribe a User
+HTTP 200; relevant response fields:
 
-```bash
-curl -X DELETE https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers/YOUR_USER_ID \
-  -H "X-API-Key: YOUR_API_KEY"
+<!-- api-example:subscribe-topic:response -->
+```json
+{
+  "success": true,
+  "added": 1
+}
 ```
 
-### List Subscribers
-
-```bash
-curl https://freerangenotify.monkeys.support/v1/topics/TOPIC_ID/subscribers \
-  -H "X-API-Key: YOUR_API_KEY"
-```
-
-## Broadcasting
-
-Send a notification to all users subscribed to a topic:
-
-```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/notifications/broadcast \
-  -H "X-API-Key: YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "topic_key": "product_updates",
-    "channel": "email",
-    "priority": "normal",
-    "title": "New Feature: Workflows",
-    "body": "We just launched multi-step workflows!",
-    "data": {"feature": "workflows"}
-  }'
-```
-
-Each subscriber receives an individual notification, processed through the same Worker pipeline (template rendering, preference checking, delivery).
-
-## Best Practices
-
-- **Keep topic keys descriptive:** Use patterns like `billing_alerts`, `security_updates`, `product_news`
-- **Respect preferences:** Users can opt out of specific topics via their preference settings
-- **Don't over-broadcast:** High-frequency broadcasts increase queue depth — use digest workflows for batching
-
-## API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/v1/topics/` | Create a topic |
-| GET | `/v1/topics/` | List all topics |
-| GET | `/v1/topics/:id` | Get topic details |
-| DELETE | `/v1/topics/:id` | Delete a topic |
-| POST | `/v1/topics/:id/subscribers` | Subscribe a user |
-| DELETE | `/v1/topics/:id/subscribers/:user_id` | Unsubscribe a user |
-| GET | `/v1/topics/:id/subscribers` | List subscribers |
+Remove subscribers with `DELETE /topics/TOPIC_ID/subscribers` and the same `user_ids` body. List with `GET /topics/TOPIC_ID/subscribers`. Read by key with `GET /topics/key/product-updates`. For broadcasts use `topic_key` alongside a valid template or direct content; normal preferences and billing still apply.

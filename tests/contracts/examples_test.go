@@ -46,6 +46,15 @@ func assertSubset(t *testing.T, expected, actual interface{}) {
 		}
 		return
 	}
+	if list, ok := expected.([]interface{}); ok {
+		a, ok := actual.([]interface{})
+		require.True(t, ok)
+		require.Len(t, a, len(list))
+		for i, value := range list {
+			assertSubset(t, value, a[i])
+		}
+		return
+	}
 	require.Equal(t, expected, actual)
 }
 func exampleBlock(t *testing.T, guide, id, kind string) string {
@@ -129,4 +138,14 @@ func runExamples(t *testing.T, cases []APICase) {
 		})
 	}
 }
-func TestDocumentationOnboardingContracts(t *testing.T) { runExamples(t, loadCases(t)) }
+func TestDocumentationOnboardingContracts(t *testing.T) {
+	cases := []APICase{}
+	for _, c := range loadCases(t) {
+		if c.Guide == "getting-started" || c.Guide == "users" {
+			cases = append(cases, c)
+		}
+	}
+	runExamples(t, cases)
+}
+
+func TestDocumentationLifecycleContracts(t *testing.T) { runExamples(t, loadCases(t)) }

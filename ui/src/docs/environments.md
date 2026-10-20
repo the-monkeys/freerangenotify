@@ -1,72 +1,122 @@
-# Multi-Environment Setup
+# Environments
 
-Environments let you isolate notification configurations across development, staging, and production. Each environment gets its own API key and can have independent provider settings.
+When multi-environment support is enabled, open your app's **Environments** area to manage development, staging and production. App/environment management uses a dashboard JWT and owner authorization. Recipient/template/send APIs use the selected environment's full API key.
 
-## Overview
+Existing app keys keep their default/legacy behavior. Do not assume every existing app has named environments automatically created. Use `GET /apps/APP_ID/environments` to inspect your app.
 
-When you create an Application, a **default** environment is automatically created. You can add additional environments to separate testing from production traffic.
+## Create staging
 
-| Environment | Use Case |
-|-------------|----------|
-| `development` | Local testing, debugging |
-| `staging` | Pre-production validation |
-| `production` | Live user notifications |
+Create staging and save `data.id` as `STAGING_ENV_ID`. Obtain its full key through the authorized reveal action; ordinary responses mask it.
 
-## Creating Environments
-
-### Via the Dashboard
-
-Navigate to your application → **Environments** tab → **Create Environment**.
-
-### Via the API
-
-```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/apps/APP_ID/environments \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "staging"}'
+<!-- api-example:create-staging:request -->
+```json
+{
+  "name": "staging"
+}
 ```
 
-Each environment returns its own API key. Use the environment-specific key to scope all API calls.
-
-## API Key Scoping
-
-When you use an environment's API key, all operations are scoped to that environment:
-
-- Templates created with a staging key are only visible in staging
-- Notifications sent with a production key hit production providers
-- Users can exist across environments
-
-## Promoting Resources
-
-Move templates and configurations from one environment to another:
-
+<!-- api-example:create-staging:curl -->
 ```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/apps/APP_ID/environments/promote \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+curl -sS -X POST "$BASE_URL/apps/${APP_ID}/environments" \
+  -H "Authorization: Bearer $DASHBOARD_JWT" \
   -H "Content-Type: application/json" \
-  -d '{
-    "source_env_id": "STAGING_ENV_ID",
-    "target_env_id": "PRODUCTION_ENV_ID",
-    "resources": ["templates"]
-  }'
+  --data @- <<JSON
+{
+  "name": "staging"
+}
+JSON
 ```
 
-This copies all templates from staging to production without affecting staging's state.
+HTTP 201; relevant response fields:
 
-## Best Practices
+<!-- api-example:create-staging:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "id": "${STAGING_ENV_ID}",
+    "name": "staging"
+  }
+}
+```
 
-- **Never share API keys between environments** — each key scopes traffic to its environment
-- **Test in staging first** — validate templates, workflows, and provider config before promoting
-- **Use promotion for deployments** — avoid manual recreation of templates in production
-- **Rotate keys regularly** — regenerate API keys periodically for security
+## Create production
 
-## API Reference
+Create production only if it does not already exist; save `data.id` as `PRODUCTION_ENV_ID`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/v1/apps/:id/environments` | Create an environment |
-| GET | `/v1/apps/:id/environments` | List all environments |
-| GET | `/v1/apps/:id/environments/:env_id` | Get environment details |
-| DELETE | `/v1/apps/:id/environments/:env_id` | Delete an environment |
-| POST | `/v1/apps/:id/environments/promote` | Promote resources between environments |
+<!-- api-example:create-production:request -->
+```json
+{
+  "name": "production"
+}
+```
+
+<!-- api-example:create-production:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/apps/${APP_ID}/environments" \
+  -H "Authorization: Bearer $DASHBOARD_JWT" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "name": "production"
+}
+JSON
+```
+
+HTTP 201; relevant response fields:
+
+<!-- api-example:create-production:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "id": "${PRODUCTION_ENV_ID}",
+    "name": "production"
+  }
+}
+```
+
+## Promote environment
+
+Promotion copies supported resources between environments belonging to the same app. This empty staging example promotes zero templates; inspect the counts. Existing target templates can be updated, so preview your source and target before running this in production.
+
+<!-- api-example:promote-environment:request -->
+```json
+{
+  "source_env_id": "${STAGING_ENV_ID}",
+  "target_env_id": "${PRODUCTION_ENV_ID}",
+  "resources": [
+    "templates"
+  ]
+}
+```
+
+<!-- api-example:promote-environment:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/apps/${APP_ID}/environments/promote" \
+  -H "Authorization: Bearer $DASHBOARD_JWT" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "source_env_id": "${STAGING_ENV_ID}",
+  "target_env_id": "${PRODUCTION_ENV_ID}",
+  "resources": [
+    "templates"
+  ]
+}
+JSON
+```
+
+HTTP 200; relevant response fields:
+
+<!-- api-example:promote-environment:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "templates_promoted": 0,
+    "workflows_promoted": 0
+  }
+}
+```
+
