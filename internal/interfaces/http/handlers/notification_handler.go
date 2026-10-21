@@ -78,6 +78,7 @@ func (h *NotificationHandler) resolveUserID(c *fiber.Ctx, appID, identifier stri
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications [post]
 func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 	// Get app ID from context (set by API key middleware)
@@ -94,14 +95,10 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 		}
 	}
 
-	body := c.Body()
-	h.logger.Debug("Raw request body", zap.String("body", string(body)), zap.String("app_id", appID))
-
 	var req dto.SendNotificationRequest
 	if err := c.BodyParser(&req); err != nil {
 		h.logger.Error("Failed to parse notification request body",
 			zap.Error(err),
-			zap.String("body", string(body)),
 			zap.String("app_id", appID))
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "invalid request body",
@@ -112,8 +109,7 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 		zap.String("user_id", req.UserID),
 		zap.String("template_id", req.TemplateID),
 		zap.String("channel", req.Channel),
-		zap.String("priority", req.Priority),
-		zap.Any("data", req.Data))
+		zap.String("priority", req.Priority))
 
 	// Convert to domain request
 	sendReq := req.ToSendRequest(appID)
@@ -193,6 +189,7 @@ func (h *NotificationHandler) Send(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/bulk [post]
 func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -301,6 +298,7 @@ func (h *NotificationHandler) SendBulk(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/batch [post]
 func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -367,6 +365,7 @@ func (h *NotificationHandler) SendBatch(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/broadcast [post]
 func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -480,6 +479,7 @@ func (h *NotificationHandler) Broadcast(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications [get]
 func (h *NotificationHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -568,6 +568,7 @@ func (h *NotificationHandler) List(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/{id} [get]
 func (h *NotificationHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -598,6 +599,7 @@ func (h *NotificationHandler) Get(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/{id}/status [put]
 func (h *NotificationHandler) UpdateStatus(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -638,11 +640,12 @@ func (h *NotificationHandler) UpdateStatus(c *fiber.Ctx) error {
 // @Tags notifications
 // @Produce json
 // @Param id path string true "Notification ID"
-// @Success 200 {object} fiber.Map
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/{id} [delete]
 func (h *NotificationHandler) Cancel(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -668,10 +671,11 @@ func (h *NotificationHandler) Cancel(c *fiber.Ctx) error {
 // @Accept json
 // @Produce json
 // @Param request body dto.BatchCancelRequest true "Batch cancel request"
-// @Success 200 {object} fiber.Map
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/batch [delete]
 func (h *NotificationHandler) CancelBatch(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -702,11 +706,12 @@ func (h *NotificationHandler) CancelBatch(c *fiber.Ctx) error {
 // @Tags notifications
 // @Produce json
 // @Param id path string true "Notification ID"
-// @Success 200 {object} fiber.Map
+// @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/notifications/{id}/retry [post]
 func (h *NotificationHandler) Retry(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -726,6 +731,16 @@ func (h *NotificationHandler) Retry(c *fiber.Ctx) error {
 }
 
 // GetUnreadCount handles GET /v1/notifications/unread/count
+// @Summary Get Unread Count
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/unread/count [get]
 func (h *NotificationHandler) GetUnreadCount(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	userID := c.Query("user_id")
@@ -744,6 +759,16 @@ func (h *NotificationHandler) GetUnreadCount(c *fiber.Ctx) error {
 }
 
 // ListUnread handles GET /v1/notifications/unread
+// @Summary List Unread
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/unread [get]
 func (h *NotificationHandler) ListUnread(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	userID := c.Query("user_id")
@@ -802,6 +827,16 @@ func renderTemplate(templateStr string, data map[string]any) (string, error) {
 }
 
 // MarkRead handles POST /v1/notifications/read
+// @Summary Mark Read
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/read [post]
 func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -831,6 +866,19 @@ func (h *NotificationHandler) MarkRead(c *fiber.Ctx) error {
 // ── Phase 5: Snooze, Unsnooze, BulkArchive, MarkAllRead ────────────
 
 // Snooze handles POST /v1/notifications/:id/snooze
+// @Summary Snooze
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Param id path string true "id"
+// @Accept json
+// @Param body body dto.SnoozeRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/{id}/snooze [post]
 func (h *NotificationHandler) Snooze(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	notificationID := c.Params("id")
@@ -862,6 +910,17 @@ func (h *NotificationHandler) Snooze(c *fiber.Ctx) error {
 }
 
 // Unsnooze handles POST /v1/notifications/:id/unsnooze
+// @Summary Unsnooze
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/{id}/unsnooze [post]
 func (h *NotificationHandler) Unsnooze(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 	notificationID := c.Params("id")
@@ -875,6 +934,18 @@ func (h *NotificationHandler) Unsnooze(c *fiber.Ctx) error {
 }
 
 // BulkArchive handles PATCH /v1/notifications/bulk/archive
+// @Summary Bulk Archive
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Accept json
+// @Param body body dto.BulkArchiveRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/bulk/archive [patch]
 func (h *NotificationHandler) BulkArchive(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 
@@ -900,6 +971,18 @@ func (h *NotificationHandler) BulkArchive(c *fiber.Ctx) error {
 }
 
 // MarkAllRead handles POST /v1/notifications/read-all
+// @Summary Mark All Read
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Notification
+// @Produce json
+// @Accept json
+// @Param body body dto.MarkAllReadRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/notifications/read-all [post]
 func (h *NotificationHandler) MarkAllRead(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 

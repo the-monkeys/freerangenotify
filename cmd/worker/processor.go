@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	stdtemplate "text/template"
@@ -20,6 +19,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/license"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
+	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
@@ -53,22 +53,25 @@ type ProcessorConfig struct {
 
 // NotificationProcessor processes notifications from the queue
 type NotificationProcessor struct {
-	queue            queue.Queue
-	notifRepo        notification.Repository
-	userRepo         user.Repository
-	appRepo          application.Repository
-	templateRepo     template.Repository
-	authService      auth.Service
-	licensingChecker license.Checker
-	providerManager  *providers.Manager
-	creditService    *services.CreditService
-	redisClient      *redis.Client
-	logger           *zap.Logger
-	config           ProcessorConfig
-	metrics          *metrics.NotificationMetrics
-	digestManager    *orchestrator.DigestManager          // Phase 1: optional digest support
-	throttle         *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
-	richTplService   services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
+	otpDeliveryAuthorizer otp.DeliveryAuthorizer
+	channelDispatch       *services.ChannelDispatchService
+	channelInbox          whatsapp.Repository
+	queue                 queue.Queue
+	notifRepo             notification.Repository
+	userRepo              user.Repository
+	appRepo               application.Repository
+	templateRepo          template.Repository
+	authService           auth.Service
+	licensingChecker      license.Checker
+	providerManager       *providers.Manager
+	creditService         *services.CreditService
+	redisClient           *redis.Client
+	logger                *zap.Logger
+	config                ProcessorConfig
+	metrics               *metrics.NotificationMetrics
+	digestManager         *orchestrator.DigestManager          // Phase 1: optional digest support
+	throttle              *limiter.SubscriberThrottle          // Phase 2: optional per-subscriber throttle
+	richTplService        services.WhatsAppRichTemplateService // WhatsApp rich-template runtime resolver
 
 	// attachmentResolver materialises notification.Attachment specs
 	// (URL / inline base64 / file_id) for provider adapters. Optional —
@@ -81,6 +84,11 @@ type NotificationProcessor struct {
 
 	wg       sync.WaitGroup
 	stopChan chan struct{}
+}
+
+func (p *NotificationProcessor) SetChannelInbox(r whatsapp.Repository) { p.channelInbox = r }
+func (p *NotificationProcessor) SetChannelDispatch(s *services.ChannelDispatchService) {
+	p.channelDispatch = s
 }
 
 // SetDigestManager injects the optional digest manager (Phase 1).
@@ -338,6 +346,21 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		span.SetStatus(codes.Error, "failed_to_get_notification")
 		return
 	}
+	defer func() {
+		if p.channelInbox == nil || notif.Channel != notification.ChannelWhatsApp {
+			return
+		}
+		repairCtx, cancel := notificationAccountingContext(ctx)
+		defer cancel()
+		saved, e := p.notifRepo.GetByID(repairCtx, notif.NotificationID)
+		if e == nil {
+			e = services.RepairOutboundConversation(repairCtx, p.channelInbox, saved)
+		}
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Conversation repair deferred", zap.String("notification_id", notif.NotificationID))
+		}
+	}()
 	span.SetAttributes(
 		attribute.String("app.id", notif.AppID),
 		attribute.String("channel", string(notif.Channel)),
@@ -358,15 +381,6 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	}
 	if state, _ := notif.Metadata["delivery_attempt_state"].(string); state == "dispatching" || state == "unknown" {
 		logger.Warn("Delivery attempt requires reconciliation; automatic resend blocked", zap.String("notification_id", notif.NotificationID))
-		return
-	}
-	if deadline, ok := notificationDeliveryDeadline(notif); ok {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, deadline)
-		defer cancel()
-	}
-	if notificationDeliveryExpired(notif, time.Now().UTC()) {
-		p.handleExpiredNotification(ctx, notif)
 		return
 	}
 
@@ -409,6 +423,44 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		}
 	}
 
+	if claimer, ok := p.notifRepo.(interface {
+		ClaimNotificationProcessing(context.Context, *notification.Notification) (bool, error)
+	}); ok {
+		token := uuid.NewString()
+		if notif.Metadata == nil {
+			notif.Metadata = map[string]interface{}{}
+		}
+		notif.Metadata["worker_claim"] = token
+		claimed, e := claimer.ClaimNotificationProcessing(ctx, notif)
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Processing claim unavailable", zap.Error(e))
+			return
+		}
+		if !claimed {
+			return
+		}
+		ctx = notification.WithProcessingClaim(ctx, token)
+	}
+	if deadline, ok := notificationDeliveryDeadline(notif); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	if notificationDeliveryExpired(notif, time.Now().UTC()) {
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
+	if err := p.authorizeOTPDelivery(ctx, notif); err != nil {
+		if errors.Is(err, otp.ErrStateUnavailable) || errors.Is(err, otp.ErrConflict) {
+			retainNotificationProcessingItem(ctx)
+			logger.Warn("OTP delivery authority unavailable")
+			return
+		}
+		// A stale or invalid operation cannot reach billing or the provider.
+		p.handleExpiredNotification(ctx, notif)
+		return
+	}
 	// Remove stored failure fields before attempting another delivery. A failed
 	// removal must recover from the processing queue, rather than leave false
 	// failure history on a later successful delivery.
@@ -431,7 +483,9 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 
 	// Get user details (only if UserID is present)
 	var usr *user.User
-	if notif.UserID != "" {
+	if phone, reply := services.InboxReplyRecipient(notif); reply {
+		usr = &user.User{UserID: notif.UserID, AppID: notif.AppID, Phone: phone}
+	} else if notif.UserID != "" {
 		usr, err = p.userRepo.GetByID(ctx, notif.UserID)
 		if err != nil {
 			logger.Error("Failed to get user", zap.Error(err))
@@ -473,9 +527,9 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		return
 	}
 
+	var tmpl *template.Template
 	// Fetch template details if template_id is set to enrich content only (avoid duplicating metadata)
-	if notif.TemplateID != "" {
-		var tmpl *template.Template
+	if notif.TemplateID != "" && notif.Metadata["channel_content_prepared"] != true {
 
 		// Try by UUID first; if that fails and it's not a valid UUID, resolve by name
 		if _, parseErr := uuid.Parse(notif.TemplateID); parseErr == nil {
@@ -496,70 +550,16 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		} else {
 			// Keep template context inside content; do not mirror it into metadata to avoid redundant storage
 			if tmpl != nil {
-				// Phase 6: Merge control defaults → saved values → payload
-				if len(tmpl.Controls) > 0 || len(tmpl.ControlValues) > 0 {
-					notif.Content.Data = p.mergeTemplateData(tmpl, notif.Content.Data)
-				}
-
-				// Phase 4: Auto-inject unsubscribe_url for newsletter-category templates
-				if tmpl.Metadata != nil {
-					if cat, ok := tmpl.Metadata["category"].(string); ok && cat == "newsletter" {
-						if notif.Content.Data == nil {
-							notif.Content.Data = make(map[string]interface{})
+				appName := ""
+				for _, variable := range tmpl.Variables {
+					if variable == "product" {
+						if app, e := p.appRepo.GetByID(ctx, notif.AppID); e == nil && app != nil {
+							appName = app.AppName
 						}
-						if _, exists := notif.Content.Data["unsubscribe_url"]; !exists {
-							notif.Content.Data["unsubscribe_url"] = fmt.Sprintf(
-								"https://notify.example.com/v1/unsubscribe?user=%s&app=%s",
-								notif.UserID, notif.AppID,
-							)
-							logger.Debug("Auto-injected unsubscribe_url for newsletter template",
-								zap.String("notification_id", notif.NotificationID))
-						}
+						break
 					}
 				}
-
-				// Auto-inject user-derived name variables (name, user_name, full_name,
-				// first_name, last_name) declared by the template. The helper is
-				// channel-agnostic and gates each injection on tmpl.Variables, mirroring
-				// the product/cta_url pattern below. user.FullName is the authoritative
-				// source; email/external_id local-parts and "there" are fallbacks.
-				if notif.Content.Data == nil {
-					notif.Content.Data = make(map[string]interface{})
-				}
-				templateutil.ApplyUserAutoFill(tmpl.Variables, notif.Content.Data, usr)
-
-				// Auto-inject product and cta_url for welcome_email and similar templates when missing
-				hasProductVar := containsString(tmpl.Variables, "product")
-				hasCtaURLVar := containsString(tmpl.Variables, "cta_url")
-				needProduct := hasProductVar && needTemplateVar(notif.Content.Data, "product")
-				needCtaURL := hasCtaURLVar && needTemplateVar(notif.Content.Data, "cta_url")
-				if needProduct || needCtaURL {
-					frontendURL := os.Getenv("FREERANGE_FRONTEND_URL")
-					if frontendURL == "" {
-						frontendURL = "http://localhost:3000"
-					}
-					if needProduct {
-						product := ""
-						if app, err := p.appRepo.GetByID(ctx, notif.AppID); err == nil && app != nil && app.AppName != "" {
-							product = app.AppName
-						}
-						if product == "" {
-							product = "our platform"
-						}
-						notif.Content.Data["product"] = product
-						logger.Debug("Auto-injected product for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("product", product))
-					}
-					if needCtaURL {
-						ctaURL := frontendURL + "/login"
-						notif.Content.Data["cta_url"] = ctaURL
-						logger.Debug("Auto-injected cta_url for template",
-							zap.String("notification_id", notif.NotificationID),
-							zap.String("cta_url", ctaURL))
-					}
-				}
-
+				notif.Content.Data = templateutil.EnrichData(tmpl, notif.Content.Data, usr, appName, notif.UserID, notif.AppID)
 				// Render template content
 				title, err := p.renderTemplate(tmpl.Subject, notif.Content.Data)
 				if err != nil {
@@ -588,92 +588,92 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 					zap.String("notification_id", notif.NotificationID),
 					zap.String("template_id", notif.TemplateID),
 					zap.String("template_name", tmpl.Name),
-					zap.String("title", notif.Content.Title),
-					zap.String("body", notif.Content.Body))
+					zap.String("template_id", notif.TemplateID))
 			} else {
 				logger.Warn("Template is NIL in processor, skipping template enrichment",
 					zap.String("notification_id", notif.NotificationID),
 					zap.String("template_id", notif.TemplateID))
 			}
 
-			// Webhook Routing Logic: Resolve target from Application config if Template specifies it
-			// Resolve webhook target URL if applicable
-			target := ""
-			if tmpl != nil && tmpl.WebhookTarget != "" {
-				target = tmpl.WebhookTarget
-			}
+		}
+	}
 
-			// Allow override or manual target from data
-			if notif.Content.Data != nil {
-				if val, ok := notif.Content.Data["webhook_target"].(string); ok && val != "" {
-					target = val
-				}
-			}
+	// Resolve a named webhook target independently of optional template enrichment.
+	// Resolve webhook target URL if applicable
+	target := ""
+	if tmpl != nil && tmpl.WebhookTarget != "" {
+		target = tmpl.WebhookTarget
+	}
 
-			if notification.IsWebhookLikeChannel(notif.Channel) && target != "" {
-				app, err := p.appRepo.GetByID(ctx, notif.AppID)
-				if err != nil {
-					logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
-				} else if app != nil {
-					resolved := false
+	// Allow override or manual target from data
+	if notif.Content.Data != nil {
+		if val, ok := notif.Content.Data["webhook_target"].(string); ok && val != "" {
+			target = val
+		}
+	}
 
-					// 1. Try legacy app.Webhooks map first
-					if app.Webhooks != nil {
-						if url, ok := app.Webhooks[target]; ok {
-							if notif.Metadata == nil {
-								notif.Metadata = make(map[string]interface{})
-							}
-							if _, exists := notif.Metadata["webhook_url"]; !exists {
-								notif.Metadata["webhook_url"] = url
-								logger.Info("Resolved webhook target from application webhooks map",
-									zap.String("notification_id", notif.NotificationID),
-									zap.String("target_name", target),
-									zap.String("url", url))
-								resolved = true
-							}
-						}
+	if notification.IsWebhookLikeChannel(notif.Channel) && target != "" {
+		app, err := p.appRepo.GetByID(ctx, notif.AppID)
+		if err != nil {
+			logger.Error("Failed to fetch application for webhook routing", zap.Error(err))
+		} else if app != nil {
+			resolved := false
+
+			// 1. Try legacy app.Webhooks map first
+			if app.Webhooks != nil {
+				if url, ok := app.Webhooks[target]; ok {
+					if notif.Metadata == nil {
+						notif.Metadata = make(map[string]interface{})
 					}
-
-					// 2. Try custom providers (the current storage mechanism)
-					if !resolved {
-						for _, cp := range app.Settings.CustomProviders {
-							if cp.Name == target && cp.Channel == string(notif.Channel) && cp.Active {
-								if notif.Metadata == nil {
-									notif.Metadata = make(map[string]interface{})
-								}
-								notif.Metadata["webhook_url"] = cp.WebhookURL
-								// Record the resolved custom provider name so the send
-								// path can dispatch directly to it. Without this the
-								// notification would first be routed through the generic
-								// WebhookProvider — which posts FRN's envelope shape and
-								// is rejected by Slack/Discord/Teams — and the fallback
-								// loop iterates ALL custom providers in registration
-								// order. That caused Slack-targeted notifications to
-								// land in Discord when Discord Alerts was the first
-								// provider on the app.
-								notif.Metadata["custom_provider_name"] = cp.Name
-								logger.Info("Resolved webhook target from custom provider",
-									zap.String("notification_id", notif.NotificationID),
-									zap.String("target_name", target),
-									zap.String("url", cp.WebhookURL))
-								resolved = true
-								break
-							}
-						}
-					}
-
-					if !resolved {
-						logger.Error("Webhook target not found in application config or custom providers",
+					if _, exists := notif.Metadata["webhook_url"]; !exists {
+						notif.Metadata["webhook_url"] = url
+						logger.Info("Resolved webhook target from application webhooks map",
 							zap.String("notification_id", notif.NotificationID),
 							zap.String("target_name", target),
-							zap.Int("custom_providers_count", len(app.Settings.CustomProviders)))
+							zap.String("url", url))
+						resolved = true
 					}
-				} else {
-					logger.Error("Application not found for webhook routing",
-						zap.String("notification_id", notif.NotificationID),
-						zap.String("app_id", notif.AppID))
 				}
 			}
+
+			// 2. Try custom providers (the current storage mechanism)
+			if !resolved {
+				for _, cp := range app.Settings.CustomProviders {
+					if cp.Name == target && cp.Channel == string(notif.Channel) && cp.Active {
+						if notif.Metadata == nil {
+							notif.Metadata = make(map[string]interface{})
+						}
+						notif.Metadata["webhook_url"] = cp.WebhookURL
+						// Record the resolved custom provider name so the send
+						// path can dispatch directly to it. Without this the
+						// notification would first be routed through the generic
+						// WebhookProvider — which posts FRN's envelope shape and
+						// is rejected by Slack/Discord/Teams — and the fallback
+						// loop iterates ALL custom providers in registration
+						// order. That caused Slack-targeted notifications to
+						// land in Discord when Discord Alerts was the first
+						// provider on the app.
+						notif.Metadata["custom_provider_name"] = cp.Name
+						logger.Info("Resolved webhook target from custom provider",
+							zap.String("notification_id", notif.NotificationID),
+							zap.String("target_name", target),
+							zap.String("url", cp.WebhookURL))
+						resolved = true
+						break
+					}
+				}
+			}
+
+			if !resolved {
+				logger.Error("Webhook target not found in application config or custom providers",
+					zap.String("notification_id", notif.NotificationID),
+					zap.String("target_name", target),
+					zap.Int("custom_providers_count", len(app.Settings.CustomProviders)))
+			}
+		} else {
+			logger.Error("Application not found for webhook routing",
+				zap.String("notification_id", notif.NotificationID),
+				zap.String("app_id", notif.AppID))
 		}
 	}
 
@@ -723,12 +723,88 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 	}
 
 	var reservation *billing.CreditReservation
+	freshReservation := false
 	if p.creditService != nil {
+		if id, _ := notif.Metadata["reservation_id"].(string); id != "" {
+			reservation, err = p.creditService.ResolveDeliveryReservation(ctx, id, notif.AppID, notif.NotificationID, string(notif.Channel))
+			if err != nil {
+				p.handleCreditBlocked(ctx, notif, "existing admission requires reconciliation")
+				return
+			}
+			if reservation != nil && reservation.Status == billing.CreditReservationReleased {
+				reservation = nil
+			}
+		}
+	}
+	if reservation != nil && reservation.Quote == nil && p.channelDispatch != nil && p.channelDispatch.Quotes != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+		unpriced := *p.channelDispatch
+		unpriced.Quotes = nil
+		prepared, e := unpriced.PrepareChannelDelivery(ctx, notif, usr)
+		if e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+		quote, e := p.channelDispatch.Quotes.QuoteExistingReservation(prepared, reservation)
+		if e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+		reservation, e = p.creditService.BindDeliveryQuote(ctx, reservation, quote)
+		if e != nil {
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Existing admission quote persistence deferred", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+	} else if reservation != nil && reservation.Quote != nil {
+		notif.Metadata[billing.ChannelQuoteMetadataKey] = reservation.Quote
+	}
+	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+
+		prepared, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+		if e != nil {
+			p.handleCreditBlocked(ctx, notif, e.Error())
+			return
+		}
+		if prepared.Snapshot.Provider == "exotel" {
+			_, units, unitErr := billing.SMSUnits(notif.Content.Body)
+			if unitErr != nil {
+				p.handleCreditBlocked(ctx, notif, unitErr.Error())
+				return
+			}
+			budgetCtx := services.WithDeliveryBudgetIdentity(ctx, fmt.Sprintf("%s:%d", notif.NotificationID, notif.RetryCount))
+			if e := p.channelDispatch.Budget.AcquireDeliveryBudget(budgetCtx, prepared.Snapshot, units); e != nil {
+				var waiting *services.DeliveryBudgetDeferredError
+				if errors.As(e, &waiting) {
+					p.deferForChannelBudget(ctx, notif, item, waiting)
+					return
+				}
+				p.handleCreditBlocked(ctx, notif, "sender budget policy unavailable")
+				return
+			}
+		}
+	}
+	if p.creditService != nil && reservation == nil {
 		tenantID := notif.AppID
 		if app, appErr := p.appRepo.GetByID(ctx, notif.AppID); appErr == nil && app != nil && app.AdminUserID != "" {
 			tenantID = app.AdminUserID
 		}
-		reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		if p.channelDispatch != nil && p.channelDispatch.Quotes != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+			prepared, e := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+			if e != nil {
+				p.handleCreditBlocked(ctx, notif, e.Error())
+				return
+			}
+			quote, e := p.channelDispatch.Quotes.QuoteChannelDelivery(ctx, prepared)
+			if e != nil {
+				p.handleCreditBlocked(ctx, notif, e.Error())
+				return
+			}
+			quote.Attempt = notif.RetryCount
+			reservation, err = p.creditService.ReserveQuotedDelivery(ctx, tenantID, notif.AppID, notif.NotificationID, quote)
+		} else {
+			reservation, err = p.creditService.ReserveForNotification(ctx, tenantID, notif.AppID, notif.NotificationID, string(notif.Channel))
+		}
+
 		if err != nil {
 			message := annotateNotificationFailure(notif, err, err.Error())
 			var unavailable *billing.CreditUnavailableError
@@ -743,14 +819,41 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 			p.handleFailure(ctx, notif, item, err, fmt.Sprintf("credit reservation failed: %s", message))
 			return
 		}
-		if reservation != nil {
-			if notif.Metadata == nil {
-				notif.Metadata = make(map[string]interface{})
+		freshReservation = reservation != nil
+	}
+	if reservation != nil {
+		if reservation.Status != billing.CreditReservationReserved {
+			logger.Warn("Terminal reservation requires reconciliation; resend blocked", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+		if notif.Metadata == nil {
+			notif.Metadata = make(map[string]interface{})
+		}
+		notif.Metadata["credits_used"] = reservation.CreditsReserved
+		notif.Metadata["tenant_id"] = reservation.TenantID
+		notif.Metadata["rate_card_version"] = reservation.RateCardVersion
+		notif.Metadata["reservation_id"] = reservation.ID
+	}
+	if reservation != nil && notification.ProcessingClaim(ctx) != "" {
+		if e := p.notifRepo.Update(ctx, notif); e != nil {
+			// A fresh UUID hold was never exposed by a rejected CAS. It cannot
+			// belong to the winning worker. Shared journal or reused holds
+			// must remain owned by the winner and are never refunded here.
+			if freshReservation && errors.Is(e, notification.ErrProcessingClaimLost) {
+				if _, journal := billing.JournalSubscriptionID(reservation.ID); !journal {
+					accountingCtx, cancel := notificationAccountingContext(ctx)
+					if proofErr := p.creditService.RecordReservationDeliveryFailure(accountingCtx, reservation.ID); proofErr != nil {
+						logger.Error("Unused hold proof persistence deferred", zap.Error(proofErr))
+					}
+					if releaseErr := p.creditService.ReleaseOnFailure(accountingCtx, reservation.ID, "processing claim lost before admission binding"); releaseErr != nil {
+						logger.Error("Unused hold compensation deferred", zap.Error(releaseErr))
+					}
+					cancel()
+				}
 			}
-			notif.Metadata["credits_used"] = reservation.CreditsReserved
-			notif.Metadata["tenant_id"] = reservation.TenantID
-			notif.Metadata["rate_card_version"] = reservation.RateCardVersion
-			notif.Metadata["reservation_id"] = reservation.ID
+			retainNotificationProcessingItem(ctx)
+			logger.Error("Admission binding persistence deferred", zap.String("notification_id", notif.NotificationID))
+			return
 		}
 	}
 
@@ -775,11 +878,25 @@ func (p *NotificationProcessor) processNotification(ctx context.Context, item *q
 		notif.Metadata = make(map[string]interface{})
 	}
 	notif.Metadata["delivery_attempt_state"] = "dispatching"
-	if persistErr := p.notifRepo.Update(ctx, notif); persistErr != nil {
+	if claimer, ok := p.notifRepo.(interface {
+		ClaimChannelDeliveryAttempt(context.Context, *notification.Notification) (bool, error)
+	}); ok {
+		claimed, persistErr := claimer.ClaimChannelDeliveryAttempt(ctx, notif)
+		if persistErr != nil {
+			logger.Error("Cannot claim provider boundary", zap.Error(persistErr))
+			retainNotificationProcessingItem(ctx)
+			return
+		}
+		if !claimed {
+			logger.Warn("Provider boundary already claimed", zap.String("notification_id", notif.NotificationID))
+			return
+		}
+	} else if persistErr := p.notifRepo.Update(ctx, notif); persistErr != nil {
 		logger.Error("Cannot persist delivery attempt before dispatch", zap.Error(persistErr))
 		retainNotificationProcessingItem(ctx)
 		return
 	}
+
 	err = p.sendNotification(ctx, notif, usr)
 	if err != nil {
 		message := annotateNotificationFailure(notif, err, err.Error())
@@ -925,6 +1042,21 @@ func (p *NotificationProcessor) handleCreditBlocked(ctx context.Context, notif *
 
 // sendNotification sends the notification via the appropriate provider
 func (p *NotificationProcessor) sendNotification(ctx context.Context, notif *notification.Notification, usr *user.User) error {
+	if p.channelDispatch != nil && (notif.Channel == notification.ChannelWhatsApp || notif.Channel == notification.ChannelSMS) {
+		d, err := p.channelDispatch.PrepareChannelDelivery(ctx, notif, usr)
+		if err != nil {
+			return &providers.DeliveryError{Provider: "messaging", Stage: "configuration", ErrorType: providers.ErrorTypeConfiguration, Err: err}
+		}
+		result, err := p.channelDispatch.DispatchPrepared(ctx, d)
+		if err != nil {
+			return err
+		}
+		notif.Metadata["provider_message_id"] = result.ProviderMessageID
+		if p.providerManager != nil {
+			p.providerManager.EmitPreparedUsage(notif, result, d.Snapshot.Provider)
+		}
+		return nil
+	}
 	// Use provider manager to route and send
 	if p.providerManager == nil {
 		// Fallback: simulate sending if no provider manager (for testing)
@@ -1574,6 +1706,7 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 	newNotif := &notification.Notification{
 		NotificationID: uuid.New().String(),
 		AppID:          notif.AppID,
+		EnvironmentID:  notif.EnvironmentID,
 		UserID:         notif.UserID,
 		Channel:        notif.Channel,
 		Priority:       notif.Priority,
@@ -1588,6 +1721,24 @@ func (p *NotificationProcessor) handleRecurrence(ctx context.Context, notif *not
 		RetryCount:     0,
 	}
 
+	// New occurrence receives its own quote and connection, never the previous hold.
+	raw, e := json.Marshal(newNotif.Content)
+	if e != nil || json.Unmarshal(raw, &newNotif.Content) != nil {
+		p.logger.Error("Cannot copy recurring content")
+		return
+	}
+	if p.channelDispatch != nil && (newNotif.Channel == notification.ChannelSMS || newNotif.Channel == notification.ChannelWhatsApp) {
+		usr, e := p.userRepo.GetByID(ctx, newNotif.UserID)
+		if e != nil {
+			p.logger.Error("Cannot admit recurring recipient")
+			return
+		}
+		if _, e = p.channelDispatch.PrepareChannelDelivery(ctx, newNotif, usr); e != nil {
+			p.logger.Error("Cannot admit recurring message", zap.Error(e))
+			return
+		}
+		newNotif.Metadata["channel_content_prepared"] = true
+	}
 	// Save new notification
 	if err := p.notifRepo.Create(ctx, newNotif); err != nil {
 		p.logger.Error("Failed to create next recurring notification", zap.Error(err))
@@ -1620,9 +1771,7 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 		return "", nil
 	}
 
-	p.logger.Debug("Rendering template",
-		zap.String("template_string", tmplStr),
-		zap.Any("rendering_data", data))
+	p.logger.Debug("Rendering template")
 
 	tmplStr = usecases.NormalizeTemplateBody(tmplStr)
 	tmpl, err := stdtemplate.New("notification").Parse(tmplStr)
@@ -1637,8 +1786,7 @@ func (p *NotificationProcessor) renderTemplate(tmplStr string, data map[string]i
 	}
 
 	result := buf.String()
-	p.logger.Debug("Template rendered successfully",
-		zap.String("result", result))
+	p.logger.Debug("Template rendered successfully")
 
 	return result, nil
 }
@@ -1921,5 +2069,23 @@ func (p *NotificationProcessor) creditReservationReaper(ctx context.Context) {
 				p.logger.Info("Credit reservation reaper released holds", zap.Int("count", released))
 			}
 		}
+	}
+}
+
+// Capacity waits happen before financial admission and before provider dispatch.
+func (p *NotificationProcessor) deferForChannelBudget(ctx context.Context, n *notification.Notification, item *queue.NotificationQueueItem, waiting *services.DeliveryBudgetDeferredError) {
+	resume := time.Now().UTC().Add(waiting.RetryAfter)
+	n.Status = notification.StatusQueued
+	if n.Metadata == nil {
+		n.Metadata = map[string]interface{}{}
+	}
+	n.Metadata["delivery_wait_reason"] = waiting.Reason
+	n.Metadata["delivery_resume_at"] = resume.Format(time.RFC3339Nano)
+	if e := p.notifRepo.Update(ctx, n); e != nil {
+		retainNotificationProcessingItem(ctx)
+		return
+	}
+	if e := p.queue.EnqueueScheduled(ctx, *item, resume); e != nil {
+		retainNotificationProcessingItem(ctx)
 	}
 }

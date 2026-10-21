@@ -40,14 +40,13 @@ import (
 // @license.name MIT
 // @license.url https://opensource.org/licenses/MIT
 
-// @host localhost:8080
 // @BasePath /
 // @schemes http https
 
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description Type "Bearer" followed by a space and your API key
+// @description Authorization: Bearer APP_API_KEY for application routes; account JWT for dashboard management routes.
 
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
@@ -98,11 +97,20 @@ func main() {
 		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
 		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
 		IdleTimeout:  time.Duration(cfg.Server.IdleTimeout) * time.Second,
-		BodyLimit:    16 * 1024 * 1024,                    // 16 MB for media uploads
-		Prefork:      cfg.App.Environment == "production", // Enable prefork in production
-		ErrorHandler: middleware.ErrorHandler(zapLogger),  // Custom error handler
+		BodyLimit:    middleware.UploadTransportLimit(cfg.Filestore.MaxBytes), // 16 MB for media uploads
+		Prefork:      cfg.App.Environment == "production",                     // Enable prefork in production
+		ErrorHandler: middleware.ErrorHandler(zapLogger),                      // Custom error handler
 	})
 
+	// Ordinary requests retain their existing 16 MiB ceiling. The multipart
+	// file route applies this guard after API authentication.
+	ordinaryBodyLimit := middleware.NonUploadBodyLimit(16 << 20)
+	app.Use(func(ctx *fiber.Ctx) error {
+		if middleware.IsFileUploadRequest(ctx) {
+			return ctx.Next()
+		}
+		return ordinaryBodyLimit(ctx)
+	})
 	// Add global middleware
 	app.Use(recover.New())          // Panic recovery
 	app.Use(requestid.New())        // Request ID

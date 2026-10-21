@@ -14,7 +14,8 @@ jobs:
     # exist in CI.
     if: ${{ vars.E2E_ENABLED == 'true' }}
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    # Keep this runner compatible with the locked Playwright browser dependencies.
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4

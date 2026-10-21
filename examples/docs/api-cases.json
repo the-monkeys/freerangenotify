@@ -1,0 +1,854 @@
+[
+  {
+    "id": "create-app",
+    "method": "POST",
+    "path": "/apps",
+    "auth": "jwt",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "api_key": "${API_KEY}",
+        "app_name": "My App"
+      }
+    },
+    "request": {
+      "app_name": "My App",
+      "description": "Production notifications"
+    },
+    "capture": {
+      "APP_ID": "data.app_id",
+      "API_KEY": "data.api_key"
+    }
+  },
+  {
+    "id": "create-user",
+    "method": "POST",
+    "path": "/users",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "external_id": "alice",
+        "email": "alice@example.test"
+      }
+    },
+    "request": {
+      "email": "alice@example.test",
+      "external_id": "alice",
+      "full_name": "Alice"
+    },
+    "capture": {
+      "USER_ID": "data.user_id"
+    }
+  },
+  {
+    "id": "get-user",
+    "method": "GET",
+    "path": "/users/${USER_ID}",
+    "auth": "x-api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "external_id": "alice"
+      }
+    }
+  },
+  {
+    "id": "update-user",
+    "method": "PUT",
+    "path": "/users/${USER_ID}",
+    "auth": "api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "user_id": "${USER_ID}",
+        "full_name": "Alice Example"
+      }
+    },
+    "request": {
+      "full_name": "Alice Example"
+    }
+  },
+  {
+    "id": "create-template",
+    "method": "POST",
+    "path": "/templates",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 201,
+    "response": {
+      "id": "${TEMPLATE_ID}",
+      "name": "welcome_email",
+      "version": 1
+    },
+    "request": {
+      "app_id": "${APP_ID}",
+      "name": "welcome_email",
+      "channel": "email",
+      "subject": "Welcome, {{.name}}",
+      "body": "Hello {{.name}}",
+      "variables": [
+        "name"
+      ],
+      "locale": "en"
+    },
+    "capture": {
+      "TEMPLATE_ID": "id"
+    }
+  },
+  {
+    "id": "send-template",
+    "method": "POST",
+    "path": "/notifications",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 202,
+    "response": {
+      "notification_id": "${NOTIFICATION_ID}",
+      "status": "queued",
+      "template_id": "${TEMPLATE_ID}"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "template_id": "${TEMPLATE_ID}",
+      "channel": "email",
+      "data": {
+        "name": "Alice"
+      }
+    },
+    "capture": {
+      "NOTIFICATION_ID": "notification_id"
+    }
+  },
+  {
+    "id": "get-notification",
+    "method": "GET",
+    "path": "/notifications/${NOTIFICATION_ID}",
+    "auth": "api-key",
+    "guide": "getting-started",
+    "status": 200,
+    "response": {
+      "notification_id": "${NOTIFICATION_ID}",
+      "status": "queued"
+    }
+  },
+  {
+    "id": "render-template",
+    "method": "POST",
+    "path": "/templates/${TEMPLATE_ID}/render",
+    "guide": "templates",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "rendered_body": "Hello Alice"
+    },
+    "request": {
+      "data": {
+        "name": "Alice"
+      }
+    }
+  },
+  {
+    "id": "update-template",
+    "method": "PUT",
+    "path": "/templates/${TEMPLATE_ID}",
+    "guide": "templates",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "id": "${TEMPLATE_ID}",
+      "version": 1,
+      "body": "Hi {{.name}}"
+    },
+    "request": {
+      "body": "Hi {{.name}}"
+    }
+  },
+  {
+    "id": "snapshot-template",
+    "method": "POST",
+    "path": "/templates/${APP_ID}/welcome_email/versions",
+    "guide": "templates",
+    "auth": "api-key",
+    "status": 201,
+    "response": {
+      "id": "${VERSION_ID}",
+      "version": 2
+    },
+    "request": {
+      "locale": "en",
+      "created_by": "backend",
+      "body": "Hi {{.name}}"
+    },
+    "capture": {
+      "VERSION_ID": "id"
+    }
+  },
+  {
+    "id": "template-history",
+    "method": "GET",
+    "path": "/templates/${APP_ID}/welcome_email/versions?locale=en",
+    "guide": "templates",
+    "auth": "api-key",
+    "status": 200,
+    "response": [
+      {
+        "version": 1
+      },
+      {
+        "version": 2
+      }
+    ]
+  },
+  {
+    "id": "rollback-template",
+    "method": "POST",
+    "path": "/templates/${VERSION_ID}/rollback",
+    "guide": "templates",
+    "auth": "api-key",
+    "status": 201,
+    "response": {
+      "version": 3,
+      "body": "Hi {{.name}}"
+    },
+    "request": {
+      "version": 1,
+      "updated_by": "backend"
+    }
+  },
+  {
+    "id": "create-topic",
+    "method": "POST",
+    "path": "/topics",
+    "guide": "topics",
+    "auth": "api-key",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "id": "${TOPIC_ID}",
+        "key": "product-updates"
+      }
+    },
+    "request": {
+      "name": "Product updates",
+      "key": "product-updates"
+    },
+    "capture": {
+      "TOPIC_ID": "data.id"
+    }
+  },
+  {
+    "id": "subscribe-topic",
+    "method": "POST",
+    "path": "/topics/${TOPIC_ID}/subscribers",
+    "guide": "topics",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "success": true,
+      "added": 1
+    },
+    "request": {
+      "user_ids": [
+        "${USER_ID}"
+      ]
+    }
+  },
+  {
+    "id": "create-workflow",
+    "method": "POST",
+    "path": "/workflows",
+    "guide": "workflows",
+    "auth": "api-key",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "id": "${WORKFLOW_ID}",
+        "trigger_id": "welcome-v1",
+        "status": "active"
+      }
+    },
+    "request": {
+      "name": "Welcome workflow",
+      "trigger_id": "welcome-v1",
+      "status": "active",
+      "steps": [
+        {
+          "name": "Email",
+          "type": "channel",
+          "config": {
+            "channel": "email",
+            "template_id": "${TEMPLATE_ID}"
+          }
+        }
+      ]
+    },
+    "capture": {
+      "WORKFLOW_ID": "data.id"
+    }
+  },
+  {
+    "id": "trigger-workflow",
+    "method": "POST",
+    "path": "/workflows/trigger",
+    "guide": "workflows",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "success": true,
+      "data": {
+        "id": "${EXECUTION_ID}",
+        "status": "running"
+      }
+    },
+    "request": {
+      "trigger_id": "welcome-v1",
+      "user_id": "${USER_ID}",
+      "payload": {
+        "name": "Alice"
+      }
+    },
+    "capture": {
+      "EXECUTION_ID": "data.id"
+    }
+  },
+  {
+    "id": "send-direct",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "notification_id": "${DIRECT_ID}",
+      "status": "queued"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Service update",
+      "body": "Your update is ready."
+    },
+    "capture": {
+      "DIRECT_ID": "notification_id"
+    }
+  },
+  {
+    "id": "bulk-notifications",
+    "method": "POST",
+    "path": "/notifications/bulk",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "sent": 1,
+      "total": 1
+    },
+    "request": {
+      "user_ids": [
+        "${USER_ID}"
+      ],
+      "channel": "email",
+      "template_id": "${TEMPLATE_ID}",
+      "priority": "normal",
+      "data": {
+        "name": "Alice"
+      }
+    }
+  },
+  {
+    "id": "batch-notifications",
+    "method": "POST",
+    "path": "/notifications/batch",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "sent": 1,
+      "total": 1
+    },
+    "request": {
+      "notifications": [
+        {
+          "user_id": "${USER_ID}",
+          "channel": "email",
+          "title": "Update",
+          "body": "Ready."
+        }
+      ]
+    }
+  },
+  {
+    "id": "broadcast-notifications",
+    "method": "POST",
+    "path": "/notifications/broadcast",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "sent": 1,
+      "total": 1
+    },
+    "request": {
+      "channel": "email",
+      "template_id": "${TEMPLATE_ID}",
+      "priority": "normal",
+      "data": {
+        "name": "Alice"
+      }
+    }
+  },
+  {
+    "id": "schedule-notification",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 202,
+    "response": {
+      "notification_id": "${SCHEDULED_ID}",
+      "status": "pending"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Reminder",
+      "body": "Ready.",
+      "scheduled_at": "2099-01-01T00:00:00Z"
+    },
+    "capture": {
+      "SCHEDULED_ID": "notification_id"
+    }
+  },
+  {
+    "id": "snooze-notification",
+    "method": "POST",
+    "path": "/notifications/${SCHEDULED_ID}/snooze",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notification snoozed"
+    },
+    "request": {
+      "duration": "1h"
+    }
+  },
+  {
+    "id": "unsnooze-notification",
+    "method": "POST",
+    "path": "/notifications/${SCHEDULED_ID}/unsnooze",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notification unsnoozed"
+    },
+    "request": {}
+  },
+  {
+    "id": "status-notification",
+    "method": "PUT",
+    "path": "/notifications/${SCHEDULED_ID}/status",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "notification_id": "${SCHEDULED_ID}",
+      "status": "failed"
+    },
+    "request": {
+      "status": "failed",
+      "error_message": "Provider rejected the message."
+    }
+  },
+  {
+    "id": "retry-notification",
+    "method": "POST",
+    "path": "/notifications/${SCHEDULED_ID}/retry",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notification queued for retry"
+    },
+    "request": {}
+  },
+  {
+    "id": "cancel-notification",
+    "method": "DELETE",
+    "path": "/notifications/${SCHEDULED_ID}",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notification cancelled successfully"
+    }
+  },
+  {
+    "id": "mark-read",
+    "method": "POST",
+    "path": "/notifications/read",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notifications marked as read"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "notification_ids": [
+        "${NOTIFICATION_ID}"
+      ]
+    }
+  },
+  {
+    "id": "archive-notifications",
+    "method": "PATCH",
+    "path": "/notifications/bulk/archive",
+    "guide": "notifications",
+    "auth": "api-key",
+    "status": 200,
+    "response": {
+      "message": "notifications archived"
+    },
+    "request": {
+      "user_id": "${USER_ID}",
+      "notification_ids": [
+        "${NOTIFICATION_ID}"
+      ]
+    }
+  },
+  {
+    "id": "create-staging",
+    "method": "POST",
+    "path": "/apps/${APP_ID}/environments",
+    "guide": "environments",
+    "auth": "jwt",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "id": "${STAGING_ENV_ID}",
+        "name": "staging"
+      }
+    },
+    "request": {
+      "name": "staging"
+    },
+    "capture": {
+      "STAGING_ENV_ID": "data.id"
+    }
+  },
+  {
+    "id": "create-production",
+    "method": "POST",
+    "path": "/apps/${APP_ID}/environments",
+    "guide": "environments",
+    "auth": "jwt",
+    "status": 201,
+    "response": {
+      "success": true,
+      "data": {
+        "id": "${PRODUCTION_ENV_ID}",
+        "name": "production"
+      }
+    },
+    "request": {
+      "name": "production"
+    },
+    "capture": {
+      "PRODUCTION_ENV_ID": "data.id"
+    }
+  },
+  {
+    "id": "promote-environment",
+    "method": "POST",
+    "path": "/apps/${APP_ID}/environments/promote",
+    "guide": "environments",
+    "auth": "jwt",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "templates_promoted": 0,
+        "workflows_promoted": 0
+      }
+    },
+    "request": {
+      "source_env_id": "${STAGING_ENV_ID}",
+      "target_env_id": "${PRODUCTION_ENV_ID}",
+      "resources": [
+        "templates"
+      ]
+    }
+  },
+  {
+    "id": "email-attachments",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "file-attachments",
+    "auth": "api-key",
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Report",
+      "body": "<img src=\"cid:logo-image\">",
+      "attachments": [
+        {
+          "type": "image",
+          "name": "logo.png",
+          "mime_type": "image/png",
+          "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+          "content_id": "logo-image",
+          "disposition": "inline"
+        },
+        {
+          "type": "file",
+          "file_id": "${FILE_ID}",
+          "name": "report.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "attachments": [
+          {
+            "type": "image",
+            "name": "logo.png",
+            "mime_type": "image/png",
+            "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+            "content_id": "logo-image",
+            "disposition": "inline"
+          },
+          {
+            "type": "file",
+            "file_id": "${FILE_ID}",
+            "name": "report.pdf"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "missing-file-acceptance",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "file-attachments",
+    "auth": "api-key",
+    "request": {
+      "user_id": "${USER_ID}",
+      "channel": "email",
+      "title": "Report",
+      "body": "See attached",
+      "attachments": [
+        {
+          "type": "file",
+          "file_id": "file_missing",
+          "name": "missing.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued"
+    }
+  },
+  {
+    "id": "generic-webhook",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "webhooks",
+    "auth": "api-key",
+    "request": {
+      "channel": "webhook",
+      "title": "Order ready",
+      "body": "Ready for collection",
+      "webhook_url": "https://receiver.example.test/events",
+      "attachments": [
+        {
+          "type": "file",
+          "url": "https://cdn.example.test/report.pdf",
+          "name": "report.pdf"
+        }
+      ]
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "attachments": [
+          {
+            "type": "file",
+            "url": "https://cdn.example.test/report.pdf",
+            "name": "report.pdf"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": "custom-webhook-poll",
+    "method": "POST",
+    "path": "/notifications",
+    "guide": "webhooks",
+    "auth": "api-key",
+    "request": {
+      "channel": "webhook",
+      "title": "Choose a time",
+      "body": "Team planning",
+      "webhook_target": "registered-slack",
+      "poll": {
+        "question": "When?",
+        "choices": [
+          {
+            "label": "Morning"
+          },
+          {
+            "label": "Afternoon"
+          }
+        ],
+        "duration_hours": 24
+      }
+    },
+    "status": 202,
+    "response": {
+      "status": "queued",
+      "content": {
+        "poll": {
+          "question": "When?"
+        }
+      }
+    }
+  },
+  {
+    "id": "otp-email",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "email",
+      "recipient": "alice@example.test",
+      "ttl_seconds": 300
+    },
+    "status": 202,
+    "response": {
+      "request_id": "${OTP_REQUEST_ID}",
+      "notification_id": "${OTP_NOTIFICATION_ID}",
+      "channel": "email",
+      "max_attempts": 5
+    },
+    "capture": {
+      "OTP_REQUEST_ID": "request_id",
+      "OTP_NOTIFICATION_ID": "notification_id"
+    }
+  },
+  {
+    "id": "otp-invalid-code",
+    "method": "POST",
+    "path": "/otp/verify",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "request_id": "${OTP_REQUEST_ID}",
+      "code": "WRONG_CODE"
+    },
+    "status": 400,
+    "response": {
+      "verified": false,
+      "request_id": "${OTP_REQUEST_ID}",
+      "error": "invalid_code",
+      "attempts_remaining": 4
+    }
+  },
+  {
+    "id": "otp-cooldown",
+    "method": "POST",
+    "path": "/otp/resend",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "request_id": "${OTP_REQUEST_ID}"
+    },
+    "status": 409,
+    "response": {
+      "error": "otp: resend cooldown in effect"
+    }
+  },
+  {
+    "id": "otp-sms",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "sms",
+      "recipient": "+14155551234"
+    },
+    "status": 202,
+    "response": {
+      "channel": "sms",
+      "max_attempts": 5
+    }
+  },
+  {
+    "id": "otp-whatsapp",
+    "method": "POST",
+    "path": "/otp/send",
+    "guide": "otp",
+    "auth": "api-key",
+    "request": {
+      "channel": "whatsapp",
+      "recipient": "+14155551234",
+      "template_data": {
+        "whatsapp_template": {
+          "name": "approved_authentication",
+          "language": "en_US",
+          "components": [
+            {
+              "type": "body",
+              "parameters": [
+                {
+                  "type": "text",
+                  "text": "{{code}}"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "status": 202,
+    "response": {
+      "channel": "whatsapp",
+      "max_attempts": 5
+    }
+  },
+  {
+    "id": "delete-user",
+    "method": "DELETE",
+    "path": "/users/${USER_ID}",
+    "auth": "api-key",
+    "guide": "users",
+    "status": 200,
+    "response": {
+      "success": true
+    }
+  }
+]

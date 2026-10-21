@@ -90,7 +90,7 @@ type FileService struct {
 
 // NewFileService wires a FileService.
 func NewFileService(store domainfile.FileStore, repo domainfile.Repository, cfg FileServiceConfig, logger *zap.Logger) *FileService {
-	if cfg.MaxBytes <= 0 {
+	if cfg.MaxBytes <= 0 || cfg.MaxBytes > DefaultMaxFileBytes {
 		cfg.MaxBytes = DefaultMaxFileBytes
 	}
 	if cfg.Retention < 0 {

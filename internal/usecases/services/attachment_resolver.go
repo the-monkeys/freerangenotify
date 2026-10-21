@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,12 +88,12 @@ func NewAttachmentResolver(files *FileService, cfg AttachmentResolverConfig, log
 
 // ErrFileSourceUnavailable is returned when a notification carries a file_id
 // attachment but the resolver was not wired with a FileService.
-var ErrFileSourceUnavailable = errors.New("attachment resolver: file_id source is not configured")
+var ErrFileSourceUnavailable = attachment.ErrFileSourceUnavailable
 
 // ErrAttachmentURLOversize is returned when a remote URL response exceeds the
 // configured cap. The caller should either raise the cap (operator policy)
 // or stage the file via POST /v1/files first.
-var ErrAttachmentURLOversize = errors.New("attachment resolver: remote URL response exceeds max bytes")
+var ErrAttachmentURLOversize = attachment.ErrURLOversize
 
 // Resolve materialises a single attachment. The caller is responsible for
 // calling Close on the returned value to release any open resources.

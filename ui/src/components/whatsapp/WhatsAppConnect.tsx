@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { whatsappAdminAPI } from '../../services/api';
+import { whatsappAdminAPI, channelCapabilitiesAPI } from '../../services/api';
 import { useApiQuery } from '../../hooks/use-api-query';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Spinner } from '../ui/spinner';
 import { toast } from 'sonner';
-import { CheckCircle, XCircle, Unplug, Webhook, Phone, Building2, Shield, ExternalLink, KeyRound, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Unplug, Webhook, Phone, Building2, Shield, KeyRound, AlertTriangle } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import type { WhatsAppConnectionStatus } from '../../types';
@@ -26,80 +26,85 @@ declare global {
 
 interface WhatsAppConnectProps {
     appId: string;
+    onChanged?:()=>Promise<void>;
 }
 
-const META_SDK_VERSION = 'v23.0';
 
-const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
+const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId,onChanged }) => {
     const [disconnecting, setDisconnecting] = useState(false);
     const [subscribing, setSubscribing] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [sdkReady, setSdkReady] = useState(false);
     const [metaAppId, setMetaAppId] = useState<string | null>(null);
+    const [signupConfigId, setSignupConfigId] = useState<string>();
+    const [graphVersion, setGraphVersion] = useState('v23.0');
+    const [manualAvailable, setManualAvailable] = useState(false);
+    const [capabilitiesError, setCapabilitiesError] = useState(false);
     const [showManualForm, setShowManualForm] = useState(false);
     const [manualSubmitting, setManualSubmitting] = useState(false);
     const [manualForm, setManualForm] = useState({
         access_token: '',
-        waba_id: (import.meta.env.VITE_META_WABA_ID as string | undefined)?.trim() || '',
-        phone_number_id: (import.meta.env.VITE_META_PHONE_NUMBER_ID as string | undefined)?.trim() || '',
+        waba_id: '',
+        phone_number_id: '',
     });
     const sdkLoadAttempted = useRef(false);
+	const selectedAssets=useRef<{waba_id?:string;phone_number_id?:string}>({});
+	useEffect(()=>{selectedAssets.current={};const receive=(event:MessageEvent)=>{if(!['https://www.facebook.com','https://web.facebook.com'].includes(event.origin))return;try{const payload=typeof event.data==='string'?JSON.parse(event.data):event.data;if(payload?.type==='WA_EMBEDDED_SIGNUP'&&payload.event==='FINISH'&&typeof payload.data?.waba_id==='string'&&typeof payload.data?.phone_number_id==='string'){selectedAssets.current={waba_id:payload.data.waba_id,phone_number_id:payload.data.phone_number_id}}}catch{/* Ignore unrelated/malformed SDK messages. */}};window.addEventListener('message',receive);return()=>window.removeEventListener('message',receive)},[appId]);
 
-    const { data: status, loading, refetch } = useApiQuery<WhatsAppConnectionStatus>(
+    const { data: status, loading, error, refetch } = useApiQuery<WhatsAppConnectionStatus>(
         () => whatsappAdminAPI.getStatus(appId),
         [appId],
         { enabled: !!appId, cacheKey: `wa-status-${appId}`, staleTime: 30000 }
     );
 
     useEffect(() => {
-        if (sdkLoadAttempted.current) return;
+        let active = true;
+        channelCapabilitiesAPI.get().then(({meta}) => {
+            if (!active) return;
+            setManualAvailable(meta.manual);
+            if (!meta.embedded || !meta.app_id) return;
+            setMetaAppId(meta.app_id);
+            setSignupConfigId(meta.signup_config_id);
+            setGraphVersion(meta.graph_version);
+        }).catch(() => { if (active) setCapabilitiesError(true); });
+        return () => { active = false; };
+    }, []);
+
+    useEffect(() => {
+        if (!metaAppId || sdkLoadAttempted.current) return;
         sdkLoadAttempted.current = true;
-
-        const appIdFromEnv = (import.meta.env.VITE_META_APP_ID as string | undefined)?.trim();
-        if (!appIdFromEnv) return;
-        setMetaAppId(appIdFromEnv);
-
         window.fbAsyncInit = () => {
-            window.FB?.init({
-                appId: appIdFromEnv,
-                cookie: true,
-                xfbml: true,
-                version: META_SDK_VERSION,
-            });
+            window.FB?.init({ appId: metaAppId, cookie: true, xfbml: true, version: graphVersion });
             setSdkReady(true);
         };
-
-        if (window.FB) {
-            window.fbAsyncInit();
-            return;
-        }
-
+        if (window.FB) { window.fbAsyncInit(); return; }
         const script = document.createElement('script');
         script.src = 'https://connect.facebook.net/en_US/sdk.js';
         script.async = true;
         script.defer = true;
         script.crossOrigin = 'anonymous';
         document.body.appendChild(script);
-    }, []);
+    }, [metaAppId, graphVersion]);
 
     const handleConnect = useCallback(() => {
         if (!window.FB) {
-            toast.error('Facebook SDK not loaded. Check that VITE_META_APP_ID is set in your .env file.');
+            toast.error('Embedded signup is unavailable. Use your business credentials in the connection panel.');
             return;
         }
 
         setConnecting(true);
+		selectedAssets.current={};
 
         window.FB.login(
             (response) => {
                 if (response.authResponse?.code) {
                     whatsappAdminAPI
-                        .connect({ code: response.authResponse.code, app_id: appId })
+                        .connect({ code: response.authResponse.code, app_id: appId,revision:status?.revision,...selectedAssets.current })
                         .then((data) => {
                             toast.success(
-                                `WhatsApp connected! Phone: ${data?.display_phone || 'configured'}`
+                                `Credentials saved. Validate readiness. Phone: ${data?.display_phone || 'configured'}`
                             );
-                            refetch();
+                            refetch();onChanged?.();
                         })
                         .catch((err: any) => {
                             toast.error(
@@ -143,35 +148,25 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                 }
             },
             {
-                config_id: (import.meta.env.VITE_META_CONFIG_ID as string | undefined)?.trim() || undefined,
+                config_id: signupConfigId,
                 response_type: 'code',
                 override_default_response_type: true,
                 extras: {
-                    setup: {
-                        ...(import.meta.env.VITE_META_BUSINESS_ID
-                            ? { business: { id: (import.meta.env.VITE_META_BUSINESS_ID as string).trim() } }
-                            : {}),
-                        ...(import.meta.env.VITE_META_WABA_ID
-                            ? { whatsAppBusinessAccount: { id: (import.meta.env.VITE_META_WABA_ID as string).trim() } }
-                            : {}),
-                        ...(import.meta.env.VITE_META_PHONE_NUMBER_ID
-                            ? { phone: { id: (import.meta.env.VITE_META_PHONE_NUMBER_ID as string).trim() } }
-                            : {}),
-                    },
+                    setup: {},
                     featureType: '',
                     sessionInfoVersion: 3,
                 },
             }
         );
-    }, [appId, refetch]);
+    }, [appId, refetch, status?.revision, signupConfigId, metaAppId, onChanged]);
 
     const handleDisconnect = useCallback(async () => {
         if (!confirm('Disconnect WhatsApp? This will remove the Meta connection for this app.')) return;
         setDisconnecting(true);
         try {
-            await whatsappAdminAPI.disconnect(appId);
+            await whatsappAdminAPI.disconnect(appId,status?.revision);
             toast.success('WhatsApp disconnected');
-            refetch();
+            refetch();await onChanged?.();
         } catch (err: any) {
             toast.error('Disconnect failed: ' + (err.response?.data?.message || err.message));
         } finally {
@@ -193,11 +188,12 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                     access_token: manualForm.access_token.trim(),
                     waba_id: manualForm.waba_id.trim(),
                     phone_number_id: manualForm.phone_number_id.trim() || undefined,
+                    revision:status?.revision,
                 });
-                toast.success(`WhatsApp connected via System User token. Phone: ${data?.display_phone || 'configured'}`);
+                toast.success(`Credentials saved. Validate readiness in the connection panel. Phone: ${data?.display_phone || 'configured'}`);
                 setShowManualForm(false);
                 setManualForm((f) => ({ ...f, access_token: '' }));
-                refetch();
+                refetch();await onChanged?.();
             } catch (err: any) {
                 toast.error(
                     'Manual connect failed: ' + (err.response?.data?.message || err.message)
@@ -230,6 +226,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
     }
 
     const connected = status?.connected === true;
+    if(error)return <p role="alert">Could not load the WhatsApp connection. Check your access and retry.</p>;
     const hasSdkConfig = !!metaAppId;
 
     return (
@@ -326,7 +323,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                                     </Button>
                                 ) : null}
 
-                                {hasSdkConfig && (
+                                {manualAvailable && hasSdkConfig && (
                                     <button
                                         type="button"
                                         onClick={() => setShowManualForm((s) => !s)}
@@ -337,7 +334,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                                     </button>
                                 )}
 
-                                {showManualForm && (
+                                {manualAvailable && showManualForm && (
                                     <form
                                         onSubmit={handleManualConnect}
                                         className="mt-3 p-3 rounded-md border bg-background space-y-3"
@@ -375,7 +372,7 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                                                 <Label htmlFor="manual-waba" className="text-xs">WABA ID</Label>
                                                 <Input
                                                     id="manual-waba"
-                                                    placeholder="1660830174935643"
+                                                    placeholder="Your WhatsApp Business Account ID"
                                                     value={manualForm.waba_id}
                                                     onChange={(e) => setManualForm((f) => ({ ...f, waba_id: e.target.value }))}
                                                 />
@@ -398,28 +395,9 @@ const WhatsAppConnect: React.FC<WhatsAppConnectProps> = ({ appId }) => {
                                 )}
 
                                 {!hasSdkConfig && (
-                                    <div className="space-y-3">
-                                        <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
-                                            <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">Meta App ID not configured</p>
-                                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                                                To enable the Connect button, add these to your <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900 rounded">.env</code> file:
-                                            </p>
-                                            <pre className="mt-2 text-xs bg-amber-100 dark:bg-amber-900 p-2 rounded font-mono overflow-x-auto">
-{`VITE_META_APP_ID=<your_facebook_app_id>
-VITE_META_CONFIG_ID=<optional_config_id>`}
-                                            </pre>
-                                            <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
-                                                Then restart the UI dev server. Get your App ID from{' '}
-                                                <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="underline inline-flex items-center gap-0.5">
-                                                    Meta Developer Dashboard <ExternalLink className="h-3 w-3" />
-                                                </a>
-                                            </p>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            For local testing without a Meta account, you can simulate a connection using the API.
-                                            See the E2E Testing Guide, Section 4.4.
-                                        </p>
-                                    </div>
+                                    <p className="text-sm text-muted-foreground" role={capabilitiesError ? 'alert' : undefined}>
+                                        {capabilitiesError ? 'Could not load messaging capabilities. Retry this page.' : manualAvailable ? 'Embedded signup is unavailable. Use the business credentials in the connection panel above.' : 'Meta onboarding is disabled by this deployment.'}
+                                    </p>
                                 )}
                             </div>
                         </div>

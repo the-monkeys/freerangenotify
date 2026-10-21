@@ -58,8 +58,8 @@ func (h *AdminHandler) getAdminAppIDs(c *fiber.Ctx) (map[string]bool, error) {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/queues/stats [get]
+// @Security BearerAuth
 func (h *AdminHandler) GetQueueStats(c *fiber.Ctx) error {
 	stats, err := h.queue.GetQueueDepth(c.Context())
 	if err != nil {
@@ -82,8 +82,8 @@ func (h *AdminHandler) GetQueueStats(c *fiber.Ctx) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/queues/dlq [get]
+// @Security BearerAuth
 func (h *AdminHandler) ListDLQ(c *fiber.Ctx) error {
 	limitStr := c.Query("limit", "10")
 	limit, _ := strconv.Atoi(limitStr)
@@ -149,8 +149,8 @@ func (h *AdminHandler) ListDLQ(c *fiber.Ctx) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/queues/dlq/replay [post]
+// @Security BearerAuth
 func (h *AdminHandler) ReplayDLQ(c *fiber.Ctx) error {
 	limitStr := c.Query("limit", "10")
 	limit, _ := strconv.Atoi(limitStr)
@@ -183,8 +183,8 @@ func (h *AdminHandler) ReplayDLQ(c *fiber.Ctx) error {
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/providers/health [get]
+// @Security BearerAuth
 func (h *AdminHandler) GetProviderHealth(c *fiber.Ctx) error {
 	if h.providerManager == nil {
 		return c.JSON(fiber.Map{

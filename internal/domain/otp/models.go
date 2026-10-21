@@ -33,15 +33,15 @@ func (c Channel) Valid() bool {
 
 // Defaults applied when the caller omits a tuneable parameter.
 const (
-	DefaultCodeLength       = 6
-	DefaultTTLSeconds       = 300
-	DefaultMaxAttempts      = 5
-	DefaultResendCooldownS  = 60
-	MinCodeLength           = 4
-	MaxCodeLength           = 10
-	MaxTTLSeconds           = 15 * 60 // 15 minutes upper bound to prevent stale codes
-	MaxAttemptsCap          = 10
-	MinAttempts             = 1
+	DefaultCodeLength      = 6
+	DefaultTTLSeconds      = 300
+	DefaultMaxAttempts     = 5
+	DefaultResendCooldownS = 60
+	MinCodeLength          = 4
+	MaxCodeLength          = 10
+	MaxTTLSeconds          = 15 * 60 // 15 minutes upper bound to prevent stale codes
+	MaxAttemptsCap         = 10
+	MinAttempts            = 1
 )
 
 // Sentinel errors. Kept stable so callers (handlers, tests) can use
@@ -74,21 +74,27 @@ var (
 // Request is the persisted OTP envelope. CodeHash and Salt together let us
 // verify a code in constant time without ever storing the plaintext.
 type Request struct {
-	RequestID    string    `json:"request_id"`
-	AppID        string    `json:"app_id"`
-	Channel      Channel   `json:"channel"`
-	Recipient    string    `json:"recipient"` // E.164 phone or RFC-5322 email
-	CodeHash     string    `json:"code_hash"` // hex-encoded SHA-256(code || salt)
-	Salt         string    `json:"salt"`      // hex-encoded random 16 bytes
-	Length       int       `json:"length"`
-	Alphanumeric bool      `json:"alphanumeric"`
-	Attempts     int       `json:"attempts"`
-	MaxAttempts  int       `json:"max_attempts"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	LastSentAt   time.Time `json:"last_sent_at"`
-	Verified     bool      `json:"verified"`
-	VerifiedAt   *time.Time `json:"verified_at,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ResolvedUserID string                 `json:"resolved_user_id,omitempty"`
+	TemplateBody   string                 `json:"template_body,omitempty"`
+	TemplateData   map[string]interface{} `json:"template_data,omitempty"`
+	Delivery       *DeliveryOperation     `json:"delivery,omitempty"`
+	Revision       uint64                 `json:"revision,omitempty"`
+	EnvironmentID  string                 `json:"environment_id,omitempty"`
+	RequestID      string                 `json:"request_id"`
+	AppID          string                 `json:"app_id"`
+	Channel        Channel                `json:"channel"`
+	Recipient      string                 `json:"recipient"` // E.164 phone or RFC-5322 email
+	CodeHash       string                 `json:"code_hash"` // hex-encoded SHA-256(code || salt)
+	Salt           string                 `json:"salt"`      // hex-encoded random 16 bytes
+	Length         int                    `json:"length"`
+	Alphanumeric   bool                   `json:"alphanumeric"`
+	Attempts       int                    `json:"attempts"`
+	MaxAttempts    int                    `json:"max_attempts"`
+	ExpiresAt      time.Time              `json:"expires_at"`
+	LastSentAt     time.Time              `json:"last_sent_at"`
+	Verified       bool                   `json:"verified"`
+	VerifiedAt     *time.Time             `json:"verified_at,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 // SendInput is the use-case input for OTPService.Send. The caller must
@@ -96,22 +102,24 @@ type Request struct {
 //   - Recipient: raw email / E.164 phone (no user lookup; auto-creates a user)
 //   - UserID:    internal FRN user_id (UUID); the channel address is read off the record
 //   - ExternalID: caller-owned user identifier; resolved via the users index
+//
 // When UserID or ExternalID is used, the contact field corresponding to the
 // channel is read from the user record (Email for email; Phone for sms/whatsapp).
 // Validation lives on the DTO layer (interfaces/http/dto/otp_dto.go) so the
 // service can assume inputs are syntactically well-formed and focus on policy.
 type SendInput struct {
-	AppID        string
-	Channel      Channel
-	Recipient    string // mutually exclusive with UserID / ExternalID
-	UserID       string // mutually exclusive with Recipient / ExternalID
-	ExternalID   string // mutually exclusive with Recipient / UserID
-	Length       int    // 0 → DefaultCodeLength
-	Alphanumeric bool
-	TTLSeconds   int                    // 0 → DefaultTTLSeconds
-	MaxAttempts  int                    // 0 → DefaultMaxAttempts
-	TemplateBody string                 // optional BYO body containing {{code}}; empty → system default
-	TemplateData map[string]interface{} // extra template vars (e.g. {{app_name}})
+	EnvironmentID string
+	AppID         string
+	Channel       Channel
+	Recipient     string // mutually exclusive with UserID / ExternalID
+	UserID        string // mutually exclusive with Recipient / ExternalID
+	ExternalID    string // mutually exclusive with Recipient / UserID
+	Length        int    // 0 → DefaultCodeLength
+	Alphanumeric  bool
+	TTLSeconds    int                    // 0 → DefaultTTLSeconds
+	MaxAttempts   int                    // 0 → DefaultMaxAttempts
+	TemplateBody  string                 // optional BYO body containing {{code}}; empty → system default
+	TemplateData  map[string]interface{} // extra template vars (e.g. {{app_name}})
 }
 
 // SendResult is what SendOTP returns once the underlying notification has
@@ -135,9 +143,9 @@ type VerifyInput struct {
 // VerifyResult reports the outcome of a verification attempt. AttemptsRemaining
 // is included on failure so callers can render UX without an extra round-trip.
 type VerifyResult struct {
-	Verified           bool
-	AttemptsRemaining  int
-	VerifiedAt         *time.Time
+	Verified          bool
+	AttemptsRemaining int
+	VerifiedAt        *time.Time
 }
 
 // Service is the public OTP-as-a-service contract. Implementations must be

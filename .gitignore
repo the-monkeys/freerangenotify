@@ -156,3 +156,5 @@ Q&A/*
 .venv/
 .cursor/
 graphify-out/
+# Isolated documentation preview output
+/ui/dist-docs/

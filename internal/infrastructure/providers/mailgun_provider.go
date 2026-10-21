@@ -118,11 +118,13 @@ func (p *MailgunProvider) Send(ctx context.Context, notif *notification.Notifica
 			// Mailgun: `attachment` field for regular, `inline` field for
 			// HTML-embedded parts (the cid: reference is just the filename).
 			fieldName := "attachment"
+			filename := coalesceFilename(ra.Filename)
 			if ra.Disposition == "inline" && ra.ContentID != "" {
 				fieldName = "inline"
+				filename = ra.ContentID
 			}
 			h := make(textproto.MIMEHeader)
-			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, fieldName, coalesceFilename(ra.Filename)))
+			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, fieldName, filename))
 			h.Set("Content-Type", coalesceMIME(ra.MIMEType))
 			part, pErr := mw.CreatePart(h)
 			if pErr != nil {

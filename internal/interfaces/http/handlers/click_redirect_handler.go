@@ -37,6 +37,15 @@ func NewClickRedirectHandler(signer *whatsapp.ClickSigner, analytics *repository
 // Error responses are deliberately spare HTML so a curious user pasting
 // the link into a browser sees a friendly message instead of JSON noise,
 // while preserving distinct status codes (400/403/410) for observability.
+// @Summary Handle
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags ClickRedirect
+// @Produce json
+// @Param sig path string true "sig"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/r/{sig} [get]
 func (h *ClickRedirectHandler) Handle(c *fiber.Ctx) error {
 	sig := c.Params("sig")
 	if sig == "" {

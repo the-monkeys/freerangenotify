@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,6 +24,16 @@ func NewWhatsAppConversationHandler(svc whatsapp.Service, logger *zap.Logger) *W
 }
 
 // ListConversations handles GET /v1/whatsapp/conversations
+// @Summary List Conversations
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations [get]
 func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -30,7 +43,7 @@ func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 
-	conversations, total, err := h.whatsappSvc.ListConversations(c.Context(), appID, limit, offset)
+	conversations, total, err := h.whatsappSvc.ListConversations(channelTemplateContext(c), appID, limit, offset)
 	if err != nil {
 		h.logger.Error("Failed to list conversations", zap.String("app_id", appID), zap.Error(err))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to list conversations")
@@ -46,6 +59,17 @@ func (h *WhatsAppConversationHandler) ListConversations(c *fiber.Ctx) error {
 }
 
 // GetMessages handles GET /v1/whatsapp/conversations/:contact_id/messages
+// @Summary Get Messages
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/messages [get]
 func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -60,7 +84,7 @@ func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
 	offset, _ := strconv.Atoi(c.Query("offset", "0"))
 
-	messages, total, err := h.whatsappSvc.ListMessages(c.Context(), &whatsapp.MessageFilter{
+	messages, total, err := h.whatsappSvc.ListMessages(channelTemplateContext(c), &whatsapp.MessageFilter{
 		AppID:       appID,
 		ContactWAID: contactID,
 		Limit:       limit,
@@ -80,11 +104,25 @@ func (h *WhatsAppConversationHandler) GetMessages(c *fiber.Ctx) error {
 
 // replyRequest is the payload for the reply endpoint.
 type replyRequest struct {
-	Text         string `json:"text"`
-	TemplateName string `json:"template_name"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Text           string `json:"text"`
+	TemplateName   string `json:"template_name"`
 }
 
 // Reply handles POST /v1/whatsapp/conversations/:contact_id/reply
+// @Summary Reply
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/reply [post]
+// @Accept json
+// @Param body body replyRequest true "Request body"
 func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -103,6 +141,22 @@ func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 	if req.Text == "" && req.TemplateName == "" {
 		return pkgerrors.BadRequest("Either text or template_name is required")
 	}
+	if queued, ok := h.whatsappSvc.(interface {
+		ReplyQueued(context.Context, string, string, string, string, string) (*notification.Notification, error)
+	}); ok {
+		key := req.IdempotencyKey
+		if key == "" {
+			key = c.Get("Idempotency-Key")
+		}
+		if key == "" {
+			key = uuid.NewString()
+		}
+		n, err := queued.ReplyQueued(channelTemplateContext(c), appID, contactID, req.Text, req.TemplateName, key)
+		if err != nil {
+			return err
+		}
+		return c.JSON(fiber.Map{"success": true, "accepted": true, "message": "Reply queued", "notification_id": n.NotificationID, "status": n.Status, "idempotency_key": key})
+	}
 
 	if err := h.whatsappSvc.Reply(c.Context(), appID, contactID, req.Text, req.TemplateName); err != nil {
 		h.logger.Error("Reply failed",
@@ -116,6 +170,17 @@ func (h *WhatsAppConversationHandler) Reply(c *fiber.Ctx) error {
 }
 
 // MarkRead handles POST /v1/whatsapp/conversations/:contact_id/read
+// @Summary Mark Read
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags WhatsAppConversation
+// @Produce json
+// @Param contact_id path string true "contact_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/whatsapp/conversations/{contact_id}/read [post]
 func (h *WhatsAppConversationHandler) MarkRead(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
 	if !ok || appID == "" {
@@ -127,7 +192,7 @@ func (h *WhatsAppConversationHandler) MarkRead(c *fiber.Ctx) error {
 		return pkgerrors.BadRequest("contact_id is required")
 	}
 
-	if err := h.whatsappSvc.MarkRead(c.Context(), appID, contactID); err != nil {
+	if err := h.whatsappSvc.MarkRead(channelTemplateContext(c), appID, contactID); err != nil {
 		h.logger.Error("Mark read failed", zap.String("contact", contactID), zap.Error(err))
 		return pkgerrors.New(pkgerrors.ErrCodeInternal, "Failed to mark as read")
 	}

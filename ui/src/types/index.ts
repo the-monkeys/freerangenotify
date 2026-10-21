@@ -61,6 +61,7 @@ export interface ChangePasswordRequest {
 }
 
 export interface ApplicationSettings {
+  secret_configured?: Record<string, boolean>;
     rate_limit?: number;
     retry_attempts?: number;
     default_template?: string;
@@ -129,6 +130,7 @@ export interface WhatsAppConfig {
 
 // ============= WhatsApp Meta Types =============
 export interface WhatsAppConnectionStatus {
+	revision?:number;
     connected: boolean;
     provider: string;
     connection_status?: string;
@@ -160,6 +162,10 @@ export interface WhatsAppConversation {
 }
 
 export interface WhatsAppMessage {
+ text_body?:string;
+ delivery_state?:string;
+ notification_id?:string;
+ template_name?:string;
     id: string;
     app_id: string;
     meta_message_id?: string;
@@ -1136,6 +1142,10 @@ export interface BillingUsageBreakdown {
 }
 
 export interface BillingRates {
+ pricing_model?: string;
+ charge_basis?: string;
+ vendor_costs?: string;
+ detailed_rates?: Array<{channel:string;provider:string;credential_source:string;destination_prefix:string;country:string;category:string;credits_per_unit:number;vendor_cost_minor_per_unit:number;vendor_currency:string}>;
     currency: string;
     active_version: string;
     effective_at: string;
@@ -1156,6 +1166,9 @@ export type ProviderKind = 'generic' | 'discord' | 'slack' | 'teams';
 export type ProviderSignatureVersion = 'v1' | 'v2';
 
 export interface CustomProvider {
+	imported?:boolean;
+	origin_app_id?:string;
+	allowed_actions?:Record<string,boolean>;
     provider_id: string;
     name: string;
     channel: string;

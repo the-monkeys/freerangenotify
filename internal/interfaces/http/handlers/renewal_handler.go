@@ -45,6 +45,16 @@ func (h *RenewalHandler) SetUsageRepo(repo billing.UsageRepository, enabled bool
 // AdminRenew handles POST /v1/admin/subscriptions/:id/renew
 // Renews a subscription for the specified number of months without requiring payment.
 // Protected by admin/ops auth — NOT public.
+// @Summary Admin Renew
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Renewal
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/subscriptions/{id}/renew [post]
+// @Security BearerAuth
 func (h *RenewalHandler) AdminRenew(c *fiber.Ctx) error {
 	subID := c.Params("id")
 	if subID == "" {

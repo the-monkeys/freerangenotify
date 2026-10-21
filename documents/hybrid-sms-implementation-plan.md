@@ -1,5 +1,7 @@
 # Hybrid SMS Implementation Plan
 
+> Superseded (2026-10-18): use [WhatsApp/SMS reliability plan](../docs/superpowers/plans/2026-10-13-whatsapp-sms-reliability.md) and [production delivery recovery runbook](production-delivery-recovery-runbook.md). Retained as historical design context. The `FREERANGE_PROVIDERS_SMS_*` names and priority rules below are not current setup instructions.
+
 This document outlines the end-to-end integration of a "Hybrid" SMS service in FreeRangeNotify, allowing users to choose between system-provided Twilio credentials and their own (BYOC).
 
 ## Overview

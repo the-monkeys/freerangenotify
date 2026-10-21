@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
 	"go.uber.org/zap"
 )
@@ -62,6 +63,7 @@ type httpDoer interface {
 }
 
 type whatsappRichTemplateService struct {
+	connections   *ChannelConnectionService
 	repo          whatsapp.RichTemplateRepository
 	appRepo       application.Repository
 	httpClient    httpDoer
@@ -148,11 +150,38 @@ func (s *whatsappRichTemplateService) Create(ctx context.Context, tpl *whatsapp.
 		return nil, fmt.Errorf("load app %s: %w", tpl.AppID, err)
 	}
 	wa := app.Settings.WhatsApp
+	if s.connections != nil {
+		resolved, snap, explicit, e := s.connections.ExplicitWhatsAppConfig(ctx, tpl.AppID, channelconnection.EnvironmentID(ctx))
+		if e != nil {
+			return nil, e
+		}
+		if explicit {
+			if snap.Readiness != "ready" {
+				return nil, fmt.Errorf("validate connection readiness before template submission")
+			}
+			wa = resolved
+			tpl.ConnectionID = snap.ConnectionID
+			tpl.ConnectionRevision = snap.Revision
+			tpl.ProviderType = snap.Provider
+			tpl.ProviderAccountID = snap.AccountID
+		}
+	}
+	tpl.EnvironmentID = channelconnection.EnvironmentID(ctx)
 	metaConfigured := wa != nil && wa.Provider == "meta" && wa.MetaAccessToken != "" && wa.MetaWABAID != ""
 	// Twilio Content API is submitted whenever Twilio creds are present on
 	// the app, regardless of the runtime Provider field — so an app can run
 	// Meta in prod and keep Twilio Content SIDs warm as a failover.
 	twilioConfigured := wa != nil && wa.AccountSID != "" && wa.AuthToken != ""
+	if metaConfigured {
+		if err := EnsureExclusiveTemplateAccount(ctx, s.appRepo, s.connections, tpl.AppID, channelconnection.EnvironmentID(ctx), "meta", wa.MetaWABAID, ""); err != nil {
+			return nil, err
+		}
+	}
+	if twilioConfigured {
+		if err := EnsureExclusiveTemplateAccount(ctx, s.appRepo, s.connections, tpl.AppID, channelconnection.EnvironmentID(ctx), "twilio", wa.AccountSID, ""); err != nil {
+			return nil, err
+		}
+	}
 
 	tpl.ID = "frn_tpl_" + uuid.NewString()
 	now := s.now()
@@ -216,7 +245,9 @@ func (s *whatsappRichTemplateService) Create(ctx context.Context, tpl *whatsapp.
 		}
 	}
 
-	tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+	if tpl.Kind != whatsapp.KindList {
+		tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+	}
 	if err := s.repo.Create(ctx, tpl); err != nil {
 		return nil, fmt.Errorf("persist template: %w", err)
 	}
@@ -233,6 +264,9 @@ func (s *whatsappRichTemplateService) Get(ctx context.Context, appID, id string)
 	if tpl.AppID != appID {
 		return nil, fmt.Errorf("rich template %s does not belong to app %s", id, appID)
 	}
+	if tpl.EnvironmentID != "" && tpl.EnvironmentID != channelconnection.EnvironmentID(ctx) {
+		return nil, fmt.Errorf("template does not belong to selected environment")
+	}
 	return tpl, nil
 }
 
@@ -248,6 +282,7 @@ func (s *whatsappRichTemplateService) GetByName(ctx context.Context, appID, name
 }
 
 func (s *whatsappRichTemplateService) List(ctx context.Context, filter whatsapp.RichTemplateFilter) ([]*whatsapp.RichTemplate, int64, error) {
+	filter.EnvironmentID = channelconnection.EnvironmentID(ctx)
 	return s.repo.List(ctx, filter)
 }
 
@@ -279,11 +314,26 @@ func (s *whatsappRichTemplateService) SyncApproval(ctx context.Context, appID, i
 	if tpl.Providers.Meta == nil || tpl.Providers.Meta.TemplateName == "" {
 		return tpl, nil // never submitted; nothing to sync
 	}
-	app, err := s.appRepo.GetByID(ctx, appID)
-	if err != nil {
-		return nil, err
+	var wa *application.WhatsAppAppConfig
+	if tpl.ConnectionID != "" && tpl.ConnectionRevision > 0 {
+		if s.connections == nil {
+			return nil, fmt.Errorf("bound connection reader unavailable")
+		}
+		snap, e := s.connections.ResolveRevision(ctx, tpl.ConnectionID, tpl.ConnectionRevision)
+		if e != nil || snap.AppID != appID || snap.AccountID != tpl.ProviderAccountID || snap.Provider != "meta" {
+			return nil, fmt.Errorf("template binding unavailable")
+		}
+		wa = &application.WhatsAppAppConfig{Provider: "meta", MetaWABAID: snap.AccountID, MetaPhoneNumberID: snap.SenderID, MetaAccessToken: snap.Credentials["access_token"]}
+	} else {
+		app, e := s.appRepo.GetByID(ctx, appID)
+		if e != nil || app == nil {
+			return nil, fmt.Errorf("template application unavailable")
+		}
+		wa = app.Settings.WhatsApp
+		if tpl.ProviderAccountID != "" && (wa == nil || wa.MetaWABAID != tpl.ProviderAccountID) {
+			return nil, fmt.Errorf("legacy template account changed; reconcile before syncing")
+		}
 	}
-	wa := app.Settings.WhatsApp
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" || wa.MetaWABAID == "" {
 		return tpl, nil
 	}
@@ -323,11 +373,34 @@ func (s *whatsappRichTemplateService) Preview(ctx context.Context, appID, id str
 // transitions land in the index without polling. Locates the template by
 // (WABA → app_id → name).
 func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaID, templateName, status, reason string) error {
+	appID, _ := ctx.Value(whatsapp.CallbackAppKey).(string)
+	if appID != "" {
+		app, err := s.appRepo.GetByID(ctx, appID)
+		if err != nil {
+			return err
+		}
+		if app == nil {
+			return fmt.Errorf("template application unavailable")
+		}
+		wa := app.Settings.WhatsApp
+		if s.connections != nil {
+			resolved, _, explicit, e := s.connections.ExplicitWhatsAppConfig(ctx, appID, channelconnection.EnvironmentID(ctx))
+			if e != nil {
+				return e
+			}
+			if explicit {
+				wa = resolved
+			}
+		}
+		if wa == nil || wa.MetaWABAID != wabaID {
+			return fmt.Errorf("template callback account mismatch")
+		}
+		return s.applyMetaStatusForApp(ctx, appID, templateName, status, reason)
+	}
 	apps, err := s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
 	if err != nil {
 		return err
 	}
-	var appID string
 	for _, app := range apps {
 		wa := app.Settings.WhatsApp
 		if wa != nil && wa.Provider == "meta" && wa.MetaWABAID == wabaID {
@@ -344,6 +417,9 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 
 	// Find by Meta-side template_name (the name we submitted, which mirrors
 	// tpl.Name today but may diverge in future for collision avoidance).
+	return s.applyMetaStatusForApp(ctx, appID, templateName, status, reason)
+}
+func (s *whatsappRichTemplateService) applyMetaStatusForApp(ctx context.Context, appID, templateName, status, reason string) error {
 	tpl, err := s.repo.GetByName(ctx, appID, templateName)
 	if err != nil {
 		return err
@@ -351,6 +427,9 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 	if tpl == nil {
 		// Template was created outside FRN (raw Graph API) — nothing to do.
 		return nil
+	}
+	if tpl.EnvironmentID != "" && tpl.EnvironmentID != channelconnection.EnvironmentID(ctx) {
+		return fmt.Errorf("template callback environment mismatch")
 	}
 	if tpl.Providers.Meta == nil {
 		tpl.Providers.Meta = &whatsapp.MetaBinding{TemplateName: templateName}
@@ -367,15 +446,46 @@ func (s *whatsappRichTemplateService) ApplyMetaStatus(ctx context.Context, wabaI
 // Looks up by Twilio ContentSid (which we stored at submission time) and
 // updates the binding + aggregate state.
 func (s *whatsappRichTemplateService) ApplyTwilioStatus(ctx context.Context, contentSid, status, reason string) error {
+	if finder, ok := s.repo.(interface {
+		FindByTwilioContentSID(context.Context, string) (*whatsapp.RichTemplate, error)
+	}); ok {
+		tpl, err := finder.FindByTwilioContentSID(ctx, contentSid)
+		if err != nil {
+			return err
+		}
+		if tpl == nil {
+			return fmt.Errorf("content binding unavailable")
+		}
+		if appID, _ := ctx.Value(whatsapp.CallbackAppKey).(string); appID != "" && appID != tpl.AppID {
+			return fmt.Errorf("content binding application mismatch")
+		}
+		tpl.Providers.Twilio.Status = strings.ToLower(status)
+		tpl.Providers.Twilio.Reason = reason
+		tpl.Providers.Twilio.UpdatedAt = s.now()
+		tpl.ApprovalState = aggregateApprovalState(tpl.Providers)
+		tpl.UpdatedAt = s.now()
+		return s.repo.Update(ctx, tpl)
+	}
 	// We don't have a "GetByTwilioSid" repo method, so do a small scan with
 	// a high cap. Twilio webhook volume is low (one per approval transition
 	// per template); the simpler implementation is fine here.
 	const scanCap = 1000
-	apps, err := s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	var apps []*application.Application
+	var err error
+	if appID, ok := ctx.Value(whatsapp.CallbackAppKey).(string); ok && appID != "" {
+		app, e := s.appRepo.GetByID(ctx, appID)
+		err = e
+		apps = []*application.Application{app}
+	} else {
+		apps, err = s.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	}
 	if err != nil {
 		return err
 	}
 	for _, app := range apps {
+		if app == nil {
+			return fmt.Errorf("content application unavailable")
+		}
 		tpls, _, err := s.repo.List(ctx, whatsapp.RichTemplateFilter{AppID: app.AppID, Limit: scanCap})
 		if err != nil {
 			s.logger.Warn("Twilio status webhook: list templates failed", zap.String("app_id", app.AppID), zap.Error(err))
@@ -413,8 +523,35 @@ func (s *whatsappRichTemplateService) ResolveSendPayload(ctx context.Context, ap
 	if err != nil {
 		return nil, err
 	}
+	if tpl.Kind == whatsapp.KindList {
+		// Older runtime-only Create records were incorrectly aggregated as draft.
+		legacyRuntime := tpl.ApprovalState == whatsapp.ApprovalDraft && tpl.Providers.Meta != nil && tpl.Providers.Meta.TemplateName == "" && tpl.Providers.Meta.Status == ""
+		if tpl.ApprovalState != whatsapp.ApprovalApproved && !legacyRuntime {
+			return nil, fmt.Errorf("list draft is not ready for delivery")
+		}
+		sections := []map[string]interface{}{}
+		for _, section := range tpl.ListSections {
+			rows := []map[string]interface{}{}
+			for _, row := range section.Rows {
+				rows = append(rows, map[string]interface{}{"id": row.ID, "title": renderRichVariables(row.Title, payload.Variables), "description": renderRichVariables(row.Description, payload.Variables)})
+			}
+			sections = append(sections, map[string]interface{}{"title": renderRichVariables(section.Title, payload.Variables), "rows": rows})
+		}
+		interactive := map[string]interface{}{"type": "list", "action": map[string]interface{}{"button": firstNonEmpty(tpl.ListButtonText, "Menu"), "sections": sections}}
+		if tpl.Footer != "" {
+			interactive["footer"] = map[string]interface{}{"text": renderRichVariables(tpl.Footer, payload.Variables)}
+		}
+		if tpl.Header != nil && tpl.Header.Text != "" {
+			interactive["header"] = map[string]interface{}{"type": "text", "text": renderRichVariables(tpl.Header.Text, payload.Variables)}
+		}
+		return map[string]interface{}{"kind": "list", "body": renderRichVariables(tpl.Body, payload.Variables), "interactive": interactive}, nil
+	}
 	if tpl.Providers.Meta == nil || tpl.Providers.Meta.TemplateName == "" {
 		return nil, fmt.Errorf("template %s has no Meta binding (not submitted)", payload.TemplateID)
+	}
+
+	if !strings.EqualFold(tpl.Providers.Meta.Status, "APPROVED") {
+		return nil, fmt.Errorf("Meta template is not approved")
 	}
 
 	rich := map[string]interface{}{
@@ -431,6 +568,53 @@ func (s *whatsappRichTemplateService) ResolveSendPayload(ctx context.Context, ap
 	switch tpl.Kind {
 	case whatsapp.KindCarousel:
 		rich["cards"] = s.resolveCarouselCards(tpl, payload, notificationID)
+	case whatsapp.KindCTAURL, whatsapp.KindQuickReply:
+		components := []map[string]interface{}{}
+		if tpl.Header != nil {
+			parameters := []map[string]interface{}{}
+			if values := orderedVariableValues(tpl.Header.Text, payload.Variables); len(values) > 0 {
+				for _, value := range values {
+					parameters = append(parameters, map[string]interface{}{"type": "text", "text": value})
+				}
+			} else {
+				for _, media := range []struct{ kind, url string }{{"image", tpl.Header.ImageURL}, {"video", tpl.Header.VideoURL}, {"document", tpl.Header.DocumentURL}} {
+					if media.url != "" {
+						parameters = append(parameters, map[string]interface{}{"type": media.kind, media.kind: map[string]interface{}{"link": renderRichVariables(media.url, payload.Variables)}})
+						break
+					}
+				}
+			}
+			if len(parameters) > 0 {
+				components = append(components, map[string]interface{}{"type": "header", "parameters": parameters})
+			}
+		}
+		if vars := orderedVariableValues(tpl.Body, payload.Variables); len(vars) > 0 {
+			parameters := []map[string]interface{}{}
+			for _, value := range vars {
+				parameters = append(parameters, map[string]interface{}{"type": "text", "text": value})
+			}
+			components = append(components, map[string]interface{}{"type": "body", "parameters": parameters})
+		}
+		for index, button := range tpl.Buttons {
+			var parameter map[string]interface{}
+			subType := "quick_reply"
+			if button.Type == whatsapp.ButtonQuickReply {
+				parameter = map[string]interface{}{"type": "payload", "payload": renderRichVariables(button.Payload, payload.Variables)}
+			} else if button.Type == whatsapp.ButtonURL {
+				subType = "url"
+				values := orderedVariableValues(button.URL, payload.Variables)
+				if len(values) == 0 {
+					continue
+				}
+				value := values[0]
+				resolved := s.resolveButton(button, index, value, notificationID, tpl.AppID)
+				parameter = map[string]interface{}{"type": "text", "text": resolved["text"]}
+			} else {
+				return nil, fmt.Errorf("unsupported approved template button")
+			}
+			components = append(components, map[string]interface{}{"type": "button", "sub_type": subType, "index": fmt.Sprint(index), "parameters": []map[string]interface{}{parameter}})
+		}
+		rich["components"] = components
 	case whatsapp.KindCouponCode:
 		if tpl.CouponCode != "" {
 			rich["coupon_code"] = tpl.CouponCode
@@ -561,6 +745,9 @@ func orderedVariableValues(body string, vars map[string]string) []string {
 // requests WhatsApp approval. Returns the TwilioBinding populated with the
 // content_sid and approval_sid.
 func (s *whatsappRichTemplateService) submitToTwilio(ctx context.Context, tpl *whatsapp.RichTemplate, wa *application.WhatsAppAppConfig) (*whatsapp.TwilioBinding, error) {
+	if err := validateTwilioRichAuthoring(tpl); err != nil {
+		return nil, err
+	}
 	payload := twilioContentPayload(tpl)
 	body, _ := json.Marshal(payload)
 
@@ -922,4 +1109,12 @@ func (s *whatsappRichTemplateService) ResolveTwilioSendPayload(ctx context.Conte
 		out["content_variables"] = contentVars
 	}
 	return out, nil
+}
+
+func renderRichVariables(text string, variables map[string]string) string {
+	pairs := []string{}
+	for key, value := range variables {
+		pairs = append(pairs, "{{"+key+"}}", value)
+	}
+	return strings.NewReplacer(pairs...).Replace(text)
 }

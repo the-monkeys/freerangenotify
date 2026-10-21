@@ -24,6 +24,8 @@ type UpdateApplicationRequest struct {
 
 // UpdateSettingsRequest represents a request to update application settings
 type UpdateSettingsRequest struct {
+	ClearSecrets           []string                          `json:"clear_secrets,omitempty"`
+	SettingsRevision       string                            `json:"settings_revision,omitempty"`
 	RateLimit              *int                              `json:"rate_limit" validate:"omitempty,min=1"`
 	RetryAttempts          *int                              `json:"retry_attempts" validate:"omitempty,min=0,max=10"`
 	DefaultTemplate        *string                           `json:"default_template" validate:"omitempty"`
@@ -49,19 +51,19 @@ type DefaultPreferencesDTO struct {
 
 // ApplicationResponse represents an application response
 type ApplicationResponse struct {
-	AppID             string               `json:"app_id"`
-	RateLimitEnforced *bool                `json:"rate_limit_enforced,omitempty"`
-	AppName           string               `json:"app_name"`
-	Description       string               `json:"description"`
-	APIKey            string               `json:"api_key"`
-	AdminUserID       string               `json:"admin_user_id"`
-	TenantID          string               `json:"tenant_id"`
-	WebhookURL        string               `json:"webhook_url,omitempty"`
-	Webhooks          map[string]string    `json:"webhooks,omitempty"`
-	Settings          application.Settings `json:"settings"`
-	APIKeyGeneratedAt string               `json:"api_key_generated_at"`
-	CreatedAt         string               `json:"created_at"`
-	UpdatedAt         string               `json:"updated_at"`
+	AppID             string                  `json:"app_id"`
+	RateLimitEnforced *bool                   `json:"rate_limit_enforced,omitempty"`
+	AppName           string                  `json:"app_name"`
+	Description       string                  `json:"description"`
+	APIKey            string                  `json:"api_key"`
+	AdminUserID       string                  `json:"admin_user_id"`
+	TenantID          string                  `json:"tenant_id"`
+	WebhookURL        string                  `json:"webhook_url,omitempty"`
+	Webhooks          map[string]string       `json:"webhooks,omitempty"`
+	Settings          SafeApplicationSettings `json:"settings"`
+	APIKeyGeneratedAt string                  `json:"api_key_generated_at"`
+	CreatedAt         string                  `json:"created_at"`
+	UpdatedAt         string                  `json:"updated_at"`
 }
 
 // ListApplicationsResponse represents a paginated list of applications
@@ -80,18 +82,22 @@ type RegenerateAPIKeyResponse struct {
 
 // ToApplicationResponse converts an application entity to a response DTO
 func ToApplicationResponse(app *application.Application) ApplicationResponse {
+	webhooks := make(map[string]string, len(app.Webhooks))
+	for name, endpoint := range app.Webhooks {
+		webhooks[name] = SafeEndpoint(endpoint)
+	}
 	return ApplicationResponse{
 		AppID:             app.AppID,
 		AppName:           app.AppName,
 		Description:       app.Description,
-		APIKey:            app.APIKey,
+		APIKey:            "dashboard:" + app.AppID,
 		AdminUserID:       app.AdminUserID,
 		TenantID:          app.TenantID,
-		WebhookURL:        app.WebhookURL,
-		Webhooks:          app.Webhooks,
-		Settings:          app.Settings,
+		WebhookURL:        SafeEndpoint(app.WebhookURL),
+		Webhooks:          webhooks,
+		Settings:          ToSafeApplicationSettings(app.Settings),
 		APIKeyGeneratedAt: app.APIKeyGeneratedAt.Format("2006-01-02T15:04:05Z07:00"),
 		CreatedAt:         app.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:         app.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:         app.UpdatedAt.Format("2006-01-02T15:04:05.999999999Z07:00"),
 	}
 }

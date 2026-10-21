@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"sync"
 	"time"
 
@@ -167,7 +168,7 @@ func (p *SchedulePoller) runTick(ctx context.Context) {
 				payload["schedule_id"] = sch.ID
 				payload["scheduled_at"] = next.In(time.UTC).Format(time.RFC3339)
 
-				result, err := p.workflowSvc.TriggerForUserIDs(ctx, sch.AppID, sch.WorkflowTriggerID, userIDs, payload)
+				result, err := p.workflowSvc.TriggerForUserIDs(channelconnection.WithEnvironment(ctx, sch.EnvironmentID), sch.AppID, sch.WorkflowTriggerID, userIDs, payload)
 				if err != nil {
 					p.logger.Error("Failed to trigger workflow for schedule",
 						zap.String("schedule_id", sch.ID),

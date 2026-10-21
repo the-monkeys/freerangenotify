@@ -1,14 +1,18 @@
 package usecases
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	stdtemplate "text/template"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/template"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
@@ -17,6 +21,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/limiter"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/metrics"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
+	templateutil "github.com/the-monkeys/freerangenotify/internal/usecases/template"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/utils"
 	"go.uber.org/zap"
@@ -30,6 +35,9 @@ type appCacheEntry struct {
 
 // NotificationService implements the notification service interface
 type NotificationService struct {
+	channelDelivery interface {
+		PrepareChannelDelivery(context.Context, *notification.Notification, *user.User) (*channelconnection.PreparedDelivery, error)
+	}
 	notificationRepo notification.Repository
 	userRepo         user.Repository
 	appRepo          application.Repository
@@ -43,6 +51,78 @@ type NotificationService struct {
 	appCacheMu       sync.RWMutex
 	topicService     topic.Service    // Phase 2: optional, set via SetTopicService
 	workflowService  workflow.Service // Phase 2: optional, set via SetWorkflowService
+}
+
+func (s *NotificationService) SetChannelDispatch(dispatch interface {
+	PrepareChannelDelivery(context.Context, *notification.Notification, *user.User) (*channelconnection.PreparedDelivery, error)
+}) {
+	s.channelDelivery = dispatch
+}
+
+func (s *NotificationService) prepareMessaging(ctx context.Context, n *notification.Notification, u *user.User) error {
+	if n.Metadata != nil {
+		for _, key := range []string{channelconnection.DeliveryMetadataKey, "channel_destination", "worker_claim", "worker_claim_until", "channel_quote", "reservation_id", "credits_used", "rate_card_version", "tenant_id", "delivery_attempt_state", "delivery_reservation_id", "channel_content_prepared", "inbox_reply_phone", "inbox_reply_contact", "inbox_reply_text", "inbox_reply_template", "inbox_reply_key"} {
+			delete(n.Metadata, key)
+		}
+	}
+	if s.channelDelivery != nil && (n.Channel == notification.ChannelSMS || n.Channel == notification.ChannelWhatsApp) {
+		if n.Content.Data != nil {
+			b, err := json.Marshal(n.Content.Data)
+			if err != nil {
+				return fmt.Errorf("invalid message data")
+			}
+			var data map[string]interface{}
+			if json.Unmarshal(b, &data) != nil {
+				return fmt.Errorf("invalid message data")
+			}
+			n.Content.Data = data
+		}
+		if n.TemplateID != "" {
+			tmpl, err := s.resolveTemplate(ctx, n.AppID, n.TemplateID)
+			if err != nil {
+				return err
+			}
+			appName := ""
+			for _, variable := range tmpl.Variables {
+				if variable == "product" {
+					app, e := s.appRepo.GetByID(ctx, n.AppID)
+					if e != nil || app == nil {
+						return fmt.Errorf("application unavailable")
+					}
+					appName = app.AppName
+					break
+				}
+			}
+			n.Content.Data = templateutil.EnrichData(tmpl, n.Content.Data, u, appName, n.UserID, n.AppID)
+			render := func(text string) (string, error) {
+				t, err := stdtemplate.New("message").Parse(NormalizeTemplateBody(text))
+				if err != nil {
+					return "", fmt.Errorf("invalid messaging template")
+				}
+				var b bytes.Buffer
+				if err := t.Execute(&b, n.Content.Data); err != nil {
+					return "", fmt.Errorf("messaging template data missing")
+				}
+				return b.String(), nil
+			}
+			title, err := render(tmpl.Subject)
+			if err != nil {
+				return err
+			}
+			body, err := render(tmpl.Body)
+			if err != nil {
+				return err
+			}
+			n.Content.Title, n.Content.Body = title, body
+		}
+		if n.Metadata == nil {
+			n.Metadata = map[string]interface{}{}
+		}
+		n.Metadata["channel_content_prepared"] = true
+		_, err := s.channelDelivery.PrepareChannelDelivery(ctx, n, u)
+		return err
+	}
+	return nil
 }
 
 // SetTopicService injects the optional topic service for fan-out support.
@@ -95,8 +175,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		zap.String("user_id", req.UserID),
 		zap.String("template_id", req.TemplateID),
 		zap.String("channel", string(req.Channel)),
-		zap.String("priority", string(req.Priority)),
-		zap.Any("data", req.Data))
+		zap.String("priority", string(req.Priority)))
 
 	// ── Phase 2: Topic fan-out ──
 	// If TopicID is set, resolve subscribers and delegate to SendBulk.
@@ -140,9 +219,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 		s.logger.Debug("Template loaded for notification",
 			zap.String("template_id", req.TemplateID),
-			zap.String("template_name", tmpl.Name),
-			zap.String("title", title),
-			zap.String("body", body))
+			zap.String("template_name", tmpl.Name))
 	} else {
 		title = req.Title
 		body = req.Body
@@ -270,6 +347,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	notif := &notification.Notification{
 		NotificationID: uuid.New().String(),
 		AppID:          req.AppID,
+		EnvironmentID:  req.EnvironmentID,
 		UserID:         req.UserID,
 		Channel:        req.Channel,
 		Priority:       req.Priority,
@@ -293,6 +371,10 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 		Recurrence:  req.Recurrence,
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
+	}
+
+	if identity, ok := notification.DispatchIdentityFromContext(ctx); ok {
+		notif.NotificationID = identity
 	}
 
 	// Move webhook_url from Data to Metadata if present
@@ -337,6 +419,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 	}
 
 	// Save to database
+	if err := s.prepareMessaging(ctx, notif, u); err != nil {
+		return nil, err
+	}
 	if err := s.notificationRepo.Create(ctx, notif); err != nil {
 		s.logger.Error("Failed to create notification", zap.Error(err))
 		return nil, fmt.Errorf("failed to create notification: %w", err)
@@ -373,6 +458,9 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 
 	if err := s.queue.Enqueue(ctx, queueItem); err != nil {
 		s.logger.Error("Failed to enqueue notification", zap.Error(err))
+		if _, trusted := notification.DispatchIdentityFromContext(ctx); trusted {
+			return nil, &notification.DispatchError{NotificationID: notif.NotificationID, MayBeEnqueued: true, Cause: err}
+		}
 		// Update status to failed
 		s.notificationRepo.UpdateStatus(ctx, notif.NotificationID, notification.StatusFailed)
 		return nil, fmt.Errorf("failed to enqueue notification: %w", err)
@@ -393,7 +481,7 @@ func (s *NotificationService) Send(ctx context.Context, req notification.SendReq
 			payload["notification_id"] = notif.NotificationID
 			payload["channel"] = string(req.Channel)
 			payload["template_id"] = req.TemplateID
-			_, err := s.workflowService.Trigger(context.Background(), req.AppID, &workflow.TriggerRequest{
+			_, err := s.workflowService.Trigger(channelconnection.WithEnvironment(context.Background(), req.EnvironmentID), req.AppID, &workflow.TriggerRequest{
 				TriggerID: req.WorkflowTriggerID,
 				UserID:    req.UserID,
 				Payload:   payload,
@@ -644,6 +732,9 @@ func (s *NotificationService) sendBulk(ctx context.Context, req notification.Bul
 			continue
 		}
 
+		if err := s.prepareMessaging(ctx, notif, u); err != nil {
+			return nil, err
+		}
 		notifications = append(notifications, notif)
 	}
 	confirmed := make([]*notification.Notification, 0, len(notifications))
@@ -805,7 +896,7 @@ func (s *NotificationService) Broadcast(ctx context.Context, req notification.Br
 		if s.workflowService == nil {
 			return nil, fmt.Errorf("workflows feature is not enabled")
 		}
-		result, err := s.workflowService.TriggerForUserIDs(ctx, req.AppID, req.WorkflowTriggerID, allUserIDs, req.Data)
+		result, err := s.workflowService.TriggerForUserIDs(channelconnection.WithEnvironment(ctx, req.EnvironmentID), req.AppID, req.WorkflowTriggerID, allUserIDs, req.Data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to trigger workflows: %w", err)
 		}

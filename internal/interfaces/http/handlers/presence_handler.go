@@ -35,6 +35,7 @@ type CheckInRequest struct {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/presence/check-in [post]
 func (h *PresenceHandler) CheckIn(c *fiber.Ctx) error {
 	var req CheckInRequest

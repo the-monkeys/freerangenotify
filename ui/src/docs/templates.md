@@ -1,94 +1,171 @@
 # Templates
 
-Templates define the content of your notifications. They support dynamic variables, versioning, and multi-channel formatting.
+Complete [Getting started](/docs/getting-started) first and save `APP_ID` and `TEMPLATE_ID`. Templates use `{{.name}}` variables supplied in notification `data`. Existing bare-variable syntax remains supported. API-key scope determines ownership; use the matching app ID in DTOs and paths.
 
-## Creating Templates
+Create with `POST /templates`, read with `GET /templates/TEMPLATE_ID`, list with `GET /templates`, and delete with `DELETE /templates/TEMPLATE_ID` (204). Deletion does not recall delivered messages. Imported templates follow resource-sharing ownership rules.
 
-Templates belong to an Application and target a specific channel. Required fields:
+## Render template
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `app_id` | string | The application this template belongs to |
-| `name` | string | Unique identifier (e.g., `order_confirmation`) |
-| `channel` | string | Target channel: `email`, `webhook`, `push`, `sms`, `sse` |
-| `body` | string | Template content with variable placeholders |
-| `subject` | string | Email subject line (email channel only) |
-| `variables` | string[] | List of expected variable names |
-| `locale` | string | Language code (default: `en`) |
+Render preview checks variables without sending a message.
 
-### Variable Syntax
-
-Use Go template syntax for dynamic content:
-
-```
-Hello {{.user_name}}, your order #{{.order_id}} has shipped!
-```
-
-Variables are passed in the `data` field when sending a notification:
-
+<!-- api-example:render-template:request -->
 ```json
 {
   "data": {
-    "user_name": "Alice",
-    "order_id": "ORD-12345"
+    "name": "Alice"
   }
 }
 ```
 
-## Versioning
-
-Every template edit creates a new **version**. This gives you a full audit trail and the ability to compare and rollback.
-
-### Viewing Version History
-
-Open any template and click **Version History** to see all previous versions with timestamps and authors.
-
-### Comparing Versions (Diff)
-
-Click **Compare** to open the diff viewer. It shows a side-by-side comparison of the body, subject, and variables between any two versions.
-
-### Rolling Back
-
-Select a previous version and click **Rollback** to restore it as the current version. This creates a new version (so you never lose history).
-
-## Template Library
-
-FreeRangeNotify includes pre-built templates you can clone and customize:
-
-- Welcome email
-- Password reset
-- Order confirmation
-- Account verification
-- Alert notification
-
-Clone from the **Template Library** tab in your application.
-
-## Testing Templates
-
-### Render Preview
-
-Test your template with sample data before sending:
-
+<!-- api-example:render-template:curl -->
 ```bash
-curl -X POST https://freerangenotify.monkeys.support/v1/templates/TEMPLATE_ID/render \
-  -H "X-API-Key: YOUR_API_KEY" \
+curl -sS -X POST "$BASE_URL/templates/${TEMPLATE_ID}/render" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"data": {"user_name": "Test User", "order_id": "ORD-00001"}}'
+  --data @- <<JSON
+{
+  "data": {
+    "name": "Alice"
+  }
+}
+JSON
 ```
 
-### Test Send
+HTTP 200; relevant response fields:
 
-Use the **Test Panel** in the template detail view to render and send a test notification with sample data.
+<!-- api-example:render-template:response -->
+```json
+{
+  "rendered_body": "Hello Alice"
+}
+```
 
-## API Reference
+## Update template
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/v1/templates/` | Create a new template |
-| GET | `/v1/templates/` | List all templates for the app |
-| GET | `/v1/templates/:id` | Get template details |
-| PUT | `/v1/templates/:id` | Update template (creates new version) |
-| DELETE | `/v1/templates/:id` | Delete a template |
-| POST | `/v1/templates/:id/render` | Render template with sample data |
-| GET | `/v1/templates/:id/versions` | List version history |
-| POST | `/v1/templates/:id/rollback` | Rollback to a previous version |
+**Update in place.** This leaves version 1 as version 1. It does not automatically preserve an earlier snapshot. Create a snapshot before editing when you need the old content retained.
+
+<!-- api-example:update-template:request -->
+```json
+{
+  "body": "Hi {{.name}}"
+}
+```
+
+<!-- api-example:update-template:curl -->
+```bash
+curl -sS -X PUT "$BASE_URL/templates/${TEMPLATE_ID}" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "body": "Hi {{.name}}"
+}
+JSON
+```
+
+HTTP 200; relevant response fields:
+
+<!-- api-example:update-template:response -->
+```json
+{
+  "id": "${TEMPLATE_ID}",
+  "version": 1,
+  "body": "Hi {{.name}}"
+}
+```
+
+## Snapshot template
+
+**Explicit snapshot.** This creates a new version of the current stored content. The legacy DTO requires `body`; send the current body. The endpoint snapshots the stored template rather than applying request content. Save response `id` as `VERSION_ID`.
+
+<!-- api-example:snapshot-template:request -->
+```json
+{
+  "locale": "en",
+  "created_by": "backend",
+  "body": "Hi {{.name}}"
+}
+```
+
+<!-- api-example:snapshot-template:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/templates/${APP_ID}/welcome_email/versions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "locale": "en",
+  "created_by": "backend",
+  "body": "Hi {{.name}}"
+}
+JSON
+```
+
+HTTP 201; relevant response fields:
+
+<!-- api-example:snapshot-template:response -->
+```json
+{
+  "id": "${VERSION_ID}",
+  "version": 2
+}
+```
+
+## Template history
+
+History uses the app/name route, with locale filtering. It returns an array.
+
+<!-- api-example:template-history:curl -->
+```bash
+curl -sS -X GET "$BASE_URL/templates/${APP_ID}/welcome_email/versions?locale=en" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
+HTTP 200; relevant response fields:
+
+<!-- api-example:template-history:response -->
+```json
+[
+  {
+    "version": 1
+  },
+  {
+    "version": 2
+  }
+]
+```
+
+## Rollback template
+
+Rollback creates another version from the selected saved version. It does not delete history. Here version 1 already contains the in-place edit, so the restored body is still `Hi {{.name}}`.
+
+<!-- api-example:rollback-template:request -->
+```json
+{
+  "version": 1,
+  "updated_by": "backend"
+}
+```
+
+<!-- api-example:rollback-template:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/templates/${VERSION_ID}/rollback" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "version": 1,
+  "updated_by": "backend"
+}
+JSON
+```
+
+HTTP 201; relevant response fields:
+
+<!-- api-example:rollback-template:response -->
+```json
+{
+  "version": 3,
+  "body": "Hi {{.name}}"
+}
+```

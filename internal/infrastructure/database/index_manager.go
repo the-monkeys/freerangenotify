@@ -42,6 +42,7 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 
 	// Define all indices to create
 	indices := map[string]func() map[string]interface{}{
+		"channel_connections":   im.templates.GetChannelConnectionsTemplate,
 		"applications":          im.templates.GetApplicationsTemplate,
 		"users":                 im.templates.GetUsersTemplate,
 		"notifications":         im.templates.GetNotificationsTemplate,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/topic"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/queue"
@@ -42,7 +43,8 @@ func (s *workflowService) Create(ctx context.Context, appID string, req *workflo
 		zap.String("name", req.Name),
 		zap.String("trigger_id", req.TriggerID))
 
-	// Check for duplicate trigger_id within the same app
+	ctx = channelconnection.WithEnvironment(ctx, req.EnvironmentID)
+	// Check for duplicate trigger_id within the same app/environment
 	existing, _ := s.repo.GetWorkflowByTrigger(ctx, appID, req.TriggerID)
 	if existing != nil {
 		return nil, errors.BadRequest(fmt.Sprintf("trigger_id '%s' already exists in this app", req.TriggerID))
@@ -159,14 +161,21 @@ func (s *workflowService) List(ctx context.Context, appID, environmentID string,
 }
 
 func (s *workflowService) Trigger(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, error) {
+	execution, _, err := s.TriggerWithOutcome(ctx, appID, req)
+	return execution, err
+}
+
+// The outcome is false only when no execution write or enqueue was attempted.
+// Trigger retains its existing return type and public error behavior.
+func (s *workflowService) TriggerWithOutcome(ctx context.Context, appID string, req *workflow.TriggerRequest) (*workflow.WorkflowExecution, bool, error) {
 	// 1. Resolve workflow by trigger_id
 	wf, err := s.repo.GetWorkflowByTrigger(ctx, appID, req.TriggerID)
-	if err != nil {
-		return nil, errors.NotFound("workflow", req.TriggerID)
+	if err != nil || wf == nil || wf.AppID != appID || normalizedWorkflowEnvironment(wf.EnvironmentID) != channelconnection.EnvironmentID(ctx) {
+		return nil, false, errors.NotFound("workflow", req.TriggerID)
 	}
 
 	if wf.Status != workflow.WorkflowStatusActive {
-		return nil, errors.BadRequest(fmt.Sprintf("workflow '%s' is not active (status: %s)", wf.Name, wf.Status))
+		return nil, false, errors.BadRequest(fmt.Sprintf("workflow '%s' is not active (status: %s)", wf.Name, wf.Status))
 	}
 
 	// 2. Idempotency check
@@ -174,7 +183,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		existing, _ := s.repo.GetActiveExecutions(ctx, req.UserID, wf.ID)
 		for _, exec := range existing {
 			if exec.TransactionID == req.TransactionID {
-				return exec, nil // Already running, return existing
+				return exec, true, nil // Already running, return existing
 			}
 		}
 	}
@@ -189,6 +198,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		ID:            uuid.New().String(),
 		WorkflowID:    wf.ID,
 		AppID:         appID,
+		EnvironmentID: channelconnection.EnvironmentID(ctx),
 		UserID:        req.UserID,
 		TransactionID: req.TransactionID,
 		CurrentStepID: firstStepID,
@@ -200,7 +210,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 	}
 
 	if err := s.repo.CreateExecution(ctx, exec); err != nil {
-		return nil, fmt.Errorf("failed to create execution: %w", err)
+		return nil, true, fmt.Errorf("failed to create execution: %w", err)
 	}
 
 	// 4. Enqueue first step
@@ -209,7 +219,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		StepID:      firstStepID,
 		EnqueuedAt:  time.Now(),
 	}); err != nil {
-		return nil, fmt.Errorf("failed to enqueue workflow: %w", err)
+		return nil, true, fmt.Errorf("failed to enqueue workflow: %w", err)
 	}
 
 	s.logger.Info("Workflow triggered",
@@ -217,7 +227,7 @@ func (s *workflowService) Trigger(ctx context.Context, appID string, req *workfl
 		zap.String("execution_id", exec.ID),
 		zap.String("trigger_id", req.TriggerID))
 
-	return exec, nil
+	return exec, true, nil
 }
 
 // triggerForUsers triggers a workflow for each user. Returns execution IDs and continues on per-user errors.
@@ -322,4 +332,11 @@ func (s *workflowService) ListExecutions(ctx context.Context, workflowID, appID 
 	}
 
 	return s.repo.ListExecutions(ctx, workflowID, limit, offset)
+}
+
+func normalizedWorkflowEnvironment(id string) string {
+	if id == "" {
+		return "default"
+	}
+	return id
 }

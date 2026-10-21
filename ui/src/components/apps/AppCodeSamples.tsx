@@ -24,12 +24,11 @@ interface ChannelSamples {
     auth?: Snippet;
 }
 
-const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
+const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId }) => {
     const [samples, setSamples] = useState<Record<string, Record<string, ChannelSamples>>>({});
     const [loading, setLoading] = useState(true);
     const [copied, setCopied] = useState<string | null>(null);
     const [selectedChannel, setSelectedChannel] = useState('sse');
-    const [showApiKey, setShowApiKey] = useState(false);
 
     useEffect(() => {
         const fetchSamples = async () => {
@@ -47,10 +46,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
         fetchSamples();
     }, [appId]);
 
-    const getCodeToDisplay = (code: string) => {
-        if (!apiKey) return code;
-        return showApiKey ? code : code.split(apiKey).join('YOUR_API_KEY');
-    };
+    const getCodeToDisplay = (code: string) => code;
 
     const handleCopy = (id: string, code: string) => {
         navigator.clipboard.writeText(getCodeToDisplay(code));
@@ -96,15 +92,6 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
                         <CardTitle className="text-lg">Integration Boilerplate</CardTitle>
                     </div>
                     <div className="flex items-center gap-4">
-                        {apiKey && (
-                            <button
-                                type="button"
-                                onClick={() => setShowApiKey(!showApiKey)}
-                                className="text-muted-foreground hover:text-foreground text-xs font-semibold hover:underline"
-                            >
-                                {showApiKey ? 'Hide Token' : 'Show Token'}
-                            </button>
-                        )}
                         <div className="flex items-center gap-2">
                             <label className="text-xs text-muted-foreground">Channel:</label>
                             <select
@@ -120,7 +107,7 @@ const AppCodeSamples: React.FC<AppCodeSamplesProps> = ({ appId, apiKey }) => {
                     </div>
                 </div>
                 <p className="text-sm text-muted-foreground pt-1">
-                    Ready-to-use snippets with your real API keys pre-filled.
+                    Snippets use YOUR_API_KEY. Application owners can reveal and copy their SDK key from Integration.
                 </p>
             </CardHeader>
             <CardContent className="p-0">

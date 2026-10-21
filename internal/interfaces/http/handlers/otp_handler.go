@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
 	"go.uber.org/zap"
 
+	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/otp"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
@@ -36,8 +38,11 @@ func NewOTPHandler(service otp.Service, v *validator.Validator, logger *zap.Logg
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 429 {object} map[string]interface{}
+// @Failure 409 {object} map[string]interface{}
+// @Failure 503 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/send [post]
 func (h *OTPHandler) Send(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -53,18 +58,21 @@ func (h *OTPHandler) Send(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.Send(c.Context(), otp.SendInput{
-		AppID:        appID,
-		Channel:      otp.Channel(req.Channel),
-		Recipient:    req.Recipient,
-		UserID:       req.UserID,
-		ExternalID:   req.ExternalID,
-		Length:       req.Length,
-		Alphanumeric: req.Alphanumeric,
-		TTLSeconds:   req.TTLSeconds,
-		MaxAttempts:  req.MaxAttempts,
-		TemplateBody: req.TemplateBody,
-		TemplateData: req.TemplateData,
+	ctx := otpRequestContext(c)
+	scope, _ := otp.ScopeFromContext(ctx)
+	res, err := h.service.Send(ctx, otp.SendInput{
+		EnvironmentID: scope.EnvironmentID,
+		AppID:         appID,
+		Channel:       otp.Channel(req.Channel),
+		Recipient:     req.Recipient,
+		UserID:        req.UserID,
+		ExternalID:    req.ExternalID,
+		Length:        req.Length,
+		Alphanumeric:  req.Alphanumeric,
+		TTLSeconds:    req.TTLSeconds,
+		MaxAttempts:   req.MaxAttempts,
+		TemplateBody:  req.TemplateBody,
+		TemplateData:  req.TemplateData,
 	})
 	if err != nil {
 		return h.writeSendError(c, appID, err)
@@ -84,11 +92,14 @@ func (h *OTPHandler) Send(c *fiber.Ctx) error {
 // @Failure 400 {object} dto.OTPVerifyResponse
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} dto.OTPVerifyResponse
+// @Failure 409 {object} dto.OTPVerifyResponse
+// @Failure 503 {object} dto.OTPVerifyResponse
 // @Failure 410 {object} dto.OTPVerifyResponse
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/verify [post]
 func (h *OTPHandler) Verify(c *fiber.Ctx) error {
-	if _, ok := c.Locals("app_id").(string); !ok {
+	if appID, ok := c.Locals("app_id").(string); !ok || appID == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "application not authenticated"})
 	}
 
@@ -100,7 +111,7 @@ func (h *OTPHandler) Verify(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.Verify(c.Context(), otp.VerifyInput{
+	res, err := h.service.Verify(otpRequestContext(c), otp.VerifyInput{
 		RequestID: req.RequestID,
 		Code:      req.Code,
 	})
@@ -121,6 +132,7 @@ func (h *OTPHandler) Verify(c *fiber.Ctx) error {
 // @Failure 409 {object} map[string]interface{}
 // @Failure 429 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/otp/resend [post]
 func (h *OTPHandler) Resend(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -136,7 +148,7 @@ func (h *OTPHandler) Resend(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	res, err := h.service.Resend(c.Context(), req.RequestID)
+	res, err := h.service.Resend(otpRequestContext(c), req.RequestID)
 	if err != nil {
 		return h.writeSendError(c, appID, err)
 	}
@@ -151,12 +163,18 @@ func (h *OTPHandler) Resend(c *fiber.Ctx) error {
 //   - 429 for rate limit
 //   - 400 for validation / invalid recipient
 func (h *OTPHandler) writeSendError(c *fiber.Ctx, appID string, err error) error {
+	var admission *notification.AdmissionError
+	if errors.As(err, &admission) {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": admission.Error()})
+	}
 	switch {
 	case errors.Is(err, otp.ErrNotFound):
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, otp.ErrExpired):
 		return c.Status(fiber.StatusGone).JSON(fiber.Map{"error": err.Error()})
-	case errors.Is(err, otp.ErrAlreadyVerified), errors.Is(err, otp.ErrResendCooldown):
+	case errors.Is(err, otp.ErrStateUnavailable):
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": otp.ErrStateUnavailable.Error()})
+	case errors.Is(err, otp.ErrOperationPending), errors.Is(err, otp.ErrAlreadyVerified), errors.Is(err, otp.ErrResendCooldown):
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	case errors.Is(err, otp.ErrRateLimited):
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": err.Error()})
@@ -191,6 +209,12 @@ func (h *OTPHandler) writeVerifyOutcome(c *fiber.Ctx, requestID string, res *otp
 
 	resp := dto.OTPVerifyResponse{Verified: false, RequestID: requestID}
 	switch {
+	case errors.Is(err, otp.ErrOperationPending):
+		resp.Error = "operation_pending"
+		return c.Status(fiber.StatusConflict).JSON(resp)
+	case errors.Is(err, otp.ErrStateUnavailable):
+		resp.Error = "state_unavailable"
+		return c.Status(fiber.StatusServiceUnavailable).JSON(resp)
 	case errors.Is(err, otp.ErrInvalidCode):
 		resp.Error = "invalid_code"
 		if res != nil {
@@ -221,4 +245,10 @@ func toSendResponse(r *otp.SendResult) dto.OTPSendResponse {
 		TTLSeconds:     r.TTLSeconds,
 		MaxAttempts:    r.MaxAttempts,
 	}
+}
+
+func otpRequestContext(c *fiber.Ctx) context.Context {
+	appID, _ := c.Locals("app_id").(string)
+	environmentID, _ := c.Locals("environment_id").(string)
+	return otp.WithScope(c.Context(), otp.Scope{AppID: appID, EnvironmentID: environmentID})
 }

@@ -21,6 +21,7 @@ func main() {
 	root.AddCommand(newLicenseCmd())
 	root.AddCommand(newInstallCmd())
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newChannelConnectionsCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

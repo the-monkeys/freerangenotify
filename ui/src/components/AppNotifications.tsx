@@ -3256,7 +3256,7 @@ const AppNotifications: React.FC<AppNotificationsProps> = ({ apiKey, webhooks, o
                     <div>
                         <h3 className="text-lg font-semibold">Notification History</h3>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            Scheduled broadcasts appear here. Each recipient gets a row. Use <strong>Scheduled</strong> to see items waiting to be sent.
+                            Scheduled broadcasts appear here. Each recipient gets a row. Use <strong>Scheduled</strong> to see items waiting to be sent. Queued means accepted; check delivery status. <a href="/docs/notifications" className="underline">API guide</a>.
                         </p>
                     </div>
                     <Tabs

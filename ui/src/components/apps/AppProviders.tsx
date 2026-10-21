@@ -226,7 +226,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
                                 const pKind: ProviderKind = p.kind || inferKind(p.webhook_url);
                                 return (
                                     <TableRow key={p.provider_id}>
-                                        <TableCell className="font-medium">{p.name}</TableCell>
+                                        <TableCell className="font-medium">{p.name}{p.imported&&<p className="text-xs text-muted-foreground">Imported from {p.origin_app_id}. Remove unlinks this resource.</p>}</TableCell>
                                         <TableCell>
                                             <Badge variant="secondary" className="text-xs">{KIND_LABEL[pKind]}</Badge>
                                         </TableCell>
@@ -250,7 +250,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => handleSendTest(p)}
-                                                    disabled={testingProviderId === p.provider_id || !p.active}
+                                                    disabled={testingProviderId === p.provider_id || !p.active || p.imported || p.allowed_actions?.test===false}
                                                     aria-label="Send provider test"
                                                     title={p.active ? 'Send provider test notification' : 'Activate provider before sending a test'}
                                                 >
@@ -264,7 +264,7 @@ const AppProviders: React.FC<AppProvidersProps> = ({ appId }) => {
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => setRotateConfirm(p)}
-                                                    disabled={rotatingProviderId === p.provider_id}
+                                                    disabled={rotatingProviderId === p.provider_id || p.imported || p.allowed_actions?.rotate===false}
                                                     aria-label="Rotate signing key"
                                                     title="Rotate signing key"
                                                 >

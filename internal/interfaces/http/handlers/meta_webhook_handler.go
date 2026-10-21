@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -19,27 +19,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// wabaCacheTTL is how long the WABA/phone-number-id → app_id lookup table is
-// cached. 5 min keeps the worst-case staleness equal to the Meta template
-// status sync window in the implementation plan.
-const wabaCacheTTL = 5 * time.Minute
-
 // MetaWebhookHandler handles Meta WhatsApp Cloud API webhooks.
 type MetaWebhookHandler struct {
+	senderResolver  *services.ChannelSenderResolver
 	whatsappSvc     whatsapp.Service
 	appRepo         application.Repository
-	templateHandler    *WhatsAppTemplateHandler             // optional, legacy template status webhooks
-	richTemplateSvc    services.WhatsAppRichTemplateService // optional, rich-template status webhooks
-	appSecret          string                               // Meta App Secret for X-Hub-Signature-256 verification
-	verifyToken        string                               // hub.verify_token for webhook subscription registration
-	logger             *zap.Logger
-
-	// WABA / phone-number-id → app_id cache. Avoids an O(N) app scan on every
-	// inbound webhook. Refilled lazily via repopulateLocked() on miss or expiry.
-	cacheMu        sync.RWMutex
-	wabaIndex      map[string]string // waba_id -> app_id
-	phoneIndex     map[string]string // phone_number_id -> app_id
-	cacheExpiresAt time.Time
+	templateHandler *WhatsAppTemplateHandler             // optional, legacy template status webhooks
+	richTemplateSvc services.WhatsAppRichTemplateService // optional, rich-template status webhooks
+	appSecret       string                               // Meta App Secret for X-Hub-Signature-256 verification
+	verifyToken     string                               // hub.verify_token for webhook subscription registration
+	logger          *zap.Logger
 }
 
 // SetTemplateHandler wires the template handler for processing template status webhooks.
@@ -64,21 +53,30 @@ func NewMetaWebhookHandler(
 	logger *zap.Logger,
 ) *MetaWebhookHandler {
 	return &MetaWebhookHandler{
-		whatsappSvc: whatsappSvc,
-		appRepo:     appRepo,
-		appSecret:   appSecret,
-		verifyToken: verifyToken,
-		logger:      logger,
+		whatsappSvc:    whatsappSvc,
+		senderResolver: services.NewChannelSenderResolver(appRepo, nil),
+		appRepo:        appRepo,
+		appSecret:      appSecret,
+		verifyToken:    verifyToken,
+		logger:         logger,
 	}
 }
 
 // VerifyWebhook handles GET /v1/webhooks/meta/whatsapp — Meta webhook verification (hub.challenge).
+// @Summary Verify Webhook
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags MetaWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/meta/whatsapp [get]
 func (h *MetaWebhookHandler) VerifyWebhook(c *fiber.Ctx) error {
 	mode := c.Query("hub.mode")
 	token := c.Query("hub.verify_token")
 	challenge := c.Query("hub.challenge")
 
-	if mode == "subscribe" && token == h.verifyToken {
+	if h.verifyToken != "" && mode == "subscribe" && token == h.verifyToken {
 		h.logger.Info("Meta webhook verification succeeded")
 		return c.SendString(challenge)
 	}
@@ -91,28 +89,119 @@ func (h *MetaWebhookHandler) VerifyWebhook(c *fiber.Ctx) error {
 
 // HandleWebhook handles POST /v1/webhooks/meta/whatsapp — inbound messages and status updates.
 // Meta requires a 200 OK response within 5 seconds; processing is kept lightweight.
+// @Summary Handle Webhook
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags MetaWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/meta/whatsapp [post]
 func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 	rawBody := c.Body()
 
-	if h.appSecret != "" {
-		sigHeader := c.Get("X-Hub-Signature-256")
-		if !h.verifySignature(rawBody, sigHeader) {
-			h.logger.Warn("Invalid X-Hub-Signature-256 on Meta webhook")
+	var payload dto.MetaWebhookPayload
+	if json.Unmarshal(rawBody, &payload) != nil {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
+	verified := false
+	for _, entry := range payload.Entry {
+		for _, change := range entry.Changes {
+			secret := h.appSecret
+			if change.Field == "messages" {
+				// Inbound messages use today's sender claim; delivery statuses
+				// use the immutable admitted connection and original key.
+				if len(change.Value.Messages) > 0 || len(change.Value.Statuses) == 0 {
+					binding, err := h.senderResolver.ResolveInboundSender(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID)
+					if err != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					secret = binding.SigningSecret
+					if secret == "" {
+						secret = h.appSecret
+					}
+					if secret == "" {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					if !verifyMetaSignature(secret, rawBody, c.Get("X-Hub-Signature-256")) {
+						return c.SendStatus(fiber.StatusUnauthorized)
+					}
+					c.Locals("meta_binding_"+binding.SenderID, binding)
+					verified = true
+				}
+				for _, status := range change.Value.Statuses {
+					binding, err := h.senderResolver.ResolveAdmittedStatus(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID, status.ID)
+					if errors.Is(err, services.ErrAdmittedStatusNotFound) {
+						binding, err = h.senderResolver.ResolveInboundSender(c.Context(), "meta", entry.ID, change.Value.Metadata.PhoneNumberID)
+					}
+					if err != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					secret = binding.SigningSecret
+					if secret == "" {
+						secret = h.appSecret
+					}
+					if secret == "" {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					if !verifyMetaSignature(secret, rawBody, c.Get("X-Hub-Signature-256")) {
+						return c.SendStatus(fiber.StatusUnauthorized)
+					}
+					c.Locals("meta_status_binding_"+entry.ID+"\x00"+change.Value.Metadata.PhoneNumberID+"\x00"+status.ID, binding)
+					verified = true
+				}
+				continue
+			}
+			if change.Field == "message_template_status_update" {
+				bindings, err := h.senderResolver.ResolveMetaTemplateSenders(c.Context(), entry.ID)
+				if err != nil {
+					return c.SendStatus(fiber.StatusServiceUnavailable)
+				}
+				var compatible []*services.InboundSenderBinding
+				hasSecret := false
+				for _, binding := range bindings {
+					key := binding.SigningSecret
+					if key == "" {
+						key = h.appSecret
+					}
+					if key == "" {
+						continue
+					}
+					hasSecret = true
+					if verifyMetaSignature(key, rawBody, c.Get("X-Hub-Signature-256")) {
+						compatible = append(compatible, binding)
+					}
+				}
+				if len(compatible) == 0 {
+					if !hasSecret {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					return c.SendStatus(fiber.StatusUnauthorized)
+				}
+				c.Locals("meta_template_bindings_"+entry.ID, compatible)
+				verified = true
+				continue
+			}
+			if secret == "" {
+				return c.SendStatus(fiber.StatusServiceUnavailable)
+			}
+			if !verifyMetaSignature(secret, rawBody, c.Get("X-Hub-Signature-256")) {
+				return c.SendStatus(fiber.StatusUnauthorized)
+			}
+			verified = true
+		}
+	}
+	if !verified {
+		if h.appSecret == "" {
+			return c.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		if !h.verifySignature(rawBody, c.Get("X-Hub-Signature-256")) {
 			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 	}
-
-	var payload dto.MetaWebhookPayload
-	if err := json.Unmarshal(rawBody, &payload); err != nil {
-		h.logger.Error("Failed to parse Meta webhook payload", zap.Error(err))
-		return c.SendStatus(fiber.StatusOK)
-	}
-
 	if payload.Object != "whatsapp_business_account" {
-		h.logger.Debug("Ignoring non-WhatsApp webhook", zap.String("object", payload.Object))
 		return c.SendStatus(fiber.StatusOK)
 	}
-
 	for _, entry := range payload.Entry {
 		wabaID := entry.ID
 		for _, change := range entry.Changes {
@@ -120,7 +209,15 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 			case "messages":
 				val := change.Value
 				phoneNumberID := val.Metadata.PhoneNumberID
-				appID := h.resolveAppID(c.Context(), wabaID, phoneNumberID)
+				binding, _ := c.Locals("meta_binding_" + phoneNumberID).(*services.InboundSenderBinding)
+				if binding == nil && len(val.Messages) > 0 {
+					return c.SendStatus(fiber.StatusServiceUnavailable)
+				}
+				appID := ""
+				if binding != nil {
+					appID = binding.AppID
+				}
+				c.Locals("meta_active_binding", binding)
 
 				for i, msg := range val.Messages {
 					var contactName string
@@ -128,32 +225,36 @@ func (h *MetaWebhookHandler) HandleWebhook(c *fiber.Ctx) error {
 						contactName = val.Contacts[i].Profile.Name
 					}
 					h.handleInboundMessage(c, appID, wabaID, phoneNumberID, &msg, contactName)
+					if c.Locals("callback_error") != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
 				}
 
 				for _, status := range val.Statuses {
+					statusBinding, _ := c.Locals("meta_status_binding_" + entry.ID + "\x00" + phoneNumberID + "\x00" + status.ID).(*services.InboundSenderBinding)
+					if statusBinding == nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
+					c.Locals("meta_active_binding", statusBinding)
 					h.handleStatusUpdate(c, &status)
+					if c.Locals("callback_error") != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
+					}
 				}
 
 			case "message_template_status_update":
-				rawBytes, _ := json.Marshal(change.Value)
-				var event map[string]interface{}
-				_ = json.Unmarshal(rawBytes, &event)
-				if h.templateHandler != nil {
-					h.templateHandler.HandleTemplateStatusWebhook(event)
+				processor, ok := h.whatsappSvc.(whatsapp.EventProcessor)
+				if !ok {
+					return c.SendStatus(fiber.StatusServiceUnavailable)
 				}
-				// Forward to the rich-template service so the FRN-side binding
-				// reflects approval transitions without polling.
-				if h.richTemplateSvc != nil {
-					tplName, _ := event["message_template_name"].(string)
-					status, _ := event["event"].(string)
-					reason, _ := event["reason"].(string)
-					if tplName != "" && status != "" {
-						if err := h.richTemplateSvc.ApplyMetaStatus(c.Context(), wabaID, tplName, status, reason); err != nil {
-							h.logger.Warn("Rich template status update failed",
-								zap.String("waba_id", wabaID),
-								zap.String("template", tplName),
-								zap.Error(err))
-						}
+				bindings, _ := c.Locals("meta_template_bindings_" + entry.ID).([]*services.InboundSenderBinding)
+				if change.Value.TemplateName == "" || change.Value.TemplateEvent == "" {
+					return c.SendStatus(fiber.StatusBadRequest)
+				}
+				for _, binding := range bindings {
+					_, err := processor.AcceptVerifiedEvent(c.Context(), binding, &whatsapp.VerifiedEvent{Kind: "template", Template: &whatsapp.TemplateStatusEvent{TemplateID: change.Value.TemplateName, Status: change.Value.TemplateEvent, Reason: change.Value.TemplateReason}})
+					if err != nil {
+						return c.SendStatus(fiber.StatusServiceUnavailable)
 					}
 				}
 
@@ -279,7 +380,15 @@ func (h *MetaWebhookHandler) handleInboundMessage(
 		inbound.IsForwarded = msg.Context.Forwarded
 	}
 
+	if binding, ok := c.Locals("meta_active_binding").(*services.InboundSenderBinding); ok {
+		inbound.ConnectionID = binding.ID
+		inbound.EnvironmentID = binding.EnvironmentID
+		inbound.Provider = binding.Provider
+		inbound.AccountID = binding.AccountID
+		inbound.SenderID = binding.SenderID
+	}
 	if err := h.whatsappSvc.HandleInbound(c.Context(), appID, inbound); err != nil {
+		c.Locals("callback_error", true)
 		h.logger.Error("Failed to handle inbound WhatsApp message",
 			zap.String("app_id", appID),
 			zap.String("meta_message_id", msg.ID),
@@ -310,7 +419,16 @@ func (h *MetaWebhookHandler) handleStatusUpdate(c *fiber.Ctx, status *dto.MetaSt
 		ds.ErrorMessage = status.Errors[0].Message
 	}
 
+	if binding, ok := c.Locals("meta_active_binding").(*services.InboundSenderBinding); ok {
+		ds.ConnectionID = binding.ID
+		ds.AppID = binding.AppID
+		ds.EnvironmentID = binding.EnvironmentID
+		ds.Provider = binding.Provider
+		ds.AccountID = binding.AccountID
+		ds.SenderID = binding.SenderID
+	}
 	if err := h.whatsappSvc.HandleStatus(c.Context(), ds); err != nil {
+		c.Locals("callback_error", true)
 		h.logger.Error("Failed to handle WhatsApp delivery status",
 			zap.String("meta_message_id", status.ID),
 			zap.String("status", status.Status),
@@ -318,96 +436,25 @@ func (h *MetaWebhookHandler) handleStatusUpdate(c *fiber.Ctx, status *dto.MetaSt
 	}
 }
 
-// resolveAppID maps a WABA ID + phone number ID to a FreeRangeNotify app.
-// Hot path on every inbound webhook; backed by an in-memory cache that is
-// refilled at most every wabaCacheTTL.
 func (h *MetaWebhookHandler) resolveAppID(ctx context.Context, wabaID, phoneNumberID string) string {
-	if appID := h.lookupCached(wabaID, phoneNumberID); appID != "" {
-		return appID
-	}
-
-	// Cache miss or expired — refill and retry under the write lock so that a
-	// burst of webhooks for a freshly-configured WABA doesn't issue N parallel
-	// ES list calls.
-	h.cacheMu.Lock()
-	if appID := h.lookupLocked(wabaID, phoneNumberID); appID != "" && time.Now().Before(h.cacheExpiresAt) {
-		h.cacheMu.Unlock()
-		return appID
-	}
-	if err := h.repopulateLocked(ctx); err != nil {
-		h.cacheMu.Unlock()
-		h.logger.Warn("Failed to list apps for WABA resolution", zap.Error(err))
-		return ""
-	}
-	appID := h.lookupLocked(wabaID, phoneNumberID)
-	h.cacheMu.Unlock()
-
-	if appID == "" {
-		h.logger.Debug("No app found for WABA/phone combo",
-			zap.String("waba_id", wabaID),
-			zap.String("phone_number_id", phoneNumberID))
-	}
-	return appID
-}
-
-// lookupCached returns the cached app_id under a read lock, or "" if the
-// cache is empty / expired / has no match.
-func (h *MetaWebhookHandler) lookupCached(wabaID, phoneNumberID string) string {
-	h.cacheMu.RLock()
-	defer h.cacheMu.RUnlock()
-	if time.Now().After(h.cacheExpiresAt) {
-		return ""
-	}
-	return h.lookupLocked(wabaID, phoneNumberID)
-}
-
-// lookupLocked must be called with cacheMu held (read or write).
-func (h *MetaWebhookHandler) lookupLocked(wabaID, phoneNumberID string) string {
-	if wabaID != "" {
-		if id, ok := h.wabaIndex[wabaID]; ok {
-			return id
-		}
-	}
-	if phoneNumberID != "" {
-		if id, ok := h.phoneIndex[phoneNumberID]; ok {
-			return id
-		}
-	}
-	return ""
-}
-
-// repopulateLocked refreshes the WABA / phone-number-id indexes. Must be
-// called with cacheMu write-locked.
-func (h *MetaWebhookHandler) repopulateLocked(ctx context.Context) error {
-	apps, err := h.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
+	binding, err := h.senderResolver.ResolveInboundSender(ctx, "meta", wabaID, phoneNumberID)
 	if err != nil {
-		return err
+		return ""
 	}
-	waba := make(map[string]string, len(apps))
-	phone := make(map[string]string, len(apps))
-	for _, app := range apps {
-		wa := app.Settings.WhatsApp
-		if wa == nil || wa.Provider != "meta" {
-			continue
-		}
-		if wa.MetaWABAID != "" {
-			waba[wa.MetaWABAID] = app.AppID
-		}
-		if wa.MetaPhoneNumberID != "" {
-			phone[wa.MetaPhoneNumberID] = app.AppID
-		}
-	}
-	h.wabaIndex = waba
-	h.phoneIndex = phone
-	h.cacheExpiresAt = time.Now().Add(wabaCacheTTL)
-	return nil
+	return binding.AppID
+}
+func (h *MetaWebhookHandler) SetSenderResolver(resolver *services.ChannelSenderResolver) {
+	h.senderResolver = resolver
 }
 
 func (h *MetaWebhookHandler) verifySignature(body []byte, sigHeader string) bool {
-	if sigHeader == "" {
+	return verifyMetaSignature(h.appSecret, body, sigHeader)
+}
+func verifyMetaSignature(secret string, body []byte, sigHeader string) bool {
+	if sigHeader == "" || secret == "" {
 		return false
 	}
-	mac := hmac.New(sha256.New, []byte(h.appSecret))
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	expectedHex := hex.EncodeToString(mac.Sum(nil))
 
@@ -420,11 +467,11 @@ func (h *MetaWebhookHandler) verifySignature(body []byte, sigHeader string) bool
 
 func parseUnixTimestamp(ts string) time.Time {
 	if ts == "" {
-		return time.Now().UTC()
+		return time.Time{}
 	}
 	epoch, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
-		return time.Now().UTC()
+		return time.Time{}
 	}
 	return time.Unix(epoch, 0).UTC()
 }

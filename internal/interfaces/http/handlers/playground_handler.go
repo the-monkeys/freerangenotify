@@ -47,8 +47,8 @@ func (h *PlaygroundHandler) SetBroadcaster(b *sse.Broadcaster) {
 // @Success 201 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/playground/webhook [post]
+// @Security BearerAuth
 func (h *PlaygroundHandler) CreatePlayground(c *fiber.Ctx) error {
 	playgroundID := uuid.New().String()[:8]
 
@@ -320,8 +320,8 @@ func headerValue(headers map[string]interface{}, key string) string {
 // @Success 201 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/playground/sse [post]
+// @Security BearerAuth
 func (h *PlaygroundHandler) CreateSSEPlayground(c *fiber.Ctx) error {
 	playgroundID := "sse-" + uuid.New().String()[:8]
 
@@ -360,8 +360,8 @@ func (h *PlaygroundHandler) CreateSSEPlayground(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Failure 503 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/playground/sse/{id}/send [post]
+// @Security BearerAuth
 func (h *PlaygroundHandler) SendSSETestMessage(c *fiber.Ctx) error {
 	playgroundID := c.Params("id")
 	key := "playground:sse:" + playgroundID

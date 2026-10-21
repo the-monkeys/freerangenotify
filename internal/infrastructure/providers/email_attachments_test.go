@@ -182,8 +182,8 @@ func TestResendProvider_Send_AttachmentInJSONBody(t *testing.T) {
 	}
 }
 
-func TestResendProvider_Send_InlineDegradesToRegular(t *testing.T) {
-	// Resend does not support inline; provider must warn and still ship.
+func TestResendProvider_Send_InlineEmitsContentID(t *testing.T) {
+	// Match Resend inline attachments with the HTML CID reference.
 	var captured map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&captured)
@@ -198,17 +198,25 @@ func TestResendProvider_Send_InlineDegradesToRegular(t *testing.T) {
 		Config: Config{Timeout: 5 * time.Second}, APIKey: "k", FromEmail: "f@e.com",
 	}, zap.NewNop())
 	ctx := context.WithValue(context.Background(), AttachmentResolverKey,
-		fakeResolver("logo.png", "image/png", "inline", "logo-cid", []byte("PNG")))
+		fakeResolver("logo.png", "image/png", "inline", "logo-image", []byte("PNG")))
 
-	if _, err := p.Send(ctx, testNotificationWithAttachment(), testUser()); err != nil {
+	n := testNotificationWithAttachment()
+	n.Content.Body = `<img src="cid:logo-image">`
+	if _, err := p.Send(ctx, n, testUser()); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	atts := captured["attachments"].([]interface{})
 	if len(atts) != 1 {
 		t.Fatalf("want 1 attachment, got %d", len(atts))
 	}
-	// No inline-specific field is added — Resend has no equivalent.
+	// Inline attachment and message refer to the same content ID.
 	a := atts[0].(map[string]interface{})
+	if a["content_id"] != "logo-image" {
+		t.Errorf("inline content ID lost: %v", a)
+	}
+	if !strings.Contains(captured["html"].(string), "cid:logo-image") {
+		t.Error("HTML CID reference lost")
+	}
 	if a["filename"] != "logo.png" {
 		t.Errorf("filename = %v", a["filename"])
 	}
@@ -312,7 +320,7 @@ func TestMailgunProvider_Send_InlineUsesInlineField(t *testing.T) {
 		Config: Config{Timeout: 5 * time.Second}, APIKey: "k", Domain: "d.example", FromEmail: "f@e.com",
 	}, zap.NewNop())
 	ctx := context.WithValue(context.Background(), AttachmentResolverKey,
-		fakeResolver("logo.png", "image/png", "inline", "logo-cid", []byte("PNG")))
+		fakeResolver("logo.png", "image/png", "inline", "logo-image", []byte("PNG")))
 
 	if _, err := p.Send(ctx, testNotificationWithAttachment(), testUser()); err != nil {
 		t.Fatalf("Send: %v", err)

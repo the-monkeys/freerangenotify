@@ -5,12 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"github.com/google/uuid"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"net/http"
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/google/uuid"
+
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
@@ -21,13 +22,18 @@ import (
 
 // whatsappService implements whatsapp.Service.
 type whatsappService struct {
-	repo        whatsapp.Repository
-	appRepo     application.Repository
-	notifRepo   notification.Repository
-	sseBroadc   *sse.Broadcaster
-	workflowSvc workflow.Service
-	redis       *redis.Client
-	logger      *zap.Logger
+	replyDispatcher *ChannelInboxReplyService
+	connections     *ChannelConnectionService
+
+	applyTemplate func(context.Context, *InboundSenderBinding, *whatsapp.TemplateStatusEvent) error
+	events        whatsapp.EventRepository
+	repo          whatsapp.Repository
+	appRepo       application.Repository
+	notifRepo     notification.Repository
+	sseBroadc     interface{ PublishMessage(*sse.SSEMessage) error }
+	workflowSvc   workflow.Service
+	redis         *redis.Client
+	logger        *zap.Logger
 }
 
 // NewWhatsAppService creates a new WhatsApp service.
@@ -40,73 +46,45 @@ func NewWhatsAppService(
 	redisClient *redis.Client,
 	logger *zap.Logger,
 ) whatsapp.Service {
-	return &whatsappService{
+	service := &whatsappService{
 		repo:        repo,
 		appRepo:     appRepo,
 		notifRepo:   notifRepo,
-		sseBroadc:   sseBroadcaster,
 		workflowSvc: workflowSvc,
 		redis:       redisClient,
 		logger:      logger,
 	}
+	if sseBroadcaster != nil {
+		service.sseBroadc = sseBroadcaster
+	}
+	if events, ok := repo.(whatsapp.EventRepository); ok {
+		service.events = events
+	}
+	return service
 }
 
 func (s *whatsappService) HandleInbound(ctx context.Context, appID string, msg *whatsapp.InboundMessage) error {
-	if msg.ID == "" {
-		msg.ID = uuid.New().String()
+	binding := &InboundSenderBinding{ID: msg.ConnectionID, AppID: appID, EnvironmentID: msg.EnvironmentID, Provider: msg.Provider, AccountID: msg.AccountID, SenderID: msg.SenderID}
+	if binding.ID == "" {
+		binding.ID = appID
 	}
-	msg.AppID = appID
-	msg.Direction = whatsapp.DirectionInbound
-	msg.CreatedAt = time.Now().UTC()
-
-	if err := s.repo.StoreMessage(ctx, msg); err != nil {
-		s.logger.Error("Failed to store inbound WhatsApp message",
-			zap.String("app_id", appID),
-			zap.String("meta_message_id", msg.MetaMessageID),
-			zap.Error(err))
-		return err
+	if binding.EnvironmentID == "" {
+		binding.EnvironmentID = "default"
 	}
-
-	s.trackCSW(ctx, appID, msg.ContactWAID)
-
-	s.publishSSE("whatsapp_inbound", map[string]interface{}{
-		"app_id":        appID,
-		"message_id":    msg.ID,
-		"contact_wa_id": msg.ContactWAID,
-		"contact_name":  msg.ContactName,
-		"message_type":  msg.MessageType,
-		"text_body":     msg.TextBody,
-		"timestamp":     msg.Timestamp,
-	})
-
-	app, err := s.appRepo.GetByID(ctx, appID)
-	if err != nil {
-		s.logger.Warn("Could not load app for inbound routing", zap.String("app_id", appID), zap.Error(err))
-		return nil
+	if binding.Provider == "" {
+		binding.Provider = "meta"
 	}
-
-	if app.Settings.WhatsAppInbound == nil || !app.Settings.WhatsAppInbound.Enabled {
-		return nil
-	}
-
-	cfg := app.Settings.WhatsAppInbound
-	switch cfg.RouteAction {
-	case whatsapp.RouteWorkflow:
-		s.triggerWorkflow(ctx, appID, cfg.WorkflowTriggerID, msg)
-	case whatsapp.RouteWebhookForward:
-		s.forwardToWebhook(ctx, cfg.WebhookForwardURL, msg)
-	case whatsapp.RouteAutoReply:
-		s.logger.Info("Auto-reply configured but send not yet implemented",
-			zap.String("app_id", appID),
-			zap.String("contact_wa_id", msg.ContactWAID))
-	case whatsapp.RouteInbox:
-		// Messages are already stored; inbox UI queries them directly.
-	}
-
-	return nil
+	_, err := s.AcceptVerifiedEvent(ctx, binding, &whatsapp.VerifiedEvent{Kind: "inbound", Message: msg})
+	return err
 }
 
 func (s *whatsappService) HandleStatus(ctx context.Context, status *whatsapp.DeliveryStatus) error {
+	binding := &InboundSenderBinding{ID: status.ConnectionID, AppID: status.AppID, EnvironmentID: status.EnvironmentID, Provider: status.Provider, AccountID: status.AccountID, SenderID: status.SenderID}
+	_, err := s.AcceptVerifiedEvent(ctx, binding, &whatsapp.VerifiedEvent{Kind: "status", Status: status})
+	return err
+}
+
+func (s *whatsappService) applyDeliveryStatus(ctx context.Context, status *whatsapp.DeliveryStatus) error {
 	if status.MetaMessageID == "" {
 		return nil
 	}
@@ -119,6 +97,7 @@ func (s *whatsappService) HandleStatus(ctx context.Context, status *whatsapp.Del
 	}
 
 	filter := &notification.NotificationFilter{
+		AppID:             status.AppID,
 		Channel:           notification.ChannelWhatsApp,
 		ProviderMessageID: status.MetaMessageID,
 		PageSize:          1,
@@ -128,7 +107,7 @@ func (s *whatsappService) HandleStatus(ctx context.Context, status *whatsapp.Del
 	if err != nil || len(notifs) == 0 {
 		s.logger.Debug("No notification found for meta_message_id (may be inbound-only contact)",
 			zap.String("meta_message_id", status.MetaMessageID))
-		return nil
+		return fmt.Errorf("delivery notification not yet available")
 	}
 
 	notif := notifs[0]
@@ -150,21 +129,23 @@ func (s *whatsappService) HandleStatus(ctx context.Context, status *whatsapp.Del
 		newStatus = notification.StatusFailed
 	}
 
-	if err := s.notifRepo.UpdateStatus(ctx, notif.NotificationID, newStatus); err != nil {
+	transition, ok := s.notifRepo.(interface {
+		ApplyProviderDeliveryStatus(context.Context, string, string, string, notification.Status, time.Time) (bool, error)
+	})
+	if !ok {
+		return fmt.Errorf("conditional delivery transitions unavailable")
+	}
+	changed, transitionErr := transition.ApplyProviderDeliveryStatus(ctx, notif.NotificationID, status.AppID, status.MetaMessageID, newStatus, status.Timestamp)
+	if transitionErr != nil {
 		s.logger.Error("Failed to update notification delivery status",
 			zap.String("notification_id", notif.NotificationID),
 			zap.String("new_status", status.Status),
-			zap.Error(err))
-		return err
+			zap.Error(transitionErr))
+		return transitionErr
 	}
-
-	s.publishSSE("delivery_status", map[string]interface{}{
-		"notification_id": notif.NotificationID,
-		"app_id":          notif.AppID,
-		"status":          status.Status,
-		"timestamp":       status.Timestamp,
-		"meta_message_id": status.MetaMessageID,
-	})
+	if !changed {
+		return nil
+	}
 
 	s.logger.Info("Delivery status updated",
 		zap.String("notification_id", notif.NotificationID),
@@ -179,25 +160,31 @@ func (s *whatsappService) ListMessages(ctx context.Context, filter *whatsapp.Mes
 }
 
 func (s *whatsappService) IsCSWOpen(ctx context.Context, appID, contactWAID string) bool {
+	if s.redis == nil {
+		return false
+	}
+	if s.connections != nil {
+		env := channelconnection.EnvironmentID(ctx)
+		snap, err := s.connections.ResolveDeliveryConnection(ctx, appID, env, notification.ChannelWhatsApp)
+		if err != nil {
+			return false
+		}
+		key := channelconnection.WindowKey(appID, env, snap.Provider, snap.AccountID, snap.SenderID, contactWAID)
+		return s.redis.Exists(ctx, key).Val() == 1
+	}
 	key := fmt.Sprintf("csw:%s:%s", appID, contactWAID)
 	_, err := s.redis.Get(ctx, key).Result()
 	return err == nil
 }
 
-func (s *whatsappService) trackCSW(ctx context.Context, appID, contactWAID string) {
-	key := fmt.Sprintf("csw:%s:%s", appID, contactWAID)
-	if err := s.redis.Set(ctx, key, time.Now().Unix(), 24*time.Hour).Err(); err != nil {
-		s.logger.Warn("Failed to track CSW in Redis", zap.String("key", key), zap.Error(err))
-	}
-}
-
-func (s *whatsappService) publishSSE(eventType string, data map[string]interface{}) {
+func (s *whatsappService) publishSSE(eventType string, data map[string]interface{}) error {
 	if s.sseBroadc == nil {
-		return
+		return nil
 	}
-	_ = s.sseBroadc.PublishMessage(&sse.SSEMessage{
-		Type: eventType,
-		Data: data,
+	return s.sseBroadc.PublishMessage(&sse.SSEMessage{
+		AppID: fmt.Sprint(data["app_id"]),
+		Type:  eventType,
+		Data:  data,
 	})
 }
 
@@ -239,9 +226,10 @@ func classifyInboundEvent(msg *whatsapp.InboundMessage) string {
 	return ""
 }
 
-func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID string, msg *whatsapp.InboundMessage) {
+func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID string, msg *whatsapp.InboundMessage) error {
+	ctx = channelconnection.WithEnvironment(ctx, msg.EnvironmentID)
 	if s.workflowSvc == nil || triggerID == "" {
-		return
+		return &workflow.BeforeDispatch{Err: fmt.Errorf("workflow trigger unavailable")}
 	}
 	userID := msg.UserID
 	if userID == "" {
@@ -283,17 +271,31 @@ func (s *whatsappService) triggerWorkflow(ctx context.Context, appID, triggerID 
 	if eventName := classifyInboundEvent(msg); eventName != "" {
 		payload["event_name"] = eventName
 	}
-	_, err := s.workflowSvc.Trigger(ctx, appID, &workflow.TriggerRequest{
-		TriggerID: triggerID,
-		UserID:    userID,
-		Payload:   payload,
-	})
+	req := &workflow.TriggerRequest{
+		TriggerID:     triggerID,
+		TransactionID: "channel-event:" + msg.ID,
+		UserID:        userID,
+		Payload:       payload,
+	}
+	var err error
+	if dispatcher, ok := s.workflowSvc.(interface {
+		TriggerWithOutcome(context.Context, string, *workflow.TriggerRequest) (*workflow.WorkflowExecution, bool, error)
+	}); ok {
+		var attempted bool
+		_, attempted, err = dispatcher.TriggerWithOutcome(ctx, appID, req)
+		if err != nil && !attempted {
+			err = &workflow.BeforeDispatch{Err: err}
+		}
+	} else {
+		_, err = s.workflowSvc.Trigger(ctx, appID, req)
+	}
 	if err != nil {
 		s.logger.Error("Failed to trigger workflow from inbound WhatsApp",
 			zap.String("app_id", appID),
 			zap.String("trigger_id", triggerID),
 			zap.Error(err))
 	}
+	return err
 }
 
 func (s *whatsappService) ListConversations(ctx context.Context, appID string, limit, offset int) ([]*whatsapp.Conversation, int64, error) {
@@ -307,72 +309,19 @@ func (s *whatsappService) ListConversations(ctx context.Context, appID string, l
 	return convos, total, nil
 }
 
-func (s *whatsappService) Reply(ctx context.Context, appID, contactWAID, text, templateName string) error {
-	app, err := s.appRepo.GetByID(ctx, appID)
-	if err != nil {
-		return fmt.Errorf("failed to load app: %w", err)
+func (s *whatsappService) SetReplyDispatcher(d *ChannelInboxReplyService) {
+	s.replyDispatcher = d
+	s.connections = d.Dispatch.Connections
+}
+func (s *whatsappService) ReplyQueued(ctx context.Context, app, contact, text, template, key string) (*notification.Notification, error) {
+	if s.replyDispatcher == nil {
+		return nil, fmt.Errorf("reply dispatch unavailable")
 	}
-	wa := app.Settings.WhatsApp
-	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" {
-		return fmt.Errorf("WhatsApp Meta not configured for app %s", appID)
-	}
-
-	var payload map[string]interface{}
-
-	if s.IsCSWOpen(ctx, appID, contactWAID) && text != "" {
-		payload = map[string]interface{}{
-			"messaging_product": "whatsapp",
-			"recipient_type":    "individual",
-			"to":                contactWAID,
-			"type":              "text",
-			"text": map[string]interface{}{
-				"preview_url": false,
-				"body":        text,
-			},
-		}
-	} else if templateName != "" {
-		payload = map[string]interface{}{
-			"messaging_product": "whatsapp",
-			"recipient_type":    "individual",
-			"to":                contactWAID,
-			"type":              "template",
-			"template": map[string]interface{}{
-				"name":     templateName,
-				"language": map[string]interface{}{"code": "en_US"},
-			},
-		}
-	} else {
-		return fmt.Errorf("CSW is closed and no template specified — cannot send free-form text outside the 24h window")
-	}
-
-	body, _ := json.Marshal(payload)
-	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages",
-		"v23.0", wa.MetaPhoneNumberID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to build Meta API request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+wa.MetaAccessToken)
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("Meta API request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Meta API error %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	s.logger.Info("Reply sent via Meta WhatsApp",
-		zap.String("app_id", appID),
-		zap.String("to", contactWAID))
-
-	return nil
+	return s.replyDispatcher.EnqueueReply(ctx, app, contact, text, template, key)
+}
+func (s *whatsappService) Reply(ctx context.Context, app, contact, text, template string) error {
+	_, err := s.ReplyQueued(ctx, app, contact, text, template, uuid.NewString())
+	return err
 }
 
 func (s *whatsappService) MarkRead(ctx context.Context, appID, contactWAID string) error {
@@ -380,9 +329,18 @@ func (s *whatsappService) MarkRead(ctx context.Context, appID, contactWAID strin
 	if err != nil {
 		return fmt.Errorf("failed to load app: %w", err)
 	}
+	marker, ok := s.repo.(interface {
+		MarkContactRead(context.Context, string, string, time.Time) error
+	})
+	if !ok {
+		return fmt.Errorf("local inbox read tracking unavailable")
+	}
+	if err := marker.MarkContactRead(ctx, appID, contactWAID, time.Now().UTC()); err != nil {
+		return err
+	}
 	wa := app.Settings.WhatsApp
 	if wa == nil || wa.Provider != "meta" || wa.MetaAccessToken == "" {
-		return fmt.Errorf("WhatsApp Meta not configured for app %s", appID)
+		return nil
 	}
 
 	// Get the latest inbound message from this contact to mark it as read
@@ -416,40 +374,48 @@ func (s *whatsappService) MarkRead(ctx context.Context, appID, contactWAID strin
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("read receipt request failed: %w", err)
+		return fmt.Errorf("provider read receipt unavailable")
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("provider read receipt rejected")
+	}
 	s.logger.Debug("Read receipt sent", zap.String("contact", contactWAID))
 	return nil
 }
 
-func (s *whatsappService) forwardToWebhook(ctx context.Context, url string, msg *whatsapp.InboundMessage) {
+func (s *whatsappService) forwardToWebhook(ctx context.Context, url string, msg *whatsapp.InboundMessage) error {
 	if url == "" {
-		return
+		return fmt.Errorf("webhook forward URL required")
 	}
 	body, err := json.Marshal(msg)
 	if err != nil {
 		s.logger.Error("Failed to marshal inbound message for webhook forward", zap.Error(err))
-		return
+		return err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		s.logger.Error("Failed to create webhook forward request", zap.Error(err))
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "channel-event:"+msg.ID)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		s.logger.Error("Webhook forward failed", zap.String("url", url), zap.Error(err))
-		return
+		s.logger.Error("Webhook forward unavailable")
+		return fmt.Errorf("webhook forward unavailable")
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 300 {
 		s.logger.Warn("Webhook forward returned error status",
-			zap.String("url", url), zap.Int("status", resp.StatusCode))
+			zap.Int("status", resp.StatusCode))
 	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook forwarding rejected")
+	}
+	return nil
 }

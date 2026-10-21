@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/environment"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -25,6 +26,51 @@ func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger, opts
 	}
 
 	return func(c *fiber.Ctx) error {
+		if reference := c.Get("X-API-Key"); strings.HasPrefix(reference, "dashboard:") {
+			if cfg.authService == nil {
+				return errors.Unauthorized("Dashboard authentication unavailable")
+			}
+			token := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+			if token == "" || !strings.HasPrefix(c.Get("Authorization"), "Bearer ") {
+				return errors.Unauthorized("Dashboard JWT required")
+			}
+			user, err := cfg.authService.ValidateToken(c.Context(), token)
+			if err != nil || user == nil {
+				return errors.Unauthorized("Invalid dashboard JWT")
+			}
+			parts := strings.Split(strings.TrimPrefix(reference, "dashboard:"), ":")
+			if len(parts) > 2 {
+				return errors.Unauthorized("Invalid dashboard reference")
+			}
+			app, err := appService.GetByID(c.Context(), parts[0])
+			if err != nil || app == nil {
+				return errors.Forbidden("Application unavailable")
+			}
+			role := auth.ApplicationRole(c.Context(), app, user.UserID, cfg.members, cfg.tenants)
+			if role == "" {
+				return errors.Forbidden("Application access denied")
+			}
+			if role == auth.RoleViewer && c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead && c.Method() != fiber.MethodOptions {
+				return errors.Forbidden("Viewer access is read-only")
+			}
+			c.Locals("app_id", app.AppID)
+			c.Locals("app_name", app.AppName)
+			c.Locals("app", app)
+			c.Locals("user_id", user.UserID)
+			c.Locals("role", role)
+			c.Locals("environment_id", "default")
+			if len(parts) == 2 {
+				if cfg.envService == nil {
+					return errors.Forbidden("Environment unavailable")
+				}
+				env, err := cfg.envService.Get(c.Context(), parts[1])
+				if err != nil || env == nil || env.AppID != app.AppID {
+					return errors.Forbidden("Environment unavailable")
+				}
+				c.Locals("environment_id", env.ID)
+			}
+			return c.Next()
+		}
 		var apiKey string
 		dashboardFlow := false
 
@@ -118,8 +164,14 @@ func APIKeyAuth(appService usecases.ApplicationService, logger *zap.Logger, opts
 
 // apiKeyAuthConfig holds optional configuration for the APIKeyAuth middleware.
 type apiKeyAuthConfig struct {
+	members     auth.MembershipRepository
+	tenants     tenant.Service
 	envService  environment.Service
 	authService auth.Service
+}
+
+func WithDashboardAccess(members auth.MembershipRepository, tenants tenant.Service) APIKeyAuthOption {
+	return func(cfg *apiKeyAuthConfig) { cfg.members = members; cfg.tenants = tenants }
 }
 
 // APIKeyAuthOption configures the APIKeyAuth middleware.

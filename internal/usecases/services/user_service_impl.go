@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"time"
 
 	"github.com/google/uuid"
@@ -74,7 +75,7 @@ func (s *UserServiceImpl) Create(ctx context.Context, u *user.User) error {
 	}
 
 	// Phase 5: On-user-created workflow trigger (fire-and-forget)
-	s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+	s.triggerOnUserCreated(channelconnection.WithEnvironment(ctx, u.EnvironmentID), u.AppID, u.UserID)
 
 	s.logger.Debug("User created successfully", zap.String("user_id", u.UserID))
 	return nil
@@ -396,7 +397,7 @@ func (s *UserServiceImpl) BulkCreateResults(ctx context.Context, users []*user.U
 	}
 	for i, u := range users {
 		if outcomes[i] == nil {
-			s.triggerOnUserCreated(ctx, u.AppID, u.UserID)
+			s.triggerOnUserCreated(channelconnection.WithEnvironment(ctx, u.EnvironmentID), u.AppID, u.UserID)
 		}
 	}
 	return outcomes, nil

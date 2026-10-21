@@ -40,6 +40,7 @@ func NewDigestHandler(service digest.Service, v *validator.Validator, logger *za
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/digest-rules [post]
 func (h *DigestHandler) Create(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -86,6 +87,7 @@ func (h *DigestHandler) Create(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/digest-rules [get]
 func (h *DigestHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -127,6 +129,7 @@ func (h *DigestHandler) List(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/digest-rules/{id} [get]
 func (h *DigestHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -158,6 +161,7 @@ func (h *DigestHandler) Get(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/digest-rules/{id} [put]
 func (h *DigestHandler) Update(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -193,6 +197,7 @@ func (h *DigestHandler) Update(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/digest-rules/{id} [delete]
 func (h *DigestHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)

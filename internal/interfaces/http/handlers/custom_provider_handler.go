@@ -12,7 +12,9 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/resourcelink"
+	"github.com/the-monkeys/freerangenotify/internal/domain/tenant"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/providers"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
 	"github.com/the-monkeys/freerangenotify/internal/usecases"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
@@ -20,6 +22,7 @@ import (
 
 // CustomProviderHandler handles CRUD for custom delivery providers (Phase 3).
 type CustomProviderHandler struct {
+	tenantService  tenant.Service
 	service        usecases.ApplicationService
 	membershipRepo auth.MembershipRepository
 	logger         *zap.Logger
@@ -45,18 +48,8 @@ func (h *CustomProviderHandler) authorizeProviderAccess(c *fiber.Ctx, appID, use
 		return nil, "", err
 	}
 
-	if app.AdminUserID == userID {
-		return app, auth.RoleOwner, nil
-	}
-
-	if h.membershipRepo != nil {
-		membership, mErr := h.membershipRepo.GetByAppAndUser(c.Context(), appID, userID)
-		if mErr == nil && membership != nil {
-			return app, membership.Role, nil
-		}
-	}
-
-	return nil, "", errors.Forbidden("You do not have access to this application")
+	role, accessErr := channelAccess(c.Context(), app, userID, h.membershipRepo, h.tenantService, false)
+	return app, role, accessErr
 }
 
 // registerCustomProviderRequest is the request body for registering a custom provider.
@@ -82,8 +75,8 @@ type registerCustomProviderRequest struct {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -179,8 +172,8 @@ func (h *CustomProviderHandler) Register(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers [get]
+// @Security BearerAuth
 func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	if appID == "" {
@@ -192,39 +185,81 @@ func (h *CustomProviderHandler) List(c *fiber.Ctx) error {
 		return errors.Unauthorized("authentication required")
 	}
 
-	app, _, err := h.authorizeProviderAccess(c, appID, userID)
+	app, role, err := h.authorizeProviderAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
 
 	providers := make([]application.CustomProviderConfig, len(app.Settings.CustomProviders))
 	copy(providers, app.Settings.CustomProviders)
+	origins := map[string]string{}
 
 	// Merge linked providers from source apps.
 	if h.linkRepo != nil {
-		linkedAppIDs, _ := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeProvider)
+		linkedAppIDs, linkErr := h.linkRepo.GetLinkedAppIDs(c.Context(), appID, resourcelink.TypeProvider)
+		if linkErr != nil {
+			return errors.Internal("Imported provider links unavailable", linkErr)
+		}
 		for _, srcAppID := range linkedAppIDs {
+			linkedIDs, linkErr := h.linkRepo.GetLinkedResourceIDs(c.Context(), appID, srcAppID, resourcelink.TypeProvider)
+			if linkErr != nil {
+				return errors.Internal("Imported provider resources unavailable", linkErr)
+			}
+			allowed := map[string]bool{}
+			for _, id := range linkedIDs {
+				allowed[id] = true
+			}
 			srcApp, sErr := h.service.GetByID(c.Context(), srcAppID)
-			if sErr == nil && srcApp != nil {
-				providers = append(providers, srcApp.Settings.CustomProviders...)
+			if sErr != nil || srcApp == nil {
+				return errors.BadRequest("Imported provider source unavailable")
+			}
+			for _, provider := range srcApp.Settings.CustomProviders {
+				if allowed[provider.ProviderID] {
+					providers = append(providers, provider)
+					origins[provider.ProviderID] = srcAppID
+				}
 			}
 		}
 	}
 
-	for i := range providers {
-		if len(providers[i].SigningKey) > 4 {
-			providers[i].SigningKey = "****" + providers[i].SigningKey[len(providers[i].SigningKey)-4:]
+	safe := dto.ToSafeApplicationSettings(application.Settings{CustomProviders: providers})
+	providers = safe.CustomProviders
+	type resourceView struct {
+		application.CustomProviderConfig
+		OriginAppID    string          `json:"origin_app_id"`
+		Imported       bool            `json:"imported"`
+		AllowedActions map[string]bool `json:"allowed_actions"`
+	}
+	views := make([]resourceView, 0, len(providers))
+	manage := role == auth.RoleOwner || role == auth.RoleAdmin
+	for _, provider := range providers {
+		origin := origins[provider.ProviderID]
+		imported := origin != ""
+		if origin == "" {
+			origin = appID
 		}
+		views = append(views, resourceView{provider, origin, imported, map[string]bool{"remove": manage, "test": manage && !imported, "rotate": manage && !imported}})
 	}
 
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    providers,
+		"data":    views,
 	})
 }
 
 // Test sends a synthetic notification to a registered provider endpoint.
 // POST /v1/apps/:id/providers/:provider_id/test — requires admin or owner role
+// @Summary Test
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags CustomProvider
+// @Produce json
+// @Param id path string true "id"
+// @Param provider_id path string true "provider_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/providers/{provider_id}/test [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Test(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -302,6 +337,17 @@ func (h *CustomProviderHandler) Test(c *fiber.Ctx) error {
 
 // RotateSigningKey rotates a provider signing key and returns the new key once.
 // POST /v1/apps/:id/providers/:provider_id/rotate — requires admin or owner role
+// @Summary Rotate Signing Key
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags CustomProvider
+// @Produce json
+// @Param id path string true "id"
+// @Param provider_id path string true "provider_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/apps/{id}/providers/{provider_id}/rotate [post]
+// @Security BearerAuth
 func (h *CustomProviderHandler) RotateSigningKey(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -364,8 +410,8 @@ func (h *CustomProviderHandler) RotateSigningKey(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/providers/{provider_id} [delete]
+// @Security BearerAuth
 func (h *CustomProviderHandler) Remove(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	providerID := c.Params("provider_id")
@@ -486,3 +532,5 @@ func findCustomProviderIndex(providers []application.CustomProviderConfig, provi
 	}
 	return -1
 }
+
+func (h *CustomProviderHandler) SetTenantService(service tenant.Service) { h.tenantService = service }

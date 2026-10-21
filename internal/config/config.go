@@ -5,26 +5,53 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/filestore"
 	"github.com/the-monkeys/freerangenotify/internal/version"
 )
 
 // Config holds all configuration for the application
 type Config struct {
-	App        AppConfig        `mapstructure:"app"`
-	Server     ServerConfig     `mapstructure:"server"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Redis      RedisConfig      `mapstructure:"redis"`
-	Queue      QueueConfig      `mapstructure:"queue"`
-	Providers  ProvidersConfig  `mapstructure:"providers"`
-	Monitoring MonitoringConfig `mapstructure:"monitoring"`
-	Security   SecurityConfig   `mapstructure:"security"`
-	OIDC       OIDCConfig       `mapstructure:"oidc"`
-	Features   FeaturesConfig   `mapstructure:"features"`
-	Billing    BillingConfig    `mapstructure:"billing"`
-	Payment    PaymentConfig    `mapstructure:"payment"`
-	Licensing  LicensingConfig  `mapstructure:"licensing"`
-	Filestore  FilestoreConfig  `mapstructure:"filestore"`
-	BizBilling BizBillingConfig `mapstructure:"biz_billing"`
+	Messaging         MessagingConfig         `mapstructure:"messaging"`
+	PhoneVerification PhoneVerificationConfig `mapstructure:"phone_verification"`
+	Connection        ConnectionConfig        `mapstructure:"connection"`
+	App               AppConfig               `mapstructure:"app"`
+	Server            ServerConfig            `mapstructure:"server"`
+	Database          DatabaseConfig          `mapstructure:"database"`
+	Redis             RedisConfig             `mapstructure:"redis"`
+	Queue             QueueConfig             `mapstructure:"queue"`
+	Providers         ProvidersConfig         `mapstructure:"providers"`
+	Monitoring        MonitoringConfig        `mapstructure:"monitoring"`
+	Security          SecurityConfig          `mapstructure:"security"`
+	OIDC              OIDCConfig              `mapstructure:"oidc"`
+	Features          FeaturesConfig          `mapstructure:"features"`
+	Billing           BillingConfig           `mapstructure:"billing"`
+	Payment           PaymentConfig           `mapstructure:"payment"`
+	Licensing         LicensingConfig         `mapstructure:"licensing"`
+	Filestore         FilestoreConfig         `mapstructure:"filestore"`
+	BizBilling        BizBillingConfig        `mapstructure:"biz_billing"`
+}
+
+// MetaEnabled is optional: an absent switch preserves independent legacy gates.
+type MessagingConfig struct {
+	MetaEnabled        *bool  `mapstructure:"meta_enabled"`
+	MetaAppID          string `mapstructure:"meta_app_id"`
+	MetaSignupConfigID string `mapstructure:"meta_signup_config_id"`
+	MetaGraphVersion   string `mapstructure:"meta_graph_version"`
+	MetaAppSecret      string `mapstructure:"meta_app_secret"`
+	TwilioAccountSID   string `mapstructure:"twilio_account_sid"`
+	TwilioAuthToken    string `mapstructure:"twilio_auth_token"`
+}
+
+type PhoneVerificationConfig struct {
+	AllowedPrefixes     []string `mapstructure:"allowed_prefixes"`
+	DailyBudgetMinor    int64    `mapstructure:"daily_budget_minor"`
+	CostMinorPerSegment int64    `mapstructure:"cost_minor_per_segment"`
+	Currency            string   `mapstructure:"currency"`
+}
+
+type ConnectionConfig struct {
+	EncryptionKeys string `mapstructure:"encryption_keys"`
+	WritesEnabled  bool   `mapstructure:"writes_enabled"`
 }
 
 // FilestoreConfig configures the file-attachments subsystem (POST /v1/files).
@@ -191,6 +218,9 @@ type QueueConfig struct {
 
 // ProvidersConfig contains external provider configurations
 type ProvidersConfig struct {
+	Exotel struct {
+		Enabled bool `mapstructure:"enabled"`
+	} `mapstructure:"exotel"`
 	FCM      FCMConfig      `mapstructure:"fcm"`
 	APNS     APNSConfig     `mapstructure:"apns"`
 	SendGrid SendGridConfig `mapstructure:"sendgrid"`
@@ -407,6 +437,18 @@ type OIDCConfig struct {
 
 // Load loads configuration from various sources
 func Load() (*Config, error) {
+	bindMessagingEnvironment()
+	viper.SetDefault("phone_verification.allowed_prefixes", []string{})
+	viper.SetDefault("phone_verification.daily_budget_minor", 0)
+	viper.SetDefault("phone_verification.cost_minor_per_segment", 0)
+	viper.SetDefault("phone_verification.currency", "INR")
+	_ = viper.BindEnv("phone_verification.allowed_prefixes", "FREERANGE_AUTH_PHONE_OTP_ALLOWED_PREFIXES")
+	_ = viper.BindEnv("phone_verification.daily_budget_minor", "FREERANGE_AUTH_PHONE_OTP_DAILY_BUDGET_MINOR")
+	_ = viper.BindEnv("phone_verification.cost_minor_per_segment", "FREERANGE_AUTH_PHONE_OTP_COST_MINOR_PER_SEGMENT")
+	_ = viper.BindEnv("phone_verification.currency", "FREERANGE_AUTH_PHONE_OTP_CURRENCY")
+	viper.SetDefault("connection.encryption_keys", "")
+	viper.SetDefault("connection.writes_enabled", false)
+	_ = viper.BindEnv("connection.encryption_keys", "FREERANGE_CONNECTION_ENCRYPTION_KEYS")
 	// Set default values
 	viper.SetDefault("app.name", "FreeRangeNotify")
 	viper.SetDefault("app.version", version.Get())
@@ -486,6 +528,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("biz_billing.estimate_prefix", "EST")
 	viper.SetDefault("biz_billing.portal_base_url", "")
 
+	viper.SetDefault("providers.exotel.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.enabled", false)
 	viper.SetDefault("providers.meta_whatsapp.api_version", "v23.0")
 	viper.SetDefault("providers.meta_whatsapp.timeout", 15)
@@ -559,12 +602,18 @@ func Load() (*Config, error) {
 			config.Licensing.FailMode = overrides.FailMode
 		}
 	}
+	if err := config.resolveMessaging(); err != nil {
+		return nil, err
+	}
 
 	return &config, nil
 }
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	if err := filestore.ValidatePublicURL(c.Server.PublicURL); err != nil {
+		return err
+	}
 	if c.App.Name == "" {
 		return fmt.Errorf("app.name is required")
 	}

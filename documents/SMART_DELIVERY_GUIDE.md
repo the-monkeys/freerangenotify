@@ -45,7 +45,7 @@ Invoke-RestMethod -Uri "http://localhost:8080/v1/notifications" -Method Post -He
 Verify status is `queued` and check logs for "connection refused":
 ```powershell
 # Replace with the ID from the output above
-curl.exe -s -H "Authorization: Bearer frn_1766408682" http://localhost:8080/v1/notifications/<NOTIF_ID>
+curl.exe -s -H "Authorization: Bearer $env:FRN_API_KEY" http://localhost:8080/v1/notifications/<NOTIF_ID>
 ```
 
 ### Step B: Start Receiver (Check-in)

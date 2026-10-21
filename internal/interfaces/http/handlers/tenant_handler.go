@@ -25,6 +25,17 @@ func NewTenantHandler(service tenant.Service, v *validator.Validator, logger *za
 }
 
 // Create handles POST /v1/tenants
+// @Summary Create
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants [post]
+// @Security BearerAuth
+// @Accept json
+// @Param body body tenant.CreateRequest true "Request body"
 func (h *TenantHandler) Create(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -50,6 +61,15 @@ func (h *TenantHandler) Create(c *fiber.Ctx) error {
 }
 
 // List handles GET /v1/tenants
+// @Summary List
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants [get]
+// @Security BearerAuth
 func (h *TenantHandler) List(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -70,6 +90,16 @@ func (h *TenantHandler) List(c *fiber.Ctx) error {
 }
 
 // GetByID handles GET /v1/tenants/:id
+// @Summary Get ByID
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id} [get]
+// @Security BearerAuth
 func (h *TenantHandler) GetByID(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -100,6 +130,18 @@ func (h *TenantHandler) GetByID(c *fiber.Ctx) error {
 }
 
 // Update handles PUT /v1/tenants/:id
+// @Summary Update
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id} [put]
+// @Security BearerAuth
+// @Accept json
+// @Param body body tenant.UpdateRequest true "Request body"
 func (h *TenantHandler) Update(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -127,6 +169,16 @@ func (h *TenantHandler) Update(c *fiber.Ctx) error {
 }
 
 // Delete handles DELETE /v1/tenants/:id
+// @Summary Delete
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id} [delete]
+// @Security BearerAuth
 func (h *TenantHandler) Delete(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -148,6 +200,16 @@ func (h *TenantHandler) Delete(c *fiber.Ctx) error {
 }
 
 // ListMembers handles GET /v1/tenants/:id/members
+// @Summary List Members
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/members [get]
+// @Security BearerAuth
 func (h *TenantHandler) ListMembers(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -178,6 +240,18 @@ func (h *TenantHandler) ListMembers(c *fiber.Ctx) error {
 }
 
 // InviteMember handles POST /v1/tenants/:id/members
+// @Summary Invite Member
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/members [post]
+// @Security BearerAuth
+// @Accept json
+// @Param body body tenant.InviteMemberRequest true "Request body"
 func (h *TenantHandler) InviteMember(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -212,6 +286,16 @@ func (h *TenantHandler) InviteMember(c *fiber.Ctx) error {
 // Deprecated: the dashboard no longer uses tenant billing after the credit
 // billing migration in PR #107. Use /v1/billing/subscription, /v1/billing/usage,
 // and /v1/billing/rates for UI billing surfaces.
+// @Summary Get Billing
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/billing [get]
+// @Security BearerAuth
 func (h *TenantHandler) GetBilling(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -248,6 +332,16 @@ func (h *TenantHandler) GetBilling(c *fiber.Ctx) error {
 //
 // Deprecated: the UI uses /v1/billing/checkout. This legacy tenant-scoped route
 // is retained only to return a clear migration error.
+// @Summary Checkout
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/billing/checkout [post]
+// @Security BearerAuth
 func (h *TenantHandler) Checkout(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -289,6 +383,19 @@ func (h *TenantHandler) createInternalOrder(c *fiber.Ctx, userID, tier string) e
 }
 
 // UpdateMemberRole handles PUT /v1/tenants/:id/members/:memberId
+// @Summary Update Member Role
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Param memberId path string true "memberId"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/members/{memberId} [put]
+// @Security BearerAuth
+// @Accept json
+// @Param body body tenant.UpdateMemberRoleRequest true "Request body"
 func (h *TenantHandler) UpdateMemberRole(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {
@@ -317,6 +424,17 @@ func (h *TenantHandler) UpdateMemberRole(c *fiber.Ctx) error {
 }
 
 // RemoveMember handles DELETE /v1/tenants/:id/members/:memberId
+// @Summary Remove Member
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Tenant
+// @Produce json
+// @Param id path string true "id"
+// @Param memberId path string true "memberId"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/tenants/{id}/members/{memberId} [delete]
+// @Security BearerAuth
 func (h *TenantHandler) RemoveMember(c *fiber.Ctx) error {
 	userID, ok := c.Locals("user_id").(string)
 	if !ok || userID == "" {

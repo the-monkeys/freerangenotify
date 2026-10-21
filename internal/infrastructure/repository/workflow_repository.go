@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/the-monkeys/freerangenotify/internal/domain/channelconnection"
 	"github.com/the-monkeys/freerangenotify/internal/domain/workflow"
 	"go.uber.org/zap"
 )
@@ -57,6 +58,15 @@ func (r *WorkflowRepository) GetWorkflowByTrigger(ctx context.Context, appID, tr
 		"size": 1,
 	}
 
+	env := channelconnection.EnvironmentID(ctx)
+	var scope map[string]interface{}
+	if env == "default" {
+		scope = map[string]interface{}{"bool": map[string]interface{}{"minimum_should_match": 1, "should": []interface{}{map[string]interface{}{"term": map[string]interface{}{"environment_id": "default"}}, map[string]interface{}{"term": map[string]interface{}{"environment_id": ""}}, map[string]interface{}{"bool": map[string]interface{}{"must_not": []interface{}{map[string]interface{}{"exists": map[string]interface{}{"field": "environment_id"}}}}}}}}
+	} else {
+		scope = map[string]interface{}{"term": map[string]interface{}{"environment_id": env}}
+	}
+	b := query["query"].(map[string]interface{})["bool"].(map[string]interface{})
+	b["must"] = append(b["must"].([]map[string]interface{}), scope)
 	result, err := r.workflows.Search(ctx, query)
 	if err != nil {
 		return nil, err

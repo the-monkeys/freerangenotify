@@ -36,6 +36,7 @@ type CreditUsageSnapshot struct {
 }
 
 type CreditService struct {
+	disableFreeTierDailyCap     bool
 	balanceRepo                 billing.CreditBalanceRepository
 	ledgerRepo                  billing.CreditLedgerRepository
 	subRepo                     license.Repository
@@ -85,6 +86,12 @@ func NewCreditService(
 	}
 }
 
+// SetEnforceFreeTierDailyCap controls new admissions; existing refunds retain
+// their original counter key when the policy is disabled during a rollback.
+func (s *CreditService) SetEnforceFreeTierDailyCap(enabled bool) {
+	s.disableFreeTierDailyCap = !enabled
+}
+
 // EnableReservationJournal controls new admissions only. Journal IDs always
 // remain recoverable when this flag is disabled during a drain/rollback.
 func (s *CreditService) EnableReservationJournal(enabled bool) { s.reservationJournalEnabled = enabled }
@@ -126,9 +133,15 @@ func (s *CreditService) reserveCredits(
 	appID string,
 	notificationID string,
 	channel string,
+	quotes ...*billing.ChannelQuote,
 ) (*billing.CreditReservation, error) {
 	normalizedChannel := normalizeCreditChannel(channel)
 	creditsNeeded, version := s.creditCostSnapshot(normalizedChannel)
+	var quote *billing.ChannelQuote
+	if len(quotes) > 0 {
+		quote = quotes[0]
+		creditsNeeded, version = quote.Credits, quote.RateCardVersion
+	}
 	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
 	if err != nil {
 		return nil, err
@@ -145,7 +158,7 @@ func (s *CreditService) reserveCredits(
 	}
 
 	if s.reservationJournalEnabled {
-		return s.reserveJournal(ctx, balance, tenantID, appID, notificationID, normalizedChannel, creditsNeeded, version, capKey)
+		return s.reserveJournal(ctx, balance, tenantID, appID, notificationID, normalizedChannel, creditsNeeded, version, capKey, quote)
 	}
 	if balance.JournalBacked {
 		s.undoDailyCapKey(ctx, capKey)
@@ -181,6 +194,7 @@ func (s *CreditService) reserveCredits(
 
 	reservation := &billing.CreditReservation{
 		ID:              uuid.NewString(),
+		Quote:           quote,
 		SubscriptionID:  balance.ID,
 		DailyCapKey:     capKey,
 		TenantID:        tenantID,
@@ -215,6 +229,7 @@ func (s *CreditService) reserveLegacyQuota(
 	notificationID string,
 	channel string,
 	sub *license.Subscription,
+	sources ...string,
 ) (*billing.CreditReservation, error) {
 	normalizedChannel := normalizeCreditChannel(channel)
 	capKey, err := s.acquireDailyCap(ctx, tenantID, normalizedChannel)
@@ -227,6 +242,9 @@ func (s *CreditService) reserveLegacyQuota(
 		app, _ = s.appRepo.GetByID(ctx, appID)
 	}
 	credSource := billing.InferCredentialSource(app, channel)
+	if len(sources) > 0 {
+		credSource = sources[0]
+	}
 	if credSource == billing.CredSourceBYOC || credSource == billing.CredSourcePlatform {
 		return s.newLegacyReservation(tenantID, appID, notificationID, normalizedChannel, "", capKey), nil
 	}
@@ -690,6 +708,9 @@ func (s *CreditService) getOrBootstrapBalance(ctx context.Context, tenantID stri
 }
 
 func (s *CreditService) acquireDailyCap(ctx context.Context, tenantID, channel string) (string, error) {
+	if s.disableFreeTierDailyCap {
+		return "", nil
+	}
 	if s.redisClient == nil {
 		return "", nil
 	}
@@ -929,4 +950,62 @@ func normalizeCreditChannel(channel string) string {
 	default:
 		return channel
 	}
+}
+
+// Bound pre-upgrade admissions remain authoritative during a worker drain.
+func (s *CreditService) ResolveDeliveryReservation(ctx context.Context, id, app, notif, ch string) (*billing.CreditReservation, error) {
+	var res *billing.CreditReservation
+	var err error
+	if _, durable := billing.JournalSubscriptionID(id); durable {
+		repo, e := s.journal()
+		if e != nil {
+			return nil, e
+		}
+		receipt, e := repo.GetReservationReceipt(ctx, id)
+		if e != nil {
+			return nil, e
+		}
+		if receipt != nil {
+			copy := receipt.Reservation
+			res = &copy
+		}
+	} else {
+		res, err = s.loadReservationWithError(ctx, id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if res == nil || res.AppID != app || res.NotificationID != notif || res.Channel != normalizeCreditChannel(ch) {
+		return nil, fmt.Errorf("existing reservation binding unavailable")
+	}
+	return res, nil
+}
+
+func (s *CreditService) BindDeliveryQuote(ctx context.Context, r *billing.CreditReservation, q *billing.ChannelQuote) (*billing.CreditReservation, error) {
+	if q.Validate() != nil || q.Credits != r.CreditsReserved || q.RateCardVersion != r.RateCardVersion || q.Connection.AppID != r.AppID || q.Channel != r.Channel || r.Status != billing.CreditReservationReserved {
+		return nil, fmt.Errorf("existing admission quote mismatch")
+	}
+	if _, durable := billing.JournalSubscriptionID(r.ID); durable {
+		binder, ok := s.balanceRepo.(interface {
+			BindReservationQuote(context.Context, string, *billing.ChannelQuote) (*billing.CreditReservation, error)
+		})
+		if !ok {
+			return nil, fmt.Errorf("old admission quote journal unavailable")
+		}
+		return binder.BindReservationQuote(ctx, r.ID, q)
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	current, e := s.ResolveDeliveryReservation(ctx, r.ID, r.AppID, r.NotificationID, r.Channel)
+	if e != nil {
+		return nil, e
+	}
+	if current.Status != billing.CreditReservationReserved || current.Quote != nil && current.Quote.ID != q.ID {
+		return nil, fmt.Errorf("old admission changed")
+	}
+	current.Quote = q
+	if e = s.saveReservation(ctx, current); e != nil {
+		return nil, e
+	}
+	return current, nil
 }

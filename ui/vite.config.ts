@@ -4,8 +4,10 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const docsTest = process.env.FRN_DOCS_TEST === "1";
+  const env = docsTest ? {} : loadEnv(mode, process.cwd(), "");
   return {
+    envDir: docsTest ? false : undefined,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

@@ -44,9 +44,13 @@ func NewWhatsAppProvider(config WhatsAppConfig, logger *zap.Logger) (*WhatsAppPr
 		timeout = 15 * time.Second
 	}
 
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
 	return &WhatsAppProvider{
 		config:     config,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: client,
 		logger:     logger,
 	}, nil
 }
@@ -177,8 +181,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 	}
 	if decodeErr := json.Unmarshal(bodyBytes, &twilioResp); decodeErr != nil {
 		p.logger.Warn("Failed to decode Twilio response",
-			zap.Error(decodeErr),
-			zap.String("raw_body", string(bodyBytes)))
+			zap.Error(decodeErr))
 	}
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
@@ -191,9 +194,7 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 			errMsg = fmt.Sprintf("Twilio error: %s", twilioResp.Message)
 		}
 		p.logger.Error("Twilio WhatsApp API error",
-			zap.Int("http_status", resp.StatusCode),
-			zap.String("error_message", errMsg),
-			zap.String("raw_body", string(bodyBytes)))
+			zap.Int("http_status", resp.StatusCode))
 		category := ErrorTypeProviderAPI
 		if resp.StatusCode == http.StatusTooManyRequests {
 			category = ErrorTypeRateLimit
@@ -202,12 +203,16 @@ func (p *WhatsAppProvider) Send(ctx context.Context, notif *notification.Notific
 		}
 		// Preserve the upstream cause for inspection. The manager wraps it
 		// with categorical safe text and the request's credential source.
-		return NewErrorResult(fmt.Errorf("%s", errMsg), category), nil
+		result := NewErrorResult(fmt.Errorf("%s", errMsg), category)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, nil
 	}
 
 	providerMsgID := twilioResp.SID
 	if providerMsgID == "" {
-		providerMsgID = "whatsapp-" + notif.NotificationID
+		return NewErrorResult(fmt.Errorf("Twilio acceptance unconfirmed"), ErrorTypeUnknown), nil
 	}
 
 	p.logger.Info("WhatsApp notification delivered",

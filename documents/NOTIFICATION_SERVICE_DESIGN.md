@@ -466,7 +466,7 @@ Load Balancer → API Gateway Cluster → Service Cluster → Provider Pool
 #### 1. Register Application
 ```bash
 curl -X POST https://api.freerangenotify.com/v1/apps \
-  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Authorization: Bearer ${FRN_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "app_name": "My Application",

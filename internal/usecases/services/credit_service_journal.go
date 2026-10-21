@@ -45,20 +45,35 @@ func (s *CreditService) RecordReservationDeliveryFailure(ctx context.Context, id
 	return recorder.RecordReservationDeliveryFailure(ctx, id)
 }
 
-func (s *CreditService) reserveJournal(ctx context.Context, balance *billing.CreditBalance, tenant, app, notification, channel string, cost int64, version, capKey string) (*billing.CreditReservation, error) {
+func (s *CreditService) reserveJournal(ctx context.Context, balance *billing.CreditBalance, tenant, app, notification, channel string, cost int64, version, capKey string, quotes ...*billing.ChannelQuote) (*billing.CreditReservation, error) {
 	repo, err := s.journal()
 	if err != nil {
 		s.undoDailyCapKey(ctx, capKey)
 		return nil, err
 	}
+	var quote *billing.ChannelQuote
+	if len(quotes) > 0 {
+		quote = quotes[0]
+	}
 	now := time.Now().UTC()
 	res := &billing.CreditReservation{ID: billing.NewJournalReservationID(balance.ID, uuid.NewString()), SubscriptionID: balance.ID, TenantID: tenant, AppID: app, NotificationID: notification,
 		Channel: channel, CreditsReserved: cost, RateCardVersion: version, DailyCapKey: capKey, Status: billing.CreditReservationReserved, CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(15 * time.Minute)}
+	if quote != nil {
+		res.ID = quotedReservationID(balance.ID, notification, quote.Attempt)
+		res.Quote = quote
+	}
+	undoCap := func() {
+		if quote != nil {
+			s.undoQuotedDailyCap(ctx, capKey, res.ID)
+		} else {
+			s.undoDailyCapKey(ctx, capKey)
+		}
+	}
 	outcome, err := repo.ReserveReservation(ctx, res)
 	if err != nil {
 		var unavailable *billing.CreditUnavailableError
 		if errors.As(err, &unavailable) {
-			s.undoDailyCapKey(ctx, capKey)
+			undoCap()
 			if s.logger != nil {
 				s.logger.Warn("insufficient credits", zap.String("tenant_id", tenant), zap.String("app_id", app), zap.String("notification_id", notification), zap.String("channel", channel), zap.String("reason", unavailable.Reason), zap.Int64("credits_required", unavailable.CreditsRequired), zap.Int64("credits_remaining", unavailable.CreditsRemaining), zap.Int64("credits_reserved", unavailable.CreditsReserved), zap.Int64("credits_available", unavailable.CreditsAvailable), zap.String("rate_card_version", version))
 			}
@@ -71,12 +86,12 @@ func (s *CreditService) reserveJournal(ctx context.Context, balance *billing.Cre
 			outcome = &billing.CreditTransitionOutcome{Receipt: *receipt}
 		} else {
 			if errors.Is(lookupErr, billing.ErrCreditReservationNotFound) {
-				s.undoDailyCapKey(ctx, capKey)
+				undoCap()
 			}
 			return nil, err
 		}
 	}
-	if outcome == nil || outcome.Receipt.Reservation.Status != billing.CreditReservationReserved {
+	if outcome == nil || (quote == nil && outcome.Receipt.Reservation.Status != billing.CreditReservationReserved) {
 		return nil, fmt.Errorf("credit: invalid reserve receipt")
 	}
 	saved := outcome.Receipt.Reservation
@@ -119,6 +134,9 @@ func (s *CreditService) transitionJournal(ctx context.Context, id string, status
 		if err := s.appendTransitionLedger(ctx, &res, &receipt.Balance, receipt.Reason); err != nil {
 			return &res, err
 		}
+		if err := s.recordQuotedUsage(ctx, &res); err != nil {
+			return &res, err
+		}
 		if err := repo.MarkReservationLedgerRecorded(ctx, id, res.Status); err != nil {
 			return &res, err
 		}
@@ -158,9 +176,13 @@ func (s *CreditService) appendTransitionLedger(ctx context.Context, res *billing
 	if s.ledgerRepo == nil {
 		return fmt.Errorf("credit: ledger repository unavailable")
 	}
+	metadata := map[string]interface{}{"reason": reason, "subscription_id": res.SubscriptionID}
+	if res.Quote != nil {
+		metadata["quote"] = res.Quote
+	}
 	return s.ledgerRepo.Append(ctx, &billing.CreditLedgerEntry{ID: billing.CreditTransitionLedgerID(res.ID, res.Status), TenantID: res.TenantID, AppID: res.AppID, ReservationID: res.ID, NotificationID: res.NotificationID,
 		Channel: res.Channel, EntryType: kind, CreditsDelta: delta, BalanceAfter: balance.CreditsRemaining, RateCardVersion: res.RateCardVersion, CreatedAt: res.UpdatedAt,
-		Metadata: map[string]interface{}{"reason": reason, "subscription_id": res.SubscriptionID}})
+		Metadata: metadata})
 }
 
 func (s *CreditService) reapJournal(ctx context.Context, now time.Time) (int, error) {

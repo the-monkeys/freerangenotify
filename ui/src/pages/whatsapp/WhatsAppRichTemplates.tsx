@@ -14,6 +14,7 @@ import { Plus, RefreshCw, Trash2, Eye, Layers, Tag, ExternalLink } from 'lucide-
 interface Props {
     apiKey: string;
     appId: string;
+    bindingKey?:string;
 }
 
 // approvalColors maps the aggregate ApprovalState (set server-side from
@@ -42,9 +43,10 @@ type DraftKind = 'carousel' | 'coupon_code';
 
 const emptyCard = (): DraftCard => ({ header_image_url: '', body: '', button_text: 'View', button_url: '' });
 
-const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
+const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId,bindingKey="legacy" }) => {
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
+    const [editingTemplate,setEditingTemplate]=useState<any>(null);
     const [kind, setKind] = useState<DraftKind>('carousel');
     const [draft, setDraft] = useState({
         name: '',
@@ -58,7 +60,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
     const { data, loading, refetch } = useApiQuery(
         () => whatsappRichTemplatesAPI.list(apiKey),
         [apiKey],
-        { enabled: !!apiKey, cacheKey: `wa-rich-templates-${appId}` },
+        { enabled: !!apiKey, cacheKey: `wa-rich-templates-${appId}-${apiKey}-${bindingKey}` },
     );
     const templates: any[] = data?.templates || [];
 
@@ -102,8 +104,10 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
 
         setCreating(true);
         try {
-            await whatsappRichTemplatesAPI.create(apiKey, payload);
-            toast.success('Rich template submitted');
+            if(editingTemplate)await whatsappRichTemplatesAPI.updateDraft(apiKey,editingTemplate.id,editingTemplate.updated_at,payload);
+            else await whatsappRichTemplatesAPI.createDraft(apiKey,payload);
+            toast.success('Draft saved locally. Not submitted to a provider.');
+            setEditingTemplate(null);
             setShowCreate(false);
             setDraft({
                 name: '',
@@ -128,10 +132,10 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
     };
 
     const handleDelete = async (id: string, name: string) => {
-        if (!confirm(`Delete rich template "${name}"? This cannot be undone.`)) return;
+        if (!confirm(`Remove local draft "${name}"? Provider templates are retained. This cannot be undone.`)) return;
         try {
             await whatsappRichTemplatesAPI.delete(apiKey, id);
-            toast.success('Template deleted');
+            toast.success('Local template removed. Provider template retained.');
             refetch();
         } catch (err: any) {
             toast.error('Delete failed: ' + (err.response?.data?.error || err.message));
@@ -180,14 +184,14 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
                 <div>
                     <h3 className="text-lg font-semibold">WhatsApp Rich Templates</h3>
                     <p className="text-sm text-muted-foreground">
-                        Carousel and coupon-code templates with click attribution. Submitted to Meta on save; approval typically lands in &lt; 1 minute.
+                        Save and edit local drafts, then explicitly submit to the selected provider for approval. Stored lists require an open WhatsApp service window. CTA and quick-reply templates require provider approval.
                     </p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => refetch()}>
                         <RefreshCw className="h-4 w-4 mr-1" /> Refresh
                     </Button>
-                    <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
+                    <Button size="sm" onClick={() => {setEditingTemplate(null);setShowCreate(!showCreate);}}>
                         <Plus className="h-4 w-4 mr-1" /> New Rich Template
                     </Button>
                 </div>
@@ -215,6 +219,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
                                 <Label>Name</Label>
                                 <Input
                                     value={draft.name}
+                                    disabled={!!editingTemplate}
                                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                                     placeholder="diwali_carousel"
                                 />
@@ -325,7 +330,7 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
                             </Button>
                             <Button onClick={handleCreate} disabled={creating}>
                                 {creating ? <Spinner className="h-4 w-4 mr-1" /> : null}
-                                Submit to Meta
+                                Save draft
                             </Button>
                         </div>
                     </CardContent>
@@ -385,13 +390,14 @@ const WhatsAppRichTemplates: React.FC<Props> = ({ apiKey, appId }) => {
                                         )}
                                     </div>
                                     <div className="flex flex-wrap gap-1 pt-2">
+                                        {t.approval_state==='draft'&&<>{['carousel','coupon_code'].includes(t.kind)&&<Button size="sm" variant="outline" onClick={()=>{setEditingTemplate(t);setKind(t.kind);setDraft({name:t.name,category:t.category,language:t.language,body:t.body||'',coupon_code:t.coupon_code||'',cards:(t.cards||[]).map((c:any)=>({header_image_url:c.header_image_url,body:c.body,button_text:c.buttons?.[0]?.text||'View',button_url:c.buttons?.[0]?.url||''}))});setShowCreate(true);}}>Edit draft</Button>}<Button size="sm" onClick={async()=>{try{await whatsappRichTemplatesAPI.submitDraft(apiKey,t.id,t.updated_at);toast.success('Template submitted for provider approval');refetch();}catch{toast.error('Submission failed. Check connection readiness and reconcile any pending provider submission.')}}}>Submit for approval</Button></>}
                                         <Button size="sm" variant="outline" onClick={() => handlePreview(t.id)}>
                                             <Eye className="h-3.5 w-3.5 mr-1" /> Preview
                                         </Button>
                                         <Button size="sm" variant="outline" onClick={() => handleSync(t.id)}>
                                             <RefreshCw className="h-3.5 w-3.5 mr-1" /> Sync
                                         </Button>
-                                        <Button size="sm" variant="ghost" onClick={() => handleDelete(t.id, t.name)}>
+                                        <Button size="sm" variant="ghost" aria-label="Remove local template" onClick={() => handleDelete(t.id, t.name)}>
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
                                     </div>
