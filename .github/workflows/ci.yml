@@ -84,7 +84,8 @@ jobs:
 
   documentation-contracts:
     name: Documentation contracts and public UI
-    runs-on: ubuntu-latest
+    # Keep the browser image compatible with the locked Playwright version.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
