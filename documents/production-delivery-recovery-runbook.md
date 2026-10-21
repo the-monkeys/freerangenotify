@@ -1027,3 +1027,43 @@ Phase 5 execution rulings, preserved before owned scratch cleanup:
 - Ruling: Quarantine legacy workflow executions whose recorded/default environment differs from the workflow definition rather than infer a new destination. Cost: those old executions need scoped operator reconciliation before retry.
 
 Reproduction harness note: the second `TestChannelLegacyGatesRealES` constructor initially hit duplicate default Prometheus registration. Each fixture constructor now uses its own test registry; both actual legacy-gate behavioral failures were then observed before fixing production wiring. Initial new-API/compiler errors were corrected before GREEN and were not treated as behavioral proof.
+
+
+## Documentation and delivery contracts — 2026-10-21
+
+This change is local on `codex/whatsapp-sms-reliability`. It does not repair historical production data, rotate credentials, resubmit provider templates, or replay failed sends. Existing API bodies, app keys, SSE routes and named events remain supported.
+
+### Deployment order and rollback
+
+1. Deploy compatible workers/readers before enabling the new OTP writer. Upgrade every API instance; do not mix unaware writers with fenced OTP state.
+2. Retain compatible readers for at least the maximum 900-second legacy OTP TTL and until pending delivery operations are resolved. An uncertain enqueue must not trigger a blind resend. Reconcile using the stable internal notification/operation identity.
+3. Roll back only to a version that understands additive pending-operation state. Drain or resolve new state before returning to older writers. Keep prior code/template configuration available; no automatic historical provider resubmission is part of this release.
+4. Canary email, SMS and WhatsApp OTP using operator-controlled recipients. Check delivery, app/environment isolation, invalid attempts, verified replay, cooldown and original expiry. Local fixture success does not establish live provider approval or delivery.
+5. Canary existing SSE clients: exchange a token on the backend, receive the named `notification` event, reconnect using a fresh token after expiry, and check inbox/history. Existing credentials and identifiers need no migration.
+
+### Files, providers and references
+
+Set the public API URL to a reachable HTTP(S) base, including any deployment prefix. Signed file links require `app_id`, expiry and signature, and remain subject to the file's logical expiry. Configure the reverse proxy for the intended upload cap; the service enforces a maximum of 50 MiB and providers may enforce lower limits. Normal JSON requests remain capped at 16 MiB. Missing/expired attachment IDs can fail asynchronously after acceptance.
+
+Each application's SMTP credentials and SMS/WhatsApp connection must be configured for that application. Meta approval/account bindings and service windows, Twilio sender/ContentSid approval, domestic SMS registration and provider account balances remain operator/provider prerequisites. No real provider sends or credential changes were performed by documentation checks.
+
+`go run ./cmd/docsgen` generates Swagger 2, the byte-identical UI fallback, compatible registered Go specification, and validated OpenAPI 3 views. `go run ./cmd/docsgen -check` detects drift without source writes. Existing `/swagger/*` and `/openapi/*` entry URLs remain; `/v1/swagger/doc.json` is public and outside customer authentication/quota middleware. The UI uses its configured API base and validates remote/fallback specs.
+
+`node scripts/verify-docs.mjs` checks generated references, real-handler request fixtures, compiled Go/TypeScript/React examples and raw-byte webhook signatures. It passes an explicit toolchain/fixture environment allowlist. Isolated Playwright configurations skip saved-state/global setup and environment files. Mocked browser tests do not substitute for the separate authenticated backend E2E suites.
+
+### Phase checkpoints
+
+- Phase 1: `9e59347` through `99d9dee` — OTP isolation/atomicity/recovery, safe handling and signed-file/upload repairs.
+- Phase 2: `5e52c28` through `ba8d29c` — executable lifecycle guides, configured-base snippets and compatible SDK user decoding.
+- Phase 3: `dab0786` through `0f4a61b` — stored WhatsApp delivery, Twilio authoring, six-adapter inline attachments, webhook/poll checks and channel recipes.
+- Phase 4: `9049e55` reference generation and `81f0002` UI loading; CI/verification evidence is recorded in the implementation plan.
+
+The existing large UI bundle warning remains. No vendor acceptance, production rollout, customer-data reconciliation or historical credit correction is claimed by these local checks.
+
+### Final local evidence and review
+
+The full Go short suite, reproducible documentation verifier, JS SDK7/7 and normal UI build passed. Isolated docs browsers passed18/18; a non-default deployment-base reference run passed10/10, including actual bundled-spec request fields. Existing route-mocked channel/import tests passed19, and the dedicated legacy-signup build passed its1 intentionally skipped default case.
+
+A separate Linux/CGO race run passed services, repositories, SSE, HTTP handlers and worker with actual isolated Redis CAS and Elasticsearch repository tests. The legacy ES test helper's localhost endpoint was forwarded only to the identity-verified owned fixture. The instrumented large multipart test budget is120s; production upload/body limits and timeouts are unchanged.
+
+The one fresh review's4 Important and1 Minor findings were repaired and regression-tested (`c41f6b6` plus final validation fixtures). The named webhook recipe now reaches only its selected registered provider without a template, approved CTA/quick-reply headers are preserved, malformed nested specs fall back safely, configuration request schemas are present, and draft creation documents201. Remote CI and live provider/production checks remain to be run after handoff.

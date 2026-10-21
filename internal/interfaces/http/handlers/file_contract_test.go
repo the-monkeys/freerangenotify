@@ -114,7 +114,8 @@ func TestUploadBodyFileServiceBoundaries(t *testing.T) {
 				require.NoError(t, writer.Close())
 				req := httptest.NewRequest("POST", "/v1/files", &body)
 				req.Header.Set("Content-Type", writer.FormDataContentType())
-				res, err := app.Test(req, 10000)
+				// Race instrumentation makes large multipart copies slower; this checks size admission, not latency.
+				res, err := app.Test(req, 120000)
 				if req.ContentLength > int64(middleware.UploadTransportLimit(cap)) {
 					require.Error(t, err)
 					continue

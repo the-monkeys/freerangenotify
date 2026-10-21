@@ -46,7 +46,7 @@ export function validateSwagger2(value: unknown): SwaggerSpec {
             if(!isRecord(op))return invalid();
             for(const key of ['summary','description','x-feature-prerequisites'])if(op[key]!==undefined && typeof op[key]!=='string')return invalid();
             if(op.tags!==undefined && !strings(op.tags))return invalid();
-            if(op.parameters!==undefined){if(!Array.isArray(op.parameters))return invalid();for(const p of op.parameters){if(!isRecord(p)||typeof p.name!=='string'||typeof p.in!=='string'||(p.required!==undefined && typeof p.required!=='boolean'))return invalid();if(p.schema!==undefined)schema(p.schema);if(p.items!==undefined)schema(p.items);}}
+            if(op.parameters!==undefined){if(!Array.isArray(op.parameters))return invalid();for(const p of op.parameters){if(!isRecord(p)||typeof p.name!=='string'||typeof p.in!=='string'||(p.required!==undefined && typeof p.required!=='boolean'))return invalid();for(const key of ['type','format','description'])if(p[key]!==undefined && typeof p[key]!=='string')return invalid();if(p.schema!==undefined)schema(p.schema);if(p.items!==undefined)schema(p.items);}}
             if(!isRecord(op.responses)||!Object.keys(op.responses).length)return invalid();
             for(const response of Object.values(op.responses)){if(!isRecord(response)||(response.description!==undefined && typeof response.description!=='string'))return invalid();if(response.schema!==undefined)schema(response.schema);}
             if(op.security!==undefined){if(!Array.isArray(op.security))return invalid();for(const entry of op.security){if(!isRecord(entry)||Object.values(entry).some(v=>!strings(v)))return invalid();}}
