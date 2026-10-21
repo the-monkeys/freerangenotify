@@ -1,8 +1,11 @@
 import urllib.request
 import json
+import os
 import sys
 
-API_KEY = "frn_-J8tDmXVDCXqGInAQTc5mmOwKS1pYsmKpDKGbi7FczU="
+API_KEY = os.environ.get("FRN_API_KEY", "").strip()
+if not API_KEY:
+    sys.exit("Set FRN_API_KEY to your application API token before running this script.")
 APP_ID = "38743c80-0b9f-431a-b84b-783fa713a32b"
 USER_ID = "7998188a-1649-40f9-b2e1-de26a130c367"  # This matches the SSE receiver
 TEMPLATE_ID = "0f1eae0d-fab3-4da2-bd2f-c79b1f5902a9"
