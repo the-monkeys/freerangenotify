@@ -98,17 +98,17 @@ Go unit commands below use explicit package paths to avoid traversing `node_modu
 
 **Interfaces:** Produce `CheckedAdd(a,b int64) (int64,error)`, `CheckedMul(a,b int64) (int64,error)`, `ProrateMinor(amount,numerator,denominator int64) (int64,error)`, `NextAnchoredPeriod(start time.Time, cycle BillingCycle, cycleDays, anchorDay int) (time.Time,error)`, and `ComputeInvoiceTotalsChecked(items []InvoiceLineItem,cfg TaxConfig,state string,overrides []LineTaxOverride) (InvoiceTotals,error)` with `LineTaxOverride{Rate *int; Exempt bool}`. Keep current public helpers as legacy wrappers; new journal writers use checked variants. Optional override fields distinguish explicit zero from omitted/legacy zero.
 
-- [ ] **1. Tests:** `TestBizMoneyOverflow`, `TestBizExplicitZeroTaxPreservesLegacyDefault`, `TestBizAnchoredCalendar`, `TestBizProrationTruncatesMinorUnits`; cover maximum integers, negatives, January 31 → February 28 → March 31, leap-day years, and partial periods.
+- [x] **1. Tests:** `TestBizMoneyOverflow`, `TestBizExplicitZeroTaxPreservesLegacyDefault`, `TestBizAnchoredCalendar`, `TestBizProrationTruncatesMinorUnits`; cover maximum integers, negatives, January 31 → February 28 → March 31, leap-day years, and partial periods.
   ```go
   require.Error(t, overflowErr)
   require.Zero(t, explicitZero.TaxPaisa)
   require.Equal(t, int64(1800), legacyDefault.TaxPaisa) // 10,000 taxable paisa
   require.Equal(t, "2027-03-31", march.Format("2006-01-02"))
   ```
-- [ ] **2. Red:** `go test ./internal/domain/bizbilling -run 'TestBiz(Money|Explicit|Anchored|Proration)' -count=1`.
-- [ ] **3. Implement:** Preserve truncation toward minor units using checked integer/rational arithmetic; validate rather than clamp invalid new inputs. Preserve issued snapshots and legacy defaults. Retain the original anniversary across short months; provider-confirmed periods take precedence for automatic collection.
-- [ ] **4. Green:** Repeat command; include table/fuzz seeds for boundary amounts and date arithmetic. No historical fixture changes.
-- [ ] **5. Commit:** Stage listed domain files; `git commit -m "fix(biz-billing): validate money and preserve billing anchors"`.
+- [x] **2. Red:** `go test ./internal/domain/bizbilling -run 'TestBiz(Money|Explicit|Anchored|Proration)' -count=1`.
+- [x] **3. Implement:** Preserve truncation toward minor units using checked integer/rational arithmetic; validate rather than clamp invalid new inputs. Preserve issued snapshots and legacy defaults. Retain the original anniversary across short months; provider-confirmed periods take precedence for automatic collection.
+- [x] **4. Green:** Repeat command; include table/fuzz seeds for boundary amounts and date arithmetic. No historical fixture changes.
+- [x] **5. Commit:** Stage listed domain files; `git commit -m "fix(biz-billing): validate money and preserve billing anchors"`.
 
 ### Task 3: Conditional creation and pure optimistic-concurrency mutations
 
@@ -549,3 +549,5 @@ Self-review completed 2026-11-11:
 Status: detailed plan ready for user review. Native execution and phase order are preserved; no product implementation or production action has begun.
 
 Execution 2026-11-11: Task 1 compatibility/gate foundation verified: Node fixture safety 4/4; focused Go domain/config/service/handler/fixture/CLI tests pass; real ES/Redis legacy billing E2E 9/9, zero skips (101.855s). Owned fixture containers and volume removed. Task 2 independent math implementation is in progress; no v2 app activation or production change.
+
+Task 2 evidence: checked arithmetic/tax/calendar tests RED→GREEN; legacy zero-rate default retained. Five-second independent big-integer-oracle fuzz run passed 164,884 executions. No historical periods/totals or public DTOs changed; strict overrides are integrated into protected writers in Task 5 before advertising them.

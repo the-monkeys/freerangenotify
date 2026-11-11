@@ -1,5 +1,90 @@
 package bizbilling
 
+// ComputeInvoiceTotalsChecked is the strict path for journal-backed writers.
+// Existing callers retain the legacy helper's zero/default behavior below.
+// Failed validation never leaves partially mutated input line items.
+func ComputeInvoiceTotalsChecked(items []InvoiceLineItem, cfg TaxConfig, customerState string, overrides []LineTaxOverride) (InvoiceTotals, error) {
+	var result InvoiceTotals
+	if len(items) == 0 || (len(overrides) != 0 && len(overrides) != len(items)) {
+		return result, ErrInvalidMoney
+	}
+	defaultRate := cfg.DefaultTaxRate
+	if defaultRate == 0 {
+		defaultRate = 18
+	}
+	if defaultRate < 0 || defaultRate > 100 {
+		return result, ErrInvalidMoney
+	}
+	checked := append([]InvoiceLineItem(nil), items...)
+	for i := range checked {
+		item := &checked[i]
+		if item.Quantity <= 0 || item.UnitPrice < 0 || item.DiscountPaisa < 0 || item.TaxRate < 0 || item.TaxRate > 100 {
+			return InvoiceTotals{}, ErrInvalidMoney
+		}
+		rate := item.TaxRate
+		if rate == 0 {
+			rate = defaultRate
+		}
+		if len(overrides) > 0 {
+			override := overrides[i]
+			if override.Exempt {
+				if override.Rate != nil && *override.Rate != 0 {
+					return InvoiceTotals{}, ErrInvalidMoney
+				}
+				rate = 0
+			} else if override.Rate != nil {
+				rate = *override.Rate
+			}
+		}
+		if rate < 0 || rate > 100 {
+			return InvoiceTotals{}, ErrInvalidMoney
+		}
+		gross, err := CheckedMul(item.UnitPrice, int64(item.Quantity))
+		if err != nil {
+			return InvoiceTotals{}, err
+		}
+		if item.DiscountPaisa > gross {
+			return InvoiceTotals{}, ErrInvalidMoney
+		}
+		gross -= item.DiscountPaisa
+		taxable := gross
+		var tax int64
+		if cfg.TaxInclusive {
+			taxable, err = ProrateMinor(gross, 100, int64(100+rate))
+			tax = gross - taxable
+		} else {
+			tax, err = ProrateMinor(taxable, int64(rate), 100)
+		}
+		if err != nil {
+			return InvoiceTotals{}, err
+		}
+		item.AmountPaisa = taxable
+		item.TaxRate = rate
+		if result.SubtotalPaisa, err = CheckedAdd(result.SubtotalPaisa, taxable); err != nil {
+			return InvoiceTotals{}, err
+		}
+		if result.DiscountPaisa, err = CheckedAdd(result.DiscountPaisa, item.DiscountPaisa); err != nil {
+			return InvoiceTotals{}, err
+		}
+		if result.TaxPaisa, err = CheckedAdd(result.TaxPaisa, tax); err != nil {
+			return InvoiceTotals{}, err
+		}
+	}
+	var err error
+	result.TotalPaisa, err = CheckedAdd(result.SubtotalPaisa, result.TaxPaisa)
+	if err != nil {
+		return InvoiceTotals{}, err
+	}
+	if customerState != "" && cfg.BusinessState != "" && equalState(customerState, cfg.BusinessState) {
+		half := result.TaxPaisa / 2
+		result.Breakdown = TaxBreakdown{CGSTPaisa: half, SGSTPaisa: result.TaxPaisa - half}
+	} else {
+		result.Breakdown = TaxBreakdown{IGSTPaisa: result.TaxPaisa}
+	}
+	copy(items, checked)
+	return result, nil
+}
+
 // ─── Tax Engine (pure functions — no I/O) ────────────────────────────────
 //
 // GST rules implemented here:
