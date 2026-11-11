@@ -306,12 +306,12 @@ func (h *OpsHandler) GrantCredits(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data": fiber.Map{
-			"tenant_id":          snap.TenantID,
-			"credits_total":      snap.CreditsTotal,
-			"credits_remaining":  snap.CreditsRemaining,
-			"credits_reserved":   snap.CreditsReserved,
-			"credits_available":  snap.CreditsAvailable,
-			"credits_granted":    req.Credits,
+			"tenant_id":         snap.TenantID,
+			"credits_total":     snap.CreditsTotal,
+			"credits_remaining": snap.CreditsRemaining,
+			"credits_reserved":  snap.CreditsReserved,
+			"credits_available": snap.CreditsAvailable,
+			"credits_granted":   req.Credits,
 		},
 	})
 }
@@ -362,11 +362,11 @@ func (h *OpsHandler) ResetReservedCredits(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data": fiber.Map{
-			"tenant_id":          snap.TenantID,
-			"credits_total":      snap.CreditsTotal,
-			"credits_remaining":  snap.CreditsRemaining,
-			"credits_reserved":   snap.CreditsReserved,
-			"credits_available":  snap.CreditsAvailable,
+			"tenant_id":         snap.TenantID,
+			"credits_total":     snap.CreditsTotal,
+			"credits_remaining": snap.CreditsRemaining,
+			"credits_reserved":  snap.CreditsReserved,
+			"credits_available": snap.CreditsAvailable,
 		},
 	})
 }

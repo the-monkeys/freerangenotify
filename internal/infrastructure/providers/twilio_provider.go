@@ -6,13 +6,16 @@ import (
 	"strings"
 	"time"
 
+	"encoding/json"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/billing"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
 	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/twilio/twilio-go"
-	openapi "github.com/twilio/twilio-go/rest/api/v2010"
 	"go.uber.org/zap"
+	"io"
+	"net/http"
+	"net/url"
 )
 
 // TwilioProvider implements the Provider interface for SMS via Twilio
@@ -99,38 +102,57 @@ func (p *TwilioProvider) Send(ctx context.Context, notif *notification.Notificat
 		}
 	}
 
-	client := p.client
-	if credSource == billing.CredSourceBYOC {
-		// Instantiate a new client per request for BYOC to avoid mutating the shared provider client
-		client = twilio.NewRestClientWithParams(twilio.ClientParams{
-			Username: accountSID,
-			Password: authToken,
-		})
+	if accountSID == "" || authToken == "" || fromNumber == "" {
+		return NewErrorResult(fmt.Errorf("SMS credentials and sender required"), ErrorTypeConfiguration), nil
 	}
-
-	params := &openapi.CreateMessageParams{}
-	params.SetTo(usr.Phone)
-	params.SetFrom(fromNumber)
-	params.SetBody(smsBody)
-
-	resp, err := client.Api.CreateMessage(params)
+	form := url.Values{"To": {usr.Phone}, "From": {fromNumber}, "Body": {smsBody}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json", accountSID), strings.NewReader(form.Encode()))
 	if err != nil {
-		p.logger.Error("Twilio SMS failed", zap.Error(err))
-		return p.handleError(err), nil
+		return NewErrorResult(fmt.Errorf("SMS request invalid"), ErrorTypeInvalid), nil
 	}
-
-	if resp.Status != nil && (*resp.Status == "failed" || *resp.Status == "undelivered") {
-		return NewErrorResult(
-			fmt.Errorf("Twilio message failed with status: %s", *resp.Status),
-			ErrorTypeProviderAPI,
-		), nil
+	req.SetBasicAuth(accountSID, authToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	client := p.config.HTTPClient
+	if client == nil {
+		timeout := p.config.Timeout
+		if timeout <= 0 {
+			timeout = 15 * time.Second
+		}
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		return NewErrorResult(fmt.Errorf("SMS request failed: %w", err), ErrorTypeNetwork), nil
+	}
+	defer response.Body.Close()
+	var resp struct {
+		SID    string `json:"sid"`
+		Status string `json:"status"`
+	}
+	decodeErr := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&resp)
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		category := ErrorTypeProviderAPI
+		if response.StatusCode == 401 || response.StatusCode == 403 {
+			category = ErrorTypeAuth
+		}
+		if response.StatusCode == 429 {
+			category = ErrorTypeRateLimit
+		}
+		result := NewErrorResult(fmt.Errorf("Twilio SMS rejected (%d)", response.StatusCode), category)
+		if response.StatusCode >= 400 && response.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, nil
+	}
+	if decodeErr != nil || resp.SID == "" {
+		return NewErrorResult(fmt.Errorf("Twilio SMS acceptance unconfirmed"), ErrorTypeUnknown), nil
+	}
+	if resp.Status == "failed" || resp.Status == "undelivered" {
+		return NewErrorResult(fmt.Errorf("Twilio SMS rejected"), ErrorTypeInvalid), nil
 	}
 
 	deliveryTime := time.Since(startTime)
-	msgID := ""
-	if resp.Sid != nil {
-		msgID = *resp.Sid
-	}
+	msgID := resp.SID
 
 	p.logger.Info("Twilio SMS sent successfully",
 		zap.String("notification_id", notif.NotificationID),

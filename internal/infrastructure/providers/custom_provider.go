@@ -276,10 +276,27 @@ func (p *CustomProvider) postWebhook(ctx context.Context, body []byte, contentTy
 // when an incoming webhook receives a payload with a `poll` field it cannot
 // honor: `{"proto_data": ["poll"]}` (sometimes nested under `errors`).
 func isDiscordPollRejection(respBody []byte) bool {
-	// Substring check is sufficient — Discord's error envelope is small and
-	// the literal `"poll"` token only appears here in the rejection body.
-	s := string(respBody)
-	return strings.Contains(s, "proto_data") && strings.Contains(s, "poll")
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal(respBody, &envelope) != nil {
+		return false
+	}
+	// Only the explicit Discord field rejection authorizes a second send.
+	for depth := 0; depth < 4 && envelope != nil; depth++ {
+		var fields []string
+		if json.Unmarshal(envelope["proto_data"], &fields) == nil {
+			for _, field := range fields {
+				if field == "poll" {
+					return true
+				}
+			}
+		}
+		var nested map[string]json.RawMessage
+		if json.Unmarshal(envelope["errors"], &nested) != nil {
+			return false
+		}
+		envelope = nested
+	}
+	return false
 }
 
 // GetName returns the provider name.

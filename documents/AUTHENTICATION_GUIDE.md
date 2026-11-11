@@ -155,8 +155,8 @@ curl -X POST http://localhost:8080/v1/auth/register \
     "created_at": "2026-01-23T10:00:00Z",
     "updated_at": "2026-01-23T10:00:00Z"
   },
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "access_token": "<example-token>",
+  "refresh_token": "<example-token>",
   "expires_at": "2026-01-23T10:15:00Z"
 }
 ```
@@ -221,7 +221,7 @@ Client                          API Server                    Elasticsearch
 curl -X POST http://localhost:8080/v1/auth/refresh \
   -H "Content-Type: application/json" \
   -d '{
-    "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+    "refresh_token": "<example-token>"
   }'
 ```
 
@@ -229,8 +229,8 @@ curl -X POST http://localhost:8080/v1/auth/refresh \
 
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "access_token": "<example-token>",
+  "refresh_token": "<example-token>",
   "expires_at": "2026-01-23T10:30:00Z"
 }
 ```

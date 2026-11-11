@@ -58,6 +58,7 @@ func NewFileHandler(svc *services.FileService, signer *filestore.Signer, publicU
 // @Failure 413 {object} map[string]interface{}
 // @Failure 415 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files [post]
 func (h *FileHandler) Upload(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -106,6 +107,7 @@ func (h *FileHandler) Upload(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 410 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files/{id} [get]
 func (h *FileHandler) Get(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -130,6 +132,7 @@ func (h *FileHandler) Get(c *fiber.Ctx) error {
 // @Param offset query int false "Page offset (default 0)"
 // @Success 200 {object} dto.FileListResponse
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files [get]
 func (h *FileHandler) List(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -157,6 +160,7 @@ func (h *FileHandler) List(c *fiber.Ctx) error {
 // @Success 204
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files/{id} [delete]
 func (h *FileHandler) Delete(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -183,6 +187,7 @@ func (h *FileHandler) Delete(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 410 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files/{id}/content [get]
 func (h *FileHandler) Content(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -205,6 +210,7 @@ func (h *FileHandler) Content(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 503 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/files/{id}/download-url [get]
 func (h *FileHandler) DownloadURL(c *fiber.Ctx) error {
 	if h.signer == nil {
@@ -220,11 +226,7 @@ func (h *FileHandler) DownloadURL(c *fiber.Ctx) error {
 		return h.mapServiceError(c, err, "download-url")
 	}
 	exp, sig := h.signer.Sign(appID, id)
-	relPath := fmt.Sprintf("/v1/files/download/%s?app_id=%s&exp=%d&sig=%s", id, appID, exp, sig)
-	url := relPath
-	if h.publicURL != "" {
-		url = h.publicURL + relPath
-	}
+	url := filestore.BuildSignedDownloadURL(h.publicURL, appID, id, exp, sig)
 	return c.JSON(dto.SignedURLResponse{
 		URL:       url,
 		ExpiresAt: time.Unix(exp, 0).UTC(),

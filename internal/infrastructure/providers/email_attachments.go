@@ -11,7 +11,6 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	filedomain "github.com/the-monkeys/freerangenotify/internal/domain/file"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
-	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 )
 
 // resolveEmailAttachments materialises any binary attachments declared on the
@@ -64,7 +63,7 @@ func resolveEmailAttachments(
 // validation/source sentinels are permanent; remote fetch/read failures retain
 // their timeout/network category or the legacy retryable unknown policy.
 func emailAttachmentErrorType(err error) string {
-	if notification.IsValidationError(err) || errors.Is(err, filedomain.ErrFileNotFound) || errors.Is(err, services.ErrFileSourceUnavailable) || errors.Is(err, services.ErrAttachmentURLOversize) {
+	if notification.IsValidationError(err) || errors.Is(err, filedomain.ErrFileNotFound) || errors.Is(err, attachment.ErrFileSourceUnavailable) || errors.Is(err, attachment.ErrURLOversize) {
 		return ErrorTypeInvalid
 	}
 	return classifyDeliveryCause("", err)

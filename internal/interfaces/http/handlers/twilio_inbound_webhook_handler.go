@@ -1,18 +1,18 @@
 package handlers
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
 	"sort"
 	"strings"
-	"sync"
+
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
 	"github.com/the-monkeys/freerangenotify/internal/domain/whatsapp"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"go.uber.org/zap"
 )
 
@@ -32,26 +32,19 @@ import (
 // already handles workflow event emission (whatsapp.button_clicked, etc.)
 // per WHATSAPP_RICH_INTERACTIVE_PLAN.md §6.
 //
-// Always returns HTTP 200 so Twilio does not retry. Failures are logged.
+// Acknowledges only accepted messages. Storage failures remain retryable.
 type TwilioInboundWebhookHandler struct {
-	whatsappSvc whatsapp.Service
-	appRepo     application.Repository
-	authToken   string
-	logger      *zap.Logger
-
-	// app lookup cache keyed by normalised "to_number" (without
-	// "whatsapp:" prefix). Refreshed on miss with a short TTL.
-	cacheMu        sync.RWMutex
-	toIndex        map[string]string
-	cacheExpiresAt time.Time
+	Dispatch       *services.ChannelDispatchService
+	senderResolver *services.ChannelSenderResolver
+	publicURL      string
+	whatsappSvc    whatsapp.Service
+	logger         *zap.Logger
 }
-
-const twilioInboundCacheTTL = 60 * time.Second
 
 // NewTwilioInboundWebhookHandler constructs a Twilio inbound webhook
 // handler. authToken is the Twilio account auth token used to validate
-// signatures; an empty token disables verification (with a warning log
-// per request) and is intended for local development only.
+// signatures. Production wiring supplies an account-specific resolver and the
+// canonical public URL; missing signing configuration fails closed.
 func NewTwilioInboundWebhookHandler(
 	whatsappSvc whatsapp.Service,
 	appRepo application.Repository,
@@ -59,16 +52,25 @@ func NewTwilioInboundWebhookHandler(
 	logger *zap.Logger,
 ) *TwilioInboundWebhookHandler {
 	return &TwilioInboundWebhookHandler{
-		whatsappSvc: whatsappSvc,
-		appRepo:     appRepo,
-		authToken:   authToken,
-		logger:      logger,
-		toIndex:     map[string]string{},
+		whatsappSvc:    whatsappSvc,
+		senderResolver: services.NewChannelSenderResolver(appRepo, nil),
+		logger:         logger,
 	}
 }
 
 // Handle implements POST /v1/webhooks/twilio/whatsapp.
+// @Summary Handle
+// @Description Inbound provider callback. Requires the configured provider signature or handshake verification; application API keys are not callback credentials.
+// @Tags TwilioInboundWebhook
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/webhooks/twilio/whatsapp [post]
 func (h *TwilioInboundWebhookHandler) Handle(c *fiber.Ctx) error {
+	if hasRepeatedFormFields(c) {
+		return c.SendStatus(fiber.StatusBadRequest)
+	}
 	// Capture the raw form values up front; Fiber parses them lazily and
 	// signature validation must see the same key/value set Twilio signed.
 	form, err := c.MultipartForm()
@@ -79,27 +81,25 @@ func (h *TwilioInboundWebhookHandler) Handle(c *fiber.Ctx) error {
 	}
 	values := collectFormValues(c, form)
 
-	if h.authToken == "" {
-		h.logger.Warn("Twilio inbound webhook signature verification disabled (no auth token configured)")
-	} else {
-		sig := c.Get("X-Twilio-Signature")
-		fullURL := buildTwilioSignatureURL(c)
-		if !validateTwilioSignature(h.authToken, fullURL, values, sig) {
-			h.logger.Warn("Twilio inbound webhook signature rejected",
-				zap.String("from", values["From"]),
-				zap.String("to", values["To"]))
-			return c.SendStatus(fiber.StatusForbidden)
-		}
-	}
-
 	to := strings.TrimPrefix(values["To"], "whatsapp:")
+	binding, resolveErr := h.senderResolver.ResolveInboundSender(c.Context(), "twilio", values["AccountSid"], to)
+	if resolveErr != nil {
+		return c.SendStatus(fiber.StatusForbidden)
+	}
+	if binding.SigningSecret == "" || h.publicURL == "" {
+		return c.SendStatus(fiber.StatusServiceUnavailable)
+	}
+	if !validateTwilioSignature(binding.SigningSecret, strings.TrimRight(h.publicURL, "/")+c.OriginalURL(), values, c.Get("X-Twilio-Signature")) {
+		return c.SendStatus(fiber.StatusForbidden)
+	}
+	// Sender ownership was verified above.
 	from := strings.TrimPrefix(values["From"], "whatsapp:")
 	if from == "" {
 		// Nothing actionable; ack.
 		return c.SendStatus(fiber.StatusOK)
 	}
 
-	appID := h.resolveAppIDByTo(c.Context(), to)
+	appID := binding.AppID
 	if appID == "" {
 		h.logger.Warn("Twilio inbound webhook: no app matched 'To' number",
 			zap.String("to", to))
@@ -107,56 +107,27 @@ func (h *TwilioInboundWebhookHandler) Handle(c *fiber.Ctx) error {
 	}
 
 	msg := buildInboundFromTwilio(appID, from, values)
+	msg.ConnectionID = binding.ID
+	msg.EnvironmentID = binding.EnvironmentID
+	msg.Provider = binding.Provider
+	msg.AccountID = binding.AccountID
+	msg.SenderID = binding.SenderID
+	if h.Dispatch != nil {
+		stamp, err := h.Dispatch.ResolveTwilioInboundTimestamp(c.Context(), binding, msg.MetaMessageID, from)
+		if err != nil {
+			return c.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		msg.Timestamp = stamp
+		msg.RawPayload["DateCreated"] = stamp.UTC().Format(time.RFC3339)
+	}
 	if err := h.whatsappSvc.HandleInbound(c.Context(), appID, msg); err != nil {
 		h.logger.Error("Twilio inbound: HandleInbound failed",
 			zap.String("app_id", appID),
 			zap.String("from", from),
 			zap.Error(err))
+		return c.SendStatus(fiber.StatusServiceUnavailable)
 	}
 	return c.SendStatus(fiber.StatusOK)
-}
-
-// resolveAppIDByTo looks up the FRN app whose Twilio FromNumber matches
-// the inbound `To` field. Results are cached for a short TTL.
-func (h *TwilioInboundWebhookHandler) resolveAppIDByTo(ctx context.Context, to string) string {
-	if to == "" {
-		return ""
-	}
-	h.cacheMu.RLock()
-	if time.Now().Before(h.cacheExpiresAt) {
-		if id, ok := h.toIndex[to]; ok {
-			h.cacheMu.RUnlock()
-			return id
-		}
-	}
-	h.cacheMu.RUnlock()
-
-	// Refresh cache.
-	h.cacheMu.Lock()
-	defer h.cacheMu.Unlock()
-	if time.Now().Before(h.cacheExpiresAt) {
-		if id, ok := h.toIndex[to]; ok {
-			return id
-		}
-	}
-	apps, err := h.appRepo.List(ctx, application.ApplicationFilter{Limit: 500})
-	if err != nil {
-		h.logger.Warn("Twilio inbound: app list failed", zap.Error(err))
-		return ""
-	}
-	idx := make(map[string]string, len(apps))
-	for _, app := range apps {
-		wa := app.Settings.WhatsApp
-		if wa == nil {
-			continue
-		}
-		if wa.FromNumber != "" {
-			idx[strings.TrimPrefix(wa.FromNumber, "whatsapp:")] = app.AppID
-		}
-	}
-	h.toIndex = idx
-	h.cacheExpiresAt = time.Now().Add(twilioInboundCacheTTL)
-	return idx[to]
 }
 
 // buildInboundFromTwilio normalises Twilio's flat form fields into the
@@ -228,40 +199,38 @@ func validateTwilioSignature(authToken, fullURL string, values map[string]string
 	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
-// buildTwilioSignatureURL reconstructs the absolute URL Twilio used when
-// signing. Behind a TLS-terminating proxy callers MUST forward the
-// X-Forwarded-Proto / X-Forwarded-Host headers or pass an explicit
-// public URL — Twilio's signature is URL-sensitive.
-func buildTwilioSignatureURL(c *fiber.Ctx) string {
-	scheme := c.Get("X-Forwarded-Proto")
-	if scheme == "" {
-		scheme = c.Protocol()
-	}
-	host := c.Get("X-Forwarded-Host")
-	if host == "" {
-		host = c.Hostname()
-	}
-	return scheme + "://" + host + c.OriginalURL()
-}
-
 // collectFormValues extracts all form fields (multipart or urlencoded)
-// into a flat string map. Multi-value fields are joined by comma — none
-// of Twilio's WhatsApp webhook fields are repeated in practice.
+// into a flat string map. Handlers reject repeated fields before validation.
 func collectFormValues(c *fiber.Ctx, mf interface{}) map[string]string {
-	out := map[string]string{}
-	// Common Twilio fields we definitely want even if multipart parsing
-	// failed; FormValue falls back to urlencoded body parsing.
-	for _, k := range []string{
-		"MessageSid", "AccountSid", "From", "To", "Body",
-		"ButtonText", "ButtonPayload", "ListId", "ListTitle",
-		"ListDescription", "OriginalRepliedMessageSid", "NumMedia",
-		"MediaUrl0", "MediaContentType0", "ProfileName", "WaId",
-	} {
-		if v := c.FormValue(k); v != "" {
-			out[k] = v
+	values := map[string]string{}
+	c.Request().PostArgs().VisitAll(func(key, value []byte) { values[string(key)] = string(value) })
+	if form, err := c.MultipartForm(); err == nil {
+		for key, value := range form.Value {
+			if len(value) == 1 {
+				values[key] = value[0]
+			}
 		}
 	}
-	return out
+	return values
+}
+func hasRepeatedFormFields(c *fiber.Ctx) bool {
+	seen := map[string]bool{}
+	repeated := false
+	c.Request().PostArgs().VisitAll(func(k, v []byte) {
+		key := string(k)
+		if seen[key] {
+			repeated = true
+		}
+		seen[key] = true
+	})
+	if form, err := c.MultipartForm(); err == nil {
+		for _, values := range form.Value {
+			if len(values) != 1 {
+				repeated = true
+			}
+		}
+	}
+	return repeated
 }
 
 // toInterfaceMap shallow-copies a string map into the map[string]interface{}
@@ -272,4 +241,9 @@ func toInterfaceMap(in map[string]string) map[string]interface{} {
 		out[k] = v
 	}
 	return out
+}
+
+func (h *TwilioInboundWebhookHandler) SetSenderResolver(resolver *services.ChannelSenderResolver, publicURL string) {
+	h.senderResolver = resolver
+	h.publicURL = publicURL
 }

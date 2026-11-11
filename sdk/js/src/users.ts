@@ -15,7 +15,7 @@ export class UsersClient {
   constructor(private readonly http: HttpClient) { }
 
   async create(params: CreateUserParams): Promise<User> {
-    return this.http.request<User>('POST', '/users/', params);
+    return userResource(await this.http.request<User>('POST', '/users/', params));
   }
 
   /** Register multiple users. Use skip_existing or upsert to handle duplicates. */
@@ -25,17 +25,17 @@ export class UsersClient {
 
   /** Retrieve a user by internal UUID or external_id. */
   async get(identifier: string): Promise<User> {
-    return this.http.request<User>('GET', `/users/${identifier}`);
+    return userResource(await this.http.request<User>('GET', `/users/${identifier}`));
   }
 
   /** Retrieve a user by their external_id. */
   async getByExternalId(externalId: string): Promise<User> {
-    return this.http.request<User>('GET', `/users/by-external-id/${externalId}`);
+    return userResource(await this.http.request<User>('GET', `/users/by-external-id/${externalId}`));
   }
 
   /** Update a user. Accepts internal UUID or external_id. */
   async update(identifier: string, params: UpdateUserParams): Promise<User> {
-    return this.http.request<User>('PUT', `/users/${identifier}`, params);
+    return userResource(await this.http.request<User>('PUT', `/users/${identifier}`, params));
   }
 
   /** Delete a user. Accepts internal UUID or external_id. */
@@ -47,7 +47,7 @@ export class UsersClient {
     const query: Record<string, string | undefined> = {};
     if (page) query.page = String(page);
     if (pageSize) query.page_size = String(pageSize);
-    return this.http.request<UserListResponse>('GET', '/users/', undefined, query);
+    return userResource(await this.http.request<UserListResponse>('GET', '/users/', undefined, query));
   }
 
   // ── Devices ──
@@ -99,4 +99,13 @@ export class UsersClient {
     );
     return result.subscriber_hash;
   }
+}
+
+// Preserve legacy flat results and existing envelope properties while exposing
+// the resource fields promised by the public SDK types.
+function userResource<T>(value: T): T {
+  if (value && typeof value === 'object' && 'success' in value && value.success === true && 'data' in value && value.data && typeof value.data === 'object') {
+    return Object.assign({}, value, value.data);
+  }
+  return value;
 }

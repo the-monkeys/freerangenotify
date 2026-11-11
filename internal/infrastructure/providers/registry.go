@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"go.uber.org/zap"
@@ -54,7 +55,13 @@ func InstantiateAll(cfgMap map[string]map[string]interface{}, logger *zap.Logger
 	defer registryMu.RUnlock()
 
 	var result []Provider
-	for name, factory := range factories {
+	names := make([]string, 0, len(factories))
+	for name := range factories {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		factory := factories[name]
 		cfg, ok := cfgMap[name]
 		if !ok {
 			logger.Debug("No config for provider, skipping", zap.String("provider", name))

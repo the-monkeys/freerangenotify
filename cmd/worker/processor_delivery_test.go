@@ -544,13 +544,19 @@ func TestProcessNotification_SuccessPersistsReservationBindingWithStatus(t *test
 	repo := &atomicDeliveryRepo{stubNotifRepo: stored}
 	proc.notifRepo = repo
 	withDeliveryTestCredits(proc, &deliveryTestBalanceRepo{balance: &billing.CreditBalance{ID: "sub-1", TenantID: "app-1", CreditsTotal: 1500, CreditsRemaining: 1500}})
+	prior, err := proc.creditService.ReserveForNotification(context.Background(), "app-1", "app-1", notif.NotificationID, "email")
+	require.NoError(t, err)
+	require.NoError(t, proc.creditService.RecordReservationDeliveryFailure(context.Background(), prior.ID))
+	require.NoError(t, proc.creditService.ReleaseOnFailure(context.Background(), prior.ID, "prior attempt rejected"))
+	notif.Metadata["reservation_id"] = prior.ID
+
 	proc.providerManager = providers.NewManager(nil, nil, zap.NewNop())
 	require.NoError(t, proc.providerManager.RegisterProvider(&successfulDeliveryProvider{}))
 	proc.processNotification(context.Background(), makeQueueItem(notif.NotificationID), proc.logger)
 	require.Zero(t, repo.sentOnlyCalls, "never publish success separately from its reservation binding")
 	require.Equal(t, notification.StatusSent, stored.notifications[notif.NotificationID].Status)
 	require.NotNil(t, stored.notifications[notif.NotificationID].SentAt)
-	require.NotEqual(t, "prior-attempt", notif.Metadata["reservation_id"])
+	require.NotEqual(t, prior.ID, notif.Metadata["reservation_id"])
 	require.Equal(t, notif.Metadata["reservation_id"], notif.Metadata["delivery_reservation_id"])
 }
 

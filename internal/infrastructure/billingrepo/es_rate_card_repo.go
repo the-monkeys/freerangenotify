@@ -35,6 +35,9 @@ func (r *ESRateCardRepo) CreateVersion(ctx context.Context, card *billing.RateCa
 		return fmt.Errorf("billingrepo: version is required")
 	}
 
+	if err := card.ValidatePublication(); err != nil {
+		return err
+	}
 	now := time.Now().UTC()
 	if card.CreatedAt.IsZero() {
 		card.CreatedAt = now
@@ -159,6 +162,9 @@ func (r *ESRateCardRepo) SetActiveVersion(ctx context.Context, version string) e
 		return fmt.Errorf("billingrepo: rate card version %q not found", version)
 	}
 
+	if err := card.ValidatePublication(); err != nil {
+		return err
+	}
 	runtimeDoc := map[string]interface{}{
 		"id":             activeRateCardDocID,
 		"active_version": version,
@@ -198,6 +204,9 @@ func (r *ESRateCardRepo) SetActiveVersionIfCurrent(ctx context.Context, expected
 	}
 	if expected == "" || card == nil {
 		return fmt.Errorf("billingrepo: invalid conditional activation")
+	}
+	if err := card.ValidatePublication(); err != nil {
+		return err
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	body, err := json.Marshal(map[string]interface{}{

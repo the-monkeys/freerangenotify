@@ -1,249 +1,154 @@
-# File Attachments
+# Files and attachments
 
-Attach files (PDFs, images, videos, documents) to a notification using one of three input modes. Pick the one that fits your use case; FRN resolves them all to the same internal payload before delivery.
-
-| Source           | Field            | Best for                                                              |
-| ---------------- | ---------------- | --------------------------------------------------------------------- |
-| Public URL       | `url`            | The file already lives on a CDN, S3 bucket, or public web server.     |
-| Inline base64    | `content_base64` | One-shot small files (≤ 10 MB decoded). No upload round-trip.         |
-| FRN-managed file | `file_id`        | Files > 10 MB **or** reused across many notifications (e.g. invoices).|
-
-> Exactly **one** of the three must be set per attachment. The API rejects ambiguous payloads with `400 attachment_ambiguous_source`.
-
----
-
-## Limits & defaults
-
-| Limit                          | Default value      | Override key                              |
-| ------------------------------ | ------------------ | ----------------------------------------- |
-| Max upload size                | 50 MiB             | `filestore.max_bytes`                     |
-| Max inline base64 (encoded)    | ~14 MB             | _hardcoded; ~10 MB decoded_               |
-| Retention before auto-delete   | 30 days            | `filestore.retention_days` (`-1` = never) |
-| Signed-URL TTL                 | 15 minutes         | `filestore.signed_url_ttl_seconds`        |
-| Allowed MIME types             | PDF; JPEG/PNG/GIF/WebP; MP3/OGG/WAV; MP4; CSV/TXT; ZIP; DOCX/XLSX/PPTX | `filestore.allowed_mime_types` (wildcards, e.g. `image/*`) |
-
----
-
-## 1. Public URL (simplest)
-
-Send any URL FRN can reach. The worker fetches the bytes once (cap 25 MB, timeout 20 s) and forwards them to the provider.
+Use your application API key from a trusted backend. Upload with multipart field `file`:
 
 ```bash
-curl -X POST http://localhost:8080/v1/notifications \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_id":  "u_123",
-    "channel":  "email",
-    "template": "monthly_report",
-    "content": {
-      "title": "Your May report",
-      "body":  "See the attached PDF.",
-      "attachments": [{
-        "type": "file",
-        "url":  "https://cdn.example.com/reports/2026-05.pdf",
-        "name": "report-2026-05.pdf",
-        "mime_type": "application/pdf"
-      }]
-    }
-  }'
+curl -sS -X POST "$BASE_URL/files" \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@report.pdf"
 ```
 
-## 2. Inline base64
+The response contains `file_id`. Save that ID as `FILE_ID`; it is scoped to this application. The upload cap is the operator-configured value, up to the hard 50 MiB maximum. The reverse proxy must also allow that request size. Retention is deployment-wide; expiry makes a file unavailable logically, while storage deletion follows cleanup. Do not assume a per-tenant retention policy.
 
-Best for one-shot small attachments where you already have the bytes in memory.
+Each top-level notification attachment supplies exactly one source: `url`, `content_base64`, or `file_id`. Up to ten attachments are accepted. Use `name`, `mime_type`, and `type` to describe the file. Email inline images also use `disposition: "inline"` and a `content_id` matching the HTML `cid:` reference. URL fetches are bounded to 25 MiB; inline base64 is capped at 14 MiB encoded (about 10 MiB decoded). The normal JSON request cap is 16 MiB. Provider limits may be lower than any of these limits.
 
-```jsonc
-{
-  "attachments": [{
-    "type": "file",
-    "content_base64": "JVBERi0xLjQKJ...",
-    "name": "receipt.pdf",
-    "mime_type": "application/pdf"
-  }]
-}
-```
+## Email with multiple attachments
 
-Accepts both standard (`+/=`) and URL-safe (`-_`) base64 and strips a leading `data:application/pdf;base64,` prefix if present.
+The following example assumes a previously uploaded `FILE_ID` and registered `USER_ID`. It combines an inline image with a managed file. HTTP 202 accepts the request; the worker later resolves the attachment and sends the email.
 
-## 3. Upload-then-reference (`file_id`) — recommended for invoices, contracts, large files
+## Email attachments
 
-This is the recommended path for files larger than ~10 MB or for any file you will reference more than once.
+HTTP 202. Response below shows the relevant fields.
 
-### Step 1 — Upload
-
-```bash
-curl -X POST http://localhost:8080/v1/files \
-  -H "X-API-Key: $API_KEY" \
-  -F "file=@invoice-2026-05.pdf;type=application/pdf"
-```
-
-Response (`201 Created`):
-
+<!-- api-example:email-attachments:request -->
 ```json
 {
-  "file_id":    "file_5a6d19a25b6240c0bc0a17445ef5f5be",
-  "name":       "invoice-2026-05.pdf",
-  "size":       182437,
-  "mime_type":  "application/pdf",
-  "sha256":     "9c1185a5...",
-  "expires_at": "2026-06-24T20:14:00Z",
-  "created_at": "2026-05-25T20:14:00Z"
+  "user_id": "${USER_ID}",
+  "channel": "email",
+  "title": "Report",
+  "body": "<img src=\"cid:logo-image\">",
+  "attachments": [
+    {
+      "type": "image",
+      "name": "logo.png",
+      "mime_type": "image/png",
+      "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+      "content_id": "logo-image",
+      "disposition": "inline"
+    },
+    {
+      "type": "file",
+      "file_id": "${FILE_ID}",
+      "name": "report.pdf"
+    }
+  ]
 }
 ```
 
-`file_id` is the format `file_<32 lowercase hex>` and is opaque to the caller. The response also includes the server-computed `sha256` so clients can verify the upload was not corrupted in transit.
-
-### Step 2 — Reference in a notification
-
-```jsonc
+<!-- api-example:email-attachments:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/notifications" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
 {
-  "user_id": "u_123",
+  "user_id": "${USER_ID}",
   "channel": "email",
-  "template": "invoice_email",
+  "title": "Report",
+  "body": "<img src=\"cid:logo-image\">",
+  "attachments": [
+    {
+      "type": "image",
+      "name": "logo.png",
+      "mime_type": "image/png",
+      "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+      "content_id": "logo-image",
+      "disposition": "inline"
+    },
+    {
+      "type": "file",
+      "file_id": "${FILE_ID}",
+      "name": "report.pdf"
+    }
+  ]
+}
+JSON
+```
+
+<!-- api-example:email-attachments:response -->
+```json
+{
+  "status": "queued",
   "content": {
-    "title": "Invoice for May 2026",
-    "body":  "Your invoice is attached.",
-    "attachments": [{
-      "type":    "file",
-      "file_id": "file_5a6d19a25b6240c0bc0a17445ef5f5be",
-      "name":    "invoice-2026-05.pdf"
-    }]
+    "attachments": [
+      {
+        "type": "image",
+        "name": "logo.png",
+        "mime_type": "image/png",
+        "content_base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6uvsAAAAASUVORK5CYII=",
+        "content_id": "logo-image",
+        "disposition": "inline"
+      },
+      {
+        "type": "file",
+        "file_id": "${FILE_ID}",
+        "name": "report.pdf"
+      }
+    ]
   }
 }
 ```
 
-### Pinned (never-expire) files
+## Missing file acceptance
 
-For files that must outlive the default 30-day retention (legal contracts, archived invoices), set `filestore.retention_days: -1` for the tenant. Newly uploaded files will be pinned and `expires_at` will be omitted from their metadata.
+HTTP 202. Response below shows the relevant fields.
 
----
-
-## Files endpoints
-
-| Method   | Path                              | Auth      | Purpose                                  |
-| -------- | --------------------------------- | --------- | ---------------------------------------- |
-| `POST`   | `/v1/files`                       | API key   | Upload (multipart `file` field).         |
-| `GET`    | `/v1/files`                       | API key   | List tenant files (`?limit=&offset=`).   |
-| `GET`    | `/v1/files/:id`                   | API key   | File metadata.                           |
-| `DELETE` | `/v1/files/:id`                   | API key   | Delete bytes + metadata.                 |
-| `GET`    | `/v1/files/:id/content`           | API key   | Stream the bytes.                        |
-| `GET`    | `/v1/files/:id/download-url`      | API key   | Mint a short-lived signed URL.           |
-| `GET`    | `/v1/files/download/:id`          | Signature | Public download (signature in query).    |
-
----
-
-## Inline images in email
-
-Use `disposition: "inline"` plus a `content_id` to embed images in the HTML body via `cid:` references.
-
-```jsonc
+<!-- api-example:missing-file-acceptance:request -->
+```json
 {
-  "attachments": [{
-    "type":        "image",
-    "file_id":     "file_5a6d19a25b6240c0bc0a17445ef5f5be",
-    "content_id":  "logo",
-    "disposition": "inline",
-    "mime_type":   "image/png"
-  }]
+  "user_id": "${USER_ID}",
+  "channel": "email",
+  "title": "Report",
+  "body": "See attached",
+  "attachments": [
+    {
+      "type": "file",
+      "file_id": "file_missing",
+      "name": "missing.pdf"
+    }
+  ]
 }
 ```
 
-In the HTML template body:
-
-```html
-<img src="cid:logo" alt="Logo">
+<!-- api-example:missing-file-acceptance:curl -->
+```bash
+curl -sS -X POST "$BASE_URL/notifications" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<JSON
+{
+  "user_id": "${USER_ID}",
+  "channel": "email",
+  "title": "Report",
+  "body": "See attached",
+  "attachments": [
+    {
+      "type": "file",
+      "file_id": "file_missing",
+      "name": "missing.pdf"
+    }
+  ]
+}
+JSON
 ```
 
----
-
-## SDK examples
-
-### Go
-
-```go
-import "github.com/the-monkeys/freerangenotify/sdk/go/freerangenotify"
-
-client := freerangenotify.New("frn_live_xxx")
-
-// Upload once
-f, _ := os.Open("invoice-2026-05.pdf")
-defer f.Close()
-obj, err := client.Files.Upload(ctx, freerangenotify.UploadFileParams{
-    Name:     "invoice-2026-05.pdf",
-    MIMEType: "application/pdf",
-    Reader:   f,
-})
-
-// Send by reference
-_, err = client.Notifications.Send(ctx, freerangenotify.SendParams{
-    UserID:   "u_123",
-    Channel:  "email",
-    Template: "invoice_email",
-    Content: &freerangenotify.Content{
-        Title: "Invoice for May 2026",
-        Body:  "Your invoice is attached.",
-        Attachments: []freerangenotify.ContentAttachment{{
-            Type:   "file",
-            FileID: obj.FileID,
-            Name:   obj.Name,
-        }},
-    },
-})
+<!-- api-example:missing-file-acceptance:response -->
+```json
+{
+  "status": "queued"
+}
 ```
 
-### JavaScript / TypeScript
+A missing, expired or cross-application file can be accepted with HTTP 202 and fail asynchronously during resolution. Poll the notification status and inspect its error. Upload a fresh file and issue a new send when appropriate; do not treat queued as proof the attachment exists.
 
-```ts
-import { FreeRangeNotify } from '@freerangenotify/sdk';
-
-const client = new FreeRangeNotify('frn_live_xxx');
-
-// Upload once (Node 18+ or modern browser)
-const pdf = await fs.promises.readFile('invoice-2026-05.pdf');
-const obj = await client.files.upload({
-  data: pdf,
-  name: 'invoice-2026-05.pdf',
-  mime_type: 'application/pdf',
-});
-
-// Send by reference
-await client.notifications.send({
-  user_id: 'u_123',
-  channel: 'email',
-  template: 'invoice_email',
-  content: {
-    title: 'Invoice for May 2026',
-    body:  'Your invoice is attached.',
-    attachments: [{ type: 'file', file_id: obj.file_id, name: obj.name }],
-  },
-});
-```
-
----
-
-## Channel support
-
-> Per-channel native binary delivery is being rolled out. The API accepts all three input modes today, but only the channels listed as ✅ below have been verified end-to-end. For other channels, `url` is the most reliable source until their row is verified.
-
-| Channel             | URL  | Inline base64 | `file_id` | Status                                                                                |
-|---------------------|:----:|:-------------:|:---------:|---------------------------------------------------------------------------------------|
-| Email — SMTP        | ✅   | ✅            | ✅        | Verified end-to-end against Gmail on 2026-05-26 (all three input modes).               |
-| Email — SES / SendGrid / Mailgun / Postmark / Resend | ✅ | ✅ | ✅ | Code merged, unit-tested. Awaiting vendor-sandbox verification. |
-| Webhook             | ✅   | ✅            | ✅        | Bytes are forwarded in the configured shape (passthrough or rich).                     |
-| WhatsApp / Slack / Discord / Teams / MMS / Push | ⚠️ | ⚠️ | ⚠️ | Wiring in progress. Use `url`. |
-| SMS / In-App / SSE  | ❌   | ❌            | ❌        | These transports cannot carry binaries; the resolver fails fast with a typed error.    |
-
----
-
-## Error reference
-
-| HTTP | Domain error                  | Meaning                                                  |
-| ---- | ----------------------------- | -------------------------------------------------------- |
-| 400  | `attachment_missing_source`   | None of `url` / `content_base64` / `file_id` supplied.   |
-| 400  | `attachment_ambiguous_source` | More than one source supplied on the same attachment.    |
-| 400  | `attachment_too_large`        | Inline base64 > ~14 MB encoded.                          |
-| 404  | `file_not_found`              | `file_id` doesn't exist or belongs to another tenant.    |
-| 410  | `file_expired`                | `file_id` was past its retention window.                 |
-| 413  | `file_too_large`              | Multipart upload exceeded `filestore.max_bytes`.         |
-| 415  | `unsupported_mime_type`       | MIME type not in `filestore.allowed_mime_types`.         |
+For external links, request `GET /v1/files/{file_id}/download-url` with the application key, then share the returned URL. Keep its `app_id`, `exp` and `sig` query values intact. The URL is a bearer capability until expiry; do not expose your app API key in a download link. URL expiry and the file's own expiry both apply. Custom webhook renderers generate these links automatically for managed files.

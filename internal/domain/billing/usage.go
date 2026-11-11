@@ -18,21 +18,22 @@ const (
 // All monetary amounts are stored as int64 paisa (1 INR = 100 paisa)
 // to avoid float precision drift at scale.
 type UsageEvent struct {
-	ID               string    `json:"id"`
-	TenantID         string    `json:"tenant_id"`
-	AppID            string    `json:"app_id"`
-	NotificationID   string    `json:"notification_id"`
-	Channel          string    `json:"channel"`           // "email", "whatsapp", "sms", "push", etc.
-	Provider         string    `json:"provider"`          // "smtp", "sendgrid", "twilio", etc.
-	CredentialSource string    `json:"credential_source"` // "system" | "byoc" | "platform"
-	MessageType      string    `json:"message_type"`      // "marketing" | "utility" | "transactional"
-	CostUnitPaisa    int64     `json:"cost_unit_paisa"`   // our carrier cost in paisa
-	BilledPaisa      int64     `json:"billed_paisa"`      // what we charge the user in paisa
-	CreditsUsed      int64     `json:"credits_used"`      // credits burned for this event
-	RateCardVersion  string    `json:"rate_card_version"` // active rate card version used for pricing
-	Currency         string    `json:"currency"`          // always "INR"
-	Status           string    `json:"status"`            // "charged" | "free_tier" | "platform"
-	Timestamp        time.Time `json:"timestamp"`
+	Quote            *ChannelQuote `json:"quote,omitempty"`
+	ID               string        `json:"id"`
+	TenantID         string        `json:"tenant_id"`
+	AppID            string        `json:"app_id"`
+	NotificationID   string        `json:"notification_id"`
+	Channel          string        `json:"channel"`           // "email", "whatsapp", "sms", "push", etc.
+	Provider         string        `json:"provider"`          // "smtp", "sendgrid", "twilio", etc.
+	CredentialSource string        `json:"credential_source"` // "system" | "byoc" | "platform"
+	MessageType      string        `json:"message_type"`      // "marketing" | "utility" | "transactional"
+	CostUnitPaisa    int64         `json:"cost_unit_paisa"`   // our carrier cost in paisa
+	BilledPaisa      int64         `json:"billed_paisa"`      // what we charge the user in paisa
+	CreditsUsed      int64         `json:"credits_used"`      // credits burned for this event
+	RateCardVersion  string        `json:"rate_card_version"` // active rate card version used for pricing
+	Currency         string        `json:"currency"`          // always "INR"
+	Status           string        `json:"status"`            // "charged" | "free_tier" | "platform"
+	Timestamp        time.Time     `json:"timestamp"`
 }
 
 // UsageSummary aggregates usage events over a billing period, grouped by

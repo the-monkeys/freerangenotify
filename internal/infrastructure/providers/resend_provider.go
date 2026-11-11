@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/attachment"
 	"github.com/the-monkeys/freerangenotify/internal/domain/notification"
@@ -76,11 +78,7 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 		"html":    p.buildHTMLBody(notif),
 	}
 
-	// Resolve and attach binary attachments. Resend accepts:
-	//   { filename, content (base64), content_type? }
-	// Resend does NOT natively support inline (cid:) attachments; if the
-	// caller asked for inline we degrade to regular and warn — the file
-	// still ships, it just won't render embedded in the HTML body.
+	// Resend accepts base64 attachments and content_id for inline HTML images.
 	resolved, _, rErr := resolveEmailAttachments(ctx, notif, p.logger, "resend")
 	if rErr != nil {
 		return emailAttachmentErrorResult(rErr), nil
@@ -93,17 +91,18 @@ func (p *ResendProvider) Send(ctx context.Context, notif *notification.Notificat
 			if bErr != nil {
 				return emailAttachmentErrorResult(bErr), nil
 			}
-			if ra.Disposition == "inline" && ra.ContentID != "" {
-				p.logger.Warn("Resend does not support inline cid attachments; sending as regular attachment",
-					zap.String("notification_id", notif.NotificationID),
-					zap.String("content_id", ra.ContentID),
-					zap.String("filename", ra.Filename))
-			}
-			attsOut = append(attsOut, map[string]interface{}{
+			entry := map[string]interface{}{
 				"filename":     coalesceFilename(ra.Filename),
 				"content":      base64.StdEncoding.EncodeToString(raw),
 				"content_type": coalesceMIME(ra.MIMEType),
-			})
+			}
+			if ra.Disposition == "inline" && ra.ContentID != "" {
+				if len(ra.ContentID) >= 128 || strings.IndexFunc(ra.ContentID, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) || r == '<' || r == '>' }) >= 0 {
+					return emailAttachmentErrorResult(fmt.Errorf("resend: invalid inline content ID")), nil
+				}
+				entry["content_id"] = ra.ContentID
+			}
+			attsOut = append(attsOut, entry)
 		}
 		payload["attachments"] = attsOut
 	}

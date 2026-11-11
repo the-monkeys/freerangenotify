@@ -59,8 +59,8 @@ func (h *AuditHandler) getAdminAppIDs(c *fiber.Ctx) ([]string, error) {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/audit [get]
+// @Security BearerAuth
 func (h *AuditHandler) List(c *fiber.Ctx) error {
 	appIDs, err := h.getAdminAppIDs(c)
 	if err != nil {
@@ -137,8 +137,8 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/admin/audit/{id} [get]
+// @Security BearerAuth
 func (h *AuditHandler) Get(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {

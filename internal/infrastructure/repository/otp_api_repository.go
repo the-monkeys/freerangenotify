@@ -141,9 +141,7 @@ func (r *redisOTPAPIRepository) Update(ctx context.Context, req *otp.Request) er
 	}
 	ttl := time.Until(req.ExpiresAt)
 	if ttl <= 0 {
-		// Verified records are still useful briefly for idempotent verify
-		// responses; cap at 60s so they don't linger.
-		ttl = 60 * time.Second
+		return otp.ErrExpired
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
@@ -159,21 +157,16 @@ func (r *redisOTPAPIRepository) Delete(ctx context.Context, requestID string) er
 // RecipientRateLimit uses a rolling sliding-window counter via Redis INCR with
 // a per-window expiry. Counting is approximate (fixed-window) which is fine
 // for OTP abuse-prevention.
+// INCR and expiry are one Redis operation, including repair of an old orphan counter.
+var otpBudgetScript = redis.NewScript(`local n=redis.call('INCR',KEYS[1]); if redis.call('PTTL',KEYS[1])<0 then redis.call('PEXPIRE',KEYS[1],ARGV[1]) end; return n`)
+
 func (r *redisOTPAPIRepository) RecipientRateLimit(ctx context.Context, appID, recipient string, windowSeconds int) (int, error) {
 	if windowSeconds <= 0 {
 		windowSeconds = 3600
 	}
-	key := r.rlKey(appID, recipient)
-	count, err := r.client.Incr(ctx, key).Result()
+	n, err := otpBudgetScript.Run(ctx, r.client, []string{r.rlKey(appID, recipient)}, int64(windowSeconds)*1000).Int()
 	if err != nil {
-		return 0, fmt.Errorf("otp repo: rl incr: %w", err)
+		return 0, fmt.Errorf("otp repo: recipient budget: %w", err)
 	}
-	if count == 1 {
-		// First hit in window — set the expiry. A failed Expire here is not
-		// fatal; the key will just persist until the next INCR sets it.
-		if err := r.client.Expire(ctx, key, time.Duration(windowSeconds)*time.Second).Err(); err != nil {
-			return int(count), fmt.Errorf("otp repo: rl expire: %w", err)
-		}
-	}
-	return int(count), nil
+	return n, nil
 }

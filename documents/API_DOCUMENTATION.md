@@ -37,13 +37,13 @@ http://localhost:8080
 Protected endpoints require Bearer token authentication using your application's API key:
 
 ```http
-Authorization: Bearer frn_YOUR_API_KEY_HERE
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 **Example with curl:**
 ```bash
 curl -X POST http://localhost:8080/v1/users \
-  -H "Authorization: Bearer frn_GxSftc5urm7bxVrYh-RHNEmNDvS4auxwOhwjqXwC-kM=" \
+  -H "Authorization: Bearer ${FRN_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "external_user_id": "user-123",
@@ -162,7 +162,7 @@ All user endpoints require Bearer authentication.
 #### Create User
 ```http
 POST /v1/users
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 **Request Body:**
@@ -187,25 +187,25 @@ Authorization: Bearer {api_key}
 #### Get User
 ```http
 GET /v1/users/{user_id}
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 #### List Users
 ```http
 GET /v1/users?page=1&page_size=10
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 #### Update User
 ```http
 PUT /v1/users/{user_id}
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 #### Delete User
 ```http
 DELETE /v1/users/{user_id}
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 ---
@@ -215,7 +215,7 @@ Authorization: Bearer {api_key}
 #### Add Device
 ```http
 POST /v1/users/{user_id}/devices
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 **Request Body:**
@@ -231,13 +231,13 @@ Authorization: Bearer {api_key}
 #### Get User Devices
 ```http
 GET /v1/users/{user_id}/devices
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 #### Delete Device
 ```http
 DELETE /v1/users/{user_id}/devices/{device_id}
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 ---
@@ -247,13 +247,13 @@ Authorization: Bearer {api_key}
 #### Get Preferences
 ```http
 GET /v1/users/{user_id}/preferences
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 #### Update Preferences
 ```http
 PUT /v1/users/{user_id}/preferences
-Authorization: Bearer {api_key}
+Authorization: Bearer ${FRN_API_KEY}
 ```
 
 **Request Body:**
@@ -583,7 +583,7 @@ Notes:
 
 ```http
 POST /v1/notifications
-Authorization: Bearer frn_app_<API_KEY>
+Authorization: Bearer ${FRN_API_KEY}
 Content-Type: application/json
 
 {
@@ -610,7 +610,7 @@ Content-Type: application/json
 
 ```http
 POST /v1/notifications
-Authorization: Bearer frn_app_<API_KEY>
+Authorization: Bearer ${FRN_API_KEY}
 Content-Type: application/json
 
 {

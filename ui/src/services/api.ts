@@ -281,6 +281,10 @@ export const applicationsAPI = {
     await api.delete(`/apps/${id}`);
   },
 
+  revealKey: async (id: string): Promise<string> => {
+    const {data} = await api.post<ApiResponse<{api_key:string}>>(`/apps/${id}/reveal-key`, {});
+    return data.data.api_key;
+  },
   regenerateKey: async (id: string) => {
     const { data } = await api.post<ApiResponse<Application>>(`/apps/${id}/regenerate-key`, {});
     return data.data;
@@ -1100,6 +1104,9 @@ export const auditAPI = {
 
 // ============= Environment APIs =============
 export const environmentsAPI = {
+  revealKey: async (appId:string, envId:string):Promise<string> => {
+    const {data}=await api.post<ApiResponse<{api_key:string}>>(`/apps/${appId}/environments/${envId}/reveal-key`,{}); return data.data.api_key;
+  },
   create: async (appId: string, payload: CreateEnvironmentRequest) => {
     const { data } = await api.post<ApiResponse<Environment>>(`/apps/${appId}/environments`, payload);
     return data.data;
@@ -1353,6 +1360,33 @@ export const twilioTemplatesAPI = {
   },
 };
 
+export interface ChannelCapabilities {
+  meta: { delivery?: boolean; manual: boolean; embedded: boolean; app_id: string; signup_config_id?: string; graph_version: string };
+  sms?: { providers: string[]; exotel: boolean };
+}
+export const channelCapabilitiesAPI = {
+  get: async (): Promise<ChannelCapabilities> => {
+    try {
+      const { data } = await api.get<ApiResponse<ChannelCapabilities>>('/channel-capabilities');
+      if (!data.data?.meta) throw new Error('Invalid messaging capabilities');
+      const meta = data.data.meta;
+      // Enabled older deployments may still configure these public IDs in the
+      // frontend. Runtime values win; an explicit disable is authoritative.
+      if (meta.embedded) return { ...data.data, meta: { ...meta,
+        app_id: meta.app_id || (import.meta.env.VITE_META_APP_ID as string | undefined)?.trim() || '',
+        signup_config_id: meta.signup_config_id || (import.meta.env.VITE_META_CONFIG_ID as string | undefined)?.trim(),
+      } };
+      return data.data;
+    } catch (error: any) {
+      // Temporary public-ID fallback only for an older server without the route.
+      // Explicitly disabled capabilities and network/server errors never bypass it.
+      if (error.response?.status !== 404) throw error;
+      const appId = (import.meta.env.VITE_META_APP_ID as string | undefined)?.trim() || '';
+      return { meta: { manual: true, embedded: !!appId, app_id: appId, signup_config_id: (import.meta.env.VITE_META_CONFIG_ID as string | undefined)?.trim(), graph_version: 'v23.0' } };
+    }
+  },
+};
+
 // ============= WhatsApp Admin APIs (JWT-protected) =============
 export const whatsappAdminAPI = {
   getStatus: async (appId: string) => {
@@ -1360,7 +1394,7 @@ export const whatsappAdminAPI = {
     return data.data;
   },
 
-  connect: async (payload: { code: string; app_id: string }) => {
+  connect: async (payload: { code: string; app_id: string;revision?:number;phone_number_id?:string;waba_id?:string }) => {
     const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/connect', payload);
     return data.data;
   },
@@ -1373,13 +1407,15 @@ export const whatsappAdminAPI = {
     access_token: string;
     waba_id: string;
     phone_number_id?: string;
+    revision?:number;
+    app_secret?:string;
   }) => {
     const { data } = await api.post<ApiResponse<any>>('/admin/whatsapp/manual-connect', payload);
     return data.data;
   },
 
-  disconnect: async (appId: string) => {
-    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`);
+  disconnect: async (appId: string,revision?:number) => {
+    const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/disconnect`,{revision});
     return data;
   },
 
@@ -1387,6 +1423,31 @@ export const whatsappAdminAPI = {
     const { data } = await api.post<{ success: boolean; message: string }>(`/admin/whatsapp/${appId}/subscribe-webhooks`);
     return data;
   },
+};
+
+export interface DomesticSMSConfig {
+ region:string;entity_id:string;sms_type:string;verification_message_id:string;approval_reference:string;approved_at:string;
+ templates:{id:string;body:string;variable_max_length:number}[];
+ limits:{messages_per_minute:number;units_per_minute:number;daily_units:number;daily_spend_minor:number;cost_minor_per_unit:number;currency:string;max_segments:number;rate_reference:string;rate_verified_at:string};
+}
+export interface ChannelConnectionView {
+ exotel?:DomesticSMSConfig;exotel_enabled?:boolean;meta_enabled?:boolean;
+ id: string; app_id: string; environment_id: string; channel: string;
+ provider: string; credential_source: string; account_id: string; sender_id: string;
+ revision: number; readiness: string; writes_enabled: boolean; inherited?: boolean;
+ effective_revision?:number;
+ facts?: Record<string,string>; secret_configured: Record<string,boolean>;
+}
+export const channelConnectionsAPI = {
+ get: async (appId:string,channel:string,environmentId='default') => {
+  const {data}=await api.get<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}`,{params:{environment_id:environmentId}});return data.data;
+ },
+ update: async (appId:string,channel:string,environmentId:string,payload:Record<string,unknown>) => {
+  const {data}=await api.put<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}`,payload,{params:{environment_id:environmentId}});return data.data;
+ },
+ validate: async(appId:string,channel:string,environmentId:string,revision:number) => {
+  const {data}=await api.post<ApiResponse<ChannelConnectionView>>(`/apps/${appId}/channel-connections/${channel}/validate`,{revision},{params:{environment_id:environmentId}});return data.data;
+ }
 };
 
 // ============= WhatsApp Template APIs (API-key-protected) =============
@@ -1435,6 +1496,9 @@ export const whatsappTemplatesAPI = {
 // FRN persists and submits to Meta (and Twilio in parallel when configured).
 // All endpoints are API-key protected and scoped by app via the auth header.
 export const whatsappRichTemplatesAPI = {
+  createDraft: async(apiKey:string,payload:Record<string,unknown>)=>{const {data}=await api.post<ApiResponse<any>>('/whatsapp/rich-templates/drafts',payload,{headers:{'X-API-Key':apiKey}});return data.data;},
+  updateDraft: async(apiKey:string,id:string,revision:string,template:Record<string,unknown>)=>{const {data}=await api.put<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/draft`,{revision,template},{headers:{'X-API-Key':apiKey}});return data.data;},
+  submitDraft: async(apiKey:string,id:string,revision:string)=>{const {data}=await api.post<ApiResponse<any>>(`/whatsapp/rich-templates/${id}/submit`,{revision},{headers:{'X-API-Key':apiKey}});return data.data;},
   create: async (apiKey: string, payload: Record<string, any>) => {
     const { data } = await api.post<ApiResponse<any>>('/whatsapp/rich-templates/', payload, {
       headers: getAuthHeaders(apiKey),
@@ -1502,8 +1566,8 @@ export const whatsappConversationsAPI = {
     return { messages: data.data, total: data.total };
   },
 
-  reply: async (apiKey: string, contactId: string, payload: { text?: string; template_name?: string }) => {
-    const { data } = await api.post<{ success: boolean; message: string }>(`/whatsapp/conversations/${contactId}/reply`, payload, {
+  reply: async (apiKey: string, contactId: string, payload: { text?: string; template_name?: string; idempotency_key?: string }) => {
+    const { data } = await api.post<{ success: boolean; message: string; notification_id?:string;status?:string;idempotency_key?:string }>(`/whatsapp/conversations/${contactId}/reply`, payload, {
       headers: getAuthHeaders(apiKey),
     });
     return data;

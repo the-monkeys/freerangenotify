@@ -15,6 +15,14 @@ func NewPublicHandler(authRepo auth.Repository) *PublicHandler {
 }
 
 // GetStats returns aggregate public stats (no PII).
+// @Summary Get Stats
+// @Description Public endpoint with its route-specific token, signature or authentication flow.
+// @Tags Public
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/public/stats [get]
 func (h *PublicHandler) GetStats(c *fiber.Ctx) error {
 	count, err := h.authRepo.CountUsers(c.Context())
 	if err != nil {

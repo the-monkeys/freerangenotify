@@ -96,6 +96,7 @@ type CreditLedgerEntry struct {
 
 // CreditReservation is a temporary hold on credits before final delivery outcome.
 type CreditReservation struct {
+	Quote           *ChannelQuote           `json:"quote,omitempty"`
 	ID              string                  `json:"id"`
 	SubscriptionID  string                  `json:"subscription_id,omitempty"`
 	DailyCapKey     string                  `json:"daily_cap_key,omitempty"`
@@ -189,6 +190,10 @@ type PlanBundle struct {
 }
 
 type RateCard struct {
+	PricingModel      string                `json:"pricing_model,omitempty"`
+	DetailedRates     []ChannelRate         `json:"detailed_rates,omitempty"`
+	RatesVerifiedAt   time.Time             `json:"rates_verified_at,omitempty"`
+	RateReferences    []string              `json:"rate_references,omitempty"`
 	Version           string                `json:"version"`
 	Active            bool                  `json:"active"`
 	CreditValueINR    float64               `json:"credit_value_inr"`

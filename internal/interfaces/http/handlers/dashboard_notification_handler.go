@@ -31,6 +31,15 @@ func (h *DashboardNotificationHandler) getUserID(c *fiber.Ctx) (string, error) {
 
 // List returns dashboard notifications for the authenticated user.
 // GET /v1/admin/notifications?limit=50&offset=0
+// @Summary List
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags DashboardNotification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/notifications [get]
+// @Security BearerAuth
 func (h *DashboardNotificationHandler) List(c *fiber.Ctx) error {
 	userID, err := h.getUserID(c)
 	if err != nil {
@@ -65,6 +74,15 @@ func (h *DashboardNotificationHandler) List(c *fiber.Ctx) error {
 // MarkRead marks notifications as read.
 // POST /v1/admin/notifications/read
 // Body: { "ids": ["id1", "id2"] }
+// @Summary Mark Read
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags DashboardNotification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/notifications/read [post]
+// @Security BearerAuth
 func (h *DashboardNotificationHandler) MarkRead(c *fiber.Ctx) error {
 	userID, err := h.getUserID(c)
 	if err != nil {
@@ -92,6 +110,15 @@ func (h *DashboardNotificationHandler) MarkRead(c *fiber.Ctx) error {
 
 // GetUnreadCount returns the number of unread notifications.
 // GET /v1/admin/notifications/unread-count
+// @Summary Get Unread Count
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags DashboardNotification
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/notifications/unread-count [get]
+// @Security BearerAuth
 func (h *DashboardNotificationHandler) GetUnreadCount(c *fiber.Ctx) error {
 	userID, err := h.getUserID(c)
 	if err != nil {

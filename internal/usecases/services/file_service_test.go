@@ -324,7 +324,10 @@ func TestFileService_Retention_NegativeMeansNeverExpire(t *testing.T) {
 }
 
 // AV scanner hook fires for small payloads and rejection deletes bytes.
-type stubScanner struct{ err error; called bool }
+type stubScanner struct {
+	err    error
+	called bool
+}
 
 func (s *stubScanner) Scan(_ context.Context, _, _ string, _ []byte) error {
 	s.called = true
@@ -346,5 +349,13 @@ func TestFileService_Upload_VirusScanRejection(t *testing.T) {
 	}
 	if len(repo.byID) != 0 {
 		t.Error("metadata must not be persisted after AV rejection")
+	}
+}
+
+func TestConfiguredFileCapCannotExceedHardLimit(t *testing.T) {
+	svc := NewFileService(&memStore{}, &memRepo{}, FileServiceConfig{MaxBytes: 100 << 20}, nil)
+	_, err := svc.Upload(context.Background(), UploadInput{AppID: "app-a", Name: "large.txt", MIMEType: "text/plain", DeclaredSize: DefaultMaxFileBytes + 1, Reader: strings.NewReader("x")})
+	if !errors.Is(err, domainfile.ErrFileTooLarge) {
+		t.Fatalf("expected hard file cap, got %v", err)
 	}
 }

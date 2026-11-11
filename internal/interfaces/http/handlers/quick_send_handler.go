@@ -44,6 +44,7 @@ func (h *QuickSendHandler) SetIdempotencyStore(store *idempotency.Store) {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/quick-send [post]
 func (h *QuickSendHandler) Send(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)

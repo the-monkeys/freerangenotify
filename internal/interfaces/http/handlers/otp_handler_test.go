@@ -21,6 +21,7 @@ import (
 // ─── stub OTP service ──────────────────────────────────────────────────────
 
 type stubOTPService struct {
+	lastScope    otp.Scope
 	sendResult   *otp.SendResult
 	sendErr      error
 	verifyResult *otp.VerifyResult
@@ -35,17 +36,44 @@ type stubOTPService struct {
 
 var _ otp.Service = (*stubOTPService)(nil)
 
-func (s *stubOTPService) Send(_ context.Context, in otp.SendInput) (*otp.SendResult, error) {
+func (s *stubOTPService) Send(ctx context.Context, in otp.SendInput) (*otp.SendResult, error) {
+	s.lastScope, _ = otp.ScopeFromContext(ctx)
 	s.lastSendInput = in
 	return s.sendResult, s.sendErr
 }
-func (s *stubOTPService) Verify(_ context.Context, in otp.VerifyInput) (*otp.VerifyResult, error) {
+func (s *stubOTPService) Verify(ctx context.Context, in otp.VerifyInput) (*otp.VerifyResult, error) {
+	s.lastScope, _ = otp.ScopeFromContext(ctx)
 	s.lastVerifyInput = in
 	return s.verifyResult, s.verifyErr
 }
-func (s *stubOTPService) Resend(_ context.Context, id string) (*otp.SendResult, error) {
+func (s *stubOTPService) Resend(ctx context.Context, id string) (*otp.SendResult, error) {
+	s.lastScope, _ = otp.ScopeFromContext(ctx)
 	s.lastResendID = id
 	return s.resendResult, s.resendErr
+}
+
+func TestOTPHandlerScope(t *testing.T) {
+	for _, action := range []string{"send", "verify", "resend"} {
+		t.Run(action, func(t *testing.T) {
+			svc := &stubOTPService{sendResult: &otp.SendResult{}, verifyResult: &otp.VerifyResult{Verified: true}, resendResult: &otp.SendResult{}}
+			h := NewOTPHandler(svc, validator.New(), zaptest.NewLogger(t))
+			app := fiber.New()
+			app.Use(func(c *fiber.Ctx) error {
+				c.Locals("app_id", "app-a")
+				c.Locals("environment_id", "staging")
+				return c.Next()
+			})
+			app.Post("/send", h.Send)
+			app.Post("/verify", h.Verify)
+			app.Post("/resend", h.Resend)
+			resp, _ := doOTPRequest(t, app, "POST", "/"+action, map[string]interface{}{"channel": "email", "recipient": "alice@example.test", "request_id": "otp-fixture", "code": "123456"})
+			require.Less(t, resp.StatusCode, 300)
+			require.Equal(t, otp.Scope{AppID: "app-a", EnvironmentID: "staging"}, svc.lastScope)
+			if action == "send" {
+				require.Equal(t, "staging", svc.lastSendInput.EnvironmentID)
+			}
+		})
+	}
 }
 
 // ─── test app helper ────────────────────────────────────────────────────────

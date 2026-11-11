@@ -44,12 +44,12 @@ const (
 type ApprovalState string
 
 const (
-	ApprovalDraft               ApprovalState = "draft"               // never submitted
-	ApprovalPending             ApprovalState = "pending"             // submitted, awaiting at least one provider
-	ApprovalPartiallySubmitted  ApprovalState = "partially_submitted" // submitted to one provider, the other failed
-	ApprovalApproved            ApprovalState = "approved"            // approved by at least one configured provider
-	ApprovalRejected            ApprovalState = "rejected"            // rejected by all configured providers
-	ApprovalDisabled            ApprovalState = "disabled"            // approved then disabled by provider (rare)
+	ApprovalDraft              ApprovalState = "draft"               // never submitted
+	ApprovalPending            ApprovalState = "pending"             // submitted, awaiting at least one provider
+	ApprovalPartiallySubmitted ApprovalState = "partially_submitted" // submitted to one provider, the other failed
+	ApprovalApproved           ApprovalState = "approved"            // approved by at least one configured provider
+	ApprovalRejected           ApprovalState = "rejected"            // rejected by all configured providers
+	ApprovalDisabled           ApprovalState = "disabled"            // approved then disabled by provider (rare)
 )
 
 // RichTemplate is the FRN-internal representation of a rich WhatsApp
@@ -62,13 +62,18 @@ const (
 // variables and the service resolves the binding. RichTemplate is the
 // authoring shape; the runtime shape is intentionally narrower.
 type RichTemplate struct {
-	ID        string `json:"id" es:"id"`             // FRN-internal ID (frn_tpl_*)
-	TenantID  string `json:"tenant_id" es:"tenant_id"`
-	AppID     string `json:"app_id" es:"app_id"`
-	Name      string `json:"name" es:"name"`         // snake_case, unique per app
-	Kind      RichTemplateKind `json:"kind" es:"kind"`
-	Language  string `json:"language" es:"language"` // BCP-47, e.g. en_US
-	Category  string `json:"category" es:"category"` // MARKETING | UTILITY | AUTHENTICATION
+	EnvironmentID      string           `json:"environment_id,omitempty" es:"environment_id"`
+	ConnectionID       string           `json:"connection_id,omitempty" es:"connection_id"`
+	ConnectionRevision int64            `json:"connection_revision,omitempty" es:"connection_revision"`
+	ProviderAccountID  string           `json:"provider_account_id,omitempty" es:"provider_account_id"`
+	ProviderType       string           `json:"provider_type,omitempty" es:"provider_type"`
+	ID                 string           `json:"id" es:"id"` // FRN-internal ID (frn_tpl_*)
+	TenantID           string           `json:"tenant_id" es:"tenant_id"`
+	AppID              string           `json:"app_id" es:"app_id"`
+	Name               string           `json:"name" es:"name"` // snake_case, unique per app
+	Kind               RichTemplateKind `json:"kind" es:"kind"`
+	Language           string           `json:"language" es:"language"` // BCP-47, e.g. en_US
+	Category           string           `json:"category" es:"category"` // MARKETING | UTILITY | AUTHENTICATION
 
 	// Authoring payload (provider-agnostic). Optional per kind:
 	//   carousel:     Cards (required, 2..10)
@@ -76,14 +81,14 @@ type RichTemplate struct {
 	//   cta_url:      Body, Buttons (1 URL button)
 	//   quick_reply:  Body, Buttons (1..3 QUICK_REPLY buttons)
 	//   list:         Body, ListSections, ListButtonText
-	Body            string           `json:"body,omitempty" es:"body"`
-	Header          *Header          `json:"header,omitempty" es:"header"`
-	Footer          string           `json:"footer,omitempty" es:"footer"`
-	Cards           []CarouselCard   `json:"cards,omitempty" es:"cards"`
-	Buttons         []Button         `json:"buttons,omitempty" es:"buttons"`
-	CouponCode      string           `json:"coupon_code,omitempty" es:"coupon_code"`
-	ListButtonText  string           `json:"list_button_text,omitempty" es:"list_button_text"`
-	ListSections    []ListSection    `json:"list_sections,omitempty" es:"list_sections"`
+	Body           string         `json:"body,omitempty" es:"body"`
+	Header         *Header        `json:"header,omitempty" es:"header"`
+	Footer         string         `json:"footer,omitempty" es:"footer"`
+	Cards          []CarouselCard `json:"cards,omitempty" es:"cards"`
+	Buttons        []Button       `json:"buttons,omitempty" es:"buttons"`
+	CouponCode     string         `json:"coupon_code,omitempty" es:"coupon_code"`
+	ListButtonText string         `json:"list_button_text,omitempty" es:"list_button_text"`
+	ListSections   []ListSection  `json:"list_sections,omitempty" es:"list_sections"`
 
 	// Provider linkage (filled after submission).
 	Providers     ProviderBindings `json:"providers" es:"providers"`
@@ -107,9 +112,9 @@ type Header struct {
 type CarouselCard struct {
 	HeaderImageURL string   `json:"header_image_url,omitempty" es:"header_image_url"`
 	HeaderVideoURL string   `json:"header_video_url,omitempty" es:"header_video_url"`
-	Body           string   `json:"body" es:"body"`             // ≤160 chars
+	Body           string   `json:"body" es:"body"`                     // ≤160 chars
 	Variables      []string `json:"variables,omitempty" es:"variables"` // names matching {{1}}..{{n}}
-	Buttons        []Button `json:"buttons" es:"buttons"`       // 1..2 per card
+	Buttons        []Button `json:"buttons" es:"buttons"`               // 1..2 per card
 }
 
 // Button is a single template button. The relevant fields depend on Type:
@@ -139,8 +144,8 @@ type ListSection struct {
 
 // ListRow is one row inside a list section.
 type ListRow struct {
-	ID          string `json:"id" es:"id"`                     // returned as ReplyID on tap
-	Title       string `json:"title" es:"title"`               // ≤24 chars
+	ID          string `json:"id" es:"id"`                             // returned as ReplyID on tap
+	Title       string `json:"title" es:"title"`                       // ≤24 chars
 	Description string `json:"description,omitempty" es:"description"` // ≤72 chars
 }
 
@@ -156,7 +161,7 @@ type ProviderBindings struct {
 type MetaBinding struct {
 	TemplateName string    `json:"template_name" es:"template_name"`
 	TemplateID   string    `json:"template_id" es:"template_id"`
-	Status       string    `json:"status" es:"status"`             // APPROVED | PENDING | REJECTED | DISABLED
+	Status       string    `json:"status" es:"status"` // APPROVED | PENDING | REJECTED | DISABLED
 	Reason       string    `json:"reason,omitempty" es:"reason"`
 	SubmittedAt  time.Time `json:"submitted_at,omitempty" es:"submitted_at"`
 	UpdatedAt    time.Time `json:"updated_at,omitempty" es:"updated_at"`
@@ -166,7 +171,7 @@ type MetaBinding struct {
 type TwilioBinding struct {
 	ContentSid  string    `json:"content_sid" es:"content_sid"`
 	ApprovalSid string    `json:"approval_sid,omitempty" es:"approval_sid"`
-	Status      string    `json:"status" es:"status"`           // approved | pending | rejected | unsubmitted
+	Status      string    `json:"status" es:"status"` // approved | pending | rejected | unsubmitted
 	Reason      string    `json:"reason,omitempty" es:"reason"`
 	SubmittedAt time.Time `json:"submitted_at,omitempty" es:"submitted_at"`
 	UpdatedAt   time.Time `json:"updated_at,omitempty" es:"updated_at"`
@@ -180,9 +185,9 @@ type TwilioBinding struct {
 // Fields are union-style: TemplateID is the FRN-internal ID; the worker
 // loads the template and maps Variables / Cards onto its components.
 type SendPayload struct {
-	TemplateID string                 `json:"template_id"`
-	Variables  map[string]string      `json:"variables,omitempty"`
-	Cards      []SendPayloadCard      `json:"cards,omitempty"`
+	TemplateID string            `json:"template_id"`
+	Variables  map[string]string `json:"variables,omitempty"`
+	Cards      []SendPayloadCard `json:"cards,omitempty"`
 }
 
 // SendPayloadCard is per-card runtime overrides for a carousel send.
@@ -197,13 +202,14 @@ type SendPayloadCard struct {
 
 // RichTemplateFilter describes a query for listing rich templates.
 type RichTemplateFilter struct {
-	TenantID string `json:"tenant_id"`
-	AppID    string `json:"app_id"`
-	Kind     string `json:"kind,omitempty"`
-	Status   string `json:"status,omitempty"` // aggregate ApprovalState
-	NamePrefix string `json:"name_prefix,omitempty"`
-	Limit  int `json:"limit,omitempty"`
-	Offset int `json:"offset,omitempty"`
+	EnvironmentID string `json:"environment_id,omitempty"`
+	TenantID      string `json:"tenant_id"`
+	AppID         string `json:"app_id"`
+	Kind          string `json:"kind,omitempty"`
+	Status        string `json:"status,omitempty"` // aggregate ApprovalState
+	NamePrefix    string `json:"name_prefix,omitempty"`
+	Limit         int    `json:"limit,omitempty"`
+	Offset        int    `json:"offset,omitempty"`
 }
 
 // RichTemplateRepository is the persistence interface for RichTemplate.

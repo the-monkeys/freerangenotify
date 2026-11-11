@@ -525,6 +525,7 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
                                 </p>
                             )}
                             <BreakdownTable breakdown={breakdownItems} />
+ <p className="mt-3 text-xs text-muted-foreground">FRN processing charges settle when the provider accepts a message. Estimated provider delivery costs are separate; BYOC customers pay their provider directly. Unknown delivery outcomes retain their credit hold for reconciliation.</p>
 
                             <div className="mt-6 flex flex-wrap gap-3 border-t border-border pt-4">
                                 <span className="text-xs text-muted-foreground">
@@ -536,7 +537,7 @@ export default function WorkspaceBilling({ appId }: WorkspaceBillingProps = {}) 
                                     </span>
                                 )}
                                 <span className="text-xs text-muted-foreground">
-                                    Burn rates: {Object.entries(rates?.channel_credit_cost ?? {}).map(([ch, c]) => `${ch}=${c}`).join(', ')}
+                                    {rates?.pricing_model === 'detailed-v1' ? 'Processing fees vary by provider, credential owner, destination and billable units.' : `Flat credit rates: ${Object.entries(rates?.channel_credit_cost ?? {}).map(([ch, c]) => `${ch}=${c}`).join(', ')}`}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
                                     Free caps: WhatsApp {rates?.free_tier_daily_caps?.whatsapp ?? 2}/day, SMS {rates?.free_tier_daily_caps?.sms ?? 3}/day

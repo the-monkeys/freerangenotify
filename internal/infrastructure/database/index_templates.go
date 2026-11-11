@@ -266,6 +266,7 @@ func (it *IndexTemplates) GetNotificationsTemplate() map[string]interface{} {
 						},
 					},
 				},
+				"provider_message_id": map[string]interface{}{"type": "keyword"},
 				"metadata": map[string]interface{}{
 					"type":    "object",
 					"enabled": false, // Don't index metadata for flexibility

@@ -2,14 +2,14 @@ package dto
 
 // MetaWebhookPayload is the top-level webhook payload from Meta Cloud API.
 type MetaWebhookPayload struct {
-	Object string           `json:"object"`
+	Object string             `json:"object"`
 	Entry  []MetaWebhookEntry `json:"entry"`
 }
 
 // MetaWebhookEntry represents a single entry in the webhook payload.
 type MetaWebhookEntry struct {
-	ID      string                `json:"id"` // WABA ID
-	Changes []MetaWebhookChange   `json:"changes"`
+	ID      string              `json:"id"` // WABA ID
+	Changes []MetaWebhookChange `json:"changes"`
 }
 
 // MetaWebhookChange represents a change within an entry.
@@ -20,6 +20,9 @@ type MetaWebhookChange struct {
 
 // MetaWebhookValue contains the actual webhook event data.
 type MetaWebhookValue struct {
+	TemplateName     string              `json:"message_template_name,omitempty"`
+	TemplateEvent    string              `json:"event,omitempty"`
+	TemplateReason   string              `json:"reason,omitempty"`
 	MessagingProduct string              `json:"messaging_product"`
 	Metadata         MetaWebhookMetadata `json:"metadata"`
 	Contacts         []MetaContact       `json:"contacts,omitempty"`
@@ -47,21 +50,21 @@ type MetaContactProfile struct {
 
 // MetaInboundMsg represents a single inbound WhatsApp message.
 type MetaInboundMsg struct {
-	From        string               `json:"from"`
-	ID          string               `json:"id"`
-	Timestamp   string               `json:"timestamp"`
-	Type        string               `json:"type"` // text, image, video, audio, document, location, contacts, interactive, button, reaction, order
-	Text        *MetaMsgText         `json:"text,omitempty"`
-	Image       *MetaMsgMedia        `json:"image,omitempty"`
-	Video       *MetaMsgMedia        `json:"video,omitempty"`
-	Audio       *MetaMsgMedia        `json:"audio,omitempty"`
-	Document    *MetaMsgMedia        `json:"document,omitempty"`
-	Location    *MetaMsgLocation     `json:"location,omitempty"`
-	Context     *MetaMsgContext      `json:"context,omitempty"`
-	Referral    *MetaMsgReferral     `json:"referral,omitempty"`
-	Interactive *MetaMsgInteractive  `json:"interactive,omitempty"` // quick-reply / list-reply taps
-	Button      *MetaMsgButton       `json:"button,omitempty"`      // template button taps (URL/QUICK_REPLY)
-	Reaction    *MetaMsgReaction     `json:"reaction,omitempty"`
+	From        string              `json:"from"`
+	ID          string              `json:"id"`
+	Timestamp   string              `json:"timestamp"`
+	Type        string              `json:"type"` // text, image, video, audio, document, location, contacts, interactive, button, reaction, order
+	Text        *MetaMsgText        `json:"text,omitempty"`
+	Image       *MetaMsgMedia       `json:"image,omitempty"`
+	Video       *MetaMsgMedia       `json:"video,omitempty"`
+	Audio       *MetaMsgMedia       `json:"audio,omitempty"`
+	Document    *MetaMsgMedia       `json:"document,omitempty"`
+	Location    *MetaMsgLocation    `json:"location,omitempty"`
+	Context     *MetaMsgContext     `json:"context,omitempty"`
+	Referral    *MetaMsgReferral    `json:"referral,omitempty"`
+	Interactive *MetaMsgInteractive `json:"interactive,omitempty"` // quick-reply / list-reply taps
+	Button      *MetaMsgButton      `json:"button,omitempty"`      // template button taps (URL/QUICK_REPLY)
+	Reaction    *MetaMsgReaction    `json:"reaction,omitempty"`
 }
 
 // MetaMsgInteractive holds quick-reply or list-reply payloads sent by the user.
@@ -121,9 +124,9 @@ type MetaMsgLocation struct {
 
 // MetaMsgContext holds context (reply-to) info.
 type MetaMsgContext struct {
-	From    string `json:"from"`
-	ID      string `json:"id"`
-	Forwarded bool `json:"forwarded,omitempty"`
+	From      string `json:"from"`
+	ID        string `json:"id"`
+	Forwarded bool   `json:"forwarded,omitempty"`
 }
 
 // MetaMsgReferral holds referral info (ad click, etc).
@@ -137,19 +140,19 @@ type MetaMsgReferral struct {
 
 // MetaStatus represents a message delivery status update.
 type MetaStatus struct {
-	ID           string                `json:"id"` // meta message ID
-	Status       string                `json:"status"` // sent, delivered, read, failed
-	Timestamp    string                `json:"timestamp"`
-	RecipientID  string                `json:"recipient_id"`
-	Conversation *MetaConversation     `json:"conversation,omitempty"`
-	Pricing      *MetaPricing          `json:"pricing,omitempty"`
-	Errors       []MetaWebhookError    `json:"errors,omitempty"`
+	ID           string             `json:"id"`     // meta message ID
+	Status       string             `json:"status"` // sent, delivered, read, failed
+	Timestamp    string             `json:"timestamp"`
+	RecipientID  string             `json:"recipient_id"`
+	Conversation *MetaConversation  `json:"conversation,omitempty"`
+	Pricing      *MetaPricing       `json:"pricing,omitempty"`
+	Errors       []MetaWebhookError `json:"errors,omitempty"`
 }
 
 // MetaConversation holds conversation info from a status webhook.
 type MetaConversation struct {
-	ID     string         `json:"id"`
-	Origin MetaOrigin     `json:"origin"`
+	ID     string     `json:"id"`
+	Origin MetaOrigin `json:"origin"`
 }
 
 // MetaOrigin is the origination info for a conversation.
@@ -159,9 +162,9 @@ type MetaOrigin struct {
 
 // MetaPricing holds pricing info from a status webhook.
 type MetaPricing struct {
-	Billable        bool   `json:"billable"`
-	PricingModel    string `json:"pricing_model"`
-	Category        string `json:"category"` // service, authentication, marketing, utility
+	Billable     bool   `json:"billable"`
+	PricingModel string `json:"pricing_model"`
+	Category     string `json:"category"` // service, authentication, marketing, utility
 }
 
 // MetaWebhookError represents an error in the webhook payload.

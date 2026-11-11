@@ -1,0 +1,10 @@
+{
+  "DELETE /v1/ops/users/{user_id}": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "POST /v1/ops/billing/rebalance-credits": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "POST /v1/ops/credits/grant": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "POST /v1/ops/credits/reset-reserved": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "POST /v1/ops/subscriptions": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "POST /v1/ops/subscriptions/renew": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "PUT /v1/ops/subscriptions/{id}": "Privileged operator HMAC API; not a customer integration endpoint.",
+  "GET /v1/swagger/doc.json": "Public generated specification endpoint; self-reference is intentionally omitted."
+}

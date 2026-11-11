@@ -67,7 +67,9 @@ export type OTPVerifyErrorCode =
     | 'attempts_exhausted'
     | 'expired'
     | 'not_found'
-    | 'internal_error';
+    | 'internal_error'
+    | 'operation_pending'
+    | 'state_unavailable';
 
 // ── Typed error ───────────────────────────────────────────────────────────
 
@@ -160,52 +162,38 @@ function toWire(p: OTPSendParams): Record<string, unknown> {
     return out;
 }
 
+const verifyCodes = new Set<OTPVerifyErrorCode>(['invalid_code', 'attempts_exhausted', 'expired', 'not_found', 'internal_error', 'operation_pending', 'state_unavailable']);
+
+function flatError(body: string): { error: string; attempts_remaining?: number } | undefined {
+    try {
+        const parsed: unknown = JSON.parse(body);
+        if (!parsed || typeof parsed !== 'object') return undefined;
+        const value = parsed as Record<string, unknown>;
+        if (typeof value.error !== 'string') return undefined;
+        return { error: value.error, attempts_remaining: typeof value.attempts_remaining === 'number' ? value.attempts_remaining : undefined };
+    } catch { return undefined; }
+}
+
 function mapSendError(err: unknown): unknown {
     if (!(err instanceof FreeRangeNotifyError)) return err;
-    const body = err.body || '';
-    switch (err.status) {
-        case 404:
-            return new OTPError(err.status, body, 'not_found');
-        case 410:
-            return new OTPError(err.status, body, 'expired');
-        case 409:
-            if (body.includes('already verified')) {
-                return new OTPError(err.status, body, 'already_verified');
-            }
-            if (body.includes('cooldown')) {
-                return new OTPError(err.status, body, 'resend_cooldown');
-            }
-            return err;
-        case 429:
-            return new OTPError(err.status, body, 'rate_limited');
-        default:
-            return err;
-    }
+    const message = flatError(err.body)?.error;
+    const known: Record<string, OTPErrorCode> = {
+        'otp: request not found or expired': 'not_found',
+        'otp: code expired': 'expired',
+        'otp: code already verified': 'already_verified',
+        'otp: resend cooldown in effect': 'resend_cooldown',
+        'otp: rate limit exceeded for recipient': 'rate_limited',
+        'otp: delivery operation pending': 'operation_pending',
+        'otp: state unavailable': 'state_unavailable',
+    };
+    return message && known[message] ? new OTPError(err.status, err.body, known[message]) : err;
 }
 
 function mapVerifyError(err: unknown): unknown {
     if (!(err instanceof FreeRangeNotifyError)) return err;
-    const parsed = tryParseVerifyBody(err.body);
-    const code = parsed?.error;
-    if (code) {
-        return new OTPError(err.status, err.body, code, parsed?.attempts_remaining);
+    const parsed = flatError(err.body);
+    if (parsed && verifyCodes.has(parsed.error as OTPVerifyErrorCode)) {
+        return new OTPError(err.status, err.body, parsed.error as OTPVerifyErrorCode, parsed.attempts_remaining);
     }
-    switch (err.status) {
-        case 404:
-            return new OTPError(err.status, err.body, 'not_found');
-        case 410:
-            return new OTPError(err.status, err.body, 'expired');
-        default:
-            return err;
-    }
-}
-
-function tryParseVerifyBody(body: string): OTPVerifyResult | undefined {
-    if (!body) return undefined;
-    try {
-        const out = JSON.parse(body) as OTPVerifyResult;
-        return out;
-    } catch {
-        return undefined;
-    }
+    return err;
 }

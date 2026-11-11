@@ -37,9 +37,13 @@ func NewVonageProvider(config VonageConfig, logger *zap.Logger) (Provider, error
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	}
 	return &VonageProvider{
 		config:     config,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: client,
 		logger:     logger,
 	}, nil
 }
@@ -94,12 +98,12 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 
 	if resp.StatusCode != http.StatusOK {
 		p.logger.Error("Vonage API HTTP error",
-			zap.Int("status_code", resp.StatusCode),
-			zap.String("body", string(respBody)))
-		return NewErrorResult(
-			fmt.Errorf("Vonage API error: %d - %s", resp.StatusCode, string(respBody)),
-			ErrorTypeProviderAPI,
-		), nil
+			zap.Int("status_code", resp.StatusCode))
+		result := NewErrorResult(fmt.Errorf("Vonage API HTTP error: %d", resp.StatusCode), ErrorTypeProviderAPI)
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+			result.Metadata["acceptance_rejected"] = true
+		}
+		return result, nil
 	}
 
 	var vonageResp struct {
@@ -114,15 +118,17 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 	}
 
 	if len(vonageResp.Messages) > 0 && vonageResp.Messages[0].Status != "0" {
-		return NewErrorResult(
-			fmt.Errorf("Vonage send failed: status=%s error=%s", vonageResp.Messages[0].Status, vonageResp.Messages[0].ErrorText),
-			ErrorTypeProviderAPI,
-		), nil
+		result := NewErrorResult(fmt.Errorf("Vonage message rejected"), ErrorTypeProviderAPI)
+		result.Metadata["acceptance_rejected"] = true
+		return result, nil
 	}
 
 	messageID := ""
 	if len(vonageResp.Messages) > 0 {
 		messageID = vonageResp.Messages[0].MessageID
+	}
+	if messageID == "" {
+		return NewErrorResult(fmt.Errorf("Vonage acceptance unconfirmed"), ErrorTypeUnknown), nil
 	}
 
 	deliveryTime := time.Since(start)
@@ -139,10 +145,12 @@ func (p *VonageProvider) Send(ctx context.Context, notif *notification.Notificat
 	return res, nil
 }
 
-func (p *VonageProvider) GetName() string                                { return "vonage" }
-func (p *VonageProvider) GetSupportedChannel() notification.Channel      { return notification.ChannelSMS }
-func (p *VonageProvider) IsHealthy(_ context.Context) bool               { return p.config.APIKey != "" && p.config.APISecret != "" }
-func (p *VonageProvider) Close() error                                   { return nil }
+func (p *VonageProvider) GetName() string                           { return "vonage" }
+func (p *VonageProvider) GetSupportedChannel() notification.Channel { return notification.ChannelSMS }
+func (p *VonageProvider) IsHealthy(_ context.Context) bool {
+	return p.config.APIKey != "" && p.config.APISecret != ""
+}
+func (p *VonageProvider) Close() error { return nil }
 
 func init() {
 	RegisterFactory("vonage", func(cfg map[string]interface{}, logger *zap.Logger) (Provider, error) {

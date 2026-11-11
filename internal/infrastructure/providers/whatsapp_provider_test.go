@@ -528,10 +528,11 @@ func TestWhatsAppProvider_Send_TwilioMalformedJSON(t *testing.T) {
 
 	result, err := p.Send(context.Background(), baseNotification(), baseUser())
 
-	// Still succeeds (status 201) but ProviderMessageID falls back
+	// A 201 with no real upstream ID cannot prove provider acceptance.
 	require.NoError(t, err)
-	assert.True(t, result.Success)
-	assert.Contains(t, result.ProviderMessageID, "whatsapp-notif-001")
+	assert.False(t, result.Success)
+	assert.Empty(t, result.ProviderMessageID)
+	assert.Equal(t, ErrorTypeUnknown, result.ErrorType)
 }
 
 // ─── Network errors ──────────────────────────────────────────────────────────
@@ -649,7 +650,7 @@ func TestWhatsAppProvider_Send_Status200OK(t *testing.T) {
 
 // ─── Missing SID in successful response ──────────────────────────────────────
 
-func TestWhatsAppProvider_Send_EmptySIDFallback(t *testing.T) {
+func TestWhatsAppProvider_Send_EmptySIDUnknown(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -663,8 +664,9 @@ func TestWhatsAppProvider_Send_EmptySIDFallback(t *testing.T) {
 	result, err := p.Send(context.Background(), baseNotification(), baseUser())
 
 	require.NoError(t, err)
-	assert.True(t, result.Success)
-	assert.Equal(t, "whatsapp-notif-001", result.ProviderMessageID)
+	assert.False(t, result.Success)
+	assert.Empty(t, result.ProviderMessageID)
+	assert.Equal(t, ErrorTypeUnknown, result.ErrorType)
 }
 
 // ─── URL path correctness ────────────────────────────────────────────────────

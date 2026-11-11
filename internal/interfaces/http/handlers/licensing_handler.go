@@ -24,6 +24,16 @@ func NewLicensingHandler(checker license.Checker, subRepo license.Repository, lo
 }
 
 // GetStatus handles GET /v1/license/status
+// @Summary Get Status
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/license/status [get]
 func (h *LicensingHandler) GetStatus(c *fiber.Ctx) error {
 	if h.checker == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "licensing checker unavailable"})
@@ -57,6 +67,14 @@ func (h *LicensingHandler) GetStatus(c *fiber.Ctx) error {
 }
 
 // CreateSubscription handles POST /v1/admin/licensing/subscriptions
+// @Summary Create subscription (legacy admin)
+// @Description Account JWT required. Legacy write route is available only when the privileged ops plane is disabled; operator authorization still applies.
+// @Tags Licensing
+// @Accept json
+// @Produce json
+// @Success 201 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/licensing/subscriptions [post]
 func (h *LicensingHandler) CreateSubscription(c *fiber.Ctx) error {
 	if h.subRepo == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription repository unavailable"})
@@ -109,6 +127,15 @@ func (h *LicensingHandler) CreateSubscription(c *fiber.Ctx) error {
 }
 
 // UpdateSubscription handles PUT /v1/admin/licensing/subscriptions/:id
+// @Summary Update subscription (legacy admin)
+// @Description Account JWT required. Legacy write route is available only when the privileged ops plane is disabled; operator authorization still applies.
+// @Tags Licensing
+// @Accept json
+// @Produce json
+// @Param id path string true "Subscription ID"
+// @Success 200 {object} map[string]interface{}
+// @Security BearerAuth
+// @Router /v1/admin/licensing/subscriptions/{id} [put]
 func (h *LicensingHandler) UpdateSubscription(c *fiber.Ctx) error {
 	if h.subRepo == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription repository unavailable"})
@@ -160,6 +187,16 @@ func (h *LicensingHandler) UpdateSubscription(c *fiber.Ctx) error {
 }
 
 // GetSubscription handles GET /v1/admin/licensing/subscriptions/:id
+// @Summary Get Subscription
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing/subscriptions/{id} [get]
+// @Security BearerAuth
 func (h *LicensingHandler) GetSubscription(c *fiber.Ctx) error {
 	if h.subRepo == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription repository unavailable"})
@@ -179,6 +216,15 @@ func (h *LicensingHandler) GetSubscription(c *fiber.Ctx) error {
 }
 
 // ListSubscriptions handles GET /v1/admin/licensing/subscriptions
+// @Summary List Subscriptions
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing/subscriptions [get]
+// @Security BearerAuth
 func (h *LicensingHandler) ListSubscriptions(c *fiber.Ctx) error {
 	if h.subRepo == nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "subscription repository unavailable"})
@@ -208,6 +254,15 @@ func (h *LicensingHandler) ListSubscriptions(c *fiber.Ctx) error {
 }
 
 // RequestLicense handles POST /v1/admin/licensing/request
+// @Summary Request License
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing/request [post]
+// @Security BearerAuth
 func (h *LicensingHandler) RequestLicense(c *fiber.Ctx) error {
 	if h.checker == nil || h.checker.Mode() != license.ModeSelfHosted {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "license request is only available in self_hosted mode"})
@@ -232,6 +287,15 @@ func (h *LicensingHandler) RequestLicense(c *fiber.Ctx) error {
 }
 
 // ActivateLicense handles POST /v1/admin/licensing/activate
+// @Summary Activate License
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing/activate [post]
+// @Security BearerAuth
 func (h *LicensingHandler) ActivateLicense(c *fiber.Ctx) error {
 	var req struct {
 		LicenseKey string `json:"license_key"`
@@ -276,6 +340,15 @@ func (h *LicensingHandler) ActivateLicense(c *fiber.Ctx) error {
 }
 
 // GetLicense handles GET /v1/admin/licensing
+// @Summary Get License
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing [get]
+// @Security BearerAuth
 func (h *LicensingHandler) GetLicense(c *fiber.Ctx) error {
 	if h.checker == nil || h.checker.Mode() != license.ModeSelfHosted {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "license details endpoint is only available in self_hosted mode"})
@@ -291,6 +364,15 @@ func (h *LicensingHandler) GetLicense(c *fiber.Ctx) error {
 }
 
 // ValidateLicense handles POST /v1/admin/licensing/validate
+// @Summary Validate License
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Licensing
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/licensing/validate [post]
+// @Security BearerAuth
 func (h *LicensingHandler) ValidateLicense(c *fiber.Ctx) error {
 	if h.checker == nil || h.checker.Mode() != license.ModeSelfHosted {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "license validation endpoint is only available in self_hosted mode"})

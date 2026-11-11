@@ -1,11 +1,14 @@
 package routes
 
 import (
+	"github.com/swaggo/swag"
+	_ "github.com/the-monkeys/freerangenotify/docs"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/container"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
+	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/handlers"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/middleware"
 )
 
@@ -13,6 +16,14 @@ import (
 func SetupRoutes(app *fiber.App, c *container.Container) {
 	// API v1 group
 	v1 := app.Group("/v1")
+	v1.Get("/swagger/doc.json", func(ctx *fiber.Ctx) error {
+		raw, err := swag.ReadDoc()
+		if err != nil {
+			return ctx.SendStatus(fiber.StatusServiceUnavailable)
+		}
+		ctx.Type("json")
+		return ctx.SendString(raw)
+	})
 
 	// ── Phase 2: Audit middleware (feature-gated) ──
 	// Applied globally so all state-changing requests are captured.
@@ -35,6 +46,7 @@ func SetupRoutes(app *fiber.App, c *container.Container) {
 
 // setupPublicRoutes configures public routes
 func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
+	v1.Get("/channel-capabilities", (&handlers.ChannelCapabilitiesHandler{Config: c.Config}).Get)
 	// Authentication routes (public)
 	auth := v1.Group("/auth")
 	if c.Config.Security.RateLimitEnabled {
@@ -87,6 +99,9 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		v1.Post("/billing/webhook", c.PaymentHandler.HandleWebhook)
 	}
 
+	if c.ExotelWebhookHandler != nil {
+		v1.Post("/webhooks/exotel/sms/:id", c.ExotelWebhookHandler.Handle)
+	}
 	// Meta WhatsApp webhooks (public, verified via X-Hub-Signature-256 inside handler)
 	if c.MetaWebhookHandler != nil {
 		metaWH := v1.Group("/webhooks/meta")
@@ -144,6 +159,7 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	// Create common middleware — with optional auth service for dashboard JWT extraction
 	var authOpts []middleware.APIKeyAuthOption
+	authOpts = append(authOpts, middleware.WithDashboardAccess(c.MembershipRepo, c.TenantService))
 	if c.EnvironmentService != nil {
 		authOpts = append(authOpts, middleware.WithEnvironmentService(c.EnvironmentService))
 	}
@@ -235,7 +251,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 	if c.FileHandler != nil {
 		files := v1.Group("/files")
 		applyAuth(files)
-		files.Post("/", c.FileHandler.Upload)
+		files.Post("/", middleware.NonUploadBodyLimit(16<<20), c.FileHandler.Upload)
 		files.Get("/", c.FileHandler.List)
 		files.Get("/:id", c.FileHandler.Get)
 		files.Delete("/:id", c.FileHandler.Delete)
@@ -339,6 +355,9 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		waRich := v1.Group("/whatsapp/rich-templates")
 		applyAuth(waRich)
 		waRich.Post("/", c.WhatsAppRichTemplateHandler.Create)
+		waRich.Post("/drafts", c.WhatsAppRichTemplateHandler.CreateDraft)
+		waRich.Put("/:id/draft", c.WhatsAppRichTemplateHandler.UpdateDraft)
+		waRich.Post("/:id/submit", c.WhatsAppRichTemplateHandler.SubmitDraft)
 		waRich.Get("/", c.WhatsAppRichTemplateHandler.List)
 		waRich.Get("/:id", c.WhatsAppRichTemplateHandler.Get)
 		waRich.Delete("/:id", c.WhatsAppRichTemplateHandler.Delete)
@@ -606,12 +625,19 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 	apps.Use(jwtAuth)
 	c.ApplicationHandler.SetRateLimitEnabled(c.Config.Security.AppRateLimitEnabled)
 	apps.Use("/:id", c.ApplicationHandler.AuthorizeQuotaRequest, middleware.ApplicationRateLimit(c.Limiter, c.Config.Security.AppRateLimitEnabled, c.Logger))
+	if c.ChannelConnectionHandler != nil {
+		apps.Get("/:id/channel-connections/:channel", c.ChannelConnectionHandler.Get)
+		apps.Put("/:id/channel-connections/:channel", c.ChannelConnectionHandler.Update)
+		apps.Post("/:id/channel-connections/:channel/validate", c.ChannelConnectionHandler.Validate)
+	}
 	apps.Post("/", c.ApplicationHandler.Create)
 	apps.Get("/", c.ApplicationHandler.List)
+
 	apps.Get("/:id", c.ApplicationHandler.GetByID)
 	apps.Put("/:id", c.ApplicationHandler.Update)
 	apps.Delete("/:id", c.ApplicationHandler.Delete)
 	apps.Post("/:id/regenerate-key", c.ApplicationHandler.RegenerateAPIKey)
+	apps.Post("/:id/reveal-key", c.ApplicationHandler.RevealAPIKey)
 	apps.Put("/:id/settings", c.ApplicationHandler.UpdateSettings)
 	apps.Get("/:id/settings", c.ApplicationHandler.GetSettings)
 	apps.Get("/:id/code-samples", c.ApplicationHandler.GetCodeSamples)
@@ -636,10 +662,12 @@ func setupAdminRoutes(v1 fiber.Router, c *container.Container) {
 
 	// Phase 6: Multi-Environment Management (feature-gated)
 	if c.EnvironmentHandler != nil {
+		c.EnvironmentHandler.SetAppHandler(c.ApplicationHandler)
 		apps.Post("/:id/environments", c.EnvironmentHandler.Create)
 		apps.Get("/:id/environments", c.EnvironmentHandler.List)
 		apps.Post("/:id/environments/promote", c.EnvironmentHandler.Promote)
 		apps.Get("/:id/environments/:envId", c.EnvironmentHandler.Get)
+		apps.Post("/:id/environments/:envId/reveal-key", c.EnvironmentHandler.RevealKey)
 		apps.Delete("/:id/environments/:envId", c.EnvironmentHandler.Delete)
 	}
 

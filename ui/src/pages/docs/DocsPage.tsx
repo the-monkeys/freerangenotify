@@ -27,6 +27,8 @@ const DocsPage: React.FC = () => {
 
     useEffect(() => {
         if (!slug) return;
+        let active=true;
+        setContent(null);
         setLoading(true);
         setNotFound(false);
 
@@ -39,13 +41,16 @@ const DocsPage: React.FC = () => {
 
         loader()
             .then(md => {
+                if(!active)return;
                 setContent(md);
                 setLoading(false);
             })
             .catch(() => {
+                if(!active)return;
                 setNotFound(true);
                 setLoading(false);
             });
+        return ()=>{active=false;};
     }, [slug]);
 
     if (loading) {

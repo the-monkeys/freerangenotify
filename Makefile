@@ -138,7 +138,7 @@ generate:
 # Generate Swagger documentation
 swagger:
 	@echo "Generating Swagger documentation..."
-	swag init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+	go run ./cmd/docsgen
 	@echo "Swagger docs generated at docs/"
 
 # Format Swagger spec

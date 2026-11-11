@@ -44,7 +44,7 @@ func IsDefinitiveDeliveryFailure(err error) bool {
 	if !errors.As(err, &delivery) || delivery == nil {
 		return false
 	}
-	if delivery.Stage == "health" || delivery.Stage == "resolve" {
+	if delivery.Stage == "health" || delivery.Stage == "resolve" || delivery.Stage == "rejected" {
 		return true
 	}
 	if delivery.Provider == "smtp" {
@@ -105,7 +105,7 @@ func safeProviderName(value string) string {
 }
 func safeFailureStage(value string) string {
 	switch value {
-	case "configuration", "health", "connect", "tls", "auth", "mail", "rcpt", "data", "send", "breaker":
+	case "configuration", "health", "connect", "tls", "auth", "mail", "rcpt", "data", "send", "breaker", "rejected":
 		return value
 	}
 	return "send"

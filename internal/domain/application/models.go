@@ -131,6 +131,7 @@ type WhatsAppAppConfig struct {
 	MetaPhoneNumberID string `json:"meta_phone_number_id,omitempty" es:"meta_phone_number_id"`
 	MetaWABAID        string `json:"meta_waba_id,omitempty" es:"meta_waba_id"`
 	MetaAccessToken   string `json:"meta_access_token,omitempty" es:"meta_access_token"`
+	MetaAppSecret     string `json:"meta_app_secret,omitempty" es:"meta_app_secret"`
 
 	// Embedded Signup metadata (populated during OAuth connect flow)
 	MetaBusinessID     string `json:"meta_business_id,omitempty" es:"meta_business_id"`

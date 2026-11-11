@@ -18,7 +18,7 @@ export default defineConfig({
         screenshot: 'only-on-failure',
     },
     webServer: {
-        command: 'npm --prefix ui run dev -- --host 127.0.0.1 --port 3104',
+        command: process.env.FRN_CHANNEL_PREVIEW === '1' ? 'npm --prefix ui run preview -- --host 127.0.0.1 --port 3104' : 'npm --prefix ui run dev -- --host 127.0.0.1 --port 3104',
         cwd: '..',
         url: 'http://127.0.0.1:3104',
         reuseExistingServer: !process.env.CI,

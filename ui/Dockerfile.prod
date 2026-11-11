@@ -9,6 +9,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
+# Public Meta onboarding IDs are fetched from /v1/channel-capabilities at runtime.
+# No customer sender IDs or provider secrets belong in build arguments.
 # Copy source and build
 COPY . .
 RUN npm run build

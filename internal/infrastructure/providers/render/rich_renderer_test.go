@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -310,5 +311,24 @@ func TestBuildSlackPayload_MentionsPrependedToFallbackText(t *testing.T) {
 	}
 	if strings.Contains(text, "<@999>") {
 		t.Fatalf("discord mention must not appear in slack payload, got %q", text)
+	}
+}
+
+func TestTeamsPollIsTextOnly(t *testing.T) {
+	n := &notification.Notification{Content: notification.Content{Title: "Plan", Body: "Choose", Poll: &notification.Poll{Question: "When?", Choices: []notification.PollChoice{{Label: "Morning"}, {Label: "Afternoon"}}}}}
+	payload := BuildTeamsPayload(n, "https://example.test/teams")
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"When?", "Morning", "Afternoon"} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("missing poll text %s", want)
+		}
+	}
+	for _, forbidden := range []string{"Input.ChoiceSet", "Action.Submit"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("unexpected voting controls %s", forbidden)
+		}
 	}
 }

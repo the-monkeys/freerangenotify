@@ -69,8 +69,8 @@ func (h *ImportHandler) SetTopicService(ts topic.Service)                { h.top
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/import [post]
+// @Security BearerAuth
 func (h *ImportHandler) Import(c *fiber.Ctx) error {
 	targetAppID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)
@@ -167,8 +167,8 @@ func (h *ImportHandler) Import(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/links [get]
+// @Security BearerAuth
 func (h *ImportHandler) ListLinks(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)
@@ -210,8 +210,8 @@ func (h *ImportHandler) ListLinks(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/links/{link_id} [delete]
+// @Security BearerAuth
 func (h *ImportHandler) Unlink(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	linkID := c.Params("link_id")
@@ -238,8 +238,8 @@ func (h *ImportHandler) Unlink(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Security BearerAuth
 // @Router /v1/apps/{id}/links [delete]
+// @Security BearerAuth
 func (h *ImportHandler) UnlinkAll(c *fiber.Ctx) error {
 	appID := c.Params("id")
 	userID, _ := c.Locals("user_id").(string)

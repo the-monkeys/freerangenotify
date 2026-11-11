@@ -55,6 +55,7 @@ func NewTemplateHandler(service *usecases.TemplateService, smtpProvider provider
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates [post]
 func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -115,6 +116,7 @@ func (h *TemplateHandler) CreateTemplate(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id} [get]
 func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -164,6 +166,7 @@ func (h *TemplateHandler) GetTemplate(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates [get]
 func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 	var req dto.ListTemplatesRequest
@@ -257,6 +260,7 @@ func (h *TemplateHandler) ListTemplates(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id} [put]
 func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -345,6 +349,7 @@ func (h *TemplateHandler) UpdateTemplate(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id} [delete]
 func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -434,6 +439,7 @@ func (h *TemplateHandler) DeleteTemplate(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/render [post]
 func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -504,6 +510,7 @@ func (h *TemplateHandler) RenderTemplate(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{app_id}/{name}/versions [post]
 func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string) // Ignore params app_id, force context one
@@ -573,6 +580,7 @@ func (h *TemplateHandler) CreateTemplateVersion(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{app_id}/{name}/versions [get]
 func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -623,6 +631,7 @@ func (h *TemplateHandler) GetTemplateVersions(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{app_id}/{name}/versions/{version} [get]
 func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -672,6 +681,7 @@ func (h *TemplateHandler) GetTemplateVersion(c *fiber.Ctx) error {
 // @Success 200 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/library [get]
 func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
 	category := c.Query("category", "")
@@ -706,6 +716,7 @@ func (h *TemplateHandler) GetLibrary(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/library/{name}/render [post]
 func (h *TemplateHandler) RenderLibraryTemplate(c *fiber.Ctx) error {
 	name := c.Params("name")
@@ -775,6 +786,7 @@ func (h *TemplateHandler) RenderLibraryTemplate(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/library/{name}/clone [post]
 func (h *TemplateHandler) CloneFromLibrary(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -849,6 +861,7 @@ func renderPreviewTemplate(body string, data map[string]interface{}) (string, er
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/rollback [post]
 func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -916,6 +929,7 @@ func (h *TemplateHandler) RollbackTemplate(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/diff [get]
 func (h *TemplateHandler) DiffTemplate(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -998,6 +1012,7 @@ func (h *TemplateHandler) DiffTemplate(c *fiber.Ctx) error {
 // @Failure 500 {object} map[string]interface{}
 // @Failure 503 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/test [post]
 func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 	if h.smtpProvider == nil {
@@ -1109,6 +1124,7 @@ func (h *TemplateHandler) SendTest(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/controls [get]
 func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -1159,6 +1175,7 @@ func (h *TemplateHandler) GetControls(c *fiber.Ctx) error {
 // @Failure 404 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/templates/{id}/controls [put]
 func (h *TemplateHandler) UpdateControls(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -1263,6 +1280,18 @@ func validateControlValues(controls []template.TemplateControl, values template.
 
 // SeedTemplates handles POST /v1/templates/seed
 // Accepts a JSON array of templates and creates them idempotently (skip if name already exists).
+// @Summary Seed Templates
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags Template
+// @Produce json
+// @Accept json
+// @Param body body dto.SeedTemplatesRequest true "Request"
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/templates/seed [post]
 func (h *TemplateHandler) SeedTemplates(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
 

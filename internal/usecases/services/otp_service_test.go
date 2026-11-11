@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -38,7 +39,9 @@ func (f *fakeOTPRepo) Create(_ context.Context, req *otp.Request) error {
 	if f.failOn == "Create" {
 		return errors.New("forced create failure")
 	}
-	cp := *req
+	raw, _ := json.Marshal(req)
+	var cp otp.Request
+	_ = json.Unmarshal(raw, &cp)
 	f.store[req.RequestID] = &cp
 	return nil
 }
@@ -50,7 +53,9 @@ func (f *fakeOTPRepo) Get(_ context.Context, id string) (*otp.Request, error) {
 	if !ok {
 		return nil, otp.ErrNotFound
 	}
-	cp := *r
+	raw, _ := json.Marshal(r)
+	var cp otp.Request
+	_ = json.Unmarshal(raw, &cp)
 	return &cp, nil
 }
 
@@ -80,7 +85,9 @@ func (f *fakeOTPRepo) MarkVerified(_ context.Context, id string, t time.Time) er
 func (f *fakeOTPRepo) Update(_ context.Context, req *otp.Request) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cp := *req
+	raw, _ := json.Marshal(req)
+	var cp otp.Request
+	_ = json.Unmarshal(raw, &cp)
 	f.store[req.RequestID] = &cp
 	return nil
 }
@@ -108,7 +115,7 @@ type fakeSender struct {
 	failNext bool
 }
 
-func (s *fakeSender) Send(_ context.Context, req notification.SendRequest) (*notification.Notification, error) {
+func (s *fakeSender) Send(ctx context.Context, req notification.SendRequest) (*notification.Notification, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failNext {
@@ -117,7 +124,8 @@ func (s *fakeSender) Send(_ context.Context, req notification.SendRequest) (*not
 	}
 	s.calls = append(s.calls, req)
 	s.nextID++
-	return &notification.Notification{NotificationID: "notif-test"}, nil
+	id, _ := notification.DispatchIdentityFromContext(ctx)
+	return &notification.Notification{NotificationID: id}, nil
 }
 
 // fakeUserRepo only implements the methods the OTP service uses (userResolver).
@@ -326,7 +334,7 @@ func TestSend_Happy_EmailCreatesUserAndDispatches(t *testing.T) {
 	if res.RequestID == "" || !strings.HasPrefix(res.RequestID, "otp_") {
 		t.Errorf("unexpected request_id %q", res.RequestID)
 	}
-	if res.NotificationID != "notif-test" {
+	if res.NotificationID == "" {
 		t.Errorf("notification_id = %q", res.NotificationID)
 	}
 	if res.TTLSeconds != otp.DefaultTTLSeconds {
@@ -338,8 +346,8 @@ func TestSend_Happy_EmailCreatesUserAndDispatches(t *testing.T) {
 	if len(users.created) != 1 {
 		t.Errorf("expected 1 user created, got %d", len(users.created))
 	}
-	if len(tmpls.calls) != 1 {
-		t.Errorf("expected 1 transient template, got %d", len(tmpls.calls))
+	if len(tmpls.calls) != 0 {
+		t.Errorf("expected no permanent OTP templates, got %d", len(tmpls.calls))
 	}
 	// Persisted record must NOT contain the plaintext code anywhere.
 	for _, r := range repo.store {
@@ -760,4 +768,28 @@ func TestSend_NoIdentifier_Rejected(t *testing.T) {
 	if !errors.Is(err, otp.ErrInvalidRecipient) {
 		t.Errorf("err = %v; want ErrInvalidRecipient", err)
 	}
+}
+
+func (f *fakeOTPRepo) CompareAndSwap(_ context.Context, before, next *otp.Request) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failOn == "CAS" {
+		return errors.New("forced CAS failure")
+	}
+	current, ok := f.store[before.RequestID]
+	if !ok {
+		return otp.ErrNotFound
+	}
+	if current.Revision != before.Revision || current.AppID != before.AppID || current.EnvironmentID != before.EnvironmentID || !current.ExpiresAt.Equal(before.ExpiresAt) {
+		return otp.ErrConflict
+	}
+	if !time.Now().Before(current.ExpiresAt) {
+		return otp.ErrExpired
+	}
+	next.Revision = before.Revision + 1
+	raw, _ := json.Marshal(next)
+	var cp otp.Request
+	_ = json.Unmarshal(raw, &cp)
+	f.store[next.RequestID] = &cp
+	return nil
 }

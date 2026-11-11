@@ -91,6 +91,8 @@ func (s *RateCardService) GetActiveRateCard() *billing.RateCard {
 	cp.ChannelCreditCost = cloneMap(s.activeCard.ChannelCreditCost)
 	cp.OveragePerMessage = cloneMap(s.activeCard.OveragePerMessage)
 	cp.Plans = clonePlans(s.activeCard.Plans)
+	cp.DetailedRates = append([]billing.ChannelRate(nil), s.activeCard.DetailedRates...)
+	cp.RateReferences = append([]string(nil), s.activeCard.RateReferences...)
 	return &cp
 }
 
@@ -182,6 +184,9 @@ func (s *RateCardService) RefreshActiveRateCard(ctx context.Context) error {
 		return nil
 	}
 
+	if err := card.ValidatePublication(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.activeCard = card
 	s.mu.Unlock()
@@ -228,6 +233,7 @@ func (s *RateCardService) UpdateChannelCredits(ctx context.Context, channel stri
 		Active:            false,
 		CreditValueINR:    current.CreditValueINR,
 		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
+		PricingModel:      current.PricingModel, DetailedRates: append([]billing.ChannelRate(nil), current.DetailedRates...), RatesVerifiedAt: current.RatesVerifiedAt, RateReferences: append([]string(nil), current.RateReferences...),
 		OveragePerMessage: cloneMap(current.OveragePerMessage),
 		Plans:             clonePlans(current.Plans),
 		CreatedAt:         createdAt,
@@ -284,6 +290,7 @@ func (s *RateCardService) UpdatePlanBundle(ctx context.Context, plan billing.Pla
 		Active:            false,
 		CreditValueINR:    current.CreditValueINR,
 		ChannelCreditCost: cloneMap(current.ChannelCreditCost),
+		PricingModel:      current.PricingModel, DetailedRates: append([]billing.ChannelRate(nil), current.DetailedRates...), RatesVerifiedAt: current.RatesVerifiedAt, RateReferences: append([]string(nil), current.RateReferences...),
 		OveragePerMessage: cloneMap(current.OveragePerMessage),
 		Plans:             clonePlans(plansForCard(current)),
 		CreatedAt:         createdAt,

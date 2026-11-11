@@ -1,6 +1,7 @@
+import { channelSettingsPatch } from "../lib/channelSettingsPatch";
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI } from '../services/api';
+import { applicationsAPI, providersAPI, workflowsAPI, tenantsAPI,channelConnectionsAPI,type ChannelConnectionView } from '../services/api';
 import type { Application, ApplicationSettings, Workflow as WorkflowType, Tenant } from '../types';
 import AppUsers from '../components/AppUsers';
 import AppTemplates from '../components/AppTemplates';
@@ -18,6 +19,7 @@ import SchedulesList from './schedules/SchedulesList';
 import WorkflowsList from './workflows/WorkflowsList';
 import TemplateLibrary from './TemplateLibrary';
 import WhatsAppConnect from '../components/whatsapp/WhatsAppConnect';
+import ChannelConnections from '../components/whatsapp/ChannelConnections';
 import WhatsAppTemplates from './whatsapp/WhatsAppTemplates';
 import WhatsAppRichTemplates from './whatsapp/WhatsAppRichTemplates';
 import WhatsAppConversations from './whatsapp/WhatsAppConversations';
@@ -50,10 +52,18 @@ const AppDetail: React.FC = () => {
     const [tenants, setTenants] = useState<Tenant[]>([]);
 
     const tabParam = searchParams.get('tab') as TabId | null;
+    const messagingEnvironment=searchParams.get('environment')||'default';
+	const messagingScope=`${id}:${messagingEnvironment}`;
+	const [messagingBinding,setMessagingBinding]=useState<{scope:string;key:string}|null>(null);
+	const captureMessagingBinding=useCallback((view:ChannelConnectionView)=>setMessagingBinding({scope:messagingScope,key:[view.id,view.effective_revision??view.revision,view.provider,view.account_id,view.sender_id,view.environment_id].join(':')}),[messagingScope]);
+	const messagingBindingKey=messagingBinding?.scope===messagingScope?messagingBinding.key:null;
+	const refreshMessaging=async()=>{setMessagingBinding(null);await fetchAppDetails();if(id){const view=await channelConnectionsAPI.get(id,'whatsapp',messagingEnvironment);captureMessagingBinding(view);}};
+    const messagingApiKey=messagingEnvironment==='default' ? app?.api_key||'' : `dashboard:${id}:${messagingEnvironment}`;
+    const setMessagingEnvironment=(environment:string)=>{const next=new URLSearchParams(searchParams);next.set('environment',environment);setSearchParams(next,{replace:true});};
     const activeTab: TabId = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'overview';
 
     const setActiveTab = useCallback((tab: TabId) => {
-        setSearchParams({ tab }, { replace: true });
+        setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set('tab',tab);return next;}, { replace: true });
     }, [setSearchParams]);
 
     // Local state for editing
@@ -81,6 +91,7 @@ const AppDetail: React.FC = () => {
     const [staticHeadersText, setStaticHeadersText] = useState('');
     const [eventMappingText, setEventMappingText] = useState('');
     const [showApiKey, setShowApiKey] = useState(false);
+    const [revealedApiKey, setRevealedApiKey] = useState("");
     const [copied, setCopied] = useState(false);
     const [, setUnreadCountLocal] = useState(0);
     const [confirmAction, setConfirmAction] = useState<'regenerate-key' | 'delete-app' | null>(null);
@@ -98,6 +109,7 @@ const AppDetail: React.FC = () => {
 
 
     useEffect(() => {
+        setRevealedApiKey("");
         setNavAppId(id ?? null);
         return () => {
             setNavAppId(null);
@@ -195,6 +207,9 @@ const AppDetail: React.FC = () => {
                 tenant_id: tenantId,
             });
             setApp(updated);
+            setSettings(updated.settings || {});
+            setStaticHeadersText(Object.entries(updated.settings?.validation_config?.static_headers || {}).map(([key,value]) => `${key}: ${value}`).join('\n'));
+            setEventMappingText(JSON.stringify(updated.settings?.inbound_webhook_config?.event_mapping || {}, null, 2));
             setTenantId(updated.tenant_id || '');
             localStorage.setItem('last_app_name', updated.app_name);
             setNavAppName(updated.app_name);
@@ -211,6 +226,7 @@ const AppDetail: React.FC = () => {
         setConfirmLoading(true);
         try {
             await applicationsAPI.regenerateKey(id);
+            setRevealedApiKey(""); setShowApiKey(false);
             fetchAppDetails();
             toast.success('API Key regenerated successfully!');
             setConfirmAction(null);
@@ -347,11 +363,15 @@ const AppDetail: React.FC = () => {
 
                 {app && activeTab === 'whatsapp' && (
                     <div className="space-y-8">
-                        <WhatsAppConnect appId={app.app_id} />
-                        <TwilioWhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppRichTemplates apiKey={app.api_key} appId={app.app_id} />
-                        <WhatsAppConversations apiKey={app.api_key} appId={app.app_id} />
+                        <ChannelConnections appId={app.app_id} environmentId={messagingEnvironment} onEnvironmentChange={setMessagingEnvironment} onChanged={refreshMessaging} onWhatsAppLoaded={captureMessagingBinding}/>
+                        {messagingEnvironment==='default'&&<WhatsAppConnect appId={app.app_id} onChanged={refreshMessaging}/>}
+                        {messagingBindingKey!==null&&<React.Fragment key={messagingBindingKey}>
+                        <TwilioWhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
+                        <WhatsAppTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
+                        <WhatsAppRichTemplates apiKey={messagingApiKey} appId={app.app_id} bindingKey={messagingBindingKey}/>
+                        <WhatsAppConversations apiKey={messagingApiKey} appId={app.app_id} />
+                        </React.Fragment>}
+						<p className="text-sm text-muted-foreground">Automatic WhatsApp replies are currently unavailable. Configure an inbound workflow or use the inbox to reply.</p>
                     </div>
                 )}
 
@@ -381,7 +401,8 @@ const AppDetail: React.FC = () => {
                                                 return;
                                             }
                                         }
-                                        await applicationsAPI.updateSettings(id!, settings);
+                                        await applicationsAPI.updateSettings(id!, { ...channelSettingsPatch(app.settings || {}, settings), settings_revision: app.updated_at });
+                                        await fetchAppDetails();
                                         setEventMappingText(JSON.stringify(settings.inbound_webhook_config?.event_mapping || {}, null, 2));
                                         toast.success('Settings saved successfully!');
                                     } catch (err: any) {
@@ -930,6 +951,7 @@ const AppDetail: React.FC = () => {
                                                             type="password"
                                                             className="text-sm"
                                                             value={settings.whatsapp_config?.auth_token || ''}
+                                                            placeholder={settings.secret_configured?.["whatsapp_config.auth_token"] ? "Configured — leave blank to keep" : "Enter auth token"}
                                                             onChange={(e) => setSettings({
                                                                 ...settings,
                                                                 whatsapp_config: {
@@ -995,6 +1017,7 @@ const AppDetail: React.FC = () => {
                                                             type="password"
                                                             className="text-sm"
                                                             value={settings.sms_config?.auth_token || ''}
+                                                            placeholder={settings.secret_configured?.["sms_config.auth_token"] ? "Configured — leave blank to keep" : "Enter auth token"}
                                                             onChange={(e) => setSettings({
                                                                 ...settings,
                                                                 sms_config: {
@@ -1177,8 +1200,9 @@ const AppDetail: React.FC = () => {
                 {activeTab === 'environments' && app && (
                     <AppEnvironments
                         appId={app.app_id}
-                        currentApiKey={app.api_key}
-                        onApiKeyChange={(_apiKey, envName) => {
+                        currentApiKey={messagingApiKey}
+                        onApiKeyChange={(_apiKey, envName,envId) => {
+                            setMessagingEnvironment(envId);
                             toast.success(`Switched to ${envName} environment`);
                             // Re-fetch app details to reflect the new API key context
                             fetchAppDetails();
@@ -1197,6 +1221,7 @@ const AppDetail: React.FC = () => {
                         <Card>
                             <CardHeader>
                                 <CardTitle>API Credentials</CardTitle>
+                                <p className="text-sm text-muted-foreground">Keep API keys on your backend. The app ID identifies your app; it does not authenticate requests. <a href="/docs/getting-started" className="underline">Integration guide</a></p>
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-2 mb-6">
@@ -1206,7 +1231,7 @@ const AppDetail: React.FC = () => {
                                             <Input
                                                 id="apiKey"
                                                 type={showApiKey ? "text" : "password"}
-                                                value={app.api_key}
+                                                value={revealedApiKey || "Stored securely — owner access required"}
                                                 readOnly
                                                 className="bg-muted border-border text-muted-foreground pr-24"
                                             />
@@ -1217,7 +1242,9 @@ const AppDetail: React.FC = () => {
                                                     size="sm"
                                                     onClick={async () => {
                                                         try {
-                                                            await navigator.clipboard.writeText(app.api_key);
+                                                            const key = revealedApiKey || await applicationsAPI.revealKey(app.app_id);
+                                                            setRevealedApiKey(key);
+                                                            await navigator.clipboard.writeText(key);
                                                             setCopied(true);
                                                             toast.success('API key copied to clipboard!');
                                                             setTimeout(() => setCopied(false), 2000);
@@ -1235,7 +1262,7 @@ const AppDetail: React.FC = () => {
                                                 </Button>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setShowApiKey(!showApiKey)}
+                                                    onClick={async () => { if (showApiKey) { setShowApiKey(false); setRevealedApiKey(""); return; } try { setRevealedApiKey(await applicationsAPI.revealKey(app.app_id)); setShowApiKey(true); } catch { toast.error("Only the application owner can reveal the API key"); } }}
                                                     className="text-foreground text-xs font-semibold hover:underline px-2"
                                                 >
                                                     {showApiKey ? 'Hide' : 'Show'}
@@ -1251,7 +1278,7 @@ const AppDetail: React.FC = () => {
                                         </Button>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        This key is sensitive. Use the toggle to view the full key. Regenerate to get a new full key.
+                                        Only the application owner can reveal or copy this key. Dashboard access does not require it.
                                     </p>
                                 </div>
                             </CardContent>

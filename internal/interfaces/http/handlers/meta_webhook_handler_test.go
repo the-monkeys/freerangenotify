@@ -3,6 +3,9 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http/httptest"
 	"sync"
@@ -60,8 +63,8 @@ func (r *staticAppRepo) List(context.Context, application.ApplicationFilter) ([]
 	r.listCalls++
 	return r.apps, nil
 }
-func (r *staticAppRepo) Delete(context.Context, string) error                          { return nil }
-func (r *staticAppRepo) RegenerateAPIKey(context.Context, string) (string, error)      { return "", nil }
+func (r *staticAppRepo) Delete(context.Context, string) error                     { return nil }
+func (r *staticAppRepo) RegenerateAPIKey(context.Context, string) (string, error) { return "", nil }
 
 // postWebhook drives the handler with a JSON body and returns the captured
 // InboundMessage list. Signature verification is disabled in tests (no app
@@ -83,13 +86,14 @@ func postWebhook(t *testing.T, body string) (*captureService, *staticAppRepo) {
 			},
 		},
 	}
-	h := NewMetaWebhookHandler(svc, repo, "" /* no signature check */, "token", zap.NewNop())
+	h := NewMetaWebhookHandler(svc, repo, "fixture-signing-secret", "token", zap.NewNop())
 
 	app := fiber.New()
 	app.Post("/webhook", h.HandleWebhook)
 
 	req := httptest.NewRequest("POST", "/webhook", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", signedChannelMetaBody(body))
 	resp, err := app.Test(req, -1)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
@@ -97,6 +101,7 @@ func postWebhook(t *testing.T, body string) (*captureService, *staticAppRepo) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
+	resp.Body.Close()
 	return svc, repo
 }
 
@@ -171,7 +176,7 @@ func TestInbound_TemplateButtonTap(t *testing.T) {
 
 // TestResolveAppID_CacheHit ensures the WABA cache prevents repeat ES list
 // calls for back-to-back webhooks. Critical for any non-trivial inbound load.
-func TestResolveAppID_CacheHit(t *testing.T) {
+func TestResolveAppID_RevalidatesSender(t *testing.T) {
 	body := mustEncode(t, sampleEnvelope("text", map[string]interface{}{
 		"text": map[string]interface{}{"body": "hi"},
 	}))
@@ -181,19 +186,26 @@ func TestResolveAppID_CacheHit(t *testing.T) {
 	// Reuse the same handler by sending a second webhook through it — drive a
 	// fresh request against the same handler instance. The simplest way is
 	// constructing the handler directly so we can assert listCalls.
-	h := NewMetaWebhookHandler(&captureService{}, repo, "", "token", zap.NewNop())
+	h := NewMetaWebhookHandler(&captureService{}, repo, "fixture-signing-secret", "token", zap.NewNop())
 	app := fiber.New()
 	app.Post("/webhook", h.HandleWebhook)
 	for i := 0; i < 3; i++ {
 		req := httptest.NewRequest("POST", "/webhook", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Hub-Signature-256", signedChannelMetaBody(body))
 		if _, err := app.Test(req, -1); err != nil {
 			t.Fatalf("test %d: %v", i, err)
 		}
 	}
-	if repo.listCalls != 1+1 { // 1 from initial postWebhook + 1 from the burst (cache absorbs the rest)
-		t.Errorf("expected exactly 2 list calls (1 per handler), got %d", repo.listCalls)
+	if repo.listCalls != 4 {
+		t.Errorf("expected current sender lookup for each callback, got %d", repo.listCalls)
 	}
+}
+
+func signedChannelMetaBody(body string) string {
+	mac := hmac.New(sha256.New, []byte("fixture-signing-secret"))
+	mac.Write([]byte(body))
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 // --- helpers ---

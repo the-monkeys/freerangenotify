@@ -17,10 +17,12 @@ import (
 // SSEMessage is the internal Redis pub/sub envelope. It carries routing
 // information (UserID) and the notification payload.
 type SSEMessage struct {
-	Type         string                     `json:"type"`
-	UserID       string                     `json:"user_id,omitempty"`
-	Notification *notification.Notification `json:"notification,omitempty"`
-	Data         interface{}                `json:"data,omitempty"`
+	AppID         string                     `json:"app_id,omitempty"`
+	EnvironmentID string                     `json:"environment_id,omitempty"`
+	Type          string                     `json:"type"`
+	UserID        string                     `json:"user_id,omitempty"`
+	Notification  *notification.Notification `json:"notification,omitempty"`
+	Data          interface{}                `json:"data,omitempty"`
 }
 
 // ClientPayload is the clean structure delivered to browser clients.
@@ -39,18 +41,25 @@ type ClientPayload struct {
 
 // Client represents an SSE client connection.
 type Client struct {
-	UserID string
-	Chan   chan string
+	UserID    string
+	Chan      chan string
+	Dashboard bool
+	ExpiresAt time.Time
+}
+type ClientIdentity struct {
+	Dashboard bool
+	ExpiresAt time.Time
 }
 
 // Broadcaster manages SSE connections and broadcasts messages via Redis pub/sub.
 type Broadcaster struct {
-	repo     notification.Repository
-	clients  map[string][]*Client
-	mu       sync.RWMutex
-	logger   *zap.Logger
-	redis    *redis.Client
-	stopChan chan struct{}
+	inboxAuthorize func(context.Context, string, string) bool
+	repo           notification.Repository
+	clients        map[string][]*Client
+	mu             sync.RWMutex
+	logger         *zap.Logger
+	redis          *redis.Client
+	stopChan       chan struct{}
 }
 
 // NewBroadcaster creates a new SSE broadcaster.
@@ -103,17 +112,7 @@ func (b *Broadcaster) listenForMessages() {
 						continue
 					}
 
-					// Build a clean client payload from the notification.
-					clientData := b.buildClientPayload(&sseMsg)
-
-					if sseMsg.UserID != "" {
-						b.logger.Debug("Broadcasting to user",
-							zap.String("user_id", sseMsg.UserID))
-						b.Broadcast(sseMsg.UserID, clientData)
-					} else {
-						b.logger.Debug("Broadcasting to all users")
-						b.BroadcastToAll(clientData)
-					}
+					b.routeMessage(&sseMsg)
 
 				case <-b.stopChan:
 					pubsub.Close()
@@ -175,12 +174,20 @@ func (b *Broadcaster) PublishMessage(msg *SSEMessage) error {
 
 // AddClient registers a new SSE client for a user.
 func (b *Broadcaster) AddClient(userID string) *Client {
+	return b.addClient(userID, ClientIdentity{})
+}
+func (b *Broadcaster) AddDashboardClient(userID string, expires time.Time) *Client {
+	return b.addClient(userID, ClientIdentity{Dashboard: true, ExpiresAt: expires})
+}
+func (b *Broadcaster) addClient(userID string, identity ClientIdentity) *Client {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	client := &Client{
-		UserID: userID,
-		Chan:   make(chan string, 10),
+		UserID:    userID,
+		Chan:      make(chan string, 10),
+		Dashboard: identity.Dashboard,
+		ExpiresAt: identity.ExpiresAt,
 	}
 
 	b.clients[userID] = append(b.clients[userID], client)
@@ -212,8 +219,8 @@ func (b *Broadcaster) RemoveClient(userID string, client *Client) {
 // Broadcast sends a message to all clients of a specific user.
 func (b *Broadcaster) Broadcast(userID string, message string) {
 	b.mu.RLock()
+	defer b.mu.RUnlock()
 	clients := b.clients[userID]
-	b.mu.RUnlock()
 
 	for _, client := range clients {
 		select {
@@ -243,7 +250,11 @@ func (b *Broadcaster) BroadcastToAll(message string) {
 }
 
 // HandleSSE manages the long-lived SSE connection for a single user.
-func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
+func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string, identities ...ClientIdentity) error {
+	identity := ClientIdentity{}
+	if len(identities) > 0 {
+		identity = identities[0]
+	}
 	c.Set("Content-Type", "text/event-stream")
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
@@ -259,7 +270,7 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 
 	ctxDone := c.Context().Done()
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		client := b.AddClient(userID)
+		client := b.addClient(userID, identity)
 
 		defer func() {
 			if r := recover(); r != nil {
@@ -302,6 +313,9 @@ func (b *Broadcaster) HandleSSE(c *fiber.Ctx, userID string) error {
 				}
 
 			case <-ticker.C:
+				if client.Dashboard && !client.ExpiresAt.After(time.Now()) {
+					return
+				}
 				// SSE comment line — not visible to EventSource API but keeps TCP alive
 				fmt.Fprintf(w, ": keepalive\n\n")
 				if err := w.Flush(); err != nil {
@@ -345,4 +359,52 @@ func (b *Broadcaster) handleDeliveryFailure(ctx context.Context, message string)
 // Close stops the broadcaster and releases resources.
 func (b *Broadcaster) Close() {
 	close(b.stopChan)
+}
+
+func (b *Broadcaster) routeMessage(msg *SSEMessage) {
+	if msg.Type == "whatsapp_inbound" || msg.Type == "delivery_status" || msg.Type == "template_status" {
+		if msg.AppID == "" || b.inboxAuthorize == nil {
+			return
+		}
+		b.mu.RLock()
+		users := make([]string, 0, len(b.clients))
+		for id, clients := range b.clients {
+			for _, client := range clients {
+				if client.Dashboard && client.ExpiresAt.After(time.Now()) {
+					users = append(users, id)
+					break
+				}
+			}
+		}
+		b.mu.RUnlock()
+		for _, id := range users {
+			if b.inboxAuthorize(context.Background(), msg.AppID, id) {
+				b.broadcastDashboard(id, b.buildClientPayload(msg))
+			}
+		}
+		return
+	}
+	data := b.buildClientPayload(msg)
+	if msg.UserID != "" {
+		b.Broadcast(msg.UserID, data)
+	} else {
+		b.BroadcastToAll(data)
+	}
+}
+func (b *Broadcaster) broadcastDashboard(userID, message string) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for _, client := range b.clients[userID] {
+		if !client.Dashboard || !client.ExpiresAt.After(time.Now()) {
+			continue
+		}
+		select {
+		case client.Chan <- message:
+		default:
+		}
+	}
+}
+
+func (b *Broadcaster) SetInboxAuthorizer(authorize func(context.Context, string, string) bool) {
+	b.inboxAuthorize = authorize
 }

@@ -43,6 +43,7 @@ func NewTopicHandler(service topic.Service, v *validator.Validator, logger *zap.
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics [post]
 func (h *TopicHandler) Create(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -89,6 +90,7 @@ func (h *TopicHandler) Create(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics [get]
 func (h *TopicHandler) List(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -130,6 +132,7 @@ func (h *TopicHandler) List(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id} [get]
 func (h *TopicHandler) Get(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -158,6 +161,7 @@ func (h *TopicHandler) Get(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/key/{key} [get]
 func (h *TopicHandler) GetByKey(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -185,6 +189,7 @@ func (h *TopicHandler) GetByKey(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id} [delete]
 func (h *TopicHandler) Delete(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -263,6 +268,7 @@ func (h *TopicHandler) Delete(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id} [put]
 func (h *TopicHandler) Update(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -308,6 +314,7 @@ func (h *TopicHandler) Update(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id}/subscribers [post]
 func (h *TopicHandler) AddSubscribers(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -352,6 +359,7 @@ func (h *TopicHandler) AddSubscribers(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id}/subscribers [delete]
 func (h *TopicHandler) RemoveSubscribers(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)
@@ -388,6 +396,7 @@ func (h *TopicHandler) RemoveSubscribers(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/topics/{id}/subscribers [get]
 func (h *TopicHandler) GetSubscribers(c *fiber.Ctx) error {
 	appID := c.Locals("app_id").(string)

@@ -12,3 +12,14 @@ type Service interface {
 	Reply(ctx context.Context, appID, contactWAID, text, templateName string) error
 	MarkRead(ctx context.Context, appID, contactWAID string) error
 }
+
+// EventProcessor is optional for legacy service implementations; production
+// container wiring requires it before accepting provider callbacks.
+type EventProcessor interface {
+	AcceptVerifiedEvent(context.Context, *InboundSenderBinding, *VerifiedEvent) (*EventReceipt, error)
+	ProcessEventReceipt(context.Context, string) error
+	RecoverChannelEvents(context.Context) error
+}
+type TemplateEventConfigurer interface {
+	SetTemplateStatusApplier(func(context.Context, *InboundSenderBinding, *TemplateStatusEvent) error)
+}

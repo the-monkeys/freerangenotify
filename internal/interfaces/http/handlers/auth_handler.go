@@ -11,6 +11,7 @@ import (
 	"github.com/the-monkeys/freerangenotify/internal/config"
 	"github.com/the-monkeys/freerangenotify/internal/domain/auth"
 	"github.com/the-monkeys/freerangenotify/internal/interfaces/http/dto"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 	"github.com/the-monkeys/freerangenotify/pkg/errors"
 	"github.com/the-monkeys/freerangenotify/pkg/validator"
 	"go.uber.org/zap"
@@ -249,7 +250,7 @@ func (h *AuthHandler) RefreshToken(c *fiber.Ctx) error {
 // @Success 200 {object} dto.MessageResponse
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /v1/auth/logout [post]
+// @Router /v1/admin/logout [post]
 func (h *AuthHandler) Logout(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -343,7 +344,7 @@ func (h *AuthHandler) ResetPassword(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /v1/auth/change-password [post]
+// @Router /v1/admin/change-password [post]
 func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -382,7 +383,7 @@ func (h *AuthHandler) ChangePassword(c *fiber.Ctx) error {
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /v1/auth/me [delete]
+// @Router /v1/admin/me [delete]
 func (h *AuthHandler) DeleteOwnAccount(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -418,7 +419,7 @@ func (h *AuthHandler) DeleteOwnAccount(c *fiber.Ctx) error {
 // @Success 200 {object} dto.UserResponse
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
-// @Router /v1/auth/me [get]
+// @Router /v1/admin/me [get]
 func (h *AuthHandler) GetCurrentUser(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -452,6 +453,7 @@ func formatTimePtr(t time.Time) string {
 // SSOLogin redirects the user to the IdP for authentication
 // @Summary Redirect to SSO Identity Provider
 // @Tags Auth
+// @Success 302 {string} string "Redirect to configured identity provider"
 // @Router /v1/auth/sso/login [get]
 func (h *AuthHandler) HandleSSOLogin(oauth2Config *oauth2.Config) fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -482,6 +484,8 @@ func (h *AuthHandler) HandleSSOLogin(oauth2Config *oauth2.Config) fiber.Handler 
 // SSOCallback handles the callback from the IdP
 // @Summary Handle SSO Callback
 // @Tags Auth
+// @Success 302 {string} string "Redirect after state and identity verification"
+// @Failure 400 {object} map[string]interface{}
 // @Router /v1/auth/sso/callback [get]
 func (h *AuthHandler) HandleSSOCallback(oauth2Config *oauth2.Config, verifier *oidc.IDTokenVerifier, frontendURL string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -577,6 +581,17 @@ func generateRandomState() (string, error) {
 }
 
 // SendPhoneOTP handles phone OTP send request
+// @Summary Send PhoneOTP
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Auth
+// @Produce json
+// @Accept json
+// @Param body body dto.PhoneOTPRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/phone/send-otp [post]
+// @Security BearerAuth
 func (h *AuthHandler) SendPhoneOTP(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 
@@ -593,7 +608,7 @@ func (h *AuthHandler) SendPhoneOTP(c *fiber.Ctx) error {
 		Phone: req.Phone,
 	}
 
-	if err := h.authService.SendPhoneOTP(c.Context(), userID, authReq); err != nil {
+	if err := h.authService.SendPhoneOTP(services.WithPhoneOTPClientIP(c.Context(), c.IP()), userID, authReq); err != nil {
 		h.logger.Error("Failed to send phone OTP", zap.String("user_id", userID), zap.Error(err))
 		return err
 	}
@@ -605,6 +620,17 @@ func (h *AuthHandler) SendPhoneOTP(c *fiber.Ctx) error {
 }
 
 // VerifyPhoneOTP handles phone OTP verification
+// @Summary Verify PhoneOTP
+// @Description Requires an account JWT and permission for the selected application or tenant.
+// @Tags Auth
+// @Produce json
+// @Accept json
+// @Param body body dto.PhoneVerifyRequest true "Request"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Router /v1/admin/phone/verify-otp [post]
+// @Security BearerAuth
 func (h *AuthHandler) VerifyPhoneOTP(c *fiber.Ctx) error {
 	userID := c.Locals("user_id").(string)
 

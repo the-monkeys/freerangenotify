@@ -74,6 +74,18 @@ func (h *BizBillingHandler) getAppID(c *fiber.Ctx) (string, error) {
 // ─── Product Endpoints ───────────────────────────────────────────────────
 
 // CreateProduct handles POST /v1/biz/products
+// @Summary Create Product
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/products [post]
+// @Accept json
+// @Param body body bizbilling.CreateProductRequest true "Request body"
 func (h *BizBillingHandler) CreateProduct(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -97,6 +109,16 @@ func (h *BizBillingHandler) CreateProduct(c *fiber.Ctx) error {
 }
 
 // ListProducts handles GET /v1/biz/products
+// @Summary List Products
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/products [get]
 func (h *BizBillingHandler) ListProducts(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -127,6 +149,17 @@ func (h *BizBillingHandler) ListProducts(c *fiber.Ctx) error {
 }
 
 // GetProduct handles GET /v1/biz/products/:id
+// @Summary Get Product
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/products/{id} [get]
 func (h *BizBillingHandler) GetProduct(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -150,6 +183,19 @@ func (h *BizBillingHandler) GetProduct(c *fiber.Ctx) error {
 }
 
 // UpdateProduct handles PUT /v1/biz/products/:id
+// @Summary Update Product
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/products/{id} [put]
+// @Accept json
+// @Param body body bizbilling.UpdateProductRequest true "Request body"
 func (h *BizBillingHandler) UpdateProduct(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -182,6 +228,17 @@ func (h *BizBillingHandler) UpdateProduct(c *fiber.Ctx) error {
 }
 
 // DeleteProduct handles DELETE /v1/biz/products/:id
+// @Summary Delete Product
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/products/{id} [delete]
 func (h *BizBillingHandler) DeleteProduct(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -210,6 +267,18 @@ func (h *BizBillingHandler) DeleteProduct(c *fiber.Ctx) error {
 // ─── Plan Endpoints ──────────────────────────────────────────────────────
 
 // CreatePlan handles POST /v1/biz/plans
+// @Summary Create Plan
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans [post]
+// @Accept json
+// @Param body body bizbilling.CreatePlanRequest true "Request body"
 func (h *BizBillingHandler) CreatePlan(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -234,6 +303,16 @@ func (h *BizBillingHandler) CreatePlan(c *fiber.Ctx) error {
 }
 
 // ListPlans handles GET /v1/biz/plans
+// @Summary List Plans
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans [get]
 func (h *BizBillingHandler) ListPlans(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -265,6 +344,17 @@ func (h *BizBillingHandler) ListPlans(c *fiber.Ctx) error {
 }
 
 // GetPlan handles GET /v1/biz/plans/:id
+// @Summary Get Plan
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id} [get]
 func (h *BizBillingHandler) GetPlan(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -286,6 +376,19 @@ func (h *BizBillingHandler) GetPlan(c *fiber.Ctx) error {
 }
 
 // UpdatePlan handles PUT /v1/biz/plans/:id
+// @Summary Update Plan
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id} [put]
+// @Accept json
+// @Param body body bizbilling.UpdatePlanRequest true "Request body"
 func (h *BizBillingHandler) UpdatePlan(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -317,6 +420,17 @@ func (h *BizBillingHandler) UpdatePlan(c *fiber.Ctx) error {
 }
 
 // DeletePlan handles DELETE /v1/biz/plans/:id
+// @Summary Delete Plan
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id} [delete]
 func (h *BizBillingHandler) DeletePlan(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -342,6 +456,19 @@ func (h *BizBillingHandler) DeletePlan(c *fiber.Ctx) error {
 }
 
 // AddPlanAddon handles POST /v1/biz/plans/:id/addons
+// @Summary Add Plan Addon
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 201 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id}/addons [post]
+// @Accept json
+// @Param body body bizbilling.CreatePlanAddonRequest true "Request body"
 func (h *BizBillingHandler) AddPlanAddon(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -365,6 +492,18 @@ func (h *BizBillingHandler) AddPlanAddon(c *fiber.Ctx) error {
 }
 
 // RemovePlanAddon handles DELETE /v1/biz/plans/:id/addons/:addon_id
+// @Summary Remove Plan Addon
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Param addon_id path string true "addon_id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id}/addons/{addon_id} [delete]
 func (h *BizBillingHandler) RemovePlanAddon(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -382,6 +521,17 @@ func (h *BizBillingHandler) RemovePlanAddon(c *fiber.Ctx) error {
 }
 
 // ListPlanAddons handles GET /v1/biz/plans/:id/addons
+// @Summary List Plan Addons
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "id"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/plans/{id}/addons [get]
 func (h *BizBillingHandler) ListPlanAddons(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -402,6 +552,17 @@ func (h *BizBillingHandler) ListPlanAddons(c *fiber.Ctx) error {
 // ─── Config Endpoints ────────────────────────────────────────────────────
 
 // GetConfig handles GET /v1/biz/config/:config_type
+// @Summary Get Config
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param config_type path string true "config_type"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/config/{config_type} [get]
 func (h *BizBillingHandler) GetConfig(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {
@@ -421,6 +582,17 @@ func (h *BizBillingHandler) GetConfig(c *fiber.Ctx) error {
 }
 
 // UpdateConfig handles PUT /v1/biz/config/:config_type
+// @Summary Update Config
+// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Tags BizBilling
+// @Produce json
+// @Param config_type path string true "config_type"
+// @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/config/{config_type} [put]
 func (h *BizBillingHandler) UpdateConfig(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
 	if err != nil {

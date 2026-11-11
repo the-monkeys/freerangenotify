@@ -8,14 +8,14 @@ import (
 
 // SendNotificationRequest represents the API request to send a notification
 type SendNotificationRequest struct {
-	UserID            string                 `json:"user_id"` // Removed validate:"required"
+	UserID            string                 `json:"user_id"` // Required for recipient channels; webhook destinations may omit this.
 	Channel           string                 `json:"channel" validate:"omitempty,oneof=push email sms webhook in_app sse whatsapp"`
 	MediaURL          string                 `json:"media_url,omitempty" validate:"omitempty,url"`
-	Priority          string                 `json:"priority" validate:"required,oneof=low normal high critical"`
+	Priority          string                 `json:"priority" validate:"omitempty,oneof=low normal high critical"`
 	Title             string                 `json:"title,omitempty"`
 	Body              string                 `json:"body,omitempty"`
 	Data              map[string]interface{} `json:"data,omitempty"`
-	TemplateID        string                 `json:"template_id" validate:"required"`
+	TemplateID        string                 `json:"template_id" validate:"omitempty"` // Optional when body/direct channel content is supplied; template sends use a stored template ID.
 	Category          string                 `json:"category,omitempty"`
 	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
 	Recurrence        *RecurrenceRequest     `json:"recurrence,omitempty"`

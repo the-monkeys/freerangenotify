@@ -97,6 +97,7 @@ func (h *UserHandler) verifyUserOwnership(c *fiber.Ctx, userID string) (*user.Us
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users [post]
 func (h *UserHandler) Create(c *fiber.Ctx) error {
 	var req dto.CreateUserRequest
@@ -159,6 +160,7 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id} [get]
 func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -188,6 +190,7 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/by-external-id/{external_id} [get]
 func (h *UserHandler) GetByExternalID(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
@@ -224,6 +227,7 @@ func (h *UserHandler) GetByExternalID(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id} [put]
 func (h *UserHandler) Update(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -307,6 +311,7 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/by-external-id/{external_id} [put]
 func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
 	appID, err := h.getAppID(c)
@@ -387,6 +392,7 @@ func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id} [delete]
 func (h *UserHandler) Delete(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -492,6 +498,7 @@ func (h *UserHandler) Delete(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users [get]
 func (h *UserHandler) List(c *fiber.Ctx) error {
 	// Get app_id from context
@@ -570,6 +577,7 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/devices [post]
 func (h *UserHandler) AddDevice(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -617,6 +625,7 @@ func (h *UserHandler) AddDevice(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/devices/{device_id} [delete]
 func (h *UserHandler) RemoveDevice(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -651,6 +660,7 @@ func (h *UserHandler) RemoveDevice(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/devices [get]
 func (h *UserHandler) GetDevices(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -686,6 +696,7 @@ func (h *UserHandler) GetDevices(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/preferences [put]
 func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -739,6 +750,7 @@ func (h *UserHandler) UpdatePreferences(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/preferences [get]
 func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 	userID := c.Params("id")
@@ -773,6 +785,7 @@ func (h *UserHandler) GetPreferences(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/bulk [post]
 func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 	appID, ok := c.Locals("app_id").(string)
@@ -990,6 +1003,7 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 // @Failure 401 {object} map[string]interface{}
 // @Failure 404 {object} map[string]interface{}
 // @Security ApiKeyAuth
+// @Security BearerAuth
 // @Router /v1/users/{id}/subscriber-hash [get]
 func (h *UserHandler) GetSubscriberHash(c *fiber.Ctx) error {
 	userID := c.Params("id")
