@@ -112,6 +112,7 @@ type Container struct {
 	PaymentHandler               *handlers.PaymentHandler
 	RenewalHandler               *handlers.RenewalHandler
 	BizBillingHandler            *handlers.BizBillingHandler
+	BizOperationService          *services.BizOperationService
 	BizPortalHandler             *handlers.BizPortalHandler
 	bizSchedulerCancel           context.CancelFunc
 
@@ -918,6 +919,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			logger,
 		)
 		lifecycleGate := services.NewBizLifecycleGate(bizbillingrepo.NewLifecycleStateRepo(esClient))
+		container.BizOperationService = services.NewBizOperationService(esClient, logger)
 		lifecycleSvc.SetLifecycleGate(lifecycleGate)
 		creditSvc.SetLifecycleGate(lifecycleGate)
 		estimateSvc := services.NewBizEstimateService(bizStores, configSvc, lifecycleSvc, portalSvc, bizNotifier, logger)
@@ -961,6 +963,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		)
 		schedCtx, schedCancel := context.WithCancel(context.Background())
 		scheduler.Start(schedCtx)
+		container.BizOperationService.Start(schedCtx)
 		container.bizSchedulerCancel = schedCancel
 
 		logger.Info("Business Billing module enabled")

@@ -48,6 +48,10 @@ var allIndices = []string{
 // bizBillingIndices are created only when features.biz_billing_enabled=true.
 var bizBillingIndices = []string{
 	"frn_biz_lifecycle_states",
+	"frn_biz_operations",
+	"frn_biz_journal",
+	"frn_biz_streams",
+	"frn_biz_customer_balances",
 	"frn_biz_products",
 	"frn_biz_plans",
 	"frn_biz_plan_addons",

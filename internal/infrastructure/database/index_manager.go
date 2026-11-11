@@ -89,6 +89,10 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 
 	if im.bizBillingEnabled {
 		indices["frn_biz_lifecycle_states"] = im.templates.GetBizLifecycleStatesTemplate
+		indices["frn_biz_operations"] = im.templates.GetBizOperationsTemplate
+		indices["frn_biz_journal"] = im.templates.GetBizJournalTemplate
+		indices["frn_biz_streams"] = im.templates.GetBizStreamsTemplate
+		indices["frn_biz_customer_balances"] = im.templates.GetBizCustomerBalancesTemplate
 		indices["frn_biz_products"] = im.templates.GetBizProductsTemplate
 		indices["frn_biz_plans"] = im.templates.GetBizPlansTemplate
 		indices["frn_biz_plan_addons"] = im.templates.GetBizPlanAddonsTemplate
