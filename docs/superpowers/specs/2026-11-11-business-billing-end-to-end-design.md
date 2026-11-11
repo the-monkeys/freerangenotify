@@ -2,7 +2,7 @@
 
 Date: 2026-11-11. Base: `main` at `94acfe1`. Branch: `codex/business-billing-end-to-end`.
 
-Status: proposed design, awaiting user approval after builder review. This is not authorization to deploy or modify production data.
+Status: approved by the user on 2026-11-11, including the proposed safety defaults below. The user selected native execution of all six phases on the same branch, with phase-wise updates. This is not authorization to deploy or modify production data.
 
 ## Intent and agreed decisions
 
@@ -92,19 +92,19 @@ Persist an external-effect intent before creating an order, mandate, or refund. 
 
 Manual cash/bank payments remain available under existing write permissions. Manual records explicitly identify their source; passing a gateway transaction ID does not prove a captured gateway payment. Offline refund recording is distinct from an online gateway refund.
 
-### Collection exclusivity (proposed safety default)
+### Collection exclusivity (approved safety default)
 
 An invoice committed to an automatic collection has a frozen total and one collection owner. Until that collection is captured or definitively stopped, reject manual/portal payments, credit or retainer applications, late-fee changes, voiding, and write-offs against that invoice with an actionable conflict. Do not accept the local change and hope to cancel the remote debit later. Once captured, corrections use explicit credit/refund operations; they do not change the captured charge.
 
 To make an adjustment before collection, the business must first stop the automatic collection and obtain provider confirmation. The invoice can then move to manual collection and be adjusted. If Razorpay cannot stop the relevant debit safely, retain the lock and reconcile its outcome; do not offer an unsupported skip-cycle operation. Future automatic periods can resume only through the supported authorization/lifecycle path. Unissued drafts remain editable. If funds arrive externally despite this lock, record the verified money fact once and reconcile the excess; never discard a real payment merely because the UI would have blocked initiating it.
 
-### Legacy credit currency (proposed compatibility default)
+### Legacy credit currency (approved compatibility default)
 
 New credit notes, retainers, customer-balance entries, and adjustment requests receive an additive currency field. Currency-less new requests continue to use the app's primary billing currency; snapshot that primary currency at onboarding/upgrade, using the existing configured default for the API default when the business has not selected another. Changing it later does not relabel balances. Keep the legacy scalar balance fields as the primary-currency view after migration; additional currencies use separate balances and statements. Never sum currencies or silently convert them.
 
 This default for **new requests** is not evidence about old money. Retain the original currency-less records unchanged. Attribute a legacy opening balance only where source records unambiguously establish its currency. Mixed or untraceable history is held in an unresolved legacy bucket and reported for an explicit business-owner assignment through the migration review UI/tool. It cannot be spent, refunded, or counted as newly available primary-currency credit before assignment. Confirmation records an auditable opening journal entry, not a silent overwrite of the original data. Existing requests keep their shape; attempts to use unresolved historical credit return a specific reconciliation-required error. Compatibility cannot justify guessing the currency of money.
 
-### Refund and credit policy (proposed implementation defaults)
+### Refund and credit policy (approved implementation defaults)
 
 A refund request reserves the remaining refundable amount under concurrency control. Its receipt becomes final only after gateway confirmation or explicit authorized offline recording. Repeated requests/webhooks cannot over-refund. Returning money does not silently reopen an issued/paid invoice; retain its historical paid fact and record the refund/credit adjustment separately. A business must issue a new adjustment/invoice to collect again. Available customer credit and account statements derive from the same journal, with no automatic double credit for a cash refund.
 
@@ -193,4 +193,4 @@ External access needed later: merchant test-mode credentials/capabilities and a 
 
 ## Builder review
 
-A fresh read-only builder review identified three decisions: automatic collection versus manual adjustments; the currency of legacy credit resources and future currency-less calls; and refunding payments whose overpayment credit has been spent. All three now have explicit proposed defaults in the sections above. These are conservative engineering proposals for user approval, not business policies claimed to have been selected by the user. No new implementation or provider test was performed as part of this design review.
+A fresh read-only builder review identified three decisions: automatic collection versus manual adjustments; the currency of legacy credit resources and future currency-less calls; and refunding payments whose overpayment credit has been spent. All three received explicit conservative defaults in the sections above; the user approved this design including those defaults on 2026-11-11. No product implementation or provider test was performed as part of this design review.
