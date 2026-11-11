@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,6 +15,7 @@ import (
 // authenticated by an opaque, time-limited portal token in the URL, which
 // resolves to (app_id, user_id) — all data access is scoped to both.
 type BizPortalHandler struct {
+	checkout     *services.BizCheckoutService
 	portalSvc    *services.BizPortalService
 	lifecycleSvc *services.BizLifecycleService
 	estimateSvc  *services.BizEstimateService
@@ -21,6 +23,10 @@ type BizPortalHandler struct {
 	usageSvc     *services.BizUsageService
 	contractSvc  *services.BizContractService
 	logger       *zap.Logger
+}
+
+func (h *BizPortalHandler) SetCheckoutService(service *services.BizCheckoutService) {
+	h.checkout = service
 }
 
 // NewBizPortalHandler creates a new BizPortalHandler.
@@ -144,6 +150,7 @@ func (h *BizPortalHandler) GetInvoice(c *fiber.Ctx) error {
 	if err != nil || inv.UserID != userID {
 		return h.handleError(c, errors.NotFound("invoice", c.Params("id")))
 	}
+
 	return c.JSON(fiber.Map{"success": true, "data": inv})
 }
 
@@ -168,6 +175,30 @@ func (h *BizPortalHandler) PayInvoice(c *fiber.Ctx) error {
 	inv, err := h.lifecycleSvc.GetInvoice(c.Context(), appID, c.Params("id"))
 	if err != nil || inv.UserID != userID {
 		return h.handleError(c, errors.NotFound("invoice", c.Params("id")))
+	}
+	if h.checkout != nil {
+		upgraded, stateErr := h.checkout.IsUpgraded(c.UserContext(), appID)
+		if stateErr != nil {
+			return (&BizBillingHandler{logger: h.logger}).handleError(c, stateErr)
+		}
+		if upgraded {
+			mode := inv.GatewayMode
+			if mode == "" {
+				mode = bizbilling.GatewayLive
+			}
+			key := c.Get("Idempotency-Key")
+			if key == "" {
+				key = "portal-checkout-" + inv.ID + "-" + strconv.FormatInt(inv.LastSequence, 10)
+			}
+			descriptor, checkoutErr := h.checkout.Start(c.UserContext(), appID, userID, inv.ID, mode, key)
+			if checkoutErr != nil {
+				if descriptor.OperationID != "" {
+					checkoutErr = &bizbilling.OperationFailure{Result: bizbilling.OperationResult{OperationID: descriptor.OperationID, State: bizbilling.OperationAccepted}, Cause: checkoutErr}
+				}
+				return (&BizBillingHandler{logger: h.logger}).handleError(c, checkoutErr)
+			}
+			return c.JSON(fiber.Map{"success": true, "data": descriptor})
+		}
 	}
 	if !bizbilling.PayableStatuses[inv.Status] {
 		return h.handleError(c, errors.BadRequest("invoice is not payable in its current status"))

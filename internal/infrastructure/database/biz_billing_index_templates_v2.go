@@ -9,7 +9,14 @@ func (it *IndexTemplates) GetBizLifecycleStatesTemplate() map[string]interface{}
 }
 
 func billingKeyword() map[string]interface{} { return map[string]interface{}{"type": "keyword"} }
-func billingLong() map[string]interface{}    { return map[string]interface{}{"type": "long"} }
+func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{
+		"id": billingKeyword(), "kind": billingKeyword(), "scope": billingScope(), "provider_id": billingKeyword(), "state": billingKeyword(),
+		"gateway":      map[string]interface{}{"type": "object", "properties": map[string]interface{}{"connection_id": billingKeyword(), "account_id": billingKeyword(), "mode": billingKeyword(), "credential_revision": billingLong()}},
+		"order_intent": map[string]interface{}{"type": "object", "enabled": false}, "order": map[string]interface{}{"type": "object", "enabled": false}, "attempted": map[string]interface{}{"type": "boolean"}, "created_at": map[string]interface{}{"type": "date"}, "updated_at": map[string]interface{}{"type": "date"},
+	})
+}
+func billingLong() map[string]interface{} { return map[string]interface{}{"type": "long"} }
 func billingScope() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "dynamic": false, "properties": map[string]interface{}{"app_id": billingKeyword(), "user_id": billingKeyword(), "currency": billingKeyword()}}
 }

@@ -160,9 +160,12 @@ func (c Command) Validate() error {
 		if c.BalanceAdjustment == nil || c.OpeningBalance != nil || strings.TrimSpace(c.BalanceAdjustment.Reason) == "" || len(c.BalanceAdjustment.Reason) > 1000 {
 			return ErrInvalidMoney
 		}
-	case CommandManualPayment:
+	case CommandManualPayment, CommandGatewayCapture:
 		p := c.ManualPayment
 		if p == nil || p.InvoiceID == "" || p.AmountPaisa < 0 || p.TDSPaisa < 0 || p.Method == "" {
+			return ErrInvalidMoney
+		}
+		if c.Kind == CommandGatewayCapture && (!p.VerifiedCapture || p.Method != "gateway" || p.GatewayPaymentID == "" || p.AmountPaisa <= 0 || p.GatewayBinding == nil || p.GatewayBinding.ConnectionID == "" || p.GatewayBinding.AccountID == "" || !p.GatewayBinding.Mode.Valid() || p.GatewayBinding.CredentialRevision < 1) {
 			return ErrInvalidMoney
 		}
 	case CommandBalanceApplication:

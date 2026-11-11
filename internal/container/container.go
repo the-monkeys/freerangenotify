@@ -114,6 +114,7 @@ type Container struct {
 	BizBillingHandler            *handlers.BizBillingHandler
 	BizOperationService          *services.BizOperationService
 	BizGatewayConnections        *services.BizGatewayConnectionService
+	BizCheckoutService           *services.BizCheckoutService
 	BizPortalHandler             *handlers.BizPortalHandler
 	bizSchedulerCancel           context.CancelFunc
 
@@ -989,6 +990,11 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)
+		merchantGatewayFactory := payment.NewBizRazorpayFactory(container.BizGatewayConnections.Resolve, nil)
+		container.BizCheckoutService = services.NewBizCheckoutService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
+		container.BizCheckoutService.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
+		container.BizPortalHandler.SetCheckoutService(container.BizCheckoutService)
+		container.BizBillingHandler.SetCheckoutService(container.BizCheckoutService)
 
 		// Route biz-invoice gateway payments from the Razorpay webhook.
 		if container.PaymentHandler != nil {

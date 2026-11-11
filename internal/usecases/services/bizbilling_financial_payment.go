@@ -80,7 +80,7 @@ func (s *BizOperationService) buildResourceFinancialEvent(ctx context.Context, c
 	case bizbilling.CommandInvoiceChange:
 		err = s.buildFinancialInvoiceChange(ctx, command, claim, &event)
 
-	case bizbilling.CommandManualPayment:
+	case bizbilling.CommandManualPayment, bizbilling.CommandGatewayCapture:
 		err = s.buildManualPayment(ctx, command, *command.ManualPayment, &event, &balance)
 	case bizbilling.CommandBalanceApplication:
 		err = s.buildBalanceApplication(ctx, command, *command.BalanceApplication, &event, &balance)
@@ -149,6 +149,7 @@ func (s *BizOperationService) buildManualPayment(ctx context.Context, command bi
 	payment := &bizbilling.BizPayment{CreditProvenanceKnown: true, ID: paymentID, AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, InvoiceIDs: []string{inv.ID}, AmountPaisa: amount, TDSPaisa: input.TDSPaisa, ExcessCreditPaisa: excess, Method: input.Method, GatewayPaymentID: input.GatewayPaymentID, Status: bizbilling.PaymentStatusSuccess, Notes: input.Notes, CreatedAt: event.CreatedAt, UpdatedAt: event.CreatedAt, LastSequence: event.Sequence}
 	if input.VerifiedCapture {
 		payment.Gateway = "razorpay"
+		payment.GatewayBinding = input.GatewayBinding
 	}
 	if inv.AmountPaidPaisa, err = bizbilling.CheckedAdd(inv.AmountPaidPaisa, amount); err != nil {
 		return err

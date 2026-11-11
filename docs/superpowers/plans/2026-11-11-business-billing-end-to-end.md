@@ -257,16 +257,18 @@ Task 8 verification: owned local merchant/lifecycle regression batch passed (ser
 
 **Interfaces:** `GatewayFactory.For(ctx,GatewayRef) (BizGateway,error)`; `BizGateway.CreateOrder(ctx,OrderIntent) (GatewayOrder,error)`, `FindOrder(ctx,OrderIntent) (*GatewayOrder,error)`, `FetchPayment(ctx,paymentID string) (CapturedPayment,error)`, `VerifyCheckout(orderID,paymentID,signature string) error`. `OrderIntent` pins operation/invoice/account/mode/currency/amount/receipt; `CapturedPayment` carries provider IDs/account/captured status/amount/currency. `BizCheckoutService.Start(ctx,appID,userID,invoiceID string,mode GatewayMode,key string) (CheckoutDescriptor,error)` and `Verify(ctx,appID,userID,invoiceID string,proof CheckoutProof) (OperationResult,error)`. Descriptor adds public key ID, amount/currency, order ID, merchant display name, operation ID; no private credential.
 
-- [ ] **1. Tests:** `TestBizCheckoutMerchantIsolation`, `TestBizCheckoutVerifyServerFacts`, `TestBizOrderUnknownOutcomeDoesNotRecreate` (RF2). Cover paid/void/automatic-locked invoices, tampered signature, authorized-but-uncaptured payments, amount/currency mismatch, partial manual balances, and lost order response.
+- [x] **1. Tests:** `TestBizCheckoutMerchantIsolation`, `TestBizCheckoutVerifyServerFacts`, `TestBizOrderUnknownOutcomeDoesNotRecreate` (RF2). Cover paid/void/automatic-locked invoices, tampered signature, authorized-but-uncaptured payments, amount/currency mismatch, partial manual balances, and lost order response.
   ```go
   require.Equal(t, invoice.AmountDuePaisa, descriptor.AmountPaisa)
   require.Equal(t, 1, remoteOrderCreateCalls)
   require.NotEqual(t, "paid", uncapturedInvoice.Status)
   ```
-- [ ] **2. Red:** `go test ./internal/infrastructure/payment ./internal/usecases/services -run 'TestBiz(Checkout|Order)' -count=1`; real ES variants through runner.
-- [ ] **3. Implement:** Persist external-effect intent before API call; use bounded 10-second request timeout and cancelable HTTP transport. Reconcile exact stored account/receipt/amount/currency on unknown outcomes; if lookup is ambiguous/unavailable, leave pending instead of issuing another order. Only expose supported verified facts. Add `POST /v1/portal/:token/invoices/:id/verify-payment`; preserve existing `/pay` fields while extending its descriptor. New v2 orders never fall back to platform credentials.
-- [ ] **4. Green:** Strict `httptest` wire tests plus owned repository/real-handler flow; demonstrate one remote order after crash/replay and zero false paid states.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): add scoped invoice checkout and capture verification"`.
+- [x] **2. Red:** `go test ./internal/infrastructure/payment ./internal/usecases/services -run 'TestBiz(Checkout|Order)' -count=1`; real ES variants through runner.
+- [x] **3. Implement:** Persist external-effect intent before API call; use bounded 10-second request timeout and cancelable HTTP transport. Reconcile exact stored account/receipt/amount/currency on unknown outcomes; if lookup is ambiguous/unavailable, leave pending instead of issuing another order. Only expose supported verified facts. Add `POST /v1/portal/:token/invoices/:id/verify-payment`; preserve existing `/pay` fields while extending its descriptor. New v2 orders never fall back to platform credentials.
+- [x] **4. Green:** Strict `httptest` wire tests plus owned repository/real-handler flow; demonstrate one remote order after crash/replay and zero false paid states.
+- [x] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): add scoped invoice checkout and capture verification"`.
+
+Task 9 verification: final owned batch passed (services 67.764s, provider 1.003s, real portal HTTP handlers 2.757s; container/domain/migrate compile passed). Verified wrong account/money/status/proof rejection, one capture on replay, lost remote/persisted response recovery, test/live invoice separation, legacy-mode precondition and a new remainder attempt only after earlier capture settles. Retained attempt chains and key bindings preserve old order identities. Provider canary remains unperformed.
 
 ### Task 10: Signed durable gateway inbox and replay-safe settlement
 

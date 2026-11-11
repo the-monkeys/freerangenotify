@@ -5,6 +5,7 @@ package bizbilling
 const FinancialOperationSchemaVersion = 2
 
 const (
+	CommandGatewayCapture     CommandKind = "gateway_capture"
 	CommandExpenseConvert     CommandKind = "expense_convert"
 	CommandInvoiceReminder    CommandKind = "invoice_reminder"
 	CommandBalanceConsume     CommandKind = "balance_consume"
@@ -74,13 +75,14 @@ type InvoiceChange struct {
 }
 
 type ManualPayment struct {
-	InvoiceID        string `json:"invoice_id"`
-	AmountPaisa      int64  `json:"amount_paisa"`
-	TDSPaisa         int64  `json:"tds_paisa,omitempty"`
-	Method           string `json:"method"`
-	Notes            string `json:"notes,omitempty"`
-	GatewayPaymentID string `json:"gateway_payment_id,omitempty"`
-	VerifiedCapture  bool   `json:"verified_capture,omitempty"`
+	GatewayBinding   *GatewayRef `json:"gateway_binding,omitempty"`
+	InvoiceID        string      `json:"invoice_id"`
+	AmountPaisa      int64       `json:"amount_paisa"`
+	TDSPaisa         int64       `json:"tds_paisa,omitempty"`
+	Method           string      `json:"method"`
+	Notes            string      `json:"notes,omitempty"`
+	GatewayPaymentID string      `json:"gateway_payment_id,omitempty"`
+	VerifiedCapture  bool        `json:"verified_capture,omitempty"`
 }
 type BalanceApplication struct {
 	InvoiceID string `json:"invoice_id"`

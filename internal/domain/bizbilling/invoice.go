@@ -34,6 +34,7 @@ var PayableStatuses = map[InvoiceStatus]bool{
 
 // BizInvoice represents an invoice generated for a customer.
 type BizInvoice struct {
+	GatewayMode        GatewayMode            `json:"gateway_mode,omitempty"`
 	CouponRedemptionID string                 `json:"coupon_redemption_id,omitempty"`
 	LastSequence       int64                  `json:"billing_sequence,omitempty"`
 	TDSPaisa           int64                  `json:"tds_paisa,omitempty"`
@@ -111,6 +112,7 @@ type TaxBreakdown struct {
 
 // CreateInvoiceRequest represents the payload for creating a one-time invoice.
 type CreateInvoiceRequest struct {
+	GatewayMode  GatewayMode            `json:"gateway_mode,omitempty"`
 	UserID       string                 `json:"user_id" validate:"required"`
 	LineItems    []InvoiceLineItem      `json:"line_items" validate:"required,min=1"`
 	Currency     string                 `json:"currency" validate:"required"`

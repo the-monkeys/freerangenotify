@@ -13,6 +13,7 @@ import (
 )
 
 const GatewayConnectionIndex = "frn_biz_gateway_connections"
+const GatewayEffectIndex = "frn_biz_gateway_effects"
 
 type GatewayConnectionRepo struct {
 	store *Store[bizbilling.MerchantConnection]

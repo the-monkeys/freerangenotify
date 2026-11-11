@@ -709,6 +709,9 @@ func (s *BizLifecycleService) CreateOneTimeInvoice(ctx context.Context, appID st
 	if inv, handled, err := s.tryFinancialDraft(ctx, appID, bizbilling.InvoiceDraft{Request: *req}); handled || err != nil {
 		return inv, err
 	}
+	if req.GatewayMode != "" {
+		return nil, errors.Conflict("An explicit business payment mode requires a reviewed billing upgrade")
+	}
 	if req.UserID == "" {
 		return nil, errors.BadRequest("user_id is required")
 	}

@@ -16,6 +16,7 @@ const (
 
 // BizPayment represents a payment record for an invoice.
 type BizPayment struct {
+	GatewayBinding            *GatewayRef            `json:"gateway_binding,omitempty"`
 	CreditProvenanceKnown     bool                   `json:"credit_provenance_known,omitempty"`
 	LastSequence              int64                  `json:"billing_sequence,omitempty"`
 	ExcessCreditPaisa         int64                  `json:"excess_credit_paisa,omitempty"`

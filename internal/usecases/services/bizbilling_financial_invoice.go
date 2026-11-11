@@ -37,6 +37,13 @@ func (s *BizOperationService) invoiceTotals(ctx context.Context, scope bizbillin
 
 func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, command bizbilling.Command, event *bizbilling.JournalEvent) error {
 	input := command.InvoiceDraft
+	mode := input.Request.GatewayMode
+	if mode == "" {
+		mode = bizbilling.GatewayLive
+	}
+	if !mode.Valid() {
+		return bizbilling.ErrInvalidMoney
+	}
 	items := append([]bizbilling.InvoiceLineItem(nil), input.Request.LineItems...)
 	totals, err := s.invoiceTotals(ctx, command.Scope, items)
 	if err != nil {
@@ -63,6 +70,7 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 	}
 	due := dueDateFor(terms, event.CreatedAt)
 	invoice := &bizbilling.BizInvoice{ID: event.OperationID + "-invoice", AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, LastSequence: event.Sequence,
+		GatewayMode:   mode,
 		InvoiceNumber: number, InvoiceType: typeOf, Status: bizbilling.InvoiceStatusDraft, SubscriptionID: input.SubscriptionID, EstimateID: input.EstimateID,
 		LineItems: items, SubtotalPaisa: totals.SubtotalPaisa, DiscountPaisa: totals.DiscountPaisa, TaxAmountPaisa: totals.TaxPaisa, TaxBreakdown: totals.Breakdown,
 		TotalPaisa: totals.TotalPaisa, AmountDuePaisa: totals.TotalPaisa, PaymentTerms: terms, DueDate: &due,

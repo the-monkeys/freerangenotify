@@ -50,6 +50,7 @@ var bizBillingIndices = []string{
 	"frn_biz_migration_reviews",
 	"frn_biz_legacy_resolutions",
 	"frn_biz_gateway_connections",
+	"frn_biz_gateway_effects",
 	"frn_biz_credit_applications",
 	"frn_biz_coupon_redemptions",
 	"frn_biz_coupon_customer_usage",

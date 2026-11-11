@@ -29,6 +29,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	checkout     *services.BizCheckoutService
 	merchants    *services.BizGatewayConnectionService
 	migration    *services.BizMigrationService
 	operations   *services.BizOperationService
@@ -630,6 +631,10 @@ func (h *BizBillingHandler) handleError(c *fiber.Ctx, err error) error {
 	stderrors.As(err, &operation)
 	status, code, message, retryable := fiber.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", false
 	switch {
+	case stderrors.Is(err, bizbilling.ErrInvalidGatewayProof):
+		status, code, message = 400, "BILLING_PAYMENT_NOT_VERIFIED", "The payment could not be verified. No payment was recorded."
+	case stderrors.Is(err, bizbilling.ErrGatewayPending):
+		status, code, message, retryable = 503, "BILLING_GATEWAY_PENDING", "The payment provider outcome is pending verification. Retry this operation; do not create another payment.", true
 	case stderrors.Is(err, bizbilling.ErrMerchantAuthentication):
 		status, code, message = 400, "BILLING_MERCHANT_AUTHENTICATION_FAILED", "Payment account credentials could not be authenticated."
 	case stderrors.Is(err, bizbilling.ErrMerchantUnavailable):

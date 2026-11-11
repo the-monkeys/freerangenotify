@@ -146,6 +146,7 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		portal.Get("/invoices", c.BizPortalHandler.ListInvoices)
 		portal.Get("/invoices/:id", c.BizPortalHandler.GetInvoice)
 		portal.Post("/invoices/:id/pay", c.BizPortalHandler.PayInvoice)
+		portal.Post("/invoices/:id/verify-payment", c.BizPortalHandler.VerifyInvoicePayment)
 		portal.Get("/estimates", c.BizPortalHandler.ListEstimates)
 		portal.Post("/estimates/:id/accept", c.BizPortalHandler.AcceptEstimate)
 		portal.Post("/estimates/:id/reject", c.BizPortalHandler.RejectEstimate)
@@ -442,6 +443,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		biz.Delete("/gateway-connections/:mode", c.BizBillingHandler.DisconnectMerchantConnection)
 		biz.Use(c.BizBillingHandler.GuardMutations)
 		biz.Get("/operations/:id", c.BizBillingHandler.GetBillingOperation)
+		biz.Get("/gateway-effects/:id", c.BizBillingHandler.GetGatewayEffect)
 		biz.Post("/operations/:id/resume", c.BizBillingHandler.ResumeBillingOperation)
 
 		// ── Products ──
