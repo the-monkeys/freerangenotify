@@ -16,11 +16,41 @@ const GatewayConnectionIndex = "frn_biz_gateway_connections"
 const GatewayEffectIndex = "frn_biz_gateway_effects"
 
 type GatewayConnectionRepo struct {
-	store *Store[bizbilling.MerchantConnection]
+	store  *Store[bizbilling.MerchantConnection]
+	proofs *Store[bizbilling.MerchantAccountProof]
 }
 
 func NewGatewayConnectionRepo(es *elasticsearch.Client, logger *zap.Logger) *GatewayConnectionRepo {
-	return &GatewayConnectionRepo{NewStore[bizbilling.MerchantConnection](es, GatewayConnectionIndex, logger, repository.RefreshFalse)}
+	return &GatewayConnectionRepo{store: NewStore[bizbilling.MerchantConnection](es, GatewayConnectionIndex, logger, repository.RefreshFalse), proofs: NewStore[bizbilling.MerchantAccountProof](es, GatewayConnectionIndex, logger, repository.RefreshFalse)}
+}
+
+func (r *GatewayConnectionRepo) AccountProof(ctx context.Context, ref bizbilling.GatewayRef) (*bizbilling.MerchantAccountProof, error) {
+	proof, err := r.proofs.Get(ctx, GatewayConnectionRevisionID(ref)+"_account_proof")
+	if err != nil {
+		return nil, err
+	}
+	if proof.Gateway != ref || proof.AppID == "" || proof.EventDigest == "" || proof.PaymentID == "" {
+		return nil, bizbilling.ErrReconciliationRequired
+	}
+	return proof, nil
+}
+func (r *GatewayConnectionRepo) RecordAccountProof(ctx context.Context, proof *bizbilling.MerchantAccountProof) error {
+	connection, err := r.Get(ctx, proof.Gateway)
+	if err != nil {
+		return err
+	}
+	if connection.AppID != proof.AppID || proof.EventDigest == "" || proof.PaymentID == "" {
+		return bizbilling.ErrReconciliationRequired
+	}
+	_, _ = r.proofs.CreateIfAbsent(ctx, GatewayConnectionRevisionID(proof.Gateway)+"_account_proof", proof)
+	confirmed, err := r.AccountProof(ctx, proof.Gateway)
+	if err != nil {
+		return err
+	}
+	if confirmed.AppID != proof.AppID {
+		return bizbilling.ErrReconciliationRequired
+	}
+	return nil
 }
 
 func GatewayConnectionRevisionID(ref bizbilling.GatewayRef) string {

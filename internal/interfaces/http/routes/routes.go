@@ -140,6 +140,11 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 	}
 
 	// Business Billing: customer portal (token in URL is the credential).
+	if c.BizBillingGatewayCallbackHandler != nil {
+		v1.Post("/webhooks/biz/razorpay/:connection_id", c.BizBillingGatewayCallbackHandler.Handle)
+	}
+
+	// Business Billing: customer portal (token in URL is the credential).
 	if c.BizPortalHandler != nil {
 		portal := v1.Group("/portal/:token")
 		portal.Get("/", c.BizPortalHandler.Overview)
@@ -444,6 +449,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		biz.Use(c.BizBillingHandler.GuardMutations)
 		biz.Get("/operations/:id", c.BizBillingHandler.GetBillingOperation)
 		biz.Get("/gateway-effects/:id", c.BizBillingHandler.GetGatewayEffect)
+		biz.Get("/gateway-events", c.BizBillingHandler.ListGatewayEvents)
+		biz.Get("/gateway-events/:id", c.BizBillingHandler.GetGatewayEvent)
 		biz.Post("/operations/:id/resume", c.BizBillingHandler.ResumeBillingOperation)
 
 		// ── Products ──

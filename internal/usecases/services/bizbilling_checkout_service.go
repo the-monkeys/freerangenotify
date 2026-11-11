@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -17,13 +18,15 @@ import (
 )
 
 type BizCheckoutService struct {
-	lifecycle *BizLifecycleService
-	merchants *BizGatewayConnectionService
-	factory   bizbilling.GatewayFactory
-	effects   *bizbillingrepo.Store[bizbilling.GatewayEffect]
-	keys      *bizbillingrepo.Store[bizbilling.CheckoutKey]
-	enabled   bool
-	logger    *zap.Logger
+	lifecycle       *BizLifecycleService
+	merchants       *BizGatewayConnectionService
+	factory         bizbilling.GatewayFactory
+	effects         *bizbillingrepo.Store[bizbilling.GatewayEffect]
+	keys            *bizbillingrepo.Store[bizbilling.CheckoutKey]
+	enabled         bool
+	logger          *zap.Logger
+	reconcileMu     sync.Mutex
+	reconcileCursor string
 }
 
 func NewBizCheckoutService(es *elasticsearch.Client, lifecycle *BizLifecycleService, merchants *BizGatewayConnectionService, factory bizbilling.GatewayFactory, logger *zap.Logger) *BizCheckoutService {
@@ -127,7 +130,7 @@ func (s *BizCheckoutService) Start(ctx context.Context, app, user, invoice strin
 	if err != nil {
 		return pendingCheckout(effect), err
 	}
-	credentials, err := s.merchants.Resolve(ctx, effect.Gateway)
+	credentials, err := s.merchants.ResolveAPI(ctx, effect.Gateway)
 	if err != nil {
 		return pendingCheckout(effect), err
 	}
@@ -221,7 +224,33 @@ func (s *BizCheckoutService) Verify(ctx context.Context, app, user, invoice stri
 		return bizbilling.OperationResult{}, bizbilling.ErrGatewayPending
 	}
 	if err = gateway.VerifyCheckout(effect.Order.ID, proof.PaymentID, proof.Signature); err != nil {
-		return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
+		refs, listErr := s.merchants.VerifiedCheckoutRevisions(ctx, effect.Gateway)
+		if listErr != nil {
+			return bizbilling.OperationResult{}, bizbilling.ErrMerchantUnavailable
+		}
+		valid := false
+		var unavailable error
+		if exact, ok := s.factory.(interface {
+			ForExact(context.Context, bizbilling.GatewayRef) (bizbilling.BizGateway, error)
+		}); ok {
+			for _, ref := range refs {
+				candidate, resolveErr := exact.ForExact(ctx, ref)
+				if resolveErr != nil {
+					unavailable = resolveErr
+					continue
+				}
+				if candidate.VerifyCheckout(effect.Order.ID, proof.PaymentID, proof.Signature) == nil {
+					valid = true
+					break
+				}
+			}
+		}
+		if !valid {
+			if unavailable != nil {
+				return bizbilling.OperationResult{}, bizbilling.ErrMerchantUnavailable
+			}
+			return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
+		}
 	}
 	payment, err := gateway.FetchPayment(ctx, proof.PaymentID)
 	if err != nil {
@@ -397,4 +426,61 @@ func (s *BizCheckoutService) findInvoiceOrder(ctx context.Context, app, user, or
 		return nil, bizbilling.ErrInvalidGatewayProof
 	}
 	return rows[0], nil
+}
+
+// Recovery uses only accepted intents and their pinned credentials. It neither
+// selects today's merchant slot nor manufactures a replacement order.
+func (s *BizCheckoutService) ReconcileOrders(ctx context.Context, limit int) (int, error) {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	if limit < 1 || limit > 200 {
+		limit = 100
+	}
+	if err := s.effects.Refresh(ctx); err != nil {
+		return 0, err
+	}
+	find := func(after string) ([]*bizbilling.GatewayEffect, error) {
+		filters := []any{map[string]any{"term": map[string]any{"kind": "order"}}, map[string]any{"term": map[string]any{"state": "pending"}}}
+		if after != "" {
+			filters = append(filters, map[string]any{"range": map[string]any{"id": map[string]any{"gt": after}}})
+		}
+		rows, _, err := s.effects.Find(ctx, map[string]any{"size": limit, "sort": []any{map[string]any{"id": "asc"}}, "query": map[string]any{"bool": map[string]any{"filter": filters}}})
+		return rows, err
+	}
+	rows, err := find(s.reconcileCursor)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 && s.reconcileCursor != "" {
+		s.reconcileCursor = ""
+		rows, err = find("")
+		if err != nil {
+			return 0, err
+		}
+	}
+	count := 0
+	var pending error
+	for _, effect := range rows {
+		if ctx.Err() != nil {
+			return count, ctx.Err()
+		}
+		s.reconcileCursor = effect.ID
+		if effect.OrderIntent == nil || effect.Scope.Validate() != nil || effect.OrderIntent.Scope != effect.Scope || effect.OrderIntent.Gateway != effect.Gateway {
+			pending = bizbilling.ErrReconciliationRequired
+			continue
+		}
+		run, done, err := BeginBizMutation(ctx, s.lifecycle.gate, effect.Scope.AppID)
+		if err != nil {
+			pending = bizbilling.ErrGatewayPending
+			continue
+		}
+		_, err = s.ensureOrder(run, effect)
+		releaseBizMutation(s.logger, done)
+		if err != nil {
+			pending = bizbilling.ErrGatewayPending
+		} else {
+			count++
+		}
+	}
+	return count, pending
 }

@@ -29,25 +29,26 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
-	checkout     *services.BizCheckoutService
-	merchants    *services.BizGatewayConnectionService
-	migration    *services.BizMigrationService
-	operations   *services.BizOperationService
-	gate         *services.BizLifecycleGate
-	productSvc   *services.BizProductService
-	planSvc      *services.BizPlanService
-	configSvc    *services.BizConfigService
-	lifecycleSvc *services.BizLifecycleService
-	estimateSvc  *services.BizEstimateService
-	couponSvc    *services.BizCouponService
-	creditSvc    *services.BizCreditService
-	contractSvc  *services.BizContractService
-	usageSvc     *services.BizUsageService
-	expenseSvc   *services.BizExpenseService
-	portalSvc    *services.BizPortalService
-	analyticsSvc *services.BizAnalyticsService
-	connectorSvc *services.BizConnectorService
-	logger       *zap.Logger
+	gatewayEvents *services.BizGatewayEventService
+	checkout      *services.BizCheckoutService
+	merchants     *services.BizGatewayConnectionService
+	migration     *services.BizMigrationService
+	operations    *services.BizOperationService
+	gate          *services.BizLifecycleGate
+	productSvc    *services.BizProductService
+	planSvc       *services.BizPlanService
+	configSvc     *services.BizConfigService
+	lifecycleSvc  *services.BizLifecycleService
+	estimateSvc   *services.BizEstimateService
+	couponSvc     *services.BizCouponService
+	creditSvc     *services.BizCreditService
+	contractSvc   *services.BizContractService
+	usageSvc      *services.BizUsageService
+	expenseSvc    *services.BizExpenseService
+	portalSvc     *services.BizPortalService
+	analyticsSvc  *services.BizAnalyticsService
+	connectorSvc  *services.BizConnectorService
+	logger        *zap.Logger
 }
 
 // NewBizBillingHandler creates a new BizBillingHandler.
@@ -632,7 +633,7 @@ func (h *BizBillingHandler) handleError(c *fiber.Ctx, err error) error {
 	status, code, message, retryable := fiber.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", false
 	switch {
 	case stderrors.Is(err, bizbilling.ErrInvalidGatewayProof):
-		status, code, message = 400, "BILLING_PAYMENT_NOT_VERIFIED", "The payment could not be verified. No payment was recorded."
+		status, code, message = 400, "BILLING_PAYMENT_NOT_VERIFIED", "The checkout result could not be verified. Check the invoice or payment status before trying again."
 	case stderrors.Is(err, bizbilling.ErrGatewayPending):
 		status, code, message, retryable = 503, "BILLING_GATEWAY_PENDING", "The payment provider outcome is pending verification. Retry this operation; do not create another payment.", true
 	case stderrors.Is(err, bizbilling.ErrMerchantAuthentication):

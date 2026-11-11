@@ -58,7 +58,17 @@ func (g *portalCheckoutGateway) VerifyCheckout(_, _, signature string) error {
 	return nil
 }
 
-func TestBizCheckoutPortalHTTPFlow(t *testing.T) {
+type portalHTTPFixture struct {
+	es            *elasticsearch.Client
+	lifecycle     *services.BizLifecycleService
+	portal        *services.BizPortalService
+	merchants     *services.BizGatewayConnectionService
+	checkout      *services.BizCheckoutService
+	gateway       *portalCheckoutGateway
+	appID, userID string
+}
+
+func newPortalHTTPFixture(t *testing.T) portalHTTPFixture {
 	if testing.Short() {
 		t.Skip("requires owned billing fixture")
 	}
@@ -112,6 +122,13 @@ func TestBizCheckoutPortalHTTPFlow(t *testing.T) {
 	gateway := &portalCheckoutGateway{ref: bizbilling.GatewayRef{ConnectionID: snapshot.ConnectionID, AccountID: snapshot.AccountID, Mode: snapshot.Mode, CredentialRevision: snapshot.Revision}}
 	checkout := services.NewBizCheckoutService(es, lifecycle, merchants, gateway, logger)
 	checkout.SetNewCollectionEnabled(true)
+	return portalHTTPFixture{es: es, lifecycle: lifecycle, portal: portal, merchants: merchants, checkout: checkout, gateway: gateway, appID: appID, userID: userID}
+}
+
+func TestBizCheckoutPortalHTTPFlow(t *testing.T) {
+	f := newPortalHTTPFixture(t)
+	es, lifecycle, portal, checkout, gateway, appID, userID := f.es, f.lifecycle, f.portal, f.checkout, f.gateway, f.appID, f.userID
+	ctx, logger := context.Background(), zap.NewNop()
 	handler := NewBizPortalHandler(BizBillingServices{Portal: portal, Lifecycle: lifecycle}, logger)
 	handler.SetCheckoutService(checkout)
 	app := fiber.New()

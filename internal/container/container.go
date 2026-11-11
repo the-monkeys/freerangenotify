@@ -92,31 +92,33 @@ type Container struct {
 	JWTManager *jwt.Manager
 
 	// Handlers
-	UserHandler                  *handlers.UserHandler
-	ApplicationHandler           *handlers.ApplicationHandler
-	NotificationHandler          *handlers.NotificationHandler
-	TemplateHandler              *handlers.TemplateHandler
-	PresenceHandler              *handlers.PresenceHandler
-	AdminHandler                 *handlers.AdminHandler
-	DashboardNotificationHandler *handlers.DashboardNotificationHandler
-	HealthHandler                *handlers.HealthHandler
-	SSEHandler                   *handlers.SSEHandler
-	AuthHandler                  *handlers.AuthHandler
-	QuickSendHandler             *handlers.QuickSendHandler
-	OTPHandler                   *handlers.OTPHandler
-	PlaygroundHandler            *handlers.PlaygroundHandler
-	AnalyticsHandler             *handlers.AnalyticsHandler
-	LicensingHandler             *handlers.LicensingHandler
-	OpsHandler                   *handlers.OpsHandler
-	BillingHandler               *handlers.BillingHandler
-	PaymentHandler               *handlers.PaymentHandler
-	RenewalHandler               *handlers.RenewalHandler
-	BizBillingHandler            *handlers.BizBillingHandler
-	BizOperationService          *services.BizOperationService
-	BizGatewayConnections        *services.BizGatewayConnectionService
-	BizCheckoutService           *services.BizCheckoutService
-	BizPortalHandler             *handlers.BizPortalHandler
-	bizSchedulerCancel           context.CancelFunc
+	UserHandler                      *handlers.UserHandler
+	ApplicationHandler               *handlers.ApplicationHandler
+	NotificationHandler              *handlers.NotificationHandler
+	TemplateHandler                  *handlers.TemplateHandler
+	PresenceHandler                  *handlers.PresenceHandler
+	AdminHandler                     *handlers.AdminHandler
+	DashboardNotificationHandler     *handlers.DashboardNotificationHandler
+	HealthHandler                    *handlers.HealthHandler
+	SSEHandler                       *handlers.SSEHandler
+	AuthHandler                      *handlers.AuthHandler
+	QuickSendHandler                 *handlers.QuickSendHandler
+	OTPHandler                       *handlers.OTPHandler
+	PlaygroundHandler                *handlers.PlaygroundHandler
+	AnalyticsHandler                 *handlers.AnalyticsHandler
+	LicensingHandler                 *handlers.LicensingHandler
+	OpsHandler                       *handlers.OpsHandler
+	BillingHandler                   *handlers.BillingHandler
+	PaymentHandler                   *handlers.PaymentHandler
+	RenewalHandler                   *handlers.RenewalHandler
+	BizBillingHandler                *handlers.BizBillingHandler
+	BizOperationService              *services.BizOperationService
+	BizGatewayConnections            *services.BizGatewayConnectionService
+	BizCheckoutService               *services.BizCheckoutService
+	BizGatewayEventService           *services.BizGatewayEventService
+	BizBillingGatewayCallbackHandler *handlers.BizBillingGatewayCallbackHandler
+	BizPortalHandler                 *handlers.BizPortalHandler
+	bizSchedulerCancel               context.CancelFunc
 
 	// Billing Metering and Payment
 	UsageRepo         billing.UsageRepository
@@ -991,10 +993,14 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)
 		merchantGatewayFactory := payment.NewBizRazorpayFactory(container.BizGatewayConnections.Resolve, nil)
+		merchantGatewayFactory.SetAPIResolver(container.BizGatewayConnections.ResolveAPI)
 		container.BizCheckoutService = services.NewBizCheckoutService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
 		container.BizCheckoutService.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
 		container.BizPortalHandler.SetCheckoutService(container.BizCheckoutService)
 		container.BizBillingHandler.SetCheckoutService(container.BizCheckoutService)
+		container.BizGatewayEventService = services.NewBizGatewayEventService(esClient, container.BizGatewayConnections, container.BizCheckoutService, logger)
+		container.BizBillingHandler.SetGatewayEventService(container.BizGatewayEventService)
+		container.BizBillingGatewayCallbackHandler = handlers.NewBizBillingGatewayCallbackHandler(container.BizGatewayEventService, logger)
 
 		// Route biz-invoice gateway payments from the Razorpay webhook.
 		if container.PaymentHandler != nil {
@@ -1009,6 +1015,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		schedCtx, schedCancel := context.WithCancel(context.Background())
 		scheduler.Start(schedCtx)
 		container.BizOperationService.Start(schedCtx)
+		container.BizGatewayEventService.Start(schedCtx)
 		container.bizSchedulerCancel = schedCancel
 
 		logger.Info("Business Billing module enabled")

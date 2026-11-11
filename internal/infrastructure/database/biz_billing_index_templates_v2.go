@@ -9,6 +9,9 @@ func (it *IndexTemplates) GetBizLifecycleStatesTemplate() map[string]interface{}
 }
 
 func billingKeyword() map[string]interface{} { return map[string]interface{}{"type": "keyword"} }
+func (it *IndexTemplates) GetBizGatewayEventsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "kind": billingKeyword(), "app_id": billingKeyword(), "state": billingKeyword(), "body_digest": billingKeyword(), "gateway": map[string]interface{}{"type": "object", "enabled": false}, "data": map[string]interface{}{"type": "object", "enabled": false}, "result": map[string]interface{}{"type": "object", "enabled": false}, "header_conflict": map[string]interface{}{"type": "boolean"}, "created_at": map[string]interface{}{"type": "date"}, "updated_at": map[string]interface{}{"type": "date"}})
+}
 func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{
 		"id": billingKeyword(), "kind": billingKeyword(), "scope": billingScope(), "provider_id": billingKeyword(), "state": billingKeyword(),

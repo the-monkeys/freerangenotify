@@ -127,6 +127,7 @@ tmp/
 main
 .air.toml
 # Local planning documents
+/.superpowers/
 PHASE2_IMPLEMENTATION_PLAN.md
 local/*
 

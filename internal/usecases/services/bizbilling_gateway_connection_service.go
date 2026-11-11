@@ -58,6 +58,61 @@ func (s *BizGatewayConnectionService) Resolve(ctx context.Context, ref bizbillin
 	return result, nil
 }
 
+// ResolveAPI may recover a retired API key only through a newer, separately
+// verified revision of this same immutable account. Checkout signatures still
+// resolve the exact historical secret; today's active slot is never consulted.
+func (s *BizGatewayConnectionService) ResolveAPI(ctx context.Context, ref bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error) {
+	original, err := s.Resolve(ctx, ref)
+	if err != nil {
+		return original, err
+	}
+	refs, err := s.verifiedSuccessors(ctx, ref, original.AppID)
+	if err != nil {
+		return bizbilling.MerchantCredentials{}, err
+	}
+	if len(refs) > 0 {
+		return s.Resolve(ctx, refs[len(refs)-1])
+	}
+	return original, nil
+}
+
+// Only revisions whose account linkage has already been proved may verify a
+// newer checkout result for a historical order. This returns references only.
+func (s *BizGatewayConnectionService) VerifiedCheckoutRevisions(ctx context.Context, ref bizbilling.GatewayRef) ([]bizbilling.GatewayRef, error) {
+	original, err := s.connections.Get(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return s.verifiedSuccessors(ctx, ref, original.AppID)
+}
+func (s *BizGatewayConnectionService) verifiedSuccessors(ctx context.Context, ref bizbilling.GatewayRef, app string) ([]bizbilling.GatewayRef, error) {
+	revisions, err := s.connections.Revisions(ctx, ref.ConnectionID)
+	if err != nil {
+		return nil, bizbilling.ErrMerchantUnavailable
+	}
+	refs := []bizbilling.GatewayRef{}
+	for _, connection := range revisions {
+		if connection.Revision <= ref.CredentialRevision {
+			continue
+		}
+		if connection.AppID != app || !sameMerchantIdentity(merchantRef(connection), ref) {
+			return nil, bizbilling.ErrReconciliationRequired
+		}
+		proof, err := s.connections.AccountProof(ctx, merchantRef(connection))
+		if apperrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, bizbilling.ErrMerchantUnavailable
+		}
+		if proof.AppID != app {
+			return nil, bizbilling.ErrReconciliationRequired
+		}
+		refs = append(refs, merchantRef(connection))
+	}
+	return refs, nil
+}
+
 func (s *BizGatewayConnectionService) Snapshot(ctx context.Context, app string, mode bizbilling.GatewayMode) (bizbilling.MerchantSnapshot, error) {
 	snapshot := bizbilling.MerchantSnapshot{AppID: app, Mode: mode, Readiness: "not_configured"}
 	if app == "" || !mode.Valid() {
@@ -84,6 +139,17 @@ func (s *BizGatewayConnectionService) Snapshot(ctx context.Context, app string, 
 	}
 	if connection.AppID != app || connection.Mode != mode {
 		return snapshot, bizbilling.ErrReconciliationRequired
+	}
+	proof, proofErr := s.connections.AccountProof(ctx, merchantRef(connection))
+	if proofErr != nil && !apperrors.IsNotFound(proofErr) {
+		return snapshot, proofErr
+	}
+	if proofErr == nil {
+		if proof.AppID != app {
+			return snapshot, bizbilling.ErrReconciliationRequired
+		}
+		connection.AccountVerified = true
+		connection.Readiness = "verified_for_checkout"
 	}
 	return bizbilling.MerchantSnapshot{Configured: true, ConnectionID: id, AppID: app, AccountID: connection.AccountID, Mode: mode, Revision: connection.Revision, Readiness: connection.Readiness, APIAuthenticated: connection.APIAuthenticated, AccountVerified: connection.AccountVerified, AutomaticReady: connection.AutomaticReady}, nil
 }

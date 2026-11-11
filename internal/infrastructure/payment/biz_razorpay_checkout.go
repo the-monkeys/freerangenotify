@@ -12,20 +12,45 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
 )
 
 type BizRazorpayFactory struct {
-	resolve func(context.Context, bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error)
-	client  *http.Client
+	resolve    func(context.Context, bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error)
+	resolveAPI func(context.Context, bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error)
+	client     *http.Client
 }
 
 func NewBizRazorpayFactory(resolve func(context.Context, bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error), client *http.Client) *BizRazorpayFactory {
 	return &BizRazorpayFactory{resolve: resolve, client: NewBizRazorpayAuthenticator(client).client}
 }
 func (f *BizRazorpayFactory) For(ctx context.Context, ref bizbilling.GatewayRef) (bizbilling.BizGateway, error) {
+	gateway, err := f.exact(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	if f.resolveAPI != nil {
+		api, err := f.resolveAPI(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		if api.AppID != gateway.credentials.AppID || api.Reference.ConnectionID != ref.ConnectionID || api.Reference.AccountID != ref.AccountID || api.Reference.Mode != ref.Mode || api.Reference.CredentialRevision < ref.CredentialRevision || !strings.HasPrefix(api.KeyID, "rzp_"+string(ref.Mode)+"_") || api.KeySecret == "" {
+			return nil, bizbilling.ErrMerchantUnavailable
+		}
+		gateway.apiCredentials = api
+	}
+	return gateway, nil
+}
+func (f *BizRazorpayFactory) SetAPIResolver(resolve func(context.Context, bizbilling.GatewayRef) (bizbilling.MerchantCredentials, error)) {
+	f.resolveAPI = resolve
+}
+func (f *BizRazorpayFactory) ForExact(ctx context.Context, ref bizbilling.GatewayRef) (bizbilling.BizGateway, error) {
+	return f.exact(ctx, ref)
+}
+func (f *BizRazorpayFactory) exact(ctx context.Context, ref bizbilling.GatewayRef) (*bizRazorpayGateway, error) {
 	if f.resolve == nil {
 		return nil, bizbilling.ErrMerchantUnavailable
 	}
@@ -36,12 +61,13 @@ func (f *BizRazorpayFactory) For(ctx context.Context, ref bizbilling.GatewayRef)
 	if credentials.Reference != ref || credentials.AppID == "" || credentials.KeyID == "" || credentials.KeySecret == "" {
 		return nil, bizbilling.ErrMerchantUnavailable
 	}
-	return &bizRazorpayGateway{credentials: credentials, client: f.client}, nil
+	return &bizRazorpayGateway{credentials: credentials, apiCredentials: credentials, client: f.client}, nil
 }
 
 type bizRazorpayGateway struct {
-	credentials bizbilling.MerchantCredentials
-	client      *http.Client
+	credentials    bizbilling.MerchantCredentials
+	apiCredentials bizbilling.MerchantCredentials
+	client         *http.Client
 }
 
 // No provider response bodies, credentials or transport URLs escape as errors.
@@ -60,7 +86,7 @@ func (g *bizRazorpayGateway) request(ctx context.Context, method, path string, i
 	if err != nil {
 		return bizbilling.ErrMerchantUnavailable
 	}
-	request.SetBasicAuth(g.credentials.KeyID, g.credentials.KeySecret)
+	request.SetBasicAuth(g.apiCredentials.KeyID, g.apiCredentials.KeySecret)
 	request.Header.Set("Accept", "application/json")
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
