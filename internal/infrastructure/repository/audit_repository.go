@@ -77,7 +77,7 @@ func (r *AuditRepository) List(ctx context.Context, filter audit.Filter) ([]*aud
 
 func (r *AuditRepository) Count(ctx context.Context, filter audit.Filter) (int64, error) {
 	query := r.buildQuery(filter)
-	return r.base.Count(ctx, query)
+	return r.base.Count(ctx, map[string]interface{}{"query": query["query"]})
 }
 
 // buildQuery constructs an ES bool query from the filter.
@@ -118,6 +118,20 @@ func (r *AuditRepository) buildQuery(filter audit.Filter) map[string]interface{}
 		musts = append(musts, map[string]interface{}{
 			"term": map[string]interface{}{"resource_id": filter.ResourceID},
 		})
+	}
+	if filter.FromDate != nil || filter.ToDate != nil {
+		bounds := map[string]interface{}{}
+		if filter.FromDate != nil {
+			bounds["gte"] = filter.FromDate.UTC().Format(time.RFC3339Nano)
+		}
+		if filter.ToDate != nil {
+			key := "lte"
+			if filter.ToDateExclusive {
+				key = "lt"
+			}
+			bounds[key] = filter.ToDate.UTC().Format(time.RFC3339Nano)
+		}
+		musts = append(musts, map[string]interface{}{"range": map[string]interface{}{"created_at": bounds}})
 	}
 
 	if len(musts) == 0 {

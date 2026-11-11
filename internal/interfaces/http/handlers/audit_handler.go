@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/application"
@@ -53,9 +54,12 @@ func (h *AuditHandler) getAdminAppIDs(c *fiber.Ctx) ([]string, error) {
 // @Param resource query string false "Filter by resource type"
 // @Param resource_id query string false "Filter by resource ID"
 // @Param environment_id query string false "Filter by environment ID"
+// @Param from_date query string false "Start date (YYYY-MM-DD in UTC) or RFC3339 timestamp, inclusive"
+// @Param to_date query string false "End date (YYYY-MM-DD in UTC, whole day) or inclusive RFC3339 timestamp"
 // @Param limit query int false "Limit results" default(50)
 // @Param offset query int false "Offset for pagination" default(0)
 // @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
 // @Failure 403 {object} map[string]interface{}
 // @Failure 500 {object} map[string]interface{}
@@ -66,6 +70,10 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
+	from, to, exclusive, err := parseAuditDateRange(c.Query("from_date"), c.Query("to_date"))
+	if err != nil {
+		return err
+	}
 
 	if len(appIDs) == 0 {
 		return c.JSON(fiber.Map{"audit_logs": []interface{}{}, "count": 0})
@@ -73,6 +81,7 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 
 	filter := audit.DefaultFilter()
 	filter.AppIDs = appIDs
+	filter.FromDate, filter.ToDate, filter.ToDateExclusive = from, to, exclusive
 
 	// If a specific app_id is requested, validate it belongs to this admin
 	if v := c.Query("app_id"); v != "" {
@@ -124,6 +133,45 @@ func (h *AuditHandler) List(c *fiber.Ctx) error {
 		"audit_logs": logs,
 		"count":      len(logs),
 	})
+}
+
+func parseAuditDateRange(from, to string) (*time.Time, *time.Time, bool, error) {
+	parse := func(value string, end bool) (*time.Time, bool, error) {
+		if value == "" {
+			return nil, false, nil
+		}
+		if len(value) == len("2006-01-02") {
+			parsed, err := time.Parse("2006-01-02", value)
+			if err != nil {
+				return nil, false, errors.BadRequest("invalid audit date; use YYYY-MM-DD or RFC3339")
+			}
+			if end {
+				parsed = parsed.AddDate(0, 0, 1)
+				if parsed.Year() > 9999 {
+					return nil, false, errors.BadRequest("audit end date exceeds supported range")
+				}
+			}
+			return &parsed, end, nil
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			return nil, false, errors.BadRequest("invalid audit date; use YYYY-MM-DD or RFC3339")
+		}
+		parsed = parsed.UTC()
+		return &parsed, false, nil
+	}
+	start, _, err := parse(from, false)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	end, exclusive, err := parse(to, true)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if start != nil && end != nil && (start.After(*end) || (exclusive && start.Equal(*end))) {
+		return nil, nil, false, errors.BadRequest("audit start date must not be after end date")
+	}
+	return start, end, exclusive, nil
 }
 
 // Get returns a single audit log by ID.

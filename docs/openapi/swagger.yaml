@@ -3626,6 +3626,16 @@ paths:
                   name: environment_id
                   schema:
                     type: string
+                - description: Start date (YYYY-MM-DD in UTC) or RFC3339 timestamp, inclusive
+                  in: query
+                  name: from_date
+                  schema:
+                    type: string
+                - description: End date (YYYY-MM-DD in UTC, whole day) or inclusive RFC3339 timestamp
+                  in: query
+                  name: to_date
+                  schema:
+                    type: string
                 - description: Limit results
                   in: query
                   name: limit
@@ -3646,6 +3656,13 @@ paths:
                                 additionalProperties: true
                                 type: object
                     description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
                 "401":
                     content:
                         application/json:

@@ -5182,6 +5182,18 @@ const docTemplate = `{
                         "type": "string"
                     },
                     {
+                        "description": "Start date (YYYY-MM-DD in UTC) or RFC3339 timestamp, inclusive",
+                        "in": "query",
+                        "name": "from_date",
+                        "type": "string"
+                    },
+                    {
+                        "description": "End date (YYYY-MM-DD in UTC, whole day) or inclusive RFC3339 timestamp",
+                        "in": "query",
+                        "name": "to_date",
+                        "type": "string"
+                    },
+                    {
                         "default": 50,
                         "description": "Limit results",
                         "in": "query",
@@ -5202,6 +5214,13 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
                             "additionalProperties": true,
                             "type": "object"

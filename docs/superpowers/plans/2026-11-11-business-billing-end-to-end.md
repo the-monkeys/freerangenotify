@@ -191,16 +191,18 @@ Evidence: persisted ES replay, four response-loss boundaries, partial-read gate,
 
 **Interfaces:** Add `FromDate,ToDate *time.Time` and `ToDateExclusive bool` to `audit.Filter`; add local `parseAuditDateRange(from,to string) (*time.Time,*time.Time,bool,error)`. Date-only bounds use UTC; date-only end is next-day exclusive; RFC3339 timestamps retain exact instants. Both count/list use the identical range.
 
-- [ ] **1. Tests:** `TestAuditDateBounds`, `TestAuditDateFilteringKeepsTenantScope`: same-day date range includes 23:59:59.999, excludes next midnight, handles offsets, rejects malformed/reversed bounds with 400, preserves count/pagination and app ownership.
+- [x] **1. Tests:** `TestAuditDateBounds`, `TestAuditDateFilteringKeepsTenantScope`: same-day date range includes 23:59:59.999, excludes next midnight, handles offsets, rejects malformed/reversed bounds with 400, preserves count/pagination and app ownership.
   ```go
   require.Equal(t, "2026-11-12T00:00:00Z", end.Format(time.RFC3339))
   require.True(t, exclusive)
   require.Equal(t, int64(2), filteredCount)
   ```
-- [ ] **2. Red:** `go test -short ./internal/interfaces/http/handlers ./internal/infrastructure/repository -run 'TestAuditDate' -count=1`.
-- [ ] **3. Implement:** Parse explicitly and add ES `created_at` range alongside existing app filters. Do not silently ignore invalid input or change other filters.
-- [ ] **4. Green:** Repeat; verify actual ES range/count once through the owned runner.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "fix(audit): apply date range filters consistently"`.
+- [x] **2. Red:** `go test -short ./internal/interfaces/http/handlers ./internal/infrastructure/repository -run 'TestAuditDate' -count=1`.
+- [x] **3. Implement:** Parse explicitly and add ES `created_at` range alongside existing app filters. Do not silently ignore invalid input or change other filters.
+- [x] **4. Green:** Repeat; verify actual ES range/count once through the owned runner.
+- [x] **5. Commit:** Stage listed files; `git commit -m "fix(audit): apply date range filters consistently"`.
+
+Evidence: parser/HTTP validation and tenant-scoped List/Count tests PASS; owned ES same-day boundary/count/pagination PASS (6.67s); generated API references updated and docsgen -check PASS. Legacy page count envelope is retained.
 
 **Phase 1 checkpoint:** Run focused domain/repository/service/handler suites and legacy compatibility fixtures. Report commits, executed test counts, unresolved migration cases, and the fact v2 activation remains off. No production writes or implicit rollout.
 
