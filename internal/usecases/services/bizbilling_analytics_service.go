@@ -12,18 +12,28 @@ import (
 // BizAnalyticsService produces the billing dashboard metrics via
 // Elasticsearch aggregations — nothing is precomputed or cached.
 type BizAnalyticsService struct {
-	stores  *bizbillingrepo.Stores
-	planSvc *BizPlanService
-	logger  *zap.Logger
+	operations *BizOperationService
+	stores     *bizbillingrepo.Stores
+	planSvc    *BizPlanService
+	logger     *zap.Logger
 }
 
 // NewBizAnalyticsService creates a new BizAnalyticsService.
-func NewBizAnalyticsService(stores *bizbillingrepo.Stores, planSvc *BizPlanService, logger *zap.Logger) *BizAnalyticsService {
-	return &BizAnalyticsService{stores: stores, planSvc: planSvc, logger: logger}
+func NewBizAnalyticsService(stores *bizbillingrepo.Stores, planSvc *BizPlanService, logger *zap.Logger, readers ...*BizOperationService) *BizAnalyticsService {
+	service := &BizAnalyticsService{stores: stores, planSvc: planSvc, logger: logger}
+	if len(readers) > 0 {
+		service.operations = readers[0]
+	}
+	return service
 }
 
 // Revenue returns MRR, ARR, total collected, and monthly revenue over time.
 func (s *BizAnalyticsService) Revenue(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "Revenue")
+	}
 	mrr, err := s.mrr(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -129,6 +139,11 @@ func monthlyNormalized(charge int64, cycle bizbilling.BillingCycle, cycleDays in
 
 // Subscriptions returns counts per status and a simple 30-day churn rate.
 func (s *BizAnalyticsService) Subscriptions(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "Subscriptions")
+	}
 	aggs, err := s.stores.Subscriptions.Aggregate(ctx, map[string]interface{}{
 		"query": bizbillingrepo.NewQuery(appID).Bool(),
 		"size":  0,
@@ -176,6 +191,11 @@ func (s *BizAnalyticsService) Subscriptions(ctx context.Context, appID string) (
 
 // Invoices returns paid/unpaid/overdue breakdowns and the collection rate.
 func (s *BizAnalyticsService) Invoices(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "Invoices")
+	}
 	aggs, err := s.stores.Invoices.Aggregate(ctx, map[string]interface{}{
 		"query": bizbillingrepo.NewQuery(appID).Bool(),
 		"size":  0,
@@ -226,13 +246,18 @@ func (s *BizAnalyticsService) Invoices(ctx context.Context, appID string) (map[s
 
 // Aging buckets outstanding invoice amounts by days overdue.
 func (s *BizAnalyticsService) Aging(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "Aging")
+	}
 	now := time.Now().UTC()
 	buckets := []struct {
 		Label string
 		From  *time.Time // due_date >= From
 		To    *time.Time // due_date < To
 	}{
-		{"current", ptrTime(now), nil},                                          // Not yet due
+		{"current", ptrTime(now), nil}, // Not yet due
 		{"0_30", ptrTime(now.AddDate(0, 0, -30)), ptrTime(now)},
 		{"31_60", ptrTime(now.AddDate(0, 0, -60)), ptrTime(now.AddDate(0, 0, -30))},
 		{"61_90", ptrTime(now.AddDate(0, 0, -90)), ptrTime(now.AddDate(0, 0, -60))},
@@ -284,6 +309,11 @@ func (s *BizAnalyticsService) Aging(ctx context.Context, appID string) (map[stri
 
 // Customers returns the top customers by lifetime collected revenue.
 func (s *BizAnalyticsService) Customers(ctx context.Context, appID string, limit int) ([]map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialCustomers(ctx, appID, limit)
+	}
 	if limit <= 0 || limit > 100 {
 		limit = 10
 	}
@@ -325,6 +355,11 @@ func (s *BizAnalyticsService) Customers(ctx context.Context, appID string, limit
 // Dunning reports recovery effectiveness: of invoices that went overdue, how
 // much was eventually collected vs written off vs still outstanding.
 func (s *BizAnalyticsService) Dunning(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "Dunning")
+	}
 	now := time.Now().UTC()
 
 	// Invoices whose due date has passed.
@@ -383,6 +418,11 @@ func (s *BizAnalyticsService) Dunning(ctx context.Context, appID string) (map[st
 
 // RevenueRecognition sums recognized vs deferred revenue across schedules.
 func (s *BizAnalyticsService) RevenueRecognition(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "RevenueRecognition")
+	}
 	aggs, err := s.stores.RevenueSchedules.Aggregate(ctx, map[string]interface{}{
 		"query": bizbillingrepo.NewQuery(appID).Bool(),
 		"size":  0,
@@ -404,6 +444,11 @@ func (s *BizAnalyticsService) RevenueRecognition(ctx context.Context, appID stri
 
 // TaxSummary sums collected GST by component from non-void invoices.
 func (s *BizAnalyticsService) TaxSummary(ctx context.Context, appID string) (map[string]interface{}, error) {
+	if active, err := s.financialReportsEnabled(ctx, appID); err != nil {
+		return nil, err
+	} else if active {
+		return s.financialAnalytics(ctx, appID, "TaxSummary")
+	}
 	aggs, err := s.stores.Invoices.Aggregate(ctx, map[string]interface{}{
 		"query": bizbillingrepo.NewQuery(appID).Terms("status", []string{
 			string(bizbilling.InvoiceStatusOpen),

@@ -34,6 +34,7 @@ const (
 // (scheduler scans, analytics aggregations) on the same indices the
 // LifecycleRepo writes to.
 type Stores struct {
+	Plans              *Store[bizbilling.Plan]
 	CouponRedemptions  *Store[bizbilling.CouponRedemption]
 	CreditApplications *Store[bizbilling.CreditApplication]
 	UserBalances       *Store[bizbilling.UserBalanceMirror]
@@ -58,6 +59,7 @@ type Stores struct {
 // NewStores creates all extended entity stores.
 func NewStores(es *elasticsearch.Client, logger *zap.Logger, policies ...repository.RefreshPolicy) *Stores {
 	return &Stores{
+		Plans:              NewStore[bizbilling.Plan](es, planIndex, logger, policies...),
 		CouponRedemptions:  NewStore[bizbilling.CouponRedemption](es, CouponRedemptionIndex, logger, policies...),
 		CreditApplications: NewStore[bizbilling.CreditApplication](es, CreditApplicationIndex, logger, policies...),
 		UserBalances:       NewStore[bizbilling.UserBalanceMirror](es, "users", logger, policies...),

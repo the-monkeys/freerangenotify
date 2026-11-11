@@ -102,6 +102,9 @@ func BeginBizMutation(ctx context.Context, gate *BizLifecycleGate, app string) (
 	if gate == nil {
 		return ctx, noop, nil
 	}
+	if handled, err := gate.migrationAllowed(ctx, app); handled {
+		return ctx, noop, err
+	}
 	if p, ok := ctx.Value(billingMutationContextKey{}).(bizbilling.MutationPermit); ok {
 		if p.AppID != app {
 			return ctx, noop, bizbilling.ErrStaleMutationPermit

@@ -27,9 +27,12 @@ func (s *Stores) SetFinancialWriteGuard(guard FinancialWriteGuard) {
 	if s == nil {
 		return
 	}
+	s.RevenueSchedules.SetFinancialWriteGuard(guard)
+	s.Expenses.SetFinancialWriteGuard(guard)
 	s.Estimates.SetFinancialWriteGuard(guard)
 	s.Coupons.SetFinancialWriteGuard(guard)
 	s.CouponRedemptions.SetFinancialWriteGuard(guard)
+	s.Subscriptions.SetFinancialWriteGuard(guard)
 	s.Invoices.SetFinancialWriteGuard(guard)
 	s.Payments.SetFinancialWriteGuard(guard)
 	s.CreditNotes.SetFinancialWriteGuard(guard)
@@ -40,6 +43,7 @@ func (s *Stores) SetFinancialWriteGuard(guard FinancialWriteGuard) {
 	s.UserBalances.SetFinancialWriteGuard(guard)
 }
 func (s *LifecycleRepo) SetFinancialWriteGuard(guard FinancialWriteGuard) {
+	s.subscriptions.SetFinancialWriteGuard(guard)
 	s.invoices.SetFinancialWriteGuard(guard)
 	s.payments.SetFinancialWriteGuard(guard)
 }

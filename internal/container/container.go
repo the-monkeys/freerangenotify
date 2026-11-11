@@ -959,7 +959,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		usageSvc := services.NewBizUsageService(bizStores, logger)
 		expenseSvc := services.NewBizExpenseService(bizStores, lifecycleSvc, logger)
 
-		analyticsSvc := services.NewBizAnalyticsService(bizStores, planSvc, logger)
+		analyticsSvc := services.NewBizAnalyticsService(bizStores, planSvc, logger, container.BizOperationService)
 		connectorSvc := services.NewBizConnectorService(bizStores, bizNotifier, logger)
 
 		// Handlers
@@ -979,6 +979,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizBillingHandler = handlers.NewBizBillingHandler(bizSvcs, logger)
 		container.BizBillingHandler.SetLifecycleGate(lifecycleGate)
 		container.BizBillingHandler.SetOperationService(container.BizOperationService)
+		migrationSvc := services.NewBizMigrationService(esClient, lifecycleGate, container.BizOperationService, logger)
+		migrationSvc.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
+		container.BizBillingHandler.SetMigrationService(migrationSvc)
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)

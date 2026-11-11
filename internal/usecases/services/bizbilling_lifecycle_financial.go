@@ -4,7 +4,24 @@ import (
 	"context"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
+	apperrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 )
+
+// Phase 3 supplies durable subscription-cycle transitions. Until then an
+// upgraded app must never advance dates or mint partial proration children.
+func (s *BizLifecycleService) requireSubscriptionLifecycle(ctx context.Context, appID string) error {
+	if s.gate == nil {
+		return nil
+	}
+	state, err := s.gate.State(ctx, appID)
+	if err != nil {
+		return err
+	}
+	if state.LifecycleVersion != 1 {
+		return apperrors.Conflict("Subscription changes are not enabled for this billing lifecycle yet")
+	}
+	return nil
+}
 
 func (s *BizLifecycleService) financialInvoiceScope(ctx context.Context, appID, id string) (bizbilling.Scope, bool, error) {
 	inv, err := s.getOwnedInvoice(ctx, appID, id)

@@ -105,6 +105,9 @@ func (s *BizLifecycleService) updateOwnedInvoice(ctx context.Context, appID, id 
 
 // updateOwnedSubscription runs updateFn only when the subscription belongs to the app.
 func (s *BizLifecycleService) updateOwnedSubscription(ctx context.Context, appID, id string, updateFn func(*bizbilling.BizSubscription) error) (*bizbilling.BizSubscription, error) {
+	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
+		return nil, err
+	}
 	var updated *bizbilling.BizSubscription
 	err := s.repo.UpdateSubscription(ctx, id, func(sub *bizbilling.BizSubscription) error {
 		if sub.AppID != appID {
@@ -136,6 +139,9 @@ func (s *BizLifecycleService) customerState(ctx context.Context, userID string) 
 // CreateSubscription creates a subscription and, unless trialing, generates
 // and issues its first invoice (plan charge + setup fee + addons).
 func (s *BizLifecycleService) CreateSubscription(ctx context.Context, appID string, req *bizbilling.CreateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
+	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
+		return nil, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -220,6 +226,9 @@ func (s *BizLifecycleService) GetSubscription(ctx context.Context, appID, id str
 // RenewSubscription advances the billing period and issues the renewal
 // invoice. Called by the scheduler when current_period_end has passed.
 func (s *BizLifecycleService) RenewSubscription(ctx context.Context, sub *bizbilling.BizSubscription) error {
+	if err := s.requireSubscriptionLifecycle(ctx, sub.AppID); err != nil {
+		return err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, sub.AppID)
 	if mutationErr != nil {
 		return mutationErr
@@ -250,6 +259,9 @@ func (s *BizLifecycleService) RenewSubscription(ctx context.Context, sub *bizbil
 // ConvertTrial activates a subscription whose trial has ended and issues the
 // first invoice. Called by the scheduler.
 func (s *BizLifecycleService) ConvertTrial(ctx context.Context, sub *bizbilling.BizSubscription) error {
+	if err := s.requireSubscriptionLifecycle(ctx, sub.AppID); err != nil {
+		return err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, sub.AppID)
 	if mutationErr != nil {
 		return mutationErr
@@ -357,6 +369,9 @@ func (s *BizLifecycleService) UpdateSubscription(ctx context.Context, appID, id 
 // proration: the unused portion of the old plan becomes a credit note and the
 // prorated new-plan charge is invoiced immediately.
 func (s *BizLifecycleService) ChangePlan(ctx context.Context, appID, id, newPlanID string, quantity *int) (*bizbilling.BizSubscription, error) {
+	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
+		return nil, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -1427,6 +1442,11 @@ func dueDateFor(paymentTerms string, from time.Time) time.Time {
 // SetLifecycleGate installs the additive app-cutover guard.
 func (s *BizLifecycleService) SetLifecycleGate(g *BizLifecycleGate) {
 	s.gate = g
+	if reader, ok := s.repo.(interface {
+		SetFinancialReadOverlay(bizbillingrepo.FinancialReadOverlay)
+	}); ok {
+		reader.SetFinancialReadOverlay(financialReadOverlay(g, s.operations))
+	}
 	if guarded, ok := s.repo.(interface {
 		SetFinancialWriteGuard(bizbillingrepo.FinancialWriteGuard)
 	}); ok {
@@ -1434,6 +1454,7 @@ func (s *BizLifecycleService) SetLifecycleGate(g *BizLifecycleGate) {
 	}
 	if s.stores != nil {
 		s.stores.SetFinancialWriteGuard(financialWriteGuard(g, s.operations))
+		s.stores.SetFinancialReadOverlay(financialReadOverlay(g, s.operations))
 	}
 }
 

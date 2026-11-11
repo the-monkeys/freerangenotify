@@ -84,3 +84,12 @@ temp/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local browser reports and developer instructions are not build inputs.
+playwright-report/
+test-results/
+e2e/
+.agents/
+
+# Local Elasticsearch storage is data, never application source.
+elasticsearch/

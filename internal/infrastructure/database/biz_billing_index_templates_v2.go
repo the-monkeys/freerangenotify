@@ -60,3 +60,10 @@ func (it *IndexTemplates) GetBizCouponRedemptionsTemplate() map[string]interface
 func (it *IndexTemplates) GetBizCouponCustomerUsageTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "app_id": billingKeyword(), "user_id": billingKeyword(), "coupon_id": billingKeyword(), "uses": billingLong(), "last_marker": billingKeyword()})
 }
+
+func (it *IndexTemplates) GetBizMigrationReviewsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "app_id": billingKeyword(), "checkpoint": billingKeyword(), "primary_currency": billingKeyword(), "ready": map[string]interface{}{"type": "boolean"}})
+}
+func (it *IndexTemplates) GetBizLegacyResolutionsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "app_id": billingKeyword(), "report_id": billingKeyword(), "index": billingKeyword(), "resource_id": billingKeyword(), "source_content_hash": billingKeyword()})
+}

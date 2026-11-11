@@ -29,6 +29,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	migration    *services.BizMigrationService
 	operations   *services.BizOperationService
 	gate         *services.BizLifecycleGate
 	productSvc   *services.BizProductService

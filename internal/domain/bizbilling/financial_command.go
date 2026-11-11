@@ -5,6 +5,8 @@ package bizbilling
 const FinancialOperationSchemaVersion = 2
 
 const (
+	CommandExpenseConvert     CommandKind = "expense_convert"
+	CommandInvoiceReminder    CommandKind = "invoice_reminder"
 	CommandBalanceConsume     CommandKind = "balance_consume"
 	CommandEstimateConvert    CommandKind = "estimate_convert"
 	CommandBalanceSet         CommandKind = "balance_set"
@@ -114,4 +116,13 @@ type EstimateConvert struct {
 
 type BalanceConsume struct {
 	MaxPaisa int64 `json:"max_paisa"`
+}
+
+type ExpenseConvert struct {
+	ExpenseIDs []string `json:"expense_ids"`
+}
+type InvoiceReminder struct {
+	InvoiceID   string        `json:"invoice_id"`
+	DaysOverdue int           `json:"days_overdue"`
+	Steps       []DunningStep `json:"steps"`
 }

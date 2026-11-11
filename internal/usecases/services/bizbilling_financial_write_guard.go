@@ -9,6 +9,7 @@ import (
 )
 
 type financialWriteIdentity struct {
+	BilledToUser    string           `json:"billed_to_user"`
 	AppID           string           `json:"app_id"`
 	UserID          string           `json:"user_id"`
 	Currency        string           `json:"currency"`
@@ -23,6 +24,9 @@ func financialIdentity(raw json.RawMessage) (bizbilling.Scope, int64, error) {
 	var value financialWriteIdentity
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return bizbilling.Scope{}, 0, err
+	}
+	if value.UserID == "" {
+		value.UserID = value.BilledToUser
 	}
 	scope := value.Scope
 	if scope.AppID == "" {
@@ -56,7 +60,7 @@ func financialWriteGuard(gate *BizLifecycleGate, operations *BizOperationService
 			if err != nil {
 				return noop, err
 			}
-			if prior.AppID != scope.AppID || prior.UserID != scope.UserID || (prior.Currency != "" && prior.Currency != scope.Currency) {
+			if prior.AppID != scope.AppID || (index != bizbillingrepo.ExpenseIndex && prior.UserID != scope.UserID) || (prior.Currency != "" && prior.Currency != scope.Currency) {
 				return noop, bizbilling.ErrReconciliationRequired
 			}
 		}
@@ -79,8 +83,22 @@ func financialWriteGuard(gate *BizLifecycleGate, operations *BizOperationService
 		if state.LifecycleVersion == 1 && sequence == 0 {
 			return finish, nil
 		}
+		if index == bizbillingrepo.RevenueScheduleIndex && state.LifecycleVersion == 2 && state.Status == "active" {
+			if err := guardRevenueSchedule(before, after); err != nil {
+				finish()
+				return noop, err
+			}
+			return finish, nil
+		}
 		if index == bizbillingrepo.CouponIndex && state.LifecycleVersion == 2 && state.Status == "active" {
 			if err := guardCouponDefinition(before, after); err != nil {
+				finish()
+				return noop, err
+			}
+			return finish, nil
+		}
+		if index == bizbillingrepo.ExpenseIndex && state.LifecycleVersion == 2 && state.Status == "active" && sequence == 0 {
+			if err := guardExpenseDefinition(before, after); err != nil {
 				finish()
 				return noop, err
 			}
@@ -93,8 +111,13 @@ func financialWriteGuard(gate *BizLifecycleGate, operations *BizOperationService
 			}
 			return finish, nil
 		}
+		migration, migrationErr := gate.migrationAllowed(ctx, scope.AppID)
+		if migrationErr != nil {
+			finish()
+			return noop, migrationErr
+		}
 		claim, trusted := bizbillingrepo.FinancialProjectionClaim(ctx)
-		if state.LifecycleVersion != 2 || state.Status != "active" || !trusted || operations == nil || len(after) == 0 || claim.Scope != scope || claim.Sequence != sequence {
+		if (!migration && (state.LifecycleVersion != 2 || state.Status != "active")) || !trusted || operations == nil || len(after) == 0 || claim.Scope != scope || claim.Sequence != sequence {
 			finish()
 			return noop, bizbilling.ErrReconciliationRequired
 		}

@@ -543,6 +543,7 @@ func twoDigits(n int64) string {
 func (s *BizCreditService) SetLifecycleGate(g *BizLifecycleGate) {
 	s.gate = g
 	s.stores.SetFinancialWriteGuard(financialWriteGuard(g, s.operations))
+	s.stores.SetFinancialReadOverlay(financialReadOverlay(g, s.operations))
 }
 
 // ReadUserBalance returns whether a profile uses the completed financial stream.

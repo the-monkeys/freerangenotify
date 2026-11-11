@@ -1,6 +1,6 @@
 # Billing your customers
 
-Use **Applications → your application → Billing Setup** to manage your own products, plans, customer subscriptions, invoices and payments. Your customers are the subscribers in that application. Notification delivery credits are managed separately under [Pricing & Credits](/docs/pricing).
+Use **Applications > your application > Billing Setup** to manage your own products, plans, customer subscriptions, invoices and payments. Your customers are the subscribers in that application. Notification delivery credits are managed separately under [Pricing & Credits](/docs/pricing).
 
 Business billing must be enabled on your installation. Existing applications keep their current billing lifecycle until an explicit, reviewed upgrade. Installing a release does not activate new payment collection or change historical invoices.
 
@@ -12,7 +12,7 @@ Use `Authorization: Bearer YOUR_APP_KEY` or `X-API-Key: YOUR_APP_KEY`. All paths
 
 Create a customer with `POST /v1/users`. Save the returned `data.user_id` and use it as the billing `user_id`. See [Users](/docs/users) for profile create, read, update and delete operations.
 
-Amounts are integers in the currency's minor units. For INR, `10000` means ₹100.00. Send currency codes such as `INR`; never send rupee amounts as decimal values in a `*_paisa` field.
+Amounts are integers in the currency's minor units. For INR, `10000` means INR 100.00. Send currency codes such as `INR`; never send rupee amounts as decimal values in a `*_paisa` field.
 
 ## Create and issue an invoice
 
@@ -61,7 +61,7 @@ Do not use manual payment requests to assert a gateway capture or gateway refund
 For a reviewed, upgraded application:
 
 - `GET /v1/biz/users/USER_ID/balance?currency=INR` returns completed available and reserved credit for that currency.
-- `POST /v1/biz/users/USER_ID/balance` accepts an adjustment such as `{"amount_paisa":500,"reason":"Account correction"}`. This adds ₹5.00; a negative adjustment subtracts available credit.
+- `POST /v1/biz/users/USER_ID/balance` accepts an adjustment such as `{"amount_paisa":500,"reason":"Account correction"}`. This adds INR 5.00; a negative adjustment subtracts available credit.
 - `POST /v1/biz/invoices/INVOICE_ID/apply-credit` spends available credit against that invoice.
 
 Omitting currency on a new credit request uses the primary currency reviewed for the application. Choosing another currency never converts or relabels existing credit. Historical money whose currency or payment source is unresolved must be reconciled before use.
@@ -79,3 +79,45 @@ A temporary failure can include `operation_id` and `operation_state`. Keep them.
 `409` can mean a concurrent change, a reused key with different input, or an invoice locked by automatic collection. `503` with a reconciliation or upgrade code means the saved state is not ready to use; check the operation and retry instructions. A partially saved balance is never a confirmed spendable balance.
 
 These journal and operation guarantees apply after an application's reviewed upgrade. Legacy applications retain their existing API behavior until that cutover.
+
+
+## Review an existing application's upgrade
+
+This release adds the financial foundation. Existing applications stay on their current lifecycle. New automatic renewals and merchant collection require their later supported phases; an upgrade does not silently enable them.
+
+1. Send `POST /v1/biz/lifecycle/prepare` with `{"primary_currency":"INR"}`. This is a read-only inventory by default. It returns a report ID, source revision hashes, counts, readiness and unresolved issues.
+2. To save the reviewed inventory, send the same request with `"dry_run":false` and `"expected_report_id":"REPORT_ID"`. Saving a review does not change original balances or activate the new lifecycle.
+3. A historical currency issue can be resolved through `POST /v1/biz/lifecycle/reviews/REPORT_ID/resolve` using its `issue_id`, `expected_source_hash`, assigned `currency` and a `reason`. The authenticated actor is recorded. Review evidence must support the chosen currency; choosing a primary currency alone does not assign old money to it.
+4. Prepare the same inventory again after resolutions. If a source changed, review a new report. Missing references, inconsistent totals, old gateway bindings and unsupported subscription transitions block activation.
+5. An operator must first drain older API and worker instances. The operator can then run the reviewed migration command below. A browser request cannot attest that rollout on the operator's behalf.
+
+Read-only operator preview:
+
+```sh
+migrate biz-billing-v2 --app-id APP_ID --currency INR
+```
+
+Explicit apply after reviewing the report and draining older writers:
+
+```sh
+migrate biz-billing-v2 --app-id APP_ID --currency INR --apply --report-id REPORT_ID --writers-upgraded
+```
+
+A cutover temporarily blocks new money writes for that application, checks the original revisions again, and records opening journal facts without editing the original records. Repeating a completed migration uses the same opening identities. A partially completed cutover remains fenced until its saved report is resumed; do not manually clear writer permits or reservations based on their age.
+
+Upgraded dashboard money reports use the application's primary currency, exact minor units and completed financial revisions. Cash collected, refunds and invoice debt remain separate. Monthly recurring revenue is labelled as a current-plan estimate until subscription contract snapshots are available. Expense conversion reuses a saved conversion for the same source batch; converted expenses cannot be edited independently.
+
+`GET /v1/biz/lifecycle` shows the active lifecycle and installation readiness. `GET /v1/biz/lifecycle/reviews` lists reviewed inventories. The installation flag `FREERANGE_BIZ_BILLING_NEW_COLLECTION_ENABLED` defaults to `false` and blocks new lifecycle activation. Disabling it does not erase accepted financial work or prevent recovery. It also does not cancel an existing provider-authorized subscription; stopping provider collection requires a confirmed provider pause or cancellation.
+
+
+## Recover an abandoned billing writer
+
+If an interrupted process leaves a billing writer permit behind, an operator can inspect its `writer_id` and `epoch` in the read-only migration inventory. First recover any accepted financial operations, stop the selected writer origins, and confirm their outstanding storage requests have drained. Age or an expired permit does not prove those requests stopped.
+
+After reviewing a fresh inventory, use its report ID and the exact permit epoch:
+
+```sh
+migrate biz-billing-v2 --app-id APP_ID --currency INR --apply --report-id REPORT_ID --recover-writer WRITER_ID --expected-writer-epoch 0 --writer-drained --reviewer OPERATOR_ID --reason "Origin stopped; storage requests drained"
+```
+
+Select multiple abandoned writers with comma-separated IDs. Other registered writers must finish first. Recovery fences the application, verifies source revisions and pending operations, records the decision, and removes only the reviewed permits. It preserves money and invalidates the removed writers' old epoch. The same request can be retried after an uncertain acknowledgement. Recovery stays available when new collection is disabled. Do not clear permits directly in the database.

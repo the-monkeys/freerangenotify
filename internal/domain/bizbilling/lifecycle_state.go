@@ -14,14 +14,20 @@ type MutationPermit struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 type LifecycleState struct {
-	WriteRevision    int64                     `json:"write_revision,omitempty"`
-	AppID            string                    `json:"app_id"`
-	PrimaryCurrency  string                    `json:"primary_currency,omitempty"`
-	LifecycleVersion int                       `json:"lifecycle_version"`
-	Status           string                    `json:"status"`
-	Epoch            int64                     `json:"epoch"`
-	MutationPermits  map[string]MutationPermit `json:"mutation_permits"`
-	MerchantSlots    map[GatewayMode]string    `json:"merchant_slots,omitempty"`
+	PermitReview          *WriterPermitReviewFence  `json:"permit_review,omitempty"`
+	LastWriterReviewID    string                    `json:"last_writer_review_id,omitempty"`
+	MigrationReportID     string                    `json:"migration_report_id,omitempty"`
+	MigrationOwner        string                    `json:"migration_owner,omitempty"`
+	MigrationFactsStarted bool                      `json:"migration_facts_started,omitempty"`
+	MigrationLeaseUntil   time.Time                 `json:"migration_lease_until,omitempty"`
+	WriteRevision         int64                     `json:"write_revision,omitempty"`
+	AppID                 string                    `json:"app_id"`
+	PrimaryCurrency       string                    `json:"primary_currency,omitempty"`
+	LifecycleVersion      int                       `json:"lifecycle_version"`
+	Status                string                    `json:"status"`
+	Epoch                 int64                     `json:"epoch"`
+	MutationPermits       map[string]MutationPermit `json:"mutation_permits"`
+	MerchantSlots         map[GatewayMode]string    `json:"merchant_slots,omitempty"`
 }
 
 func DefaultLifecycleState(app string) LifecycleState {

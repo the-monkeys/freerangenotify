@@ -35,6 +35,8 @@ func (s *BizOperationService) SetLifecycleGate(gate *BizLifecycleGate) {
 	s.gate = gate
 	guard := financialWriteGuard(gate, s)
 	s.stores.SetFinancialWriteGuard(guard)
+	s.stores.SetFinancialReadOverlay(financialReadOverlay(gate, s))
+	s.expenseClaims.SetFinancialReadOverlay(financialReadOverlay(gate, s))
 	s.balances.SetFinancialWriteGuard(guard)
 }
 func (s *BizOperationService) beginOperationMutation(ctx context.Context, appID string) (context.Context, func() error, error) {
@@ -48,7 +50,12 @@ func (s *BizOperationService) beginOperationMutation(ctx context.Context, appID 
 			releaseBizMutation(s.logger, done)
 			return ctx, func() error { return nil }, err
 		}
-		if state.LifecycleVersion != 2 || state.Status != "active" {
+		migration, migrationErr := s.gate.migrationAllowed(ctx, appID)
+		if migrationErr != nil {
+			releaseBizMutation(s.logger, done)
+			return ctx, func() error { return nil }, migrationErr
+		}
+		if !migration && (state.LifecycleVersion != 2 || state.Status != "active") {
 			releaseBizMutation(s.logger, done)
 			return ctx, func() error { return nil }, bizbilling.ErrReconciliationRequired
 		}
@@ -85,8 +92,13 @@ func (s *BizOperationService) finalizeFinancialEvent(ctx context.Context, event 
 			// Subscriber deletion cannot discard a verified money fact. Balances
 			// remain in their own customer/currency stream without a profile.
 			if err == nil {
-				if mirror.AppID != event.Scope.AppID || mirror.UserID != event.Scope.UserID || (mirror.Currency != "" && mirror.Currency != state.PrimaryCurrency) {
+				if mirror.AppID != event.Scope.AppID || mirror.UserID != event.Scope.UserID {
 					return event, bizbilling.ErrReconciliationRequired
+				}
+				// A declared foreign mirror remains intact; the primary-currency API
+				// reads its own journal balance rather than re-labelling this source.
+				if mirror.Currency != "" && mirror.Currency != state.PrimaryCurrency {
+					return event, nil
 				}
 				event.UserBalanceAfter = &bizbilling.UserBalanceMirror{UserID: mirror.UserID, AppID: mirror.AppID, Currency: state.PrimaryCurrency, BalancePaisa: balance.AvailablePaisa, LastSequence: event.Sequence}
 			}

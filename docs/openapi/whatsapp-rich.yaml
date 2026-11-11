@@ -692,6 +692,8 @@ components:
                     type: string
                 category:
                     type: string
+                currency:
+                    type: string
                 date:
                     description: defaults to now
                     type: string
@@ -907,6 +909,98 @@ components:
                     description: in paisa
                     type: integer
             type: object
+        bizbilling.LegacyResolution:
+            properties:
+                actor_id:
+                    type: string
+                currency:
+                    type: string
+                expected_source_hash:
+                    type: string
+                issue_id:
+                    type: string
+                reason:
+                    type: string
+                reference:
+                    type: string
+            type: object
+        bizbilling.MigrationIssue:
+            properties:
+                code:
+                    type: string
+                id:
+                    type: string
+                index:
+                    type: string
+                resource_id:
+                    type: string
+                source_hash:
+                    type: string
+            type: object
+        bizbilling.MigrationOpening:
+            properties:
+                available_paisa:
+                    type: integer
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+            type: object
+        bizbilling.MigrationReport:
+            properties:
+                app_id:
+                    type: string
+                checkpoint:
+                    type: string
+                id:
+                    type: string
+                issues:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.MigrationIssue'
+                    type: array
+                legacy_gateway_bindings:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.ResourceRef'
+                    type: array
+                opening_balances:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.MigrationOpening'
+                    type: array
+                primary_currency:
+                    type: string
+                ready:
+                    type: boolean
+                resolution_hash:
+                    type: string
+                resource_counts:
+                    additionalProperties:
+                        format: int64
+                        type: integer
+                    type: object
+                source_hashes:
+                    additionalProperties:
+                        type: string
+                    type: object
+                writer_permits:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.MutationPermit'
+                    type: array
+                writers_upgraded:
+                    type: boolean
+            type: object
+        bizbilling.MutationPermit:
+            properties:
+                app_id:
+                    type: string
+                epoch:
+                    type: integer
+                expires_at:
+                    type: string
+                operation_id:
+                    type: string
+                started_at:
+                    type: string
+                writer_id:
+                    type: string
+            type: object
         bizbilling.PricingModel:
             enum:
                 - flat
@@ -995,6 +1089,22 @@ components:
                     type: array
             required:
                 - events
+            type: object
+        bizbilling.ResourceRef:
+            properties:
+                id:
+                    type: string
+                kind:
+                    type: string
+            type: object
+        bizbilling.Scope:
+            properties:
+                app_id:
+                    type: string
+                currency:
+                    type: string
+                user_id:
+                    type: string
             type: object
         bizbilling.UpdateConnectorRequest:
             properties:
@@ -2466,6 +2576,20 @@ components:
                 - resources
                 - source_env_id
                 - target_env_id
+            type: object
+        handlers.BillingUpgradeActivateRequest:
+            properties:
+                report_id:
+                    type: string
+            type: object
+        handlers.BillingUpgradeReviewRequest:
+            properties:
+                dry_run:
+                    type: boolean
+                expected_report_id:
+                    type: string
+                primary_currency:
+                    type: string
             type: object
         handlers.ChannelConnectionUpdateRequest:
             properties:

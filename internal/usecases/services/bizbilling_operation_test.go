@@ -61,10 +61,12 @@ func operationFixture(t *testing.T, fault *lostBillingResponse) (*BizOperationSe
 	require.NoError(t, err)
 	templates := &database.IndexTemplates{}
 	for index, template := range map[string]map[string]interface{}{
-		bizbillingrepo.OperationIndex:       templates.GetBizOperationsTemplate(),
-		bizbillingrepo.JournalIndex:         templates.GetBizJournalTemplate(),
-		bizbillingrepo.StreamIndex:          templates.GetBizStreamsTemplate(),
-		bizbillingrepo.CustomerBalanceIndex: templates.GetBizCustomerBalancesTemplate(),
+		bizbillingrepo.MigrationReviewIndex:  templates.GetBizMigrationReviewsTemplate(),
+		bizbillingrepo.LegacyResolutionIndex: templates.GetBizLegacyResolutionsTemplate(),
+		bizbillingrepo.OperationIndex:        templates.GetBizOperationsTemplate(),
+		bizbillingrepo.JournalIndex:          templates.GetBizJournalTemplate(),
+		bizbillingrepo.StreamIndex:           templates.GetBizStreamsTemplate(),
+		bizbillingrepo.CustomerBalanceIndex:  templates.GetBizCustomerBalancesTemplate(),
 	} {
 		res, err := es.Indices.Exists([]string{index})
 		require.NoError(t, err)

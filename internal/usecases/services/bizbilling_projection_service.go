@@ -47,6 +47,14 @@ func (s *BizOperationService) applyFinancialProjection(ctx context.Context, clai
 	if err := s.streams.Renew(ctx, claim); err != nil {
 		return err
 	}
+	for i := range event.ExpensesAfter {
+		if err := s.streams.Renew(ctx, claim); err != nil {
+			return err
+		}
+		if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Expenses, &event.ExpensesAfter[i], claim.Scope, claim.Sequence); err != nil {
+			return err
+		}
+	}
 	if event.BalanceAfter == nil {
 		return bizbilling.ErrReconciliationRequired
 	}

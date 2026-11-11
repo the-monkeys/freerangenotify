@@ -692,6 +692,8 @@ definitions:
                 type: string
             category:
                 type: string
+            currency:
+                type: string
             date:
                 description: defaults to now
                 type: string
@@ -907,6 +909,98 @@ definitions:
                 description: in paisa
                 type: integer
         type: object
+    bizbilling.LegacyResolution:
+        properties:
+            actor_id:
+                type: string
+            currency:
+                type: string
+            expected_source_hash:
+                type: string
+            issue_id:
+                type: string
+            reason:
+                type: string
+            reference:
+                type: string
+        type: object
+    bizbilling.MigrationIssue:
+        properties:
+            code:
+                type: string
+            id:
+                type: string
+            index:
+                type: string
+            resource_id:
+                type: string
+            source_hash:
+                type: string
+        type: object
+    bizbilling.MigrationOpening:
+        properties:
+            available_paisa:
+                type: integer
+            scope:
+                $ref: '#/definitions/bizbilling.Scope'
+        type: object
+    bizbilling.MigrationReport:
+        properties:
+            app_id:
+                type: string
+            checkpoint:
+                type: string
+            id:
+                type: string
+            issues:
+                items:
+                    $ref: '#/definitions/bizbilling.MigrationIssue'
+                type: array
+            legacy_gateway_bindings:
+                items:
+                    $ref: '#/definitions/bizbilling.ResourceRef'
+                type: array
+            opening_balances:
+                items:
+                    $ref: '#/definitions/bizbilling.MigrationOpening'
+                type: array
+            primary_currency:
+                type: string
+            ready:
+                type: boolean
+            resolution_hash:
+                type: string
+            resource_counts:
+                additionalProperties:
+                    format: int64
+                    type: integer
+                type: object
+            source_hashes:
+                additionalProperties:
+                    type: string
+                type: object
+            writer_permits:
+                items:
+                    $ref: '#/definitions/bizbilling.MutationPermit'
+                type: array
+            writers_upgraded:
+                type: boolean
+        type: object
+    bizbilling.MutationPermit:
+        properties:
+            app_id:
+                type: string
+            epoch:
+                type: integer
+            expires_at:
+                type: string
+            operation_id:
+                type: string
+            started_at:
+                type: string
+            writer_id:
+                type: string
+        type: object
     bizbilling.PricingModel:
         enum:
             - flat
@@ -995,6 +1089,22 @@ definitions:
                 type: array
         required:
             - events
+        type: object
+    bizbilling.ResourceRef:
+        properties:
+            id:
+                type: string
+            kind:
+                type: string
+        type: object
+    bizbilling.Scope:
+        properties:
+            app_id:
+                type: string
+            currency:
+                type: string
+            user_id:
+                type: string
         type: object
     bizbilling.UpdateConnectorRequest:
         properties:
@@ -2466,6 +2576,20 @@ definitions:
             - resources
             - source_env_id
             - target_env_id
+        type: object
+    handlers.BillingUpgradeActivateRequest:
+        properties:
+            report_id:
+                type: string
+        type: object
+    handlers.BillingUpgradeReviewRequest:
+        properties:
+            dry_run:
+                type: boolean
+            expected_report_id:
+                type: string
+            primary_currency:
+                type: string
         type: object
     handlers.ChannelConnectionUpdateRequest:
         properties:
@@ -8619,6 +8743,158 @@ paths:
                 - ApiKeyAuth: []
                 - BearerAuth: []
             summary: Write Off Invoice
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/lifecycle:
+        get:
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Check business billing lifecycle
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/lifecycle/activate:
+        post:
+            consumes:
+                - application/json
+            description: Requires prior operator confirmation that older writers were drained. Unresolved sources, stale reports, active writers and unfinished billing features block activation.
+            parameters:
+                - description: Operator-attested review ID
+                  in: body
+                  name: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/handlers.BillingUpgradeActivateRequest'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "409":
+                    description: Conflict
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "503":
+                    description: Service Unavailable
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Activate a reviewed billing upgrade
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/lifecycle/prepare:
+        post:
+            consumes:
+                - application/json
+            description: Defaults to dry run. Set dry_run=false and expected_report_id to persist a review. Only an operator can attest the writer rollout; client input cannot enable it.
+            parameters:
+                - description: Review options; dry_run defaults to true
+                  in: body
+                  name: body
+                  schema:
+                    $ref: '#/definitions/handlers.BillingUpgradeReviewRequest'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        $ref: '#/definitions/bizbilling.MigrationReport'
+                "400":
+                    description: Bad Request
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "409":
+                    description: Conflict
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Review an application billing upgrade
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/lifecycle/reviews:
+        get:
+            parameters:
+                - description: Exclusive report ID cursor
+                  in: query
+                  name: after
+                  type: string
+                - description: Page size, at most 25
+                  in: query
+                  name: limit
+                  type: integer
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: List billing upgrade reviews
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/lifecycle/reviews/{id}/resolve:
+        post:
+            consumes:
+                - application/json
+            description: Requires the current source hash and a reason. The authenticated actor is recorded; original documents are retained.
+            parameters:
+                - description: Persisted review ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+                - description: Reviewed decision
+                  in: body
+                  name: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/bizbilling.LegacyResolution'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "409":
+                    description: Conflict
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Resolve a historical billing currency
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.

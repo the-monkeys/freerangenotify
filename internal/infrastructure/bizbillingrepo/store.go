@@ -19,12 +19,13 @@ import (
 // BaseRepository so every biz billing entity gets Create/Get/Update/Delete/
 // Find without repeating marshal/unmarshal boilerplate.
 type Store[T any] struct {
-	financialGuard FinancialWriteGuard
-	base           *repository.BaseRepository
-	es             *elasticsearch.Client
-	index          string
-	logger         *zap.Logger
-	refresh        repository.RefreshPolicy
+	financialGuard  FinancialWriteGuard
+	financialReader FinancialReadOverlay
+	base            *repository.BaseRepository
+	es              *elasticsearch.Client
+	index           string
+	logger          *zap.Logger
+	refresh         repository.RefreshPolicy
 }
 
 // NewStore creates a typed store for the given index.
@@ -141,11 +142,16 @@ func (s *Store[T]) Find(ctx context.Context, searchBody map[string]interface{}) 
 		return nil, 0, fmt.Errorf("bizbillingrepo: search HTTP %d", res.StatusCode)
 	}
 	var result struct {
+		TimedOut bool `json:"timed_out"`
+		Shards   struct {
+			Failed int `json:"failed"`
+		} `json:"_shards"`
 		Hits struct {
 			Total struct {
 				Value int64 `json:"value"`
 			} `json:"total"`
 			Hits []struct {
+				ID     string          `json:"_id"`
 				Source json.RawMessage `json:"_source"`
 			} `json:"hits"`
 		} `json:"hits"`
@@ -153,10 +159,20 @@ func (s *Store[T]) Find(ctx context.Context, searchBody map[string]interface{}) 
 	if err = json.NewDecoder(res.Body).Decode(&result); err != nil {
 		return nil, 0, err
 	}
+	if result.TimedOut || result.Shards.Failed != 0 {
+		return nil, 0, bizbilling.ErrReconciliationRequired
+	}
 	docs := make([]*T, 0, len(result.Hits.Hits))
 	for _, hit := range result.Hits.Hits {
 		var doc T
-		if err = json.Unmarshal(hit.Source, &doc); err != nil {
+		source := hit.Source
+		if s.financialReader != nil {
+			source, err = s.financialReader(ctx, s.index, hit.ID, source)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+		if err = json.Unmarshal(source, &doc); err != nil {
 			return nil, 0, fmt.Errorf("bizbillingrepo: invalid search document: %w", err)
 		}
 		docs = append(docs, &doc)

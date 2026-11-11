@@ -428,6 +428,13 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 			biz.Use(middleware.RequirePermissionForWrites(auth.PermManageBilling, c.MembershipRepo, c.AppRepo, c.Logger))
 		}
 
+		// Review/cutover coordinates its own permits; wrapping activation in a
+		// normal writer permit would prevent its own drain from completing.
+		biz.Get("/lifecycle", c.BizBillingHandler.GetBillingLifecycle)
+		biz.Get("/lifecycle/reviews", c.BizBillingHandler.ListBillingReviews)
+		biz.Post("/lifecycle/prepare", c.BizBillingHandler.PrepareBillingUpgrade)
+		biz.Post("/lifecycle/reviews/:id/resolve", c.BizBillingHandler.ResolveBillingUpgrade)
+		biz.Post("/lifecycle/activate", c.BizBillingHandler.ActivateBillingUpgrade)
 		biz.Use(c.BizBillingHandler.GuardMutations)
 		biz.Get("/operations/:id", c.BizBillingHandler.GetBillingOperation)
 		biz.Post("/operations/:id/resume", c.BizBillingHandler.ResumeBillingOperation)

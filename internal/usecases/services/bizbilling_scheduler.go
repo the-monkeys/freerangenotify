@@ -238,6 +238,9 @@ func (s *BizBillingScheduler) processOverdueInvoices(ctx context.Context) {
 // runDunningSteps sends every due-but-unsent reminder for the invoice.
 // Sent steps are tracked in invoice metadata to keep the job idempotent.
 func (s *BizBillingScheduler) runDunningSteps(ctx context.Context, inv *bizbilling.BizInvoice, cfg *bizbilling.DunningConfig, daysOverdue int) {
+	if s.tryFinancialDunning(ctx, inv, cfg, daysOverdue) {
+		return
+	}
 	lastSent := -1
 	if inv.Metadata != nil {
 		if v, ok := inv.Metadata["dunning_last_step"].(float64); ok {

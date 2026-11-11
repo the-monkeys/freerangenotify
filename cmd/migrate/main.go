@@ -47,6 +47,11 @@ var allIndices = []string{
 
 // bizBillingIndices are created only when features.biz_billing_enabled=true.
 var bizBillingIndices = []string{
+	"frn_biz_migration_reviews",
+	"frn_biz_legacy_resolutions",
+	"frn_biz_credit_applications",
+	"frn_biz_coupon_redemptions",
+	"frn_biz_coupon_customer_usage",
 	"frn_biz_lifecycle_states",
 	"frn_biz_operations",
 	"frn_biz_journal",

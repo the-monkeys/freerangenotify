@@ -155,17 +155,17 @@ Evidence: persisted ES replay, four response-loss boundaries, partial-read gate,
 
 **Interfaces:** Consume Tasks 1–4 and extend their `buildFinancialEvent`/`applyFinancialProjection` functions. Produce `BizOperationService.Balance(ctx,Scope) (CustomerBalance,error)` using Task 4's model. Existing facade methods call `BizOperationService.Apply`; there is no extra Execute→Apply→Execute cycle. Typed command payloads cover invoice issue/amendment, manual payment/TDS, coupon reservation/release, late fee, write-off, void, credit note, retainer, balance adjustment/application/reversal, and refund reservation/settlement. `CreditLot{ID,SourcePaymentID,Currency string; OriginalPaisa,AvailablePaisa,ReservedPaisa int64}` records provenance. Keep facade methods and legacy DTOs; optional currency/idempotency flow is additive.
 
-- [ ] **1. Tests:** `TestBizAllMoneyWritersUseJournal`, `TestBizCurrencylessCreditRequest`, `TestBizCreditSpendRefundRace` (RF4), `TestBizCrossCurrencyCreditRejected`, `TestBizInvoiceAccountingInvariant`. Include indirect estimate conversion, usage billing, and coupon limits shared across customers; a global coupon redemption cap needs its own CAS reservation and recovery, not a customer lock alone.
+- [x] **1. Tests:** `TestBizAllMoneyWritersUseJournal`, `TestBizCurrencylessCreditRequest`, `TestBizCreditSpendRefundRace` (RF4), `TestBizCrossCurrencyCreditRejected`, `TestBizInvoiceAccountingInvariant`. Include indirect estimate conversion, usage billing, and coupon limits shared across customers; a global coupon redemption cap needs its own CAS reservation and recovery, not a customer lock alone.
   ```go
   require.Equal(t, "INR", defaulted.Scope.Currency)
   require.Equal(t, int64(0), doubleSpentPaisa)
   require.Equal(t, int64(1000), refundableAfterSpentExcess)
   require.ErrorIs(t, mismatchedCurrencyErr, ErrCurrencyMismatch)
   ```
-- [ ] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBiz(AllMoney|Currencyless|CreditSpend|CrossCurrency|InvoiceAccounting)' -count=1`.
-- [ ] **3. Implement:** Protect all active-v2 entrypoints, including scalar user-balance mirrors and generic-store writes. Retain legacy behavior for non-upgraded apps. Invoice paid fact is not reversed by a cash refund; expose refunds separately. Frozen/automatic-owned invoices reject competing initiated payments/adjustments, while verified unexpected captures remain recordable. Preserve existing manual APIs without pretending no-key requests are deduplicable.
-- [ ] **4. Green:** Repeat; verify balances/statement/payment projections match journal facts after restart, concurrency, and a failure between projections. Existing financial response snapshots still match.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "fix(biz-billing): protect balances and all monetary mutations"`.
+- [x] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBiz(AllMoney|Currencyless|CreditSpend|CrossCurrency|InvoiceAccounting)' -count=1`.
+- [x] **3. Implement:** Protect all active-v2 entrypoints, including scalar user-balance mirrors and generic-store writes. Retain legacy behavior for non-upgraded apps. Invoice paid fact is not reversed by a cash refund; expose refunds separately. Frozen/automatic-owned invoices reject competing initiated payments/adjustments, while verified unexpected captures remain recordable. Preserve existing manual APIs without pretending no-key requests are deduplicable.
+- [x] **4. Green:** Repeat; verify balances/statement/payment projections match journal facts after restart, concurrency, and a failure between projections. Existing financial response snapshots still match.
+- [x] **5. Commit:** Stage listed files; `git commit -m "fix(biz-billing): protect balances and all monetary mutations"`.
 
 ### Task 6: Non-destructive inventory, review, and per-app cutover
 
@@ -173,17 +173,17 @@ Evidence: persisted ES replay, four response-loss boundaries, partial-read gate,
 
 **Interfaces:** Produce `Prepare(ctx,appID string,options MigrationOptions) (*MigrationReport,error)`, `Resolve(ctx,appID,reviewID string,decision LegacyResolution) error`, `Activate(ctx,appID,reportID string) error`. `MigrationOptions{DryRun bool; ExpectedReportID string}` defaults to dry run at both CLI/HTTP boundaries. `MigrationReport` includes source revisions/hash, resource counts, unresolved currency/ownership, missing references, legacy gateway bindings, checkpoint, and readiness. `LegacyResolution` carries actor, reason, assigned currency/reference, and expected source revision. CLI `migrate biz-billing-v2 --app-id ID` defaults to dry run; `--apply --report-id ID` is explicit. Dry-run reports use a deterministic content digest and are returned without persistence; explicit preparation persists a reviewed report before resolutions/activation.
 
-- [ ] **1. Tests:** `TestBizMigrationDryRunNoWrites`, `TestBizMigrationResumePreservesSources`, `TestBizAmbiguousCurrencyNeedsReview`, `TestBizCutoverFencesOldWriter` (RF3). Pause a real legacy mutation holding its permit while activation begins; neither a timed-out lease nor stale report permits activation over that unresolved writer.
+- [x] **1. Tests:** `TestBizMigrationDryRunNoWrites`, `TestBizMigrationResumePreservesSources`, `TestBizAmbiguousCurrencyNeedsReview`, `TestBizCutoverFencesOldWriter` (RF3). Pause a real legacy mutation holding its permit while activation begins; neither a timed-out lease nor stale report permits activation over that unresolved writer.
   ```go
   require.Equal(t, before.SourceHashes, after.SourceHashes)
   require.False(t, report.Ready) // mixed/untraceable credit currency
   require.ErrorIs(t, activationErr, ErrActiveLegacyWriter)
   require.Equal(t, 2, activated.LifecycleVersion)
   ```
-- [ ] **2. Red:** Owned runner: `go test ./internal/usecases/services -run 'TestBiz(Migration|Ambiguous|Cutover)' -count=1`.
-- [ ] **3. Implement:** Before opening-balance capture, acquire the app migration fence, stop admission of new app money writes, drain registered writers and accepted operations, and snapshot/check source revisions. All new instances must register permits for legacy as well as v2 writes; deployment must first drain binaries unaware of this protocol. Dry run only reads; reviewed apply writes additive opening facts/checkpoints, preserving original documents. Stale source/review hashes invalidate activation. Release back to legacy on aborted preparation, or switch atomically to v2 after complete projection/readiness checks. Primary-currency selection never relabels old credit; ambiguous money remains unavailable pending owner review. Re-running uses the same opening-event identities.
-- [ ] **4. Green:** Repeat with crashes at every migration stage, post-report source changes, old server-wide orders, and duplicate apply. Verify original totals/numbers/history unchanged and one active writer version per app. Do not run against production.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): add reviewed resumable app upgrades"`.
+- [x] **2. Red:** Owned runner: `go test ./internal/usecases/services -run 'TestBiz(Migration|Ambiguous|Cutover)' -count=1`.
+- [x] **3. Implement:** Before opening-balance capture, acquire the app migration fence, stop admission of new app money writes, drain registered writers and accepted operations, and snapshot/check source revisions. All new instances must register permits for legacy as well as v2 writes; deployment must first drain binaries unaware of this protocol. Dry run only reads; reviewed apply writes additive opening facts/checkpoints, preserving original documents. Stale source/review hashes invalidate activation. Release back to legacy on aborted preparation, or switch atomically to v2 after complete projection/readiness checks. Primary-currency selection never relabels old credit; ambiguous money remains unavailable pending owner review. Re-running uses the same opening-event identities.
+- [x] **4. Green:** Repeat with crashes at every migration stage, post-report source changes, old server-wide orders, and duplicate apply. Verify original totals/numbers/history unchanged and one active writer version per app. Do not run against production.
+- [x] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): add reviewed resumable app upgrades"`.
 
 ### Task 7: Fix audit date filtering (#67)
 
@@ -205,6 +205,11 @@ Evidence: persisted ES replay, four response-loss boundaries, partial-read gate,
 Evidence: parser/HTTP validation and tenant-scoped List/Count tests PASS; owned ES same-day boundary/count/pagination PASS (6.67s); generated API references updated and docsgen -check PASS. Legacy page count envelope is retained.
 
 **Phase 1 checkpoint:** Run focused domain/repository/service/handler suites and legacy compatibility fixtures. Report commits, executed test counts, unresolved migration cases, and the fact v2 activation remains off. No production writes or implicit rollout.
+
+Phase 1 evidence (2026-11-12): 115 top-level billing checks across seven packages passed against owned local data; the broader short suite covered 63 packages including API route/contracts and SSE. Nine legacy HTTP end-to-end scenarios and six live lifecycle boundary checks passed. API generation/check, UI type-check/production build, and four fixture-safety tests passed. A fresh review's four important findings were reproduced and fixed in one verified pass. Native execution used checkpoint `7d8d895` plus one atomic final Task 5/6 commit because their remaining financial and migration wiring shares contracts.
+
+The local UI/API/worker use one main Compose project, with telemetry disabled and synthetic credentials; other projects and production data were untouched. Existing apps remain legacy and new activation defaults off. Ambiguous historical money, active legacy writers, unfinished operations, legacy gateway bindings and unsupported active subscriptions block cutover. Operator currency review and drained-writer recovery are explicit audited actions. Merchant collection, recurring renewals, delivery outbox, the full billing UI overhaul and release rehearsals remain assigned to later phases. The guided user smoke test must finish before Phase 2.
+
 
 ## Phase 2 — Each business's Razorpay account
 
@@ -531,7 +536,7 @@ Evidence: parser/HTTP validation and tenant-scoped List/Count tests PASS; owned 
 
 After each phase, send a concise update containing its delivered behavior, commits, verification evidence, and pending risks. Keep the next phase independent of an extra permission request once this plan is reviewed; the user has selected all six phases and native execution. Pause only for a material unanswered product decision, unavailable required external access, or an actual approval boundary such as production writes.
 
-- [ ] Phase 1: Tasks 1–7; evidence pending implementation.
+- [x] Phase 1 implementation: Tasks 1–7; automated local verification complete. Guided user UI smoke test is pending; Phase 2 has not started.
 - [ ] Phase 2: Tasks 8–11; evidence pending implementation.
 - [ ] Phase 3: Tasks 12–15; evidence pending implementation.
 - [ ] Phase 4: Tasks 16–19; evidence pending implementation.

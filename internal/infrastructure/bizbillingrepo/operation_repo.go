@@ -171,3 +171,42 @@ func (r *OperationRepo) Pending(ctx context.Context, after string, size int) ([]
 	}
 	return ops, nil
 }
+
+// PendingForApp is used only behind the app's migration fence. An unfinished
+// rejected head still counts until recovery has released it.
+func (r *OperationRepo) PendingForApp(ctx context.Context, appID string) ([]*bizbilling.Operation, error) {
+	if err := r.store.Refresh(ctx); err != nil {
+		return nil, err
+	}
+	result := []*bizbilling.Operation{}
+	after := ""
+	for {
+		q := NewQuery(appID)
+		body := q.Body("id", 200, 0)
+		body["sort"] = []interface{}{map[string]interface{}{"id": "asc"}}
+		filters := []interface{}{q.Bool(), map[string]interface{}{"bool": map[string]interface{}{"must_not": []interface{}{map[string]interface{}{"term": map[string]interface{}{"state": "completed"}}}}}}
+		if after != "" {
+			filters = append(filters, map[string]interface{}{"range": map[string]interface{}{"id": map[string]interface{}{"gt": after}}})
+		}
+		body["query"] = map[string]interface{}{"bool": map[string]interface{}{"filter": filters}}
+		rows, _, err := r.store.Find(ctx, body)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			return result, nil
+		}
+		for _, op := range rows {
+			if op.AppID != appID || op.ID == "" || op.ID <= after {
+				return nil, bizbilling.ErrReconciliationRequired
+			}
+			after = op.ID
+			if op.State != bizbilling.OperationRejected || !op.HeadReleased {
+				result = append(result, op)
+			}
+			if len(result) > 10000 {
+				return nil, bizbilling.ErrReconciliationRequired
+			}
+		}
+	}
+}

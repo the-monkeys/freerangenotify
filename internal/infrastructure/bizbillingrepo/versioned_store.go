@@ -61,6 +61,15 @@ func (s *Store[T]) GetVersioned(ctx context.Context, id string) (*T, Version, er
 	if err != nil {
 		return nil, version, err
 	}
+	if s.financialReader != nil {
+		normalized, err := s.financialReader(ctx, s.index, id, body.Source)
+		if err != nil {
+			return nil, version, err
+		}
+		if err = json.Unmarshal(normalized, &doc); err != nil {
+			return nil, version, err
+		}
+	}
 	return &doc, Version{SeqNo: body.SeqNo, PrimaryTerm: body.PrimaryTerm, index: s.index, id: id, source: body.Source, before: before}, nil
 }
 

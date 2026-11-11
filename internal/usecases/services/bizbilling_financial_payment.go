@@ -56,6 +56,10 @@ func invoiceAccountingInvariant(i *bizbilling.BizInvoice) error {
 func (s *BizOperationService) buildResourceFinancialEvent(ctx context.Context, command bizbilling.Command, claim bizbilling.StreamClaim, event bizbilling.JournalEvent, balance bizbilling.CustomerBalance) (bizbilling.JournalEvent, error) {
 	var err error
 	switch command.Kind {
+	case bizbilling.CommandInvoiceReminder:
+		err = s.buildInvoiceReminder(ctx, command, &event)
+	case bizbilling.CommandExpenseConvert:
+		err = s.buildExpenseConversion(ctx, command, claim, &event)
 	case bizbilling.CommandEstimateConvert:
 		err = s.buildEstimateConversion(ctx, command, &event)
 	case bizbilling.CommandOfflineRefund:

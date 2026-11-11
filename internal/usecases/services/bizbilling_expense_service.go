@@ -27,6 +27,17 @@ func NewBizExpenseService(stores *bizbillingrepo.Stores, lifecycleSvc *BizLifecy
 
 // Create records an expense.
 func (s *BizExpenseService) Create(ctx context.Context, appID string, req *bizbilling.CreateExpenseRequest) (*bizbilling.Expense, error) {
+	var gate *BizLifecycleGate
+	if s.lifecycleSvc != nil {
+		gate = s.lifecycleSvc.gate
+	}
+	scope, active, scopeErr := financialScopeFor(ctx, gate, appID, "expense-definition", req.Currency)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	if !active && req.Currency != "" {
+		return nil, errors.BadRequest("explicit expense currency requires reviewed billing upgrade")
+	}
 	if req.Billable && req.BilledToUser == "" {
 		return nil, errors.BadRequest("billed_to_user is required for billable expenses")
 	}
@@ -37,6 +48,12 @@ func (s *BizExpenseService) Create(ctx context.Context, appID string, req *bizbi
 		date = req.Date.UTC()
 	}
 	expense := &bizbilling.Expense{
+		Currency: func() string {
+			if active {
+				return scope.Currency
+			}
+			return ""
+		}(),
 		ID:              uuid.New().String(),
 		AppID:           appID,
 		Category:        req.Category,
@@ -65,6 +82,11 @@ func (s *BizExpenseService) Get(ctx context.Context, appID, id string) (*bizbill
 	if err != nil || expense.AppID != appID {
 		return nil, errors.NotFound("expense", id)
 	}
+	if s.lifecycleSvc != nil {
+		if err = guardFinancialRead(ctx, s.lifecycleSvc.gate, s.lifecycleSvc.operations, expense.FinancialScope(), expense.LastSequence); err != nil {
+			return nil, err
+		}
+	}
 	return expense, nil
 }
 
@@ -84,7 +106,16 @@ func (s *BizExpenseService) List(ctx context.Context, filter bizbilling.ExpenseF
 		to = filter.To
 	}
 	q.Range("date", from, to)
-	return s.expenses.Find(ctx, q.Body("date", filter.Limit, filter.Offset))
+	rows, total, err := s.expenses.Find(ctx, q.Body("date", filter.Limit, filter.Offset))
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.lifecycleSvc != nil {
+		if err = guardFinancialRows(ctx, s.lifecycleSvc.gate, s.lifecycleSvc.operations, rows); err != nil {
+			return nil, 0, err
+		}
+	}
+	return rows, total, nil
 }
 
 // Update updates an expense that has not been invoiced yet.
@@ -140,6 +171,9 @@ func (s *BizExpenseService) Delete(ctx context.Context, appID, id string) error 
 // ConvertToInvoice bundles a user's un-invoiced billable expenses into a new
 // draft invoice (one line item per expense) and marks them as invoiced.
 func (s *BizExpenseService) ConvertToInvoice(ctx context.Context, appID, userID string, expenseIDs []string) (*bizbilling.BizInvoice, error) {
+	if inv, handled, err := s.tryFinancialConversion(ctx, appID, userID, expenseIDs); handled || err != nil {
+		return inv, err
+	}
 	if len(expenseIDs) == 0 {
 		return nil, errors.BadRequest("at least one expense_id is required")
 	}
@@ -197,6 +231,15 @@ func (s *BizExpenseService) ConvertToInvoice(ctx context.Context, appID, userID 
 
 // CategorySummary aggregates expense totals per category within a period.
 func (s *BizExpenseService) CategorySummary(ctx context.Context, appID string, from, to *time.Time) (map[string]int64, error) {
+	if s.lifecycleSvc != nil && s.lifecycleSvc.operations != nil {
+		enabled, err := (&BizAnalyticsService{operations: s.lifecycleSvc.operations}).financialReportsEnabled(ctx, appID)
+		if err != nil {
+			return nil, err
+		}
+		if enabled {
+			return s.financialExpenseSummary(ctx, appID, from, to)
+		}
+	}
 	q := bizbillingrepo.NewQuery(appID)
 	var gte, lte interface{}
 	if from != nil {

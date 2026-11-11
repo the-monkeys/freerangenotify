@@ -17,7 +17,7 @@ func (s *Stores) RefreshFinancialProjections(ctx context.Context, event bizbilli
 		index   string
 	}{
 		{event.InvoiceAfter != nil, invoiceIndex}, {event.PaymentAfter != nil, paymentIndex},
-		{event.EstimateAfter != nil, EstimateIndex}, {event.CreditNoteAfter != nil, CreditNoteIndex},
+		{len(event.ExpensesAfter) > 0, ExpenseIndex}, {event.EstimateAfter != nil, EstimateIndex}, {event.CreditNoteAfter != nil, CreditNoteIndex},
 		{event.RetainerAfter != nil, RetainerIndex}, {event.CreditApplicationAfter != nil, CreditApplicationIndex},
 		{len(event.CreditLotsAfter) > 0, CreditLotIndex}, {event.RefundReservationAfter != nil, RefundReservationIndex},
 		{event.CouponRedemptionAfter != nil, CouponRedemptionIndex}, {event.CouponRedemptionAfter != nil, CouponIndex},
