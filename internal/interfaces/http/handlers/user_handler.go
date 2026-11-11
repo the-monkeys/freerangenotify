@@ -21,11 +21,13 @@ import (
 
 // UserHandler handles user-related HTTP requests
 type UserHandler struct {
-	service   usecases.UserService
-	validator *validator.Validator
-	logger    *zap.Logger
-	linkRepo  resourcelink.Repository
-	userRepo  user.Repository
+	service              usecases.UserService
+	validator            *validator.Validator
+	logger               *zap.Logger
+	linkRepo             resourcelink.Repository
+	userRepo             user.Repository
+	billingBalanceWriter UserBillingBalanceWriter
+	billingBalanceReader func(context.Context, *user.User) (int64, bool, error)
 }
 
 // NewUserHandler creates a new UserHandler
@@ -39,6 +41,33 @@ func NewUserHandler(service usecases.UserService, v *validator.Validator, logger
 
 func (h *UserHandler) SetLinkRepo(repo resourcelink.Repository) { h.linkRepo = repo }
 func (h *UserHandler) SetUserRepo(repo user.Repository)         { h.userRepo = repo }
+
+// SetBillingBalanceReader adds authoritative billing reads without adding work
+// to notification recipient lookups or changing legacy UserService adapters.
+func (h *UserHandler) SetBillingBalanceReader(reader func(context.Context, *user.User) (int64, bool, error)) {
+	h.billingBalanceReader = reader
+}
+
+func (h *UserHandler) billingUserResponse(c *fiber.Ctx, profile *user.User) (dto.UserResponse, error) {
+	response := dto.ToUserResponse(profile)
+	// A linked profile belongs to its source app. Do not disclose that app's
+	// financial balance through another app's subscriber listing.
+	appID, _ := c.Locals("app_id").(string)
+	if profile.AppID != appID {
+		response.BalancePaisa = 0
+		return response, nil
+	}
+	if h.billingBalanceReader != nil {
+		balance, upgraded, err := h.billingBalanceReader(c.UserContext(), profile)
+		if err != nil {
+			return response, errors.New(errors.ErrCodeServiceUnavailable, "Customer balance is being reconciled; retry shortly")
+		}
+		if upgraded {
+			response.BalancePaisa = balance
+		}
+	}
+	return response, nil
+}
 
 // getAppID extracts the authenticated app_id from Fiber context.
 func (h *UserHandler) getAppID(c *fiber.Ctx) (string, error) {
@@ -139,7 +168,27 @@ func (h *UserHandler) Create(c *fiber.Ctx) error {
 		u.Preferences = *req.Preferences
 	}
 
-	if err := h.service.Create(c.Context(), u); err != nil {
+	mutationCtx := c.UserContext()
+	var receipt *user.BillingBalanceReceipt
+	if req.BalancePaisa != 0 && h.billingBalanceWriter != nil {
+		assignBillingCustomerID(c, u, "")
+		if err := h.checkBillingCustomerIdentity(c, u); err != nil {
+			return err
+		}
+		var err error
+		mutationCtx, receipt, err = h.prepareUserBalance(c, u, req.BalancePaisa, "customer opening balance", req)
+		if err != nil {
+			return h.userBillingError(c, err)
+		}
+	}
+	if err := h.service.Create(mutationCtx, u); err != nil {
+		if receipt != nil && userBillingRequestKey(c) != "" {
+			if existing, lookupErr := h.service.GetByID(mutationCtx, u.UserID); lookupErr == nil && existing.AppID == appID {
+				response := dto.ToUserResponse(existing)
+				response.BalancePaisa = receipt.BalancePaisa
+				return c.Status(fiber.StatusCreated).JSON(fiber.Map{"success": true, "data": response})
+			}
+		}
 		return err
 	}
 
@@ -173,9 +222,13 @@ func (h *UserHandler) GetByID(c *fiber.Ctx) error {
 		return err
 	}
 
+	response, err := h.billingUserResponse(c, u)
+	if err != nil {
+		return err
+	}
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    dto.ToUserResponse(u),
+		"data":    response,
 	})
 }
 
@@ -208,9 +261,13 @@ func (h *UserHandler) GetByExternalID(c *fiber.Ctx) error {
 		return err
 	}
 
+	response, err := h.billingUserResponse(c, u)
+	if err != nil {
+		return err
+	}
 	return c.JSON(fiber.Map{
 		"success": true,
-		"data":    dto.ToUserResponse(u),
+		"data":    response,
 	})
 }
 
@@ -288,7 +345,15 @@ func (h *UserHandler) Update(c *fiber.Ctx) error {
 		u.BillingMeta = req.BillingMeta
 	}
 
-	if err := h.service.Update(c.Context(), u); err != nil {
+	mutationCtx := c.UserContext()
+	if req.BalancePaisa != nil && h.billingBalanceWriter != nil {
+		var err error
+		mutationCtx, _, err = h.prepareUserBalance(c, u, *req.BalancePaisa, "profile balance set", req)
+		if err != nil {
+			return h.userBillingError(c, err)
+		}
+	}
+	if err := h.service.Update(mutationCtx, u); err != nil {
 		return err
 	}
 
@@ -333,7 +398,19 @@ func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
 		return errors.Validation("Validation failed", validator.FormatValidationErrors(err))
 	}
 
-	u, err := h.service.UpdateByExternalID(c.Context(), appID, externalID, func(u *user.User) {
+	mutationCtx := c.UserContext()
+	var receipt *user.BillingBalanceReceipt
+	if req.BalancePaisa != nil && h.billingBalanceWriter != nil {
+		profile, err := h.service.GetByExternalID(mutationCtx, appID, externalID)
+		if err != nil {
+			return err
+		}
+		mutationCtx, receipt, err = h.prepareUserBalance(c, profile, *req.BalancePaisa, "profile balance set", req)
+		if err != nil {
+			return h.userBillingError(c, err)
+		}
+	}
+	u, err := h.service.UpdateByExternalID(mutationCtx, appID, externalID, func(u *user.User) {
 		if req.ExternalID != "" {
 			u.ExternalID = req.ExternalID
 		}
@@ -373,6 +450,10 @@ func (h *UserHandler) UpdateByExternalID(c *fiber.Ctx) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	if receipt != nil {
+		u.BalancePaisa = receipt.BalancePaisa
 	}
 
 	return c.JSON(fiber.Map{
@@ -550,7 +631,11 @@ func (h *UserHandler) List(c *fiber.Ctx) error {
 
 	userResponses := make([]dto.UserResponse, len(users))
 	for i, u := range users {
-		userResponses[i] = dto.ToUserResponse(u)
+		response, err := h.billingUserResponse(c, u)
+		if err != nil {
+			return err
+		}
+		userResponses[i] = response
 	}
 
 	return c.JSON(fiber.Map{
@@ -918,11 +1003,20 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 				if u.BillingMeta != nil {
 					existing.BillingMeta = u.BillingMeta
 				}
+				mutationCtx := c.UserContext()
+				if ur.BalancePaisa != 0 && h.billingBalanceWriter != nil {
+					var err error
+					mutationCtx, _, err = h.prepareUserBalance(c, existing, ur.BalancePaisa, "profile balance set", ur)
+					if err != nil {
+						bulkErrors = append(bulkErrors, dto.BulkUserError{Index: i, Email: ur.Email, Message: "credit initialization pending or rejected; check this row before retrying"})
+						continue
+					}
+				}
 				if err := func() error {
 					if pending[existing] {
 						return nil
 					}
-					return h.service.Update(c.Context(), existing)
+					return h.service.Update(mutationCtx, existing)
 				}(); err != nil {
 					bulkErrors = append(bulkErrors, dto.BulkUserError{
 						Index:   i,
@@ -936,6 +1030,18 @@ func (h *UserHandler) BulkCreate(c *fiber.Ctx) error {
 						updatedUsers = append(updatedUsers, existing)
 					}
 				}
+				continue
+			}
+		}
+
+		if ur.BalancePaisa != 0 && h.billingBalanceWriter != nil {
+			assignBillingCustomerID(c, u, ur.Email+":"+ur.ExternalID)
+			if err := h.checkBillingCustomerIdentity(c, u); err != nil {
+				bulkErrors = append(bulkErrors, dto.BulkUserError{Index: i, Email: ur.Email, Message: "customer identity conflicts with this credit request"})
+				continue
+			}
+			if _, _, err := h.prepareUserBalance(c, u, ur.BalancePaisa, "customer opening balance", ur); err != nil {
+				bulkErrors = append(bulkErrors, dto.BulkUserError{Index: i, Email: ur.Email, Message: "credit initialization pending or rejected; check this row before retrying"})
 				continue
 			}
 		}

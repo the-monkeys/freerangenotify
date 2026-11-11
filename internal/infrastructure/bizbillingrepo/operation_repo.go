@@ -54,7 +54,7 @@ func (r *OperationRepo) Begin(ctx context.Context, command bizbilling.Command) (
 		}{command.Scope, command.IdempotencyKey})
 	}
 	now := time.Now().UTC()
-	op := &bizbilling.Operation{SchemaVersion: 1, ID: id, AppID: command.Scope.AppID, Scope: command.Scope, IntentHash: intentHash(command), Command: command, State: bizbilling.OperationAccepted, CreatedAt: now, UpdatedAt: now}
+	op := &bizbilling.Operation{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: id, AppID: command.Scope.AppID, Scope: command.Scope, IntentHash: intentHash(command), Command: command, State: bizbilling.OperationAccepted, CreatedAt: now, UpdatedAt: now}
 	created, err := r.store.CreateIfAbsent(ctx, id, op)
 	if err != nil {
 		return op, false, err
@@ -76,7 +76,7 @@ func (r *OperationRepo) Get(ctx context.Context, id string) (*bizbilling.Operati
 	if err != nil {
 		return nil, err
 	}
-	if op.SchemaVersion != 1 || (op.Event != nil && op.Event.SchemaVersion != 1) || op.ID != id || op.AppID != op.Scope.AppID || op.Command.Scope != op.Scope || op.Command.Validate() != nil || intentHash(op.Command) != op.IntentHash {
+	if op.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || (op.Event != nil && op.Event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion) || op.ID != id || op.AppID != op.Scope.AppID || op.Command.Scope != op.Scope || op.Command.Validate() != nil || intentHash(op.Command) != op.IntentHash {
 		return nil, bizbilling.ErrReconciliationRequired
 	}
 	switch op.State {
@@ -103,7 +103,7 @@ func (r *OperationRepo) Get(ctx context.Context, id string) (*bizbilling.Operati
 }
 func (r *OperationRepo) Freeze(ctx context.Context, id string, event bizbilling.JournalEvent) (*bizbilling.Operation, error) {
 	return r.store.Update(ctx, id, func(op *bizbilling.Operation) error {
-		if op.SchemaVersion != 1 || event.SchemaVersion != 1 || op.Scope != event.Scope || op.ID != event.OperationID || event.Sequence <= 0 || op.Command.Kind != event.Kind {
+		if op.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || op.Scope != event.Scope || op.ID != event.OperationID || event.Sequence <= 0 || op.Command.Kind != event.Kind {
 			return bizbilling.ErrReconciliationRequired
 		}
 		if op.Event != nil {
@@ -113,6 +113,7 @@ func (r *OperationRepo) Freeze(ctx context.Context, id string, event bizbilling.
 			return bizbilling.ErrConflict
 		}
 		op.Event = &event
+		op.Resources = event.Resources
 		op.State = bizbilling.OperationPrepared
 		op.UpdatedAt = time.Now().UTC()
 		return nil

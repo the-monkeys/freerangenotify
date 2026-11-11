@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	stderrors "errors"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	operations   *services.BizOperationService
 	gate         *services.BizLifecycleGate
 	productSvc   *services.BizProductService
 	planSvc      *services.BizPlanService
@@ -622,12 +624,52 @@ func (h *BizBillingHandler) UpdateConfig(c *fiber.Ctx) error {
 
 // handleError converts domain errors to HTTP status codes.
 func (h *BizBillingHandler) handleError(c *fiber.Ctx, err error) error {
-	if appErr, ok := errors.AsAppError(err); ok {
-		return c.Status(appErr.GetHTTPStatus()).JSON(fiber.Map{"error": err.Error()})
-	}
+	var operation *bizbilling.OperationFailure
+	stderrors.As(err, &operation)
+	status, code, message, retryable := fiber.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", false
+	switch {
+	case stderrors.Is(err, bizbilling.ErrLegacyReviewRequired):
+		status, code, message = 409, "BILLING_LEGACY_REVIEW_REQUIRED", "Review this historical credit before spending or refunding it."
+	case stderrors.Is(err, bizbilling.ErrCouponExhausted):
+		status, code, message = 400, "BILLING_COUPON_UNAVAILABLE", "This coupon is unavailable or its usage limit has been reached."
 
-	h.logger.Error("Internal error in biz billing handler", zap.Error(err))
-	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "internal server error"})
+	case stderrors.Is(err, bizbilling.ErrCurrencyMismatch):
+		status, code, message = 409, "BILLING_CURRENCY_MISMATCH", "The request currency does not match this record."
+	case stderrors.Is(err, bizbilling.ErrIdempotencyConflict):
+		status, code, message = 409, "BILLING_IDEMPOTENCY_CONFLICT", "This idempotency key was already used for a different request."
+	case stderrors.Is(err, bizbilling.ErrAutomaticCollectionInProgress):
+		status, code, message = 409, "BILLING_COLLECTION_LOCKED", "Stop automatic collection and confirm its status before changing this invoice."
+	case stderrors.Is(err, bizbilling.ErrActiveLegacyWriter):
+		status, code, message, retryable = 503, "BILLING_UPGRADE_PENDING", "Billing upgrade is in progress. Retry shortly.", true
+	case stderrors.Is(err, bizbilling.ErrReconciliationRequired):
+		status, code, message, retryable = 503, "BILLING_RECONCILIATION_PENDING", "Billing needs reconciliation. Check the operation status before retrying.", true
+	case stderrors.Is(err, bizbilling.ErrConflict) || stderrors.Is(err, bizbilling.ErrStaleMutationPermit):
+		status, code, message, retryable = 409, "BILLING_CONFLICT", "Billing changed. Retry using the same idempotency key.", true
+	case stderrors.Is(err, bizbilling.ErrInvalidMoney) || stderrors.Is(err, bizbilling.ErrMoneyOverflow):
+		status, code, message = 400, "BILLING_INVALID_AMOUNT", "Invalid amount, rate, or financial state."
+	default:
+		if appErr, ok := errors.AsAppError(err); ok {
+			status, code, message, retryable = appErr.GetHTTPStatus(), appErr.Code, err.Error(), appErr.Retryable
+			if operation != nil {
+				message = appErr.Message
+			}
+		} else if operation != nil {
+			status, code, message, retryable = 503, "BILLING_OPERATION_PENDING", "Billing could not confirm completion. Check the operation status before retrying.", true
+		}
+	}
+	response := fiber.Map{"error": message, "code": code, "retryable": retryable}
+	if operation != nil && operation.Result.OperationID != "" {
+		response["operation_id"] = operation.Result.OperationID
+		response["operation_state"] = operation.Result.State
+		c.Set("Operation-Id", operation.Result.OperationID)
+	}
+	if retryable {
+		c.Set("Retry-After", "1")
+	}
+	if status >= 500 {
+		h.logger.Warn("Billing request needs recovery", zap.String("failure_code", code))
+	}
+	return c.Status(status).JSON(response)
 }
 
 // queryInt extracts an integer query parameter with a default value.
@@ -654,6 +696,14 @@ func (h *BizBillingHandler) GuardMutations(c *fiber.Ctx) error {
 	if c.Method() == fiber.MethodGet || c.Method() == fiber.MethodHead || c.Method() == fiber.MethodOptions {
 		return c.Next()
 	}
+	key := c.Get("Idempotency-Key")
+	if len(key) > 200 {
+		return c.Status(400).JSON(fiber.Map{"error": "Idempotency-Key must be at most 200 characters", "code": "BILLING_INVALID_IDEMPOTENCY_KEY"})
+	}
+	ctxWithKey := services.WithBizOperationKey(c.UserContext(), key)
+	actor, _ := c.Locals("user_id").(string)
+	ctxWithKey = services.WithBizOperationActor(ctxWithKey, actor)
+	c.SetUserContext(ctxWithKey)
 	app, err := h.getAppID(c)
 	if err != nil {
 		return h.handleError(c, err)

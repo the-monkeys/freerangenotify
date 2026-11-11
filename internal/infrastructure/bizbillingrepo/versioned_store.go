@@ -72,6 +72,11 @@ func (s *Store[T]) CreateIfAbsent(ctx context.Context, id string, doc *T) (bool,
 	if err != nil {
 		return false, err
 	}
+	done, err := s.guardFinancialWrite(ctx, nil, data)
+	if err != nil {
+		return false, err
+	}
+	defer done()
 	req := esapi.IndexRequest{Index: s.index, DocumentID: id, OpType: "create", Refresh: string(s.refresh), Body: bytes.NewReader(data)}
 	err = s.write(ctx, req)
 	if err == bizbilling.ErrConflict {
@@ -96,6 +101,11 @@ func (s *Store[T]) ReplaceVersioned(ctx context.Context, id string, doc *T, expe
 	if err != nil {
 		return err
 	}
+	done, err := s.guardFinancialWrite(ctx, expected.source, merged)
+	if err != nil {
+		return err
+	}
+	defer done()
 	return s.write(ctx, esapi.IndexRequest{Index: s.index, DocumentID: id, IfSeqNo: &seq, IfPrimaryTerm: &term, Refresh: string(s.refresh), Body: bytes.NewReader(merged)})
 }
 

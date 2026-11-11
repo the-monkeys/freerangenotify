@@ -14,6 +14,7 @@ type MutationPermit struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 type LifecycleState struct {
+	WriteRevision    int64                     `json:"write_revision,omitempty"`
 	AppID            string                    `json:"app_id"`
 	PrimaryCurrency  string                    `json:"primary_currency,omitempty"`
 	LifecycleVersion int                       `json:"lifecycle_version"`

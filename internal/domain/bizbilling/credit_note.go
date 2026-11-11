@@ -27,6 +27,9 @@ const (
 // CreditNote represents a credit issued to a customer for billing
 // corrections or partial refunds. BalancePaisa tracks the unconsumed amount.
 type CreditNote struct {
+	Currency         string           `json:"currency,omitempty"`
+	LastSequence     int64            `json:"billing_sequence,omitempty"`
+	RefundedPaisa    int64            `json:"refunded_paisa,omitempty"`
 	ID               string           `json:"id"`
 	AppID            string           `json:"app_id"`
 	UserID           string           `json:"user_id"`
@@ -44,6 +47,9 @@ type CreditNote struct {
 // Retainer represents an advance-payment (deposit) invoice whose paid
 // balance is drawn down against future invoices.
 type Retainer struct {
+	Currency        string         `json:"currency,omitempty"`
+	LastSequence    int64          `json:"billing_sequence,omitempty"`
+	RefundedPaisa   int64          `json:"refunded_paisa,omitempty"`
 	ID              string         `json:"id"`
 	AppID           string         `json:"app_id"`
 	UserID          string         `json:"user_id"`
@@ -60,6 +66,7 @@ type Retainer struct {
 
 // CreateCreditNoteRequest is the payload for creating a credit note.
 type CreateCreditNoteRequest struct {
+	Currency    string `json:"currency,omitempty"`
 	UserID      string `json:"user_id" validate:"required"`
 	InvoiceID   string `json:"invoice_id,omitempty"`
 	AmountPaisa int64  `json:"amount_paisa" validate:"required,gt=0"`
@@ -68,6 +75,7 @@ type CreateCreditNoteRequest struct {
 
 // CreateRetainerRequest is the payload for creating a retainer invoice.
 type CreateRetainerRequest struct {
+	Currency    string `json:"currency,omitempty"`
 	UserID      string `json:"user_id" validate:"required"`
 	AmountPaisa int64  `json:"amount_paisa" validate:"required,gt=0"`
 	Notes       string `json:"notes,omitempty"`
@@ -90,3 +98,15 @@ type RetainerFilter struct {
 	Limit  int
 	Offset int
 }
+
+func (a CreditNote) FinancialScope() Scope {
+	return Scope{AppID: a.AppID, UserID: a.UserID, Currency: a.Currency}
+}
+func (a CreditNote) FinancialSequence() int64 { return a.LastSequence }
+func (a CreditNote) FinancialID() string      { return a.ID }
+
+func (a Retainer) FinancialScope() Scope {
+	return Scope{AppID: a.AppID, UserID: a.UserID, Currency: a.Currency}
+}
+func (a Retainer) FinancialSequence() int64 { return a.LastSequence }
+func (a Retainer) FinancialID() string      { return a.ID }

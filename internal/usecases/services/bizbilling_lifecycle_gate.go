@@ -82,6 +82,13 @@ func (g *BizLifecycleGate) ReleaseMutation(ctx context.Context, p bizbilling.Mut
 		if stored.Epoch != p.Epoch || s.Epoch != p.Epoch {
 			return bizbilling.ErrStaleMutationPermit
 		}
+		if s.LifecycleVersion == 2 {
+			revision, err := bizbilling.CheckedAdd(s.WriteRevision, 1)
+			if err != nil {
+				return err
+			}
+			s.WriteRevision = revision
+		}
 		delete(s.MutationPermits, p.WriterID)
 		return nil
 	})

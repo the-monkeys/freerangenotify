@@ -18,8 +18,8 @@ func TestBizLeaseCannotAbortFrozenEvent(t *testing.T) {
 	scope := bizbilling.Scope{AppID: "app", UserID: "user", Currency: "INR"}
 	claim := bizbilling.StreamClaim{Scope: scope, Sequence: 1, OperationID: "op", Owner: "owner", Generation: 1}
 	command := bizbilling.Command{Kind: bizbilling.CommandOpeningBalance, Scope: scope, OpeningBalance: &bizbilling.OpeningBalance{AvailablePaisa: 400}}
-	event := &bizbilling.JournalEvent{SchemaVersion: 1, ID: JournalID(scope, 1), AppID: scope.AppID, Scope: scope, OperationID: "op", Sequence: 1, Kind: command.Kind}
-	op := bizbilling.Operation{SchemaVersion: 1, ID: "op", AppID: scope.AppID, Scope: scope, IntentHash: intentHash(command), Command: command, Event: event, State: bizbilling.OperationPrepared}
+	event := &bizbilling.JournalEvent{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: JournalID(scope, 1), AppID: scope.AppID, Scope: scope, OperationID: "op", Sequence: 1, Kind: command.Kind}
+	op := bizbilling.Operation{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: "op", AppID: scope.AppID, Scope: scope, IntentHash: intentHash(command), Command: command, Event: event, State: bizbilling.OperationPrepared}
 	var writes atomic.Int32
 	store := transportCASStore(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -43,8 +43,8 @@ func TestBizLeaseCannotCommitIncompleteProjection(t *testing.T) {
 			scope := bizbilling.Scope{AppID: "app", UserID: "user", Currency: "INR"}
 			claim := bizbilling.StreamClaim{Scope: scope, Sequence: 1, OperationID: "op", Owner: "owner", Generation: 1}
 			command := bizbilling.Command{Kind: bizbilling.CommandOpeningBalance, Scope: scope, OpeningBalance: &bizbilling.OpeningBalance{AvailablePaisa: 400}}
-			event := &bizbilling.JournalEvent{SchemaVersion: 1, ID: JournalID(scope, 1), AppID: scope.AppID, Scope: scope, OperationID: "op", Sequence: 1, Kind: command.Kind, BalanceAfter: &bizbilling.CustomerBalance{Scope: scope, AvailablePaisa: 400, LastSequence: 1}}
-			op := bizbilling.Operation{SchemaVersion: 1, ID: "op", AppID: scope.AppID, Scope: scope, IntentHash: intentHash(command), Command: command, Event: event, State: bizbilling.OperationPrepared}
+			event := &bizbilling.JournalEvent{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: JournalID(scope, 1), AppID: scope.AppID, Scope: scope, OperationID: "op", Sequence: 1, Kind: command.Kind, BalanceAfter: &bizbilling.CustomerBalance{Scope: scope, AvailablePaisa: 400, LastSequence: 1}}
+			op := bizbilling.Operation{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: "op", AppID: scope.AppID, Scope: scope, IntentHash: intentHash(command), Command: command, Event: event, State: bizbilling.OperationPrepared}
 			var writes atomic.Int32
 			store := transportCASStore(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet {

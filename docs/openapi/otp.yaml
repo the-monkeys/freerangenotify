@@ -513,6 +513,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 reason:
                     type: string
             required:
@@ -644,6 +646,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 invoice_id:
                     type: string
                 reason:
@@ -821,6 +825,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 notes:
                     type: string
                 user_id:
@@ -890,8 +896,12 @@ components:
                     type: string
                 quantity:
                     type: integer
+                tax_exempt:
+                    type: boolean
                 tax_rate:
                     description: e.g., 18 for 18%
+                    type: integer
+                tax_rate_override:
                     type: integer
                 unit_price:
                     description: in paisa

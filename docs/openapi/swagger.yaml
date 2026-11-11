@@ -513,6 +513,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 reason:
                     type: string
             required:
@@ -644,6 +646,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 invoice_id:
                     type: string
                 reason:
@@ -821,6 +825,8 @@ components:
             properties:
                 amount_paisa:
                     type: integer
+                currency:
+                    type: string
                 notes:
                     type: string
                 user_id:
@@ -890,8 +896,12 @@ components:
                     type: string
                 quantity:
                     type: integer
+                tax_exempt:
+                    type: boolean
                 tax_rate:
                     description: e.g., 18 for 18%
+                    type: integer
+                tax_rate_override:
                     type: integer
                 unit_price:
                     description: in paisa
@@ -9364,6 +9374,105 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/operations/{id}:
+        get:
+            description: Use the operation_id from a pending request. Results belong to the authenticated application and contain no payment credentials.
+            parameters:
+                - description: Billing operation ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Check a billing action
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/operations/{id}/resume:
+        post:
+            description: Continues the saved action using its original details. A new request body cannot change the action. Pending work may need reconciliation before it can continue.
+            parameters:
+                - description: Billing operation ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Resume a saved billing action
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/payments:
         get:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
@@ -10683,6 +10792,63 @@ paths:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/users/{user_id}/balance:
+        get:
+            description: Returns available and reserved amounts in minor currency units. Omit currency to use the application's primary billing currency. Requires a reviewed business billing upgrade.
+            parameters:
+                - description: Customer user ID
+                  in: path
+                  name: user_id
+                  required: true
+                  schema:
+                    type: string
+                - description: Currency code, such as INR
+                  in: query
+                  name: currency
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get a customer's credit balance
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
         post:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
             parameters:
@@ -10776,6 +10942,11 @@ paths:
                   in: path
                   name: user_id
                   required: true
+                  schema:
+                    type: string
+                - description: Currency code; defaults to the reviewed primary currency on upgraded applications
+                  in: query
+                  name: currency
                   schema:
                     type: string
             responses:

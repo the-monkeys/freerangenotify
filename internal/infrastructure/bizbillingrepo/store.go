@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -18,21 +19,26 @@ import (
 // BaseRepository so every biz billing entity gets Create/Get/Update/Delete/
 // Find without repeating marshal/unmarshal boilerplate.
 type Store[T any] struct {
-	base    *repository.BaseRepository
-	es      *elasticsearch.Client
-	index   string
-	logger  *zap.Logger
-	refresh repository.RefreshPolicy
+	financialGuard FinancialWriteGuard
+	base           *repository.BaseRepository
+	es             *elasticsearch.Client
+	index          string
+	logger         *zap.Logger
+	refresh        repository.RefreshPolicy
 }
 
 // NewStore creates a typed store for the given index.
-func NewStore[T any](es *elasticsearch.Client, index string, logger *zap.Logger) *Store[T] {
+func NewStore[T any](es *elasticsearch.Client, index string, logger *zap.Logger, policies ...repository.RefreshPolicy) *Store[T] {
+	refresh := repository.RefreshWaitFor
+	if len(policies) > 0 {
+		refresh = policies[0]
+	}
 	return &Store[T]{
-		base:    repository.NewBaseRepository(es, index, logger, repository.RefreshWaitFor),
+		base:    repository.NewBaseRepository(es, index, logger, refresh),
 		es:      es,
 		index:   index,
 		logger:  logger,
-		refresh: repository.RefreshWaitFor,
+		refresh: refresh,
 	}
 }
 
@@ -87,27 +93,89 @@ func (s *Store[T]) Replace(ctx context.Context, id string, doc *T) error {
 }
 
 func (s *Store[T]) Delete(ctx context.Context, id string) error {
-	return s.base.Delete(ctx, id)
+	if s.financialGuard == nil {
+		return s.base.Delete(ctx, id)
+	}
+	_, version, err := s.GetVersioned(ctx, id)
+	if err != nil {
+		return err
+	}
+	done, err := s.guardFinancialWrite(ctx, version.source, nil)
+	if err != nil {
+		return err
+	}
+	defer done()
+	seq, term := int(version.SeqNo), int(version.PrimaryTerm)
+	if int64(seq) != version.SeqNo || int64(term) != version.PrimaryTerm {
+		return bizbilling.ErrConflict
+	}
+	request := esapi.DeleteRequest{Index: s.index, DocumentID: id, IfSeqNo: &seq, IfPrimaryTerm: &term, Refresh: string(s.refresh)}
+	res, err := request.Do(ctx, s.es)
+	if err != nil {
+		return fmt.Errorf("billing deletion outcome unknown: %w", err)
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, res.Body)
+	if res.StatusCode == 409 {
+		return bizbilling.ErrConflict
+	}
+	if res.IsError() {
+		return fmt.Errorf("billing deletion HTTP %d", res.StatusCode)
+	}
+	return nil
+
 }
 
 // Find executes a full search request body and decodes the hits.
 func (s *Store[T]) Find(ctx context.Context, searchBody map[string]interface{}) ([]*T, int64, error) {
-	res, err := s.base.Search(ctx, searchBody)
+	data, err := json.Marshal(searchBody)
 	if err != nil {
 		return nil, 0, err
 	}
-
-	docs := make([]*T, 0, len(res.Hits))
-	for _, hit := range res.Hits {
-		doc, err := decodeDoc[T](hit)
-		if err != nil {
-			s.logger.Error("bizbillingrepo: failed to decode document",
-				zap.String("index", s.index), zap.Error(err))
-			continue
-		}
-		docs = append(docs, doc)
+	res, err := (esapi.SearchRequest{Index: []string{s.index}, Body: strings.NewReader(string(data))}).Do(ctx, s.es)
+	if err != nil {
+		return nil, 0, err
 	}
-	return docs, res.Total, nil
+	defer res.Body.Close()
+	if res.IsError() {
+		return nil, 0, fmt.Errorf("bizbillingrepo: search HTTP %d", res.StatusCode)
+	}
+	var result struct {
+		Hits struct {
+			Total struct {
+				Value int64 `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				Source json.RawMessage `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err = json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, 0, err
+	}
+	docs := make([]*T, 0, len(result.Hits.Hits))
+	for _, hit := range result.Hits.Hits {
+		var doc T
+		if err = json.Unmarshal(hit.Source, &doc); err != nil {
+			return nil, 0, fmt.Errorf("bizbillingrepo: invalid search document: %w", err)
+		}
+		docs = append(docs, &doc)
+	}
+	return docs, result.Hits.Total.Value, nil
+}
+
+// Refresh makes new discovery records searchable before a stream is committed.
+// Monetary resource reads themselves always use realtime GET.
+func (s *Store[T]) Refresh(ctx context.Context) error {
+	res, err := s.es.Indices.Refresh(s.es.Indices.Refresh.WithIndex(s.index), s.es.Indices.Refresh.WithContext(ctx))
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("bizbillingrepo: refresh HTTP %d", res.StatusCode)
+	}
+	return nil
 }
 
 // Aggregate runs a search with aggregations and returns the raw "aggregations"

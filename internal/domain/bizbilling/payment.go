@@ -16,23 +16,50 @@ const (
 
 // BizPayment represents a payment record for an invoice.
 type BizPayment struct {
-	ID               string                 `json:"id"`
-	AppID            string                 `json:"app_id"`
-	UserID           string                 `json:"user_id"`
-	InvoiceIDs       []string               `json:"invoice_ids"`
-	AmountPaisa      int64                  `json:"amount_paisa"`
-	Currency         string                 `json:"currency"`
-	Method           string                 `json:"method"` // "card", "bank_transfer", "cash"
-	Gateway          string                 `json:"gateway,omitempty"`
-	GatewayPaymentID string                 `json:"gateway_payment_id,omitempty"`
-	Status           PaymentStatus          `json:"status"`
-	RefundedPaisa    int64                  `json:"refunded_paisa,omitempty"`
-	TDSPaisa         int64                  `json:"tds_paisa,omitempty"`
-	Notes            string                 `json:"notes,omitempty"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	CreditProvenanceKnown     bool                   `json:"credit_provenance_known,omitempty"`
+	LastSequence              int64                  `json:"billing_sequence,omitempty"`
+	ExcessCreditPaisa         int64                  `json:"excess_credit_paisa,omitempty"`
+	RefundReservedPaisa       int64                  `json:"refund_reserved_paisa,omitempty"`
+	RefundReservedExcessPaisa int64                  `json:"refund_reserved_excess_paisa,omitempty"`
+	RefundedExcessPaisa       int64                  `json:"refunded_excess_paisa,omitempty"`
+	ID                        string                 `json:"id"`
+	AppID                     string                 `json:"app_id"`
+	UserID                    string                 `json:"user_id"`
+	InvoiceIDs                []string               `json:"invoice_ids"`
+	AmountPaisa               int64                  `json:"amount_paisa"`
+	Currency                  string                 `json:"currency"`
+	Method                    string                 `json:"method"` // "card", "bank_transfer", "cash"
+	Gateway                   string                 `json:"gateway,omitempty"`
+	GatewayPaymentID          string                 `json:"gateway_payment_id,omitempty"`
+	Status                    PaymentStatus          `json:"status"`
+	RefundedPaisa             int64                  `json:"refunded_paisa,omitempty"`
+	TDSPaisa                  int64                  `json:"tds_paisa,omitempty"`
+	Notes                     string                 `json:"notes,omitempty"`
+	Metadata                  map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt                 time.Time              `json:"created_at"`
+	UpdatedAt                 time.Time              `json:"updated_at"`
 }
+
+func (p BizPayment) FinancialScope() Scope {
+	return Scope{AppID: p.AppID, UserID: p.UserID, Currency: p.Currency}
+}
+func (p BizPayment) FinancialSequence() int64 { return p.LastSequence }
+func (p BizPayment) FinancialID() string      { return p.ID }
+
+type RefundReservation struct {
+	ID             string `json:"id"`
+	Scope          Scope  `json:"scope"`
+	PaymentID      string `json:"payment_id"`
+	AmountPaisa    int64  `json:"amount_paisa"`
+	ExcessPaisa    int64  `json:"excess_paisa"`
+	State          string `json:"state"`
+	ConfirmationID string `json:"confirmation_id,omitempty"`
+	LastSequence   int64  `json:"billing_sequence"`
+}
+
+func (r RefundReservation) FinancialScope() Scope    { return r.Scope }
+func (r RefundReservation) FinancialSequence() int64 { return r.LastSequence }
+func (r RefundReservation) FinancialID() string      { return r.ID }
 
 // RefundPaymentRequest initiates a full or partial refund.
 // AmountPaisa = 0 means full refund of the remaining refundable amount.
@@ -43,12 +70,12 @@ type RefundPaymentRequest struct {
 
 // SubscriptionFilter defines criteria for listing subscriptions.
 type SubscriptionFilter struct {
-	AppID     string
-	UserID    string
-	PlanID    string
-	Status    SubscriptionStatus
-	Limit     int
-	Offset    int
+	AppID  string
+	UserID string
+	PlanID string
+	Status SubscriptionStatus
+	Limit  int
+	Offset int
 }
 
 // InvoiceFilter defines criteria for listing invoices.
@@ -79,7 +106,7 @@ type BizLifecycleRepository interface {
 	GetSubscription(ctx context.Context, id string) (*BizSubscription, error)
 	UpdateSubscription(ctx context.Context, id string, updateFn func(*BizSubscription) error) error
 	ListSubscriptions(ctx context.Context, filter SubscriptionFilter) ([]*BizSubscription, int, error)
-	
+
 	// Invoices
 	CreateInvoice(ctx context.Context, inv *BizInvoice) error
 	GetInvoice(ctx context.Context, id string) (*BizInvoice, error)

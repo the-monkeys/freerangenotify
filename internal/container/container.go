@@ -920,8 +920,39 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		)
 		lifecycleGate := services.NewBizLifecycleGate(bizbillingrepo.NewLifecycleStateRepo(esClient))
 		container.BizOperationService = services.NewBizOperationService(esClient, logger)
+		container.BizOperationService.SetLifecycleGate(lifecycleGate)
+		creditSvc.SetOperationService(container.BizOperationService)
+		lifecycleSvc.SetOperationService(container.BizOperationService)
+		if guardedUsers, ok := repos.User.(interface {
+			SetBillingWriteGuard(repository.UserBillingWriteGuard)
+		}); ok {
+			guardedUsers.SetBillingWriteGuard(func(ctx context.Context, appID string) (bool, func(), error) {
+				ctx, done, err := services.BeginBizMutation(ctx, lifecycleGate, appID)
+				if err != nil {
+					return false, func() {}, err
+				}
+				state, stateErr := lifecycleGate.State(ctx, appID)
+				finish := func() {
+					if err := done(); err != nil {
+						logger.Warn("Customer writer permit needs reconciliation", zap.String("failure_code", "writer_release_pending"))
+					}
+				}
+				if stateErr != nil {
+					finish()
+					return false, func() {}, stateErr
+				}
+				return state.LifecycleVersion == 2, finish, nil
+			})
+		}
+		if authorizedUsers, ok := repos.User.(interface {
+			SetBillingBalanceAuthorizer(func(context.Context, *user.User) error)
+		}); ok {
+			authorizedUsers.SetBillingBalanceAuthorizer(creditSvc.VerifyUserBalanceReceipt)
+		}
 		lifecycleSvc.SetLifecycleGate(lifecycleGate)
 		creditSvc.SetLifecycleGate(lifecycleGate)
+		container.UserHandler.SetBillingBalanceReader(creditSvc.ReadUserBalance)
+		container.UserHandler.SetBillingBalanceWriter(creditSvc.SetUserBalance)
 		estimateSvc := services.NewBizEstimateService(bizStores, configSvc, lifecycleSvc, portalSvc, bizNotifier, logger)
 		couponSvc := services.NewBizCouponService(bizStores, logger)
 		contractSvc := services.NewBizContractService(bizStores, configSvc, portalSvc, bizNotifier, logger)
@@ -947,6 +978,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		}
 		container.BizBillingHandler = handlers.NewBizBillingHandler(bizSvcs, logger)
 		container.BizBillingHandler.SetLifecycleGate(lifecycleGate)
+		container.BizBillingHandler.SetOperationService(container.BizOperationService)
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)

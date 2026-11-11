@@ -93,6 +93,11 @@ func (im *IndexManager) CreateIndices(ctx context.Context) ([]IndexOperation, er
 		indices["frn_biz_journal"] = im.templates.GetBizJournalTemplate
 		indices["frn_biz_streams"] = im.templates.GetBizStreamsTemplate
 		indices["frn_biz_customer_balances"] = im.templates.GetBizCustomerBalancesTemplate
+		indices["frn_biz_credit_lots"] = im.templates.GetBizCreditLotsTemplate
+		indices["frn_biz_refund_reservations"] = im.templates.GetBizRefundReservationsTemplate
+		indices["frn_biz_credit_applications"] = im.templates.GetBizCreditApplicationsTemplate
+		indices["frn_biz_coupon_redemptions"] = im.templates.GetBizCouponRedemptionsTemplate
+		indices["frn_biz_coupon_customer_usage"] = im.templates.GetBizCouponCustomerUsageTemplate
 		indices["frn_biz_products"] = im.templates.GetBizProductsTemplate
 		indices["frn_biz_plans"] = im.templates.GetBizPlansTemplate
 		indices["frn_biz_plan_addons"] = im.templates.GetBizPlanAddonsTemplate

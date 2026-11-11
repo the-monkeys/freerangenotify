@@ -8,7 +8,9 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
+	"github.com/the-monkeys/freerangenotify/internal/domain/user"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/bizbillingrepo"
+	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	apperrors "github.com/the-monkeys/freerangenotify/pkg/errors"
 	"go.uber.org/zap"
 )
@@ -16,6 +18,10 @@ import (
 // BizOperationService coordinates immutable financial facts and replayable
 // projections. It never waits for a gateway while holding a customer stream.
 type BizOperationService struct {
+	couponCapacity  *bizbillingrepo.CouponCapacityRepo
+	config          *BizConfigService
+	profiles        *bizbillingrepo.Store[user.User]
+	gate            *BizLifecycleGate
 	operations      *bizbillingrepo.OperationRepo
 	journal         *bizbillingrepo.JournalRepo
 	streams         *bizbillingrepo.StreamRepo
@@ -23,10 +29,11 @@ type BizOperationService struct {
 	logger          *zap.Logger
 	reconcileMu     sync.Mutex
 	reconcileCursor string
+	stores          *bizbillingrepo.Stores
 }
 
 func NewBizOperationService(es *elasticsearch.Client, logger *zap.Logger) *BizOperationService {
-	return &BizOperationService{operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
+	return &BizOperationService{couponCapacity: bizbillingrepo.NewCouponCapacityRepo(es, logger), config: NewBizConfigService(bizbillingrepo.NewConfigRepo(es, logger), logger), profiles: bizbillingrepo.NewStore[user.User](es, "users", logger), stores: bizbillingrepo.NewStores(es, logger, repository.RefreshFalse), operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
 }
 
 // Start recovers persisted work independently of the hourly renewal job. It
@@ -50,7 +57,17 @@ func (s *BizOperationService) Start(ctx context.Context) {
 		}
 	}()
 }
-func (s *BizOperationService) Apply(ctx context.Context, command bizbilling.Command) (bizbilling.OperationResult, error) {
+func (s *BizOperationService) Apply(ctx context.Context, command bizbilling.Command) (result bizbilling.OperationResult, failure error) {
+	defer func() {
+		if failure != nil && result.OperationID != "" {
+			failure = &bizbilling.OperationFailure{Result: result, Cause: failure}
+		}
+	}()
+	ctx, done, err := s.beginOperationMutation(ctx, command.Scope.AppID)
+	if err != nil {
+		return result, err
+	}
+	defer releaseBizMutation(s.logger, done)
 	op, _, err := s.operations.Begin(ctx, command)
 	if err != nil {
 		if op != nil {
@@ -82,6 +99,11 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 	if err != nil {
 		return bizbilling.OperationResult{}, err
 	}
+	ctx, done, err := s.beginOperationMutation(ctx, appID)
+	if err != nil {
+		return op.Result(), err
+	}
+	defer releaseBizMutation(s.logger, done)
 	result := op.Result()
 	if op.State == bizbilling.OperationCompleted {
 		return result, nil
@@ -111,7 +133,7 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 				return result, err
 			}
 		}
-		return op.Result(), bizbilling.ErrInvalidMoney
+		return op.Result(), financialRejectedError(op.ErrorCode)
 	}
 	claim, err := s.streams.Claim(ctx, op.Scope, id)
 	if err != nil {
@@ -124,19 +146,19 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 		if err = s.operations.FinishRejected(ctx, id); err != nil {
 			return result, err
 		}
-		return op.Result(), bizbilling.ErrInvalidMoney
+		return op.Result(), financialRejectedError(op.ErrorCode)
 	}
 	if op.Event == nil {
 		event, buildErr := s.buildFinancialEvent(ctx, op.Command, *claim)
 		if buildErr != nil {
 			// Only definitive validation failures may reject before freezing.
 			// Storage uncertainty retains the head for recovery.
-			if errors.Is(buildErr, bizbilling.ErrInvalidMoney) || errors.Is(buildErr, bizbilling.ErrMoneyOverflow) || errors.Is(buildErr, bizbilling.ErrCurrencyMismatch) {
-				if err = s.operations.Reject(ctx, id, "invalid_financial_intent"); err != nil {
+			if code, rejected := financialRejection(buildErr); rejected {
+				if err = s.operations.Reject(ctx, id, code); err != nil {
 					return result, err
 				}
 				result.State = bizbilling.OperationRejected
-				result.ErrorCode = "invalid_financial_intent"
+				result.ErrorCode = code
 				if err = s.streams.Abort(ctx, *claim); err != nil {
 					return result, err
 				}
@@ -165,6 +187,9 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 		return result, err
 	}
 	if err = s.applyFinancialProjection(ctx, *claim, *op.Event); err != nil {
+		return result, err
+	}
+	if err = s.stores.RefreshFinancialProjections(ctx, *op.Event); err != nil {
 		return result, err
 	}
 	if err = s.streams.Renew(ctx, *claim); err != nil {

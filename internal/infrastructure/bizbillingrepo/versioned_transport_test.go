@@ -111,3 +111,33 @@ func TestBizCASDoesNotRetryUnknownWriteOutcome(t *testing.T) {
 	require.ErrorContains(t, err, "outcome unknown")
 	require.Equal(t, int32(1), writes.Load(), "only a confirmed 409 can repeat the mutation")
 }
+
+func TestBizSearchKeepsMinorUnitPrecision(t *testing.T) {
+	store := transportCASStore(t, func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"hits":{"total":{"value":1},"hits":[{"_source":{"id":"doc","value":9007199254740993}}]}}`)
+	})
+	docs, total, err := store.Find(context.Background(), map[string]interface{}{"query": map[string]interface{}{"match_all": map[string]interface{}{}}})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, docs, 1)
+	require.Equal(t, int64(9007199254740993), int64(docs[0].Value))
+}
+
+func TestBizLifecycleListsKeepMinorUnitPrecision(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		io.WriteString(w, `{"hits":{"total":{"value":1},"hits":[{"_source":{"id":"doc","app_id":"app","total_paisa":9007199254740993,"amount_paisa":9007199254740993,"quantity":9007199254740993}}]}}`)
+	}))
+	defer server.Close()
+	es, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}, DisableRetry: true})
+	require.NoError(t, err)
+	repo := NewLifecycleRepo(es, zap.NewNop())
+	invoices, _, err := repo.ListInvoices(context.Background(), bizbilling.InvoiceFilter{AppID: "app"})
+	require.NoError(t, err)
+	require.Len(t, invoices, 1)
+	require.Equal(t, int64(9007199254740993), invoices[0].TotalPaisa)
+	payments, _, err := repo.ListPayments(context.Background(), bizbilling.PaymentFilter{AppID: "app"})
+	require.NoError(t, err)
+	require.Len(t, payments, 1)
+	require.Equal(t, int64(9007199254740993), payments[0].AmountPaisa)
+}

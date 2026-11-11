@@ -52,6 +52,7 @@ export const NAV_SECTIONS: DocNavSection[] = [
         title: 'BILLING',
         items: [
             { label: 'Pricing & Credits', to: '/docs/pricing', icon: <IndianRupee className="h-4 w-4" /> },
+            { label: 'Customer Billing', to: '/docs/business-billing', icon: <FileText className="h-4 w-4" /> },
         ],
     },
     {

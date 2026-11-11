@@ -20,6 +20,7 @@ const (
 // Estimate represents a quote sent to a customer that can be accepted,
 // rejected, and converted into an invoice.
 type Estimate struct {
+	LastSequence       int64                  `json:"billing_sequence,omitempty"`
 	ID                 string                 `json:"id"`
 	AppID              string                 `json:"app_id"`
 	UserID             string                 `json:"user_id"`
@@ -72,3 +73,9 @@ type EstimateFilter struct {
 	Limit  int
 	Offset int
 }
+
+func (e Estimate) FinancialScope() Scope {
+	return Scope{AppID: e.AppID, UserID: e.UserID, Currency: e.Currency}
+}
+func (e Estimate) FinancialSequence() int64 { return e.LastSequence }
+func (e Estimate) FinancialID() string      { return e.ID }

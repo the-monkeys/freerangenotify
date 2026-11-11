@@ -36,6 +36,9 @@ func NewBizEstimateService(stores *bizbillingrepo.Stores, configSvc *BizConfigSe
 
 // Create creates a draft estimate with computed totals.
 func (s *BizEstimateService) Create(ctx context.Context, appID string, req *bizbilling.CreateEstimateRequest) (*bizbilling.Estimate, error) {
+	if _, explicit := invoiceTaxOverrides(req.LineItems); explicit {
+		return nil, errors.BadRequest("Explicit tax overrides are supported on upgraded invoices; estimate tax uses its configured rate")
+	}
 	if len(req.LineItems) == 0 {
 		return nil, errors.BadRequest("at least one line item is required")
 	}
@@ -87,6 +90,15 @@ func (s *BizEstimateService) Get(ctx context.Context, appID, id string) (*bizbil
 	if err != nil || est.AppID != appID {
 		return nil, errors.NotFound("estimate", id)
 	}
+	if est.LastSequence != 0 {
+		if s.lifecycleSvc == nil {
+			return nil, bizbilling.ErrReconciliationRequired
+		}
+		if err = guardFinancialRead(ctx, s.lifecycleSvc.gate, s.lifecycleSvc.operations, est.FinancialScope(), est.LastSequence); err != nil {
+			return nil, err
+		}
+	}
+
 	return est, nil
 }
 
@@ -96,11 +108,26 @@ func (s *BizEstimateService) List(ctx context.Context, filter bizbilling.Estimat
 		Term("user_id", filter.UserID).
 		Term("status", string(filter.Status)).
 		Body("created_at", filter.Limit, filter.Offset)
-	return s.stores.Estimates.Find(ctx, body)
+	rows, total, err := s.stores.Estimates.Find(ctx, body)
+	if err != nil {
+		return nil, 0, err
+	}
+	if s.lifecycleSvc != nil {
+		err = guardFinancialRows(ctx, s.lifecycleSvc.gate, s.lifecycleSvc.operations, rows)
+	} else {
+		err = guardFinancialRows(ctx, nil, nil, rows)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }
 
 // Update updates a draft estimate and recomputes totals.
 func (s *BizEstimateService) Update(ctx context.Context, appID, id string, req *bizbilling.UpdateEstimateRequest) (*bizbilling.Estimate, error) {
+	if _, explicit := invoiceTaxOverrides(req.LineItems); explicit {
+		return nil, errors.BadRequest("Explicit tax overrides are supported on upgraded invoices; estimate tax uses its configured rate")
+	}
 	taxCfg, err := s.configSvc.TaxConfig(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -229,6 +256,25 @@ func (s *BizEstimateService) Convert(ctx context.Context, appID, id string, line
 	if err != nil {
 		return nil, err
 	}
+	var gate *BizLifecycleGate
+	if s.lifecycleSvc != nil {
+		gate = s.lifecycleSvc.gate
+	}
+	scope, upgraded, scopeErr := financialScopeFor(ctx, gate, appID, est.UserID, est.Currency)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	if upgraded {
+		if bizOperationKey(ctx) == "" {
+			ctx = WithBizOperationKey(ctx, "estimate-convert:"+id)
+		}
+		event, err := s.lifecycleSvc.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandEstimateConvert, Scope: scope, EstimateConvert: &bizbilling.EstimateConvert{EstimateID: id, LineIndexes: lineIndexes}})
+		if err != nil {
+			return nil, err
+		}
+		return event.InvoiceAfter, nil
+	}
+
 	if est.Status != bizbilling.EstimateStatusAccepted {
 		return nil, errors.BadRequest("only accepted estimates can be converted")
 	}

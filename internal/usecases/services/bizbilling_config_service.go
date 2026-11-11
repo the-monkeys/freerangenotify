@@ -159,6 +159,20 @@ const (
 // document kind and returns a formatted number like "INV-000042".
 // Counter state lives in the numbering config document.
 func (s *BizConfigService) NextNumber(ctx context.Context, appID string, kind NumberKind) (string, error) {
+	return s.NextNumberAtLeast(ctx, appID, kind, 1)
+}
+
+// NextNumberAtLeast also honors reviewed historical floors during v2 cutover.
+func (s *BizConfigService) NextNumberAtLeast(ctx context.Context, appID string, kind NumberKind, minimum int64) (string, error) {
+	if atomic, ok := s.repo.(interface {
+		AllocateNumber(context.Context, string, string, int64) (string, int64, error)
+	}); ok {
+		prefix, next, err := atomic.AllocateNumber(ctx, appID, string(kind), minimum)
+		if err != nil {
+			return "", err
+		}
+		return FormatDocNumber(prefix, next), nil
+	}
 	var nc bizbilling.NumberingConfig
 	if err := s.decodeConfig(ctx, appID, bizbilling.ConfigTypeNumbering, &nc); err != nil {
 		return "", err

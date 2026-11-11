@@ -652,6 +652,7 @@ func (h *BizBillingHandler) MarkRetainerPaid(c *fiber.Ctx) error {
 // @Tags BizBilling
 // @Produce json
 // @Param user_id path string true "user_id"
+// @Param currency query string false "Currency code; defaults to the reviewed primary currency on upgraded applications"
 // @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
@@ -664,7 +665,7 @@ func (h *BizBillingHandler) GetUserStatement(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	statement, err := h.creditSvc.Statement(c.UserContext(), appID, c.Params("user_id"))
+	statement, err := h.creditSvc.StatementInCurrency(c.UserContext(), appID, c.Params("user_id"), c.Query("currency"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -696,7 +697,7 @@ func (h *BizBillingHandler) AdjustUserBalance(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "non-zero amount_paisa is required"})
 	}
 
-	balance, err := h.creditSvc.AdjustBalance(c.UserContext(), appID, c.Params("user_id"), req.AmountPaisa)
+	balance, err := h.creditSvc.AdjustBalanceInCurrency(c.UserContext(), appID, c.Params("user_id"), req.Currency, req.AmountPaisa, req.Reason)
 	if err != nil {
 		return h.handleError(c, err)
 	}

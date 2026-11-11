@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"time"
 
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/bizbillingrepo"
@@ -43,70 +42,52 @@ func (s *BizOperationService) Balance(ctx context.Context, scope bizbilling.Scop
 	return *balance, nil
 }
 
-func (s *BizOperationService) buildFinancialEvent(ctx context.Context, command bizbilling.Command, claim bizbilling.StreamClaim) (bizbilling.JournalEvent, error) {
-	event := bizbilling.JournalEvent{SchemaVersion: 1, ID: bizbillingrepo.JournalID(claim.Scope, claim.Sequence), AppID: claim.Scope.AppID, OperationID: claim.OperationID, Scope: claim.Scope, Sequence: claim.Sequence, Kind: command.Kind, CreatedAt: time.Now().UTC()}
-	// The initial opening has no prior balance document. Every later command
-	// must read exactly the last committed revision of this stream.
-	var balance bizbilling.CustomerBalance
-	if claim.Sequence == 1 && command.Kind == bizbilling.CommandOpeningBalance {
-		_, err := s.balances.Get(ctx, bizbillingrepo.ScopeID(claim.Scope))
-		if !apperrors.IsNotFound(err) {
-			if err != nil {
-				return event, err
-			}
-			return event, bizbilling.ErrReconciliationRequired
-		}
-		balance = bizbilling.CustomerBalance{Scope: claim.Scope, AvailablePaisa: command.OpeningBalance.AvailablePaisa, UnresolvedLegacy: command.OpeningBalance.UnresolvedLegacy}
-	} else {
-		previous, readErr := s.balances.Get(ctx, bizbillingrepo.ScopeID(claim.Scope))
-		if apperrors.IsNotFound(readErr) && claim.Sequence == 1 {
-			balance = bizbilling.CustomerBalance{Scope: claim.Scope}
-		} else {
-			if readErr != nil {
-				return event, readErr
-			}
-			balance = *previous
-		}
-		if balance.Scope != claim.Scope {
-			return event, bizbilling.ErrReconciliationRequired
-		}
-		if balance.LastSequence != claim.Sequence-1 {
-			return event, bizbilling.ErrReconciliationRequired
-		}
-		switch command.Kind {
-		case bizbilling.CommandBalanceAdjustment:
-			if balance.UnresolvedLegacy {
-				return event, bizbilling.ErrReconciliationRequired
-			}
-			next, err := bizbilling.CheckedAdd(balance.AvailablePaisa, command.BalanceAdjustment.DeltaPaisa)
-			if err != nil {
-				return event, err
-			}
-			if next < 0 {
-				return event, bizbilling.ErrInvalidMoney
-			}
-			balance.AvailablePaisa = next
-		case bizbilling.CommandOpeningBalance:
-			return event, bizbilling.ErrInvalidMoney
-		default:
-			return event, bizbilling.ErrInvalidMoney
-		}
-	}
-	balance.LastSequence = claim.Sequence
-	event.BalanceAfter = &balance
-	return event, nil
-}
-
 func (s *BizOperationService) applyFinancialProjection(ctx context.Context, claim bizbilling.StreamClaim, event bizbilling.JournalEvent) error {
+	ctx = bizbillingrepo.WithFinancialProjection(ctx, claim)
 	if err := s.streams.Renew(ctx, claim); err != nil {
 		return err
 	}
 	if event.BalanceAfter == nil {
 		return bizbilling.ErrReconciliationRequired
 	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Estimates, event.EstimateAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.CouponRedemptions, event.CouponRedemptionAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.CreditNotes, event.CreditNoteAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Retainers, event.RetainerAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.CreditApplications, event.CreditApplicationAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Invoices, event.InvoiceAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Payments, event.PaymentAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	for i := range event.CreditLotsAfter {
+		if err := s.streams.Renew(ctx, claim); err != nil {
+			return err
+		}
+		if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.CreditLots, &event.CreditLotsAfter[i], claim.Scope, claim.Sequence); err != nil {
+			return err
+		}
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.RefundReservations, event.RefundReservationAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
 	after := event.BalanceAfter
 	if after.Scope != claim.Scope || after.LastSequence != claim.Sequence || after.AvailablePaisa < 0 || after.ReservedPaisa < 0 {
 		return bizbilling.ErrReconciliationRequired
+	}
+	if err := s.stores.ProjectUserBalanceMirror(ctx, event.UserBalanceAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
 	}
 	id := bizbillingrepo.ScopeID(claim.Scope)
 	_, err := s.balances.Get(ctx, id)

@@ -27,21 +27,22 @@ var (
 
 // Coupon represents a discount code.
 type Coupon struct {
-	ID                string       `json:"id"`
-	AppID             string       `json:"app_id"`
-	Code              string       `json:"code"`
-	DiscountType      DiscountType `json:"discount_type"`
-	DiscountValue     int64        `json:"discount_value"`
-	MaxUses           int          `json:"max_uses,omitempty"` // 0 = unlimited
-	CurrentUses       int          `json:"current_uses"`
-	MaxUsesPerUser    int          `json:"max_uses_per_user,omitempty"`
-	ApplicablePlanIDs []string     `json:"applicable_plan_ids,omitempty"` // empty = all plans
-	Stackable         bool         `json:"stackable"`
-	ValidFrom         *time.Time   `json:"valid_from,omitempty"`
-	ValidUntil        *time.Time   `json:"valid_until,omitempty"`
-	Active            bool         `json:"active"`
-	CreatedAt         time.Time    `json:"created_at"`
-	UpdatedAt         time.Time    `json:"updated_at"`
+	PendingCapacity   *CouponCapacityClaim `json:"pending_capacity,omitempty"`
+	ID                string               `json:"id"`
+	AppID             string               `json:"app_id"`
+	Code              string               `json:"code"`
+	DiscountType      DiscountType         `json:"discount_type"`
+	DiscountValue     int64                `json:"discount_value"`
+	MaxUses           int                  `json:"max_uses,omitempty"` // 0 = unlimited
+	CurrentUses       int                  `json:"current_uses"`
+	MaxUsesPerUser    int                  `json:"max_uses_per_user,omitempty"`
+	ApplicablePlanIDs []string             `json:"applicable_plan_ids,omitempty"` // empty = all plans
+	Stackable         bool                 `json:"stackable"`
+	ValidFrom         *time.Time           `json:"valid_from,omitempty"`
+	ValidUntil        *time.Time           `json:"valid_until,omitempty"`
+	Active            bool                 `json:"active"`
+	CreatedAt         time.Time            `json:"created_at"`
+	UpdatedAt         time.Time            `json:"updated_at"`
 }
 
 // Validate checks whether the coupon can be redeemed right now for the given

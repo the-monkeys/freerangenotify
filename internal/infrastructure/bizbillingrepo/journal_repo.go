@@ -32,7 +32,7 @@ func (r *JournalRepo) Get(ctx context.Context, scope bizbilling.Scope, sequence 
 	if err != nil {
 		return nil, err
 	}
-	if event.SchemaVersion != 1 || event.Scope != scope || event.Sequence != sequence || event.ID != JournalID(scope, sequence) {
+	if event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || event.Scope != scope || event.Sequence != sequence || event.ID != JournalID(scope, sequence) {
 		return nil, bizbilling.ErrReconciliationRequired
 	}
 	op, err := r.operations.Get(ctx, event.OperationID)

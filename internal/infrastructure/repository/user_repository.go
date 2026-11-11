@@ -1,9 +1,11 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -64,6 +66,22 @@ func (r *UserRepository) GetByIDs(ctx context.Context, ids []string) (map[string
 // UserRepository implements the user domain repository interface
 type UserRepository struct {
 	*BaseRepository
+	billingWriteGuard        UserBillingWriteGuard
+	billingBalanceAuthorizer func(context.Context, *user.User) error
+}
+
+// UserBillingWriteGuard fences customer writes during reviewed cutover. The
+// boolean marks an upgraded app whose monetary scalar is a read-only mirror.
+type UserBillingWriteGuard func(context.Context, string) (bool, func(), error)
+
+func (r *UserRepository) SetBillingWriteGuard(guard UserBillingWriteGuard) {
+	r.billingWriteGuard = guard
+}
+func (r *UserRepository) beginBillingWrite(ctx context.Context, appID string) (bool, func(), error) {
+	if r.billingWriteGuard == nil {
+		return false, func() {}, nil
+	}
+	return r.billingWriteGuard(ctx, appID)
 }
 
 // NewUserRepository creates a new user repository
@@ -75,8 +93,40 @@ func NewUserRepository(client *elasticsearch.Client, logger *zap.Logger) user.Re
 
 // Create creates a new user
 func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
+	upgraded, done, err := r.beginBillingWrite(ctx, u.AppID)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if upgraded && (u.BalancePaisa != 0 || u.BizBalanceSequence != 0 || u.BizBalanceCurrency != "") {
+		if r.billingBalanceAuthorizer == nil {
+			return apperrors.Conflict("Initialize this customer's credit through the business billing balance API")
+		}
+		if err = r.billingBalanceAuthorizer(ctx, u); err != nil {
+			return err
+		}
+	}
 	u.CreatedAt = time.Now()
 	u.UpdatedAt = time.Now()
+	if upgraded {
+		data, err := json.Marshal(u)
+		if err != nil {
+			return err
+		}
+		res, err := r.client.Index("users", bytes.NewReader(data), r.client.Index.WithDocumentID(u.UserID), r.client.Index.WithOpType("create"), r.client.Index.WithRefresh(string(r.defaultRefresh)), r.client.Index.WithContext(ctx))
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		_, _ = io.Copy(io.Discard, res.Body)
+		if res.StatusCode == 409 {
+			return apperrors.Conflict("User already exists")
+		}
+		if res.IsError() {
+			return fmt.Errorf("customer creation HTTP %d", res.StatusCode)
+		}
+		return nil
+	}
 	return r.BaseRepository.Create(ctx, u.UserID, u)
 }
 
@@ -173,8 +223,31 @@ func (r *UserRepository) GetByExternalID(ctx context.Context, appID, externalID 
 
 // Update updates an existing user
 func (r *UserRepository) Update(ctx context.Context, u *user.User) error {
+	upgraded, done, err := r.beginBillingWrite(ctx, u.AppID)
+	if err != nil {
+		return err
+	}
+	defer done()
 	u.UpdatedAt = time.Now()
-	return r.BaseRepository.Update(ctx, u.UserID, u)
+	data, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	// An explicit zero must clear the previous stored credit.
+	fields["balance_paisa"], err = json.Marshal(u.BalancePaisa)
+	if err != nil {
+		return err
+	}
+	if upgraded {
+		delete(fields, "balance_paisa")
+		delete(fields, "biz_balance_sequence")
+		delete(fields, "biz_balance_currency")
+	}
+	return r.BaseRepository.Update(ctx, u.UserID, fields)
 }
 
 // Delete deletes a user
@@ -228,11 +301,57 @@ func (r *UserRepository) BulkCreate(ctx context.Context, users []*user.User) err
 	return nil
 }
 func (r *UserRepository) BulkCreateResults(ctx context.Context, users []*user.User) ([]error, error) {
-	docs := make([]BulkDocument, len(users))
-	for i, u := range users {
-		docs[i] = BulkDocument{ID: u.UserID, Document: u}
+	type admission struct {
+		upgraded bool
+		err      error
 	}
-	return r.BaseRepository.BulkCreateResults(ctx, docs)
+	admissions := map[string]admission{}
+	for _, u := range users {
+		if _, known := admissions[u.AppID]; known {
+			continue
+		}
+		upgraded, done, err := r.beginBillingWrite(ctx, u.AppID)
+		if err == nil {
+			defer done()
+		}
+		admissions[u.AppID] = admission{upgraded, err}
+	}
+	docs := make([]BulkDocument, 0, len(users))
+	positions := make([]int, 0, len(users))
+	outcomes := make([]error, len(users))
+	for i, u := range users {
+		admission := admissions[u.AppID]
+		if admission.err != nil {
+			outcomes[i] = admission.err
+			continue
+		}
+		if admission.upgraded && (u.BalancePaisa != 0 || u.BizBalanceSequence != 0 || u.BizBalanceCurrency != "") {
+			if r.billingBalanceAuthorizer == nil {
+				outcomes[i] = apperrors.Conflict("Initialize customer credit through the business billing balance API")
+				continue
+			}
+			if err := r.billingBalanceAuthorizer(ctx, u); err != nil {
+				outcomes[i] = err
+				continue
+			}
+		}
+		docs = append(docs, BulkDocument{ID: u.UserID, Document: u, CreateOnly: admission.upgraded})
+		positions = append(positions, i)
+	}
+	if len(docs) == 0 {
+		return outcomes, nil
+	}
+	results, err := r.BaseRepository.BulkCreateResults(ctx, docs)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) != len(positions) {
+		return nil, fmt.Errorf("incomplete customer bulk result")
+	}
+	for i, position := range positions {
+		outcomes[position] = results[i]
+	}
+	return outcomes, nil
 }
 
 // LookupEmails batches exact, app-scoped identities without changing email case policy.
@@ -472,4 +591,8 @@ func escapeElasticsearchWildcard(s string) string {
 	s = strings.ReplaceAll(s, `*`, `\*`)
 	s = strings.ReplaceAll(s, `?`, `\?`)
 	return s
+}
+
+func (r *UserRepository) SetBillingBalanceAuthorizer(authorize func(context.Context, *user.User) error) {
+	r.billingBalanceAuthorizer = authorize
 }

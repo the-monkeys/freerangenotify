@@ -769,6 +769,9 @@ const docTemplate = `{
                 "amount_paisa": {
                     "type": "integer"
                 },
+                "currency": {
+                    "type": "string"
+                },
                 "reason": {
                     "type": "string"
                 }
@@ -955,6 +958,9 @@ const docTemplate = `{
             "properties": {
                 "amount_paisa": {
                     "type": "integer"
+                },
+                "currency": {
+                    "type": "string"
                 },
                 "invoice_id": {
                     "type": "string"
@@ -1212,6 +1218,9 @@ const docTemplate = `{
                 "amount_paisa": {
                     "type": "integer"
                 },
+                "currency": {
+                    "type": "string"
+                },
                 "notes": {
                     "type": "string"
                 },
@@ -1312,8 +1321,14 @@ const docTemplate = `{
                 "quantity": {
                     "type": "integer"
                 },
+                "tax_exempt": {
+                    "type": "boolean"
+                },
                 "tax_rate": {
                     "description": "e.g., 18 for 18%",
+                    "type": "integer"
+                },
+                "tax_rate_override": {
                     "type": "integer"
                 },
                 "unit_price": {
@@ -12867,6 +12882,133 @@ const docTemplate = `{
                 "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
             }
         },
+        "/v1/biz/operations/{id}": {
+            "get": {
+                "description": "Use the operation_id from a pending request. Results belong to the authenticated application and contain no payment credentials.",
+                "parameters": [
+                    {
+                        "description": "Billing operation ID",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Check a billing action",
+                "tags": [
+                    "BizBilling"
+                ],
+                "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
+            }
+        },
+        "/v1/biz/operations/{id}/resume": {
+            "post": {
+                "description": "Continues the saved action using its original details. A new request body cannot change the action. Pending work may need reconciliation before it can continue.",
+                "parameters": [
+                    {
+                        "description": "Billing operation ID",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Resume a saved billing action",
+                "tags": [
+                    "BizBilling"
+                ],
+                "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
+            }
+        },
         "/v1/biz/payments": {
             "get": {
                 "description": "Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.",
@@ -14682,6 +14824,77 @@ const docTemplate = `{
             }
         },
         "/v1/biz/users/{user_id}/balance": {
+            "get": {
+                "description": "Returns available and reserved amounts in minor currency units. Omit currency to use the application's primary billing currency. Requires a reviewed business billing upgrade.",
+                "parameters": [
+                    {
+                        "description": "Customer user ID",
+                        "in": "path",
+                        "name": "user_id",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "description": "Currency code, such as INR",
+                        "in": "query",
+                        "name": "currency",
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Get a customer's credit balance",
+                "tags": [
+                    "BizBilling"
+                ],
+                "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
+            },
             "post": {
                 "consumes": [
                     "application/json"
@@ -14808,6 +15021,12 @@ const docTemplate = `{
                         "in": "path",
                         "name": "user_id",
                         "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "description": "Currency code; defaults to the reviewed primary currency on upgraded applications",
+                        "in": "query",
+                        "name": "currency",
                         "type": "string"
                     }
                 ],

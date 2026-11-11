@@ -10,8 +10,9 @@ import (
 
 // BulkDocument keeps request and response order stable, including repeated payload values.
 type BulkDocument struct {
-	ID       string
-	Document any
+	CreateOnly bool
+	ID         string
+	Document   any
 }
 
 // BulkCreateResults returns one error per item. A request/decode error has an unknown
@@ -27,7 +28,11 @@ func (r *BaseRepository) BulkCreateResults(ctx context.Context, documents []Bulk
 			return nil, fmt.Errorf("bulk document IDs must be nonempty and unique")
 		}
 		seen[doc.ID] = true
-		action, _ := json.Marshal(map[string]any{"index": map[string]string{"_index": r.indexName, "_id": doc.ID}})
+		operation := "index"
+		if doc.CreateOnly {
+			operation = "create"
+		}
+		action, _ := json.Marshal(map[string]any{operation: map[string]string{"_index": r.indexName, "_id": doc.ID}})
 		data, err := json.Marshal(doc.Document)
 		if err != nil {
 			return nil, fmt.Errorf("marshal bulk document: %w", err)
@@ -61,7 +66,11 @@ func (r *BaseRepository) BulkCreateResults(ctx context.Context, documents []Bulk
 	}
 	outcomes := make([]error, len(documents))
 	for i, item := range result.Items {
-		write, ok := item["index"]
+		operation := "index"
+		if documents[i].CreateOnly {
+			operation = "create"
+		}
+		write, ok := item[operation]
 		if !ok || write.ID != documents[i].ID || write.Status == 0 {
 			return nil, fmt.Errorf("invalid bulk item response: write outcome unknown")
 		}

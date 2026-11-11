@@ -18,15 +18,19 @@ const configIndex = "frn_biz_configs"
 // ConfigRepo is the Elasticsearch-backed repository for biz billing configs.
 // Uses composite document IDs: "{app_id}:{config_type}" for uniqueness.
 type ConfigRepo struct {
-	base   *repository.BaseRepository
-	logger *zap.Logger
+	base      *repository.BaseRepository
+	logger    *zap.Logger
+	numbers   *Store[numberingDocument]
+	sequences *Store[documentSequence]
 }
 
 // NewConfigRepo creates a new ConfigRepo.
 func NewConfigRepo(es *elasticsearch.Client, logger *zap.Logger) *ConfigRepo {
 	return &ConfigRepo{
-		base:   repository.NewBaseRepository(es, configIndex, logger, repository.RefreshWaitFor),
-		logger: logger,
+		base:      repository.NewBaseRepository(es, configIndex, logger, repository.RefreshWaitFor),
+		logger:    logger,
+		numbers:   NewStore[numberingDocument](es, configIndex, logger, repository.RefreshFalse),
+		sequences: NewStore[documentSequence](es, configIndex, logger, repository.RefreshFalse),
 	}
 }
 
@@ -63,6 +67,9 @@ func (r *ConfigRepo) Upsert(ctx context.Context, config *bizbilling.BizConfig) e
 	}
 
 	config.UpdatedAt = time.Now().UTC()
+	if config.ConfigType == bizbilling.ConfigTypeNumbering {
+		return r.upsertNumbering(ctx, config)
+	}
 
 	// Use Replace (full-doc upsert via _index API) so missing fields are cleared properly.
 	return r.base.Replace(ctx, docID(config.AppID, config.ConfigType), config)

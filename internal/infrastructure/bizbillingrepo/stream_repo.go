@@ -20,12 +20,13 @@ type StreamRepo struct {
 	operations *OperationRepo
 	facts      *Store[bizbilling.JournalEvent]
 	balances   *Store[bizbilling.CustomerBalance]
+	financial  *Stores
 }
 
 func NewStreamRepo(es *elasticsearch.Client, logger *zap.Logger) *StreamRepo {
 	store := NewStore[bizbilling.Stream](es, StreamIndex, logger)
 	store.refresh = repository.RefreshFalse
-	return &StreamRepo{store: store, operations: NewOperationRepo(es, logger), facts: NewStore[bizbilling.JournalEvent](es, JournalIndex, logger), balances: NewCustomerBalanceStore(es, logger)}
+	return &StreamRepo{store: store, operations: NewOperationRepo(es, logger), facts: NewStore[bizbilling.JournalEvent](es, JournalIndex, logger), balances: NewCustomerBalanceStore(es, logger), financial: NewStores(es, logger, repository.RefreshFalse)}
 }
 func (r *StreamRepo) Get(ctx context.Context, scope bizbilling.Scope) (*bizbilling.Stream, error) {
 	s, err := r.store.Get(ctx, ScopeID(scope))
@@ -137,6 +138,9 @@ func (r *StreamRepo) Complete(ctx context.Context, c bizbilling.StreamClaim) err
 	}
 	if *balance != *fact.BalanceAfter {
 		return bizbilling.ErrReconciliationRequired
+	}
+	if err = r.financial.VerifyFinancialProjections(ctx, *fact); err != nil {
+		return err
 	}
 	_, err = r.store.Update(ctx, ScopeID(c.Scope), func(s *bizbilling.Stream) error {
 		if !matchesClaim(s, c) || !s.LeaseUntil.After(time.Now().UTC()) {

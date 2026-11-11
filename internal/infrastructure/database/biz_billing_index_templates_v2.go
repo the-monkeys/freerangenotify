@@ -3,7 +3,7 @@ package database
 // New lifecycle metadata is additive; this never recreates historical indices.
 func (it *IndexTemplates) GetBizLifecycleStatesTemplate() map[string]interface{} {
 	return map[string]interface{}{"settings": map[string]interface{}{"number_of_shards": 1, "number_of_replicas": 0}, "mappings": map[string]interface{}{"dynamic": false, "properties": map[string]interface{}{
-		"app_id": map[string]interface{}{"type": "keyword"}, "lifecycle_version": map[string]interface{}{"type": "integer"}, "status": map[string]interface{}{"type": "keyword"}, "epoch": map[string]interface{}{"type": "long"}, "primary_currency": map[string]interface{}{"type": "keyword"}, "mutation_permits": map[string]interface{}{"type": "object", "enabled": false}, "merchant_slots": map[string]interface{}{"type": "object", "enabled": false},
+		"write_revision": billingLong(), "app_id": map[string]interface{}{"type": "keyword"}, "lifecycle_version": map[string]interface{}{"type": "integer"}, "status": map[string]interface{}{"type": "keyword"}, "epoch": map[string]interface{}{"type": "long"}, "primary_currency": map[string]interface{}{"type": "keyword"}, "mutation_permits": map[string]interface{}{"type": "object", "enabled": false}, "merchant_slots": map[string]interface{}{"type": "object", "enabled": false},
 	}}}
 }
 
@@ -37,4 +37,26 @@ func (it *IndexTemplates) GetBizCustomerBalancesTemplate() map[string]interface{
 	return billingFactTemplate(map[string]interface{}{
 		"scope": billingScope(), "available_paisa": billingLong(), "reserved_paisa": billingLong(), "last_sequence": billingLong(), "unresolved_legacy": map[string]interface{}{"type": "boolean"},
 	})
+}
+
+func (it *IndexTemplates) GetBizCreditLotsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{
+		"id": billingKeyword(), "scope": billingScope(), "source_payment_id": billingKeyword(), "currency": billingKeyword(), "original_paisa": billingLong(), "available_paisa": billingLong(), "reserved_paisa": billingLong(), "refunded_paisa": billingLong(), "billing_sequence": billingLong(),
+	})
+}
+func (it *IndexTemplates) GetBizRefundReservationsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{
+		"id": billingKeyword(), "scope": billingScope(), "payment_id": billingKeyword(), "amount_paisa": billingLong(), "excess_paisa": billingLong(), "state": billingKeyword(), "confirmation_id": billingKeyword(), "billing_sequence": billingLong(),
+	})
+}
+
+func (it *IndexTemplates) GetBizCreditApplicationsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "scope": billingScope(), "invoice_id": billingKeyword(), "source_type": billingKeyword(), "source_id": billingKeyword(), "amount_paisa": billingLong(), "non_refundable_paisa": billingLong(), "lot_debits": map[string]interface{}{"type": "object", "enabled": false}, "state": billingKeyword(), "billing_sequence": billingLong()})
+}
+
+func (it *IndexTemplates) GetBizCouponRedemptionsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "scope": billingScope(), "coupon_id": billingKeyword(), "invoice_id": billingKeyword(), "discount_paisa": billingLong(), "state": billingKeyword(), "billing_sequence": billingLong()})
+}
+func (it *IndexTemplates) GetBizCouponCustomerUsageTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "app_id": billingKeyword(), "user_id": billingKeyword(), "coupon_id": billingKeyword(), "uses": billingLong(), "last_marker": billingKeyword()})
 }

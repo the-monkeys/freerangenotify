@@ -7,23 +7,25 @@ import (
 
 // User represents a user entity
 type User struct {
-	UserID            string      `json:"user_id" es:"user_id"`
-	AppID             string      `json:"app_id" es:"app_id"`
-	EnvironmentID     string      `json:"environment_id,omitempty" es:"environment_id"`
-	ExternalID        string      `json:"external_id,omitempty" es:"external_id"`
-	FullName          string      `json:"full_name,omitempty" es:"full_name"`
-	Email             string      `json:"email,omitempty" es:"email"`
-	Phone             string      `json:"phone,omitempty" es:"phone"`
-	Timezone          string      `json:"timezone,omitempty" es:"timezone"`
-	Language          string      `json:"language,omitempty" es:"language"`
-	WebhookURL        string      `json:"webhook_url,omitempty" es:"webhook_url"`
-	SlackWebhookURL   string      `json:"slack_webhook_url,omitempty" es:"slack_webhook_url"`     // Phase 3
-	SlackChannelID    string      `json:"slack_channel_id,omitempty" es:"slack_channel_id"`       // Phase 3: Direct channel delivery via Bot API
-	DiscordWebhookURL string      `json:"discord_webhook_url,omitempty" es:"discord_webhook_url"` // Phase 3
-	Preferences       Preferences `json:"preferences" es:"preferences"`
-	Devices           []Device    `json:"devices,omitempty" es:"devices"`
-	CreatedAt         time.Time   `json:"created_at" es:"created_at"`
-	UpdatedAt         time.Time   `json:"updated_at" es:"updated_at"`
+	BizBalanceSequence int64       `json:"biz_balance_sequence,omitempty"`
+	BizBalanceCurrency string      `json:"biz_balance_currency,omitempty"`
+	UserID             string      `json:"user_id" es:"user_id"`
+	AppID              string      `json:"app_id" es:"app_id"`
+	EnvironmentID      string      `json:"environment_id,omitempty" es:"environment_id"`
+	ExternalID         string      `json:"external_id,omitempty" es:"external_id"`
+	FullName           string      `json:"full_name,omitempty" es:"full_name"`
+	Email              string      `json:"email,omitempty" es:"email"`
+	Phone              string      `json:"phone,omitempty" es:"phone"`
+	Timezone           string      `json:"timezone,omitempty" es:"timezone"`
+	Language           string      `json:"language,omitempty" es:"language"`
+	WebhookURL         string      `json:"webhook_url,omitempty" es:"webhook_url"`
+	SlackWebhookURL    string      `json:"slack_webhook_url,omitempty" es:"slack_webhook_url"`     // Phase 3
+	SlackChannelID     string      `json:"slack_channel_id,omitempty" es:"slack_channel_id"`       // Phase 3: Direct channel delivery via Bot API
+	DiscordWebhookURL  string      `json:"discord_webhook_url,omitempty" es:"discord_webhook_url"` // Phase 3
+	Preferences        Preferences `json:"preferences" es:"preferences"`
+	Devices            []Device    `json:"devices,omitempty" es:"devices"`
+	CreatedAt          time.Time   `json:"created_at" es:"created_at"`
+	UpdatedAt          time.Time   `json:"updated_at" es:"updated_at"`
 
 	// Billing fields — only populated when biz billing module is active.
 	// All fields are omitempty so existing API responses are unchanged.

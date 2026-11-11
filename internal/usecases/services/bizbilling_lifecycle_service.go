@@ -19,6 +19,7 @@ import (
 // engine, sequential numbering, coupons, credits, the payment gateway, and
 // billing notifications.
 type BizLifecycleService struct {
+	operations      *BizOperationService
 	gate            *BizLifecycleGate
 	repo            bizbilling.BizLifecycleRepository
 	stores          *bizbillingrepo.Stores
@@ -79,6 +80,9 @@ func (s *BizLifecycleService) getOwnedInvoice(ctx context.Context, appID, id str
 	inv, err := s.repo.GetInvoice(ctx, id)
 	if err != nil || inv.AppID != appID {
 		return nil, errors.NotFound("invoice", id)
+	}
+	if err := guardFinancialRead(ctx, s.gate, s.operations, inv.FinancialScope(), inv.LastSequence); err != nil {
+		return nil, err
 	}
 	return inv, nil
 }
@@ -290,6 +294,9 @@ func (s *BizLifecycleService) MarkOverdue(ctx context.Context, inv *bizbilling.B
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if updated, handled, err := s.tryFinancialInvoiceChange(ctx, inv.AppID, inv.ID, "overdue", nil); handled || err != nil {
+		return updated, err
+	}
 	updated, err := s.updateOwnedInvoice(ctx, inv.AppID, inv.ID, func(i *bizbilling.BizInvoice) error {
 		if !bizbilling.PayableStatuses[i.Status] {
 			return errors.BadRequest("invoice is not outstanding")
@@ -570,8 +577,16 @@ func (s *BizLifecycleService) buildInvoice(
 	items []bizbilling.InvoiceLineItem,
 	currency, paymentTerms string,
 ) (*bizbilling.BizInvoice, error) {
+	if inv, handled, err := s.tryFinancialDraft(ctx, appID, bizbilling.InvoiceDraft{Request: bizbilling.CreateInvoiceRequest{UserID: userID, LineItems: items, Currency: currency, PaymentTerms: paymentTerms}, SubscriptionID: subscriptionID, InvoiceType: invType}); handled || err != nil {
+		return inv, err
+	}
+
 	if len(items) == 0 {
 		return nil, errors.BadRequest("at least one line item is required")
+	}
+
+	if _, explicit := invoiceTaxOverrides(items); explicit {
+		return nil, errors.Conflict("Explicit tax overrides require a reviewed billing upgrade")
 	}
 
 	taxCfg, err := s.configSvc.TaxConfig(ctx, appID)
@@ -676,6 +691,9 @@ func (s *BizLifecycleService) CreateOneTimeInvoice(ctx context.Context, appID st
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialDraft(ctx, appID, bizbilling.InvoiceDraft{Request: *req}); handled || err != nil {
+		return inv, err
+	}
 	if req.UserID == "" {
 		return nil, errors.BadRequest("user_id is required")
 	}
@@ -700,6 +718,13 @@ func (s *BizLifecycleService) UpdateDraftInvoice(ctx context.Context, appID, id 
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialInvoiceChange(ctx, appID, id, "amend", req); handled || err != nil {
+		return inv, err
+	}
+	if _, explicit := invoiceTaxOverrides(req.LineItems); explicit {
+		return nil, errors.Conflict("Explicit tax overrides require a reviewed billing upgrade")
+	}
+
 	taxCfg, err := s.configSvc.TaxConfig(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -746,6 +771,9 @@ func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialInvoiceChange(ctx, appID, id, "issue", nil); handled || err != nil {
+		return inv, err
+	}
 	// Prepare external effects once. The mutation below can be retried by OCC;
 	// it must never create another gateway order or portal credential.
 	draft, err := s.getOwnedInvoice(ctx, appID, id)
@@ -818,6 +846,9 @@ func (s *BizLifecycleService) VoidInvoice(ctx context.Context, appID, id string)
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialInvoiceChange(ctx, appID, id, "void", nil); handled || err != nil {
+		return inv, err
+	}
 	return s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status == bizbilling.InvoiceStatusPaid {
 			return errors.BadRequest("paid invoices cannot be voided")
@@ -840,6 +871,9 @@ func (s *BizLifecycleService) WriteOffInvoice(ctx context.Context, appID, id str
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialInvoiceChange(ctx, appID, id, "write_off", nil); handled || err != nil {
+		return inv, err
+	}
 	return s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status == bizbilling.InvoiceStatusPaid {
 			return errors.BadRequest("paid invoices cannot be written off")
@@ -862,6 +896,18 @@ func (s *BizLifecycleService) ApplyCoupon(ctx context.Context, appID, id, code s
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	scope, upgraded, err := s.financialInvoiceScope(ctx, appID, id)
+	if err != nil {
+		return nil, err
+	}
+	if upgraded {
+		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandCouponApply, Scope: scope, CouponApply: &bizbilling.CouponApply{InvoiceID: id, Code: normalizeCouponCode(code)}})
+		if err != nil {
+			return nil, err
+		}
+		return event.InvoiceAfter, nil
+	}
+
 	coupons, _, err := s.stores.Coupons.Find(ctx,
 		bizbillingrepo.NewQuery(appID).Term("code", code).Body("created_at", 1, 0))
 	if err != nil || len(coupons) == 0 {
@@ -914,6 +960,17 @@ func (s *BizLifecycleService) ApplyCredit(ctx context.Context, appID, id string)
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	scope, upgraded, err := s.financialInvoiceScope(ctx, appID, id)
+	if err != nil {
+		return nil, err
+	}
+	if upgraded {
+		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandBalanceApplication, Scope: scope, BalanceApplication: &bizbilling.BalanceApplication{InvoiceID: id}})
+		if err != nil {
+			return nil, err
+		}
+		return event.InvoiceAfter, nil
+	}
 	inv, err := s.getOwnedInvoice(ctx, appID, id)
 	if err != nil {
 		return nil, err
@@ -961,6 +1018,9 @@ func (s *BizLifecycleService) ApplyCreditNoteToInvoice(ctx context.Context, appI
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialSourceApplication(ctx, appID, invoiceID, "credit_note", creditNoteID); handled || err != nil {
+		return inv, err
+	}
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -982,6 +1042,9 @@ func (s *BizLifecycleService) ApplyRetainerToInvoice(ctx context.Context, appID,
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialSourceApplication(ctx, appID, invoiceID, "retainer", retainerID); handled || err != nil {
+		return inv, err
+	}
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -1003,6 +1066,9 @@ func (s *BizLifecycleService) AddLateFee(ctx context.Context, appID, id string) 
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	if inv, handled, err := s.tryFinancialInvoiceChange(ctx, appID, id, "late_fee", nil); handled || err != nil {
+		return inv, err
+	}
 	lateCfg, err := s.configSvc.LateFeeConfig(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -1035,7 +1101,14 @@ func (s *BizLifecycleService) AddLateFee(ctx context.Context, appID, id string) 
 
 // ListInvoices lists invoices for an app.
 func (s *BizLifecycleService) ListInvoices(ctx context.Context, filter bizbilling.InvoiceFilter) ([]*bizbilling.BizInvoice, int, error) {
-	return s.repo.ListInvoices(ctx, filter)
+	rows, total, err := s.repo.ListInvoices(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = guardFinancialRows(ctx, s.gate, s.operations, rows); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }
 
 // GetInvoice returns an invoice scoped to the app.
@@ -1053,6 +1126,17 @@ func (s *BizLifecycleService) RecordPayment(ctx context.Context, appID, invoiceI
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	scope, upgraded, err := s.financialInvoiceScope(ctx, appID, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	if upgraded {
+		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandManualPayment, Scope: scope, ManualPayment: &bizbilling.ManualPayment{InvoiceID: invoiceID, AmountPaisa: req.AmountPaisa, TDSPaisa: req.TDSPaisa, Method: req.Method, Notes: req.Notes, GatewayPaymentID: req.GatewayTxnID}})
+		if err != nil {
+			return nil, err
+		}
+		return event.PaymentAfter, nil
+	}
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -1151,6 +1235,22 @@ func (s *BizLifecycleService) RefundPayment(ctx context.Context, appID, paymentI
 	if err != nil || payment.AppID != appID {
 		return nil, errors.NotFound("payment", paymentID)
 	}
+	scope, upgraded, scopeErr := financialScopeFor(ctx, s.gate, appID, payment.UserID, payment.Currency)
+	if scopeErr != nil {
+		return nil, scopeErr
+	}
+	if upgraded {
+		reason := req.Reason
+		if reason == "" {
+			reason = "offline refund recorded by business"
+		}
+		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandOfflineRefund, Scope: scope, OfflineRefund: &bizbilling.RefundReservationRequest{PaymentID: paymentID, AmountPaisa: req.AmountPaisa, Reason: reason}})
+		if err != nil {
+			return nil, err
+		}
+		return event.PaymentAfter, nil
+	}
+
 	if payment.Status != bizbilling.PaymentStatusSuccess {
 		return nil, errors.BadRequest("only successful payments can be refunded")
 	}
@@ -1210,7 +1310,14 @@ func (s *BizLifecycleService) RecordGatewayPayment(ctx context.Context, gatewayO
 
 // ListPayments lists payments for an app.
 func (s *BizLifecycleService) ListPayments(ctx context.Context, filter bizbilling.PaymentFilter) ([]*bizbilling.BizPayment, int, error) {
-	return s.repo.ListPayments(ctx, filter)
+	rows, total, err := s.repo.ListPayments(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err = guardFinancialRows(ctx, s.gate, s.operations, rows); err != nil {
+		return nil, 0, err
+	}
+	return rows, total, nil
 }
 
 // GetPayment returns a payment scoped to the app.
@@ -1219,6 +1326,10 @@ func (s *BizLifecycleService) GetPayment(ctx context.Context, appID, id string) 
 	if err != nil || p.AppID != appID {
 		return nil, errors.NotFound("payment", id)
 	}
+	if err = guardFinancialRead(ctx, s.gate, s.operations, p.FinancialScope(), p.LastSequence); err != nil {
+		return nil, err
+	}
+
 	return p, nil
 }
 
@@ -1314,4 +1425,21 @@ func dueDateFor(paymentTerms string, from time.Time) time.Time {
 }
 
 // SetLifecycleGate installs the additive app-cutover guard.
-func (s *BizLifecycleService) SetLifecycleGate(g *BizLifecycleGate) { s.gate = g }
+func (s *BizLifecycleService) SetLifecycleGate(g *BizLifecycleGate) {
+	s.gate = g
+	if guarded, ok := s.repo.(interface {
+		SetFinancialWriteGuard(bizbillingrepo.FinancialWriteGuard)
+	}); ok {
+		guarded.SetFinancialWriteGuard(financialWriteGuard(g, s.operations))
+	}
+	if s.stores != nil {
+		s.stores.SetFinancialWriteGuard(financialWriteGuard(g, s.operations))
+	}
+}
+
+func (s *BizLifecycleService) SetOperationService(operations *BizOperationService) {
+	s.operations = operations
+	if s.gate != nil {
+		s.SetLifecycleGate(s.gate)
+	}
+}

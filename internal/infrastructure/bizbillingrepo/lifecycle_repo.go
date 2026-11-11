@@ -2,11 +2,9 @@ package bizbillingrepo
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
-	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"go.uber.org/zap"
 )
 
@@ -19,9 +17,6 @@ const (
 // LifecycleRepo implements bizbilling.BizLifecycleRepository using Elasticsearch.
 // Consolidating these three closely related models into one repo reduces code bloat.
 type LifecycleRepo struct {
-	subBase       *repository.BaseRepository
-	invoiceBase   *repository.BaseRepository
-	paymentBase   *repository.BaseRepository
 	logger        *zap.Logger
 	subscriptions *Store[bizbilling.BizSubscription]
 	invoices      *Store[bizbilling.BizInvoice]
@@ -31,9 +26,6 @@ type LifecycleRepo struct {
 // NewLifecycleRepo creates a new LifecycleRepo.
 func NewLifecycleRepo(es *elasticsearch.Client, logger *zap.Logger) *LifecycleRepo {
 	return &LifecycleRepo{
-		subBase:       repository.NewBaseRepository(es, subscriptionIndex, logger, repository.RefreshWaitFor),
-		invoiceBase:   repository.NewBaseRepository(es, invoiceIndex, logger, repository.RefreshWaitFor),
-		paymentBase:   repository.NewBaseRepository(es, paymentIndex, logger, repository.RefreshWaitFor),
 		logger:        logger,
 		subscriptions: NewStore[bizbilling.BizSubscription](es, subscriptionIndex, logger),
 		invoices:      NewStore[bizbilling.BizInvoice](es, invoiceIndex, logger),
@@ -94,25 +86,8 @@ func (r *LifecycleRepo) ListSubscriptions(ctx context.Context, filter bizbilling
 		searchReq["from"] = filter.Offset
 	}
 
-	res, err := r.subBase.Search(ctx, searchReq)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	subs := make([]*bizbilling.BizSubscription, 0, len(res.Hits))
-	for _, hit := range res.Hits {
-		data, err := json.Marshal(hit)
-		if err != nil {
-			continue
-		}
-		var sub bizbilling.BizSubscription
-		if err := json.Unmarshal(data, &sub); err != nil {
-			r.logger.Error("Failed to unmarshal subscription", zap.Error(err))
-			continue
-		}
-		subs = append(subs, &sub)
-	}
-	return subs, int(res.Total), nil
+	rows, total, err := r.subscriptions.Find(ctx, searchReq)
+	return rows, int(total), err
 }
 
 // ─── Invoices ────────────────────────────────────────────────────────────
@@ -168,25 +143,8 @@ func (r *LifecycleRepo) ListInvoices(ctx context.Context, filter bizbilling.Invo
 		searchReq["from"] = filter.Offset
 	}
 
-	res, err := r.invoiceBase.Search(ctx, searchReq)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	invoices := make([]*bizbilling.BizInvoice, 0, len(res.Hits))
-	for _, hit := range res.Hits {
-		data, err := json.Marshal(hit)
-		if err != nil {
-			continue
-		}
-		var inv bizbilling.BizInvoice
-		if err := json.Unmarshal(data, &inv); err != nil {
-			r.logger.Error("Failed to unmarshal invoice", zap.Error(err))
-			continue
-		}
-		invoices = append(invoices, &inv)
-	}
-	return invoices, int(res.Total), nil
+	rows, total, err := r.invoices.Find(ctx, searchReq)
+	return rows, int(total), err
 }
 
 // ─── Payments ────────────────────────────────────────────────────────────
@@ -236,23 +194,6 @@ func (r *LifecycleRepo) ListPayments(ctx context.Context, filter bizbilling.Paym
 		searchReq["from"] = filter.Offset
 	}
 
-	res, err := r.paymentBase.Search(ctx, searchReq)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	payments := make([]*bizbilling.BizPayment, 0, len(res.Hits))
-	for _, hit := range res.Hits {
-		data, err := json.Marshal(hit)
-		if err != nil {
-			continue
-		}
-		var p bizbilling.BizPayment
-		if err := json.Unmarshal(data, &p); err != nil {
-			r.logger.Error("Failed to unmarshal payment", zap.Error(err))
-			continue
-		}
-		payments = append(payments, &p)
-	}
-	return payments, int(res.Total), nil
+	rows, total, err := r.payments.Find(ctx, searchReq)
+	return rows, int(total), err
 }

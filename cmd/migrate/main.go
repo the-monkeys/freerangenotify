@@ -52,6 +52,8 @@ var bizBillingIndices = []string{
 	"frn_biz_journal",
 	"frn_biz_streams",
 	"frn_biz_customer_balances",
+	"frn_biz_credit_lots",
+	"frn_biz_refund_reservations",
 	"frn_biz_products",
 	"frn_biz_plans",
 	"frn_biz_plan_addons",

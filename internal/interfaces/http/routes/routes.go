@@ -429,6 +429,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		}
 
 		biz.Use(c.BizBillingHandler.GuardMutations)
+		biz.Get("/operations/:id", c.BizBillingHandler.GetBillingOperation)
+		biz.Post("/operations/:id/resume", c.BizBillingHandler.ResumeBillingOperation)
 
 		// ── Products ──
 		biz.Post("/products", c.BizBillingHandler.CreateProduct)
@@ -540,6 +542,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		// ── Customer billing (statement, credit balance, portal link) ──
 		biz.Get("/users/:user_id/statement", c.BizBillingHandler.GetUserStatement)
 		biz.Post("/users/:user_id/balance", c.BizBillingHandler.AdjustUserBalance)
+		biz.Get("/users/:user_id/balance", c.BizBillingHandler.GetCustomerBalance)
 		biz.Post("/users/:user_id/portal-link", c.BizBillingHandler.CreatePortalLink)
 
 		// ── Analytics (same API-key auth as rest of /v1/biz; dashboard sends X-API-Key) ──
