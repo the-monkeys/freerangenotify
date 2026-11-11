@@ -3,6 +3,7 @@ package database
 // New lifecycle metadata is additive; this never recreates historical indices.
 func (it *IndexTemplates) GetBizLifecycleStatesTemplate() map[string]interface{} {
 	return map[string]interface{}{"settings": map[string]interface{}{"number_of_shards": 1, "number_of_replicas": 0}, "mappings": map[string]interface{}{"dynamic": false, "properties": map[string]interface{}{
+		"merchant_slot_revisions": map[string]interface{}{"type": "object", "enabled": false}, "merchant_switch": map[string]interface{}{"type": "object", "enabled": false},
 		"write_revision": billingLong(), "app_id": map[string]interface{}{"type": "keyword"}, "lifecycle_version": map[string]interface{}{"type": "integer"}, "status": map[string]interface{}{"type": "keyword"}, "epoch": map[string]interface{}{"type": "long"}, "primary_currency": map[string]interface{}{"type": "keyword"}, "mutation_permits": map[string]interface{}{"type": "object", "enabled": false}, "merchant_slots": map[string]interface{}{"type": "object", "enabled": false},
 	}}}
 }
@@ -66,4 +67,12 @@ func (it *IndexTemplates) GetBizMigrationReviewsTemplate() map[string]interface{
 }
 func (it *IndexTemplates) GetBizLegacyResolutionsTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "app_id": billingKeyword(), "report_id": billingKeyword(), "index": billingKeyword(), "resource_id": billingKeyword(), "source_content_hash": billingKeyword()})
+}
+
+func (it *IndexTemplates) GetBizGatewayConnectionsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{
+		"id": billingKeyword(), "app_id": billingKeyword(), "account_id": billingKeyword(), "mode": billingKeyword(), "revision": billingLong(), "readiness": billingKeyword(),
+		"api_authenticated": map[string]interface{}{"type": "boolean"}, "account_verified": map[string]interface{}{"type": "boolean"}, "automatic_ready": map[string]interface{}{"type": "boolean"},
+		"secrets": map[string]interface{}{"type": "object", "enabled": false}, "created_at": map[string]interface{}{"type": "date"},
+	})
 }

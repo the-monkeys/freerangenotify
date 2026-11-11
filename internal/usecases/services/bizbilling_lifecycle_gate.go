@@ -40,6 +40,15 @@ func (g *BizLifecycleGate) State(ctx context.Context, app string) (bizbilling.Li
 		return s, bizbilling.ErrReconciliationRequired
 	}
 	normalizeLifecycle(&s, app)
+	if recoverExpiredMerchantSwitch(&s) {
+		if err := g.store.Mutate(ctx, app, func(current *bizbilling.LifecycleState) error {
+			recoverExpiredMerchantSwitch(current)
+			return nil
+		}); err != nil {
+			return s, err
+		}
+		return g.State(ctx, app)
+	}
 	return s, nil
 }
 func (g *BizLifecycleGate) AcquireMutation(ctx context.Context, app string) (bizbilling.MutationPermit, error) {
@@ -50,6 +59,7 @@ func (g *BizLifecycleGate) AcquireMutation(ctx context.Context, app string) (biz
 	}
 	err := g.store.Mutate(ctx, app, func(s *bizbilling.LifecycleState) error {
 		normalizeLifecycle(s, app)
+		recoverExpiredMerchantSwitch(s)
 		if s.AppID != app || (s.LifecycleVersion != 1 && s.LifecycleVersion != 2) {
 			return bizbilling.ErrReconciliationRequired
 		}

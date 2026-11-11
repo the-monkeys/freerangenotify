@@ -14,8 +14,8 @@
 
 ## Current state and handoff — updated 2026-11-12
 
-- **Scope:** Business billing inside an application for the business's own customers. Each business uses its own Razorpay account. Support invoice/payment-link and customer-authorized automatic collection, selected per subscription. Notification delivery credits and platform subscriptions remain separate financial systems.
-- **Completed implementation:** Phase 1, Tasks 1-7. Verified checkpoint `7d8d895` and final implementation commit `e316868`; Phase 2 has not started. The next approved implementation work is Phase 2, Tasks 8-11. No broader UI restructuring is authorized within those tasks.
+- **Scope:** Business billing inside an application for the business's own customers. Gateway-free invoicing and recording received cash/direct-UPI/bank payments remain available. A business choosing online collection uses its own Razorpay account; connecting a gateway is optional for manual billing. Support invoice/payment-link and customer-authorized automatic collection, selected per subscription. Notification delivery credits and platform subscriptions remain separate financial systems.
+- **Completed implementation:** Phase 1, Tasks 1-7. Verified checkpoint `7d8d895` and final implementation commit `e316868`; Phase 2 is in progress (Tasks 8-11), with merchant onboarding under verification. Stop after the Phase 2 checkpoint and wait for the user before Phase 3. No broader UI restructuring is authorized within those tasks.
 - **Verification evidence:** 115 top-level billing tests across seven packages; broader short suite across 63 packages; nine legacy HTTP end-to-end scenarios; six live lifecycle HTTP boundary checks; four fixture-safety tests; generated API check and UI production build all passed. This is local evidence, not live-provider or production verification.
 - **Guided setup/lifecycle smoke:** Created Smoke Test Product, Smoke Test Monthly (USD 10/month), and Smoke Test Customer in the local test application LocalOnly-Billing. Created a quantity-one subscription with no trial, generated its first invoice, and verified pause/resume restored the subscription to active without creating an extra invoice or payment.
 - **Saved financial result:** Exactly one active subscription and one open invoice; subtotal USD 10.00, test tax USD 1.80, total/due USD 11.80, actual paid USD 0.00, and zero payment records. The current UI incorrectly renders USD 11.80 under Amount Paid; this is a confirmed display mapping bug, not a collected payment. Actual payment collection/manual payment entry has not been exercised through this UI. The legacy HTTP payment flow was covered by automated checks.
@@ -33,7 +33,7 @@
 - Missing subscription collection mode means `invoice`; existing records never acquire a payment mandate or automatic charges through migration.
 - Existing `frn_biz_*` records and indices are retained. Do not reindex into empty replacements, delete history, regenerate invoice numbers, or recalculate issued historical totals.
 - Preserve stored currencies and minor units. Never sum currencies or silently convert them.
-- Each business connects its own Razorpay account; platform notification-credit purchases and workspace licensing are outside this project.
+- Each business choosing online collection connects its own Razorpay account; platform notification-credit purchases and workspace licensing are outside this project. Do not require merchant onboarding for issuing an invoice, recording authorized manual cash/direct-UPI/bank receipts, or sending the corresponding receipt.
 - Upgrade the billing lifecycle per app through an explicit, recorded readiness/cutover step. Apps not yet upgraded retain their legacy API behavior.
 - Initial automatic collection supports fixed-amount INR plans with cycles and terms supported by the connected merchant's Razorpay Subscriptions capability. Unsupported combinations are rejected before authorization.
 - Automatic collection freezes its invoice total and excludes manual collection/adjustment until the debit is captured or definitively stopped. Verified unexpected money is recorded and reconciled, not discarded.
@@ -71,7 +71,7 @@ The following named contracts are defined by the task that owns their file. Late
 - New requests may send `Idempotency-Key`. Gateway effects and scheduled operations always derive deterministic keys. For legacy manual APIs without a key, separate submissions remain distinct intentional actions; give each accepted request an operation ID and make interrupted/uncertain requests resumable through that ID. The new UI retains the same key across retries. Do not pretend identical requests prove the user meant only one payment.
 - `internal/domain/bizbilling/errors.go` owns typed/sentinel errors referenced below (`ErrIdempotencyConflict`, `ErrCurrencyMismatch`, `ErrAutomaticCollectionInProgress`, `ErrActiveLegacyWriter`, reconciliation-required, stale-permit, and busy/conflict errors). HTTP mapping preserves existing envelopes. `testutil.ErrUnownedFixture` is test-only and belongs to the fixture guard, not the business domain.
 - `GET /v1/biz/operations/:id` exposes only the authenticated app's sanitized progress. Incomplete synchronous operations retain the existing error envelope plus additive `operation_id`, `operation_status`, and `retryable`; use 409 for competing/changed intents and 503 for unavailable or uncertain completion. Success retains existing envelopes/status codes and only follows required projections.
-- Merchant management: `GET|PUT /v1/biz/gateways/razorpay/:mode`, `POST .../:mode/test`, `POST .../:mode/disconnect`; callback `POST /v1/webhooks/biz/razorpay/:connection_id`. These are separate from old connector callbacks and platform `/v1/billing/*` routes.
+- Merchant management: `GET|PUT|DELETE /v1/biz/gateway-connections/:mode`; saving authenticates through a read-only API and deleting disconnects the active slot while retaining historical credentials; callback `POST /v1/webhooks/biz/razorpay/:connection_id`. These are separate from old connector callbacks and platform `/v1/billing/*` routes.
 - Upgrade management: `GET /v1/biz/lifecycle`, `POST /v1/biz/lifecycle/prepare`, `POST /v1/biz/lifecycle/activate`; review `GET /v1/biz/lifecycle/reviews`, `POST /v1/biz/lifecycle/reviews/:id/resolve`. Existing `manage_billing` write authorization applies; app scope always comes from auth, never a body override.
 - Add `collection_mode?: invoice|automatic`, `gateway_mode?: test|live`, and `change_timing?: immediate|next_period`. Missing mode stays invoice. Legacy manual change-plan without timing keeps immediate proration; new UI explicitly selects next period. Automatic currency/pricing/cycle incompatibility is a validation error, never fallback.
 - Customer links stay under the existing `/v1/portal/:token` API and `/portal/:token` React paths. New v2 tokens are stored by digest, last 30 days by default (matching legacy TTL), and support revocation. Keep read-only legacy token lookup until its original expiry.
@@ -232,20 +232,24 @@ The local UI/API/worker use one main Compose project, with telemetry disabled an
 
 ### Task 8: Encrypted merchant onboarding and immutable account binding
 
+**Manual-mode compatibility requirement:** Razorpay is optional. Characterize `TestBizManualBillingDoesNotRequireMerchant` alongside the merchant tests: no merchant credentials, provider calls or gateway readiness requirement for manual invoice/cash/direct-UPI recording. Treat an already-passing manual path as baseline evidence, not as a missing-feature RED. Only online checkout/automatic collection require their supported merchant prerequisites. A manually entered UPI reference is staff-recorded evidence, not provider-verified settlement.
+
 **Files:** Create `internal/domain/bizbilling/gateway.go`, `internal/infrastructure/bizbillingrepo/gateway_connection_repo.go`, `internal/usecases/services/bizbilling_gateway_connection_service.go`, `bizbilling_gateway_connection_test.go`, `internal/interfaces/http/handlers/biz_billing_handler_gateway.go`; modify lifecycle state slots, container/config bindings, index mappings, and routes. Reuse `internal/infrastructure/secrets/connection_codec.go` unchanged unless a narrowly tested compatibility extension is necessary.
 
 **Interfaces:** `MerchantConnection{ID,AppID,AccountID string; Mode GatewayMode; Revision int64; Readiness string; Secrets map[string]channelconnection.EncryptedSecret}`; plaintext belongs only in write-only `MerchantPatch`/in-memory credentials. Produce `Save(ctx,appID string,mode GatewayMode,expectedRevision int64,patch MerchantPatch) (MerchantSnapshot,error)`, `Snapshot(ctx,appID string,mode GatewayMode) (MerchantSnapshot,error)`, `Resolve(ctx,GatewayRef) (MerchantCredentials,error)`, `Disconnect(ctx,appID string,mode GatewayMode,expectedRevision int64) error`.
 
-- [ ] **1. Tests:** `TestBizMerchantEncryptionAndRBAC`, `TestBizMerchantSlotSwitchKeepsOldOrder` (RF3), `TestBizMerchantRotationKeepsCallbackSecret`. Assert wrong-app AAD fails; reads/logs omit keys; test/live cannot cross; stale revision conflicts; old connection/account remains resolvable after slot replacement.
+- [x] **1. Tests:** `TestBizMerchantEncryptionAndRBAC`, `TestBizMerchantSlotSwitchKeepsOldOrder` (RF3), `TestBizMerchantRotationKeepsCallbackSecret`. Assert wrong-app AAD fails; reads/logs omit keys; test/live cannot cross; stale revision conflicts; old connection/account remains resolvable after slot replacement.
   ```go
   require.NotContains(t, responseBody, fixtureSecret)
   require.Equal(t, original.AccountID, oldOrderCredentials.AccountID)
   require.Error(t, crossAppDecryptErr)
   ```
-- [ ] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBizMerchant' -count=1`.
-- [ ] **3. Implement:** Use existing AES-GCM binding with connection/app/mode/provider/field; reuse the configured encryption keyring, never the platform Razorpay keys. Changing merchant identity creates a new immutable connection; slot switching does not overwrite the old account. Retain referenced connection/secret revisions and block destructive deletion while in-flight effects exist. Validate credentials with a documented read-only API and pin the expected merchant account ID; show API authentication and signed-callback account verification as distinct readiness facts. A key prefix alone proves neither account ownership nor recurring capability. Do not assume a partner-only account API is available to ordinary merchants. Gate live automatic readiness on verified linkage/capabilities, and verify payment/order ownership using the pinned credentials on every financial settlement. Missing keyring fails onboarding closed.
-- [ ] **4. Green:** Repeat including unavailable retained key, previous webhook secret, disconnected slot with a late old capture, and permission denial.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): connect encrypted per-app Razorpay merchants"`.
+- [x] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBizMerchant' -count=1`.
+- [x] **3. Implement:** Use existing AES-GCM binding with connection/app/mode/provider/field; reuse the configured encryption keyring, never the platform Razorpay keys. Changing merchant identity creates a new immutable connection; slot switching does not overwrite the old account. Retain referenced connection/secret revisions and block destructive deletion while in-flight effects exist. Validate credentials with a documented read-only API and pin the expected merchant account ID; show API authentication and signed-callback account verification as distinct readiness facts. A key prefix alone proves neither account ownership nor recurring capability. Do not assume a partner-only account API is available to ordinary merchants. Gate live automatic readiness on verified linkage/capabilities, and verify payment/order ownership using the pinned credentials on every financial settlement. Missing keyring fails onboarding closed.
+- [x] **4. Green:** Repeat including unavailable retained key, previous webhook secret, disconnected slot with a late old capture, and permission denial.
+- [x] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): connect encrypted per-app Razorpay merchants"`.
+
+Task 8 verification: owned local merchant/lifecycle regression batch passed (services 9.612s, provider 2.192s, handlers 0.231s, repository 0.210s; container/migrate compile passed). Includes real lost-write acknowledgments, expired metadata-fence recovery, unavailable retained keys and gateway-free cash/UPI/bank recording. API authentication alone leaves account verification and automatic readiness false. No live provider canary performed.
 
 ### Task 9: App-scoped orders and verified checkout
 
@@ -304,6 +308,8 @@ The local UI/API/worker use one main Compose project, with telemetry disabled an
 ## Phase 3 — Both subscription modes and invoice lifecycle
 
 ### Task 12: Complete manual invoice flow and immutable issued snapshots
+
+**Explicit gateway-free journey:** An authorized business without Razorpay can issue an invoice, record cash or a direct-UPI/bank amount and reference, handle partial/full settlement, and obtain a receipt. Preserve the distinction between staff-confirmed external money and provider-verified capture. Gateway unavailability must not prevent manual invoice issue or receipt recording. Task 15 owns reliable receipt delivery, independently of the completed money fact; Task 17 exposes the manual controls without requiring gateway onboarding. Protect automatically owned invoices under the existing collection-owner rules.
 
 **Files:** Create `internal/usecases/services/bizbilling_invoice_service.go`, `bizbilling_invoice_test.go`; modify domain `invoice.go`, `subscription.go`, `config.go`; modify lifecycle facade, financial commands, plan/product services, and `internal/interfaces/http/handlers/biz_billing_handler_lifecycle.go`.
 
@@ -578,8 +584,8 @@ Additional future usability requirement: support nontechnical businesses end to 
 
 After each phase, send a concise update containing its delivered behavior, commits, verification evidence, and pending risks. Keep the next phase independent of an extra permission request once this plan is reviewed; the user has selected all six phases and native execution. Pause only for a material unanswered product decision, unavailable required external access, or an actual approval boundary such as production writes.
 
-- [x] Phase 1 implementation: Tasks 1–7; automated verification and guided setup/lifecycle check performed. Three known UI findings are assigned to Phase 4 at the user's request; payment collection through the UI remains unverified. Phase 2 has not started.
-- [ ] Phase 2: Tasks 8–11; evidence pending implementation.
+- [x] Phase 1 implementation: Tasks 1–7; automated verification and guided setup/lifecycle check performed. Three known UI findings are assigned to Phase 4 at the user's request; payment collection through the UI remains unverified. Phase 2 is in progress.
+- [ ] Phase 2: Tasks 8–11; merchant onboarding verification in progress; finish this checkpoint and wait for instructions before Phase 3.
 - [ ] Phase 3: Tasks 12–15; evidence pending implementation.
 - [ ] Phase 4: Tasks 16–19; evidence pending implementation.
 - [ ] Phase 5: Tasks 20–22; evidence pending implementation.

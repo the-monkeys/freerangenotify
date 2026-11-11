@@ -29,6 +29,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	merchants    *services.BizGatewayConnectionService
 	migration    *services.BizMigrationService
 	operations   *services.BizOperationService
 	gate         *services.BizLifecycleGate
@@ -629,6 +630,12 @@ func (h *BizBillingHandler) handleError(c *fiber.Ctx, err error) error {
 	stderrors.As(err, &operation)
 	status, code, message, retryable := fiber.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", false
 	switch {
+	case stderrors.Is(err, bizbilling.ErrMerchantAuthentication):
+		status, code, message = 400, "BILLING_MERCHANT_AUTHENTICATION_FAILED", "Payment account credentials could not be authenticated."
+	case stderrors.Is(err, bizbilling.ErrMerchantUnavailable):
+		status, code, message, retryable = 503, "BILLING_MERCHANT_UNAVAILABLE", "Payment account verification is unavailable. Retry shortly.", true
+	case stderrors.Is(err, bizbilling.ErrMerchantNotReady):
+		status, code, message = 409, "BILLING_MERCHANT_NOT_READY", "Connect and verify the business payment account before online collection."
 	case stderrors.Is(err, bizbilling.ErrLegacyReviewRequired):
 		status, code, message = 409, "BILLING_LEGACY_REVIEW_REQUIRED", "Review this historical credit before spending or refunding it."
 	case stderrors.Is(err, bizbilling.ErrCouponExhausted):

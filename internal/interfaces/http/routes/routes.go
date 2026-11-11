@@ -435,6 +435,11 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		biz.Post("/lifecycle/prepare", c.BizBillingHandler.PrepareBillingUpgrade)
 		biz.Post("/lifecycle/reviews/:id/resolve", c.BizBillingHandler.ResolveBillingUpgrade)
 		biz.Post("/lifecycle/activate", c.BizBillingHandler.ActivateBillingUpgrade)
+		// Merchant changes coordinate an exclusive metadata fence, rather than
+		// holding a normal permit that would prevent their own writer drain.
+		biz.Get("/gateway-connections/:mode", c.BizBillingHandler.GetMerchantConnection)
+		biz.Put("/gateway-connections/:mode", c.BizBillingHandler.SaveMerchantConnection)
+		biz.Delete("/gateway-connections/:mode", c.BizBillingHandler.DisconnectMerchantConnection)
 		biz.Use(c.BizBillingHandler.GuardMutations)
 		biz.Get("/operations/:id", c.BizBillingHandler.GetBillingOperation)
 		biz.Post("/operations/:id/resume", c.BizBillingHandler.ResumeBillingOperation)

@@ -14,6 +14,8 @@ type MutationPermit struct {
 	ExpiresAt   time.Time `json:"expires_at"`
 }
 type LifecycleState struct {
+	MerchantSwitch        *MerchantSwitchFence      `json:"merchant_switch,omitempty"`
+	MerchantSlotRevisions map[GatewayMode]int64     `json:"merchant_slot_revisions,omitempty"`
 	PermitReview          *WriterPermitReviewFence  `json:"permit_review,omitempty"`
 	LastWriterReviewID    string                    `json:"last_writer_review_id,omitempty"`
 	MigrationReportID     string                    `json:"migration_report_id,omitempty"`

@@ -113,6 +113,7 @@ type Container struct {
 	RenewalHandler               *handlers.RenewalHandler
 	BizBillingHandler            *handlers.BizBillingHandler
 	BizOperationService          *services.BizOperationService
+	BizGatewayConnections        *services.BizGatewayConnectionService
 	BizPortalHandler             *handlers.BizPortalHandler
 	bizSchedulerCancel           context.CancelFunc
 
@@ -982,6 +983,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		migrationSvc := services.NewBizMigrationService(esClient, lifecycleGate, container.BizOperationService, logger)
 		migrationSvc.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
 		container.BizBillingHandler.SetMigrationService(migrationSvc)
+		merchantAuthenticator := payment.NewBizRazorpayAuthenticator(nil)
+		container.BizGatewayConnections = services.NewBizGatewayConnectionService(esClient, lifecycleGate, connectionCodec, merchantAuthenticator.Authenticate, logger)
+		container.BizBillingHandler.SetMerchantService(container.BizGatewayConnections)
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)
