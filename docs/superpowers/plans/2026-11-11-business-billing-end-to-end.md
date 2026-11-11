@@ -116,16 +116,18 @@ Go unit commands below use explicit package paths to avoid traversing `node_modu
 
 **Interfaces:** Produce `Version{SeqNo,PrimaryTerm int64}`, `Store[T].GetVersioned(ctx,id) (*T,Version,error)`, `CreateIfAbsent(ctx,id,doc *T) (bool,error)`, and `ReplaceVersioned(ctx,id,doc *T,expected Version) error`. Existing `Create/Update` signatures remain; immutable IDs use `op_type=create`. CAS retries are capped at 8, return conflict on exhaustion, and do no external work inside mutation callbacks.
 
-- [ ] **1. Tests:** `TestBizCreateDoesNotOverwrite`, `TestBizCASNoLostUpdate`, `TestBizCASPreservesUnknownFields`, `TestBizRetryDoesNotRepeatGatewayEffect`. Assert two concurrent increments survive, mismatched term/sequence produces 409, unknown optional source fields survive known-field edits, and gateway calls remain one outside CAS retries.
+- [x] **1. Tests:** `TestBizCreateDoesNotOverwrite`, `TestBizCASNoLostUpdate`, `TestBizCASPreservesUnknownFields`, `TestBizRetryDoesNotRepeatGatewayEffect`. Assert two concurrent increments survive, mismatched term/sequence produces 409, unknown optional source fields survive known-field edits, and gateway calls remain one outside CAS retries.
   ```go
   require.Equal(t, int64(2), storedCounter)
   require.Equal(t, "retained", raw["future_field"])
   require.Equal(t, 1, gatewayCalls)
   ```
-- [ ] **2. Red:** `node scripts/biz-billing-fixtures.mjs run -- go test ./internal/infrastructure/bizbillingrepo -run 'TestBiz(Create|CAS|Retry)' -count=1`.
-- [ ] **3. Implement:** Use actual ES sequence/term guards; retain unknown source keys while applying owned-field changes, including intentional removals. A blind full-document replace is not an OCC fix. Keep generic `BaseRepository` behavior outside this module unchanged.
-- [ ] **4. Green:** Repeat against real ES; kill one response/force contention in fixtures and verify bounded retry behavior.
-- [ ] **5. Commit:** Stage only listed files; `git commit -m "fix(biz-billing): fence concurrent document mutations"`.
+- [x] **2. Red:** `node scripts/biz-billing-fixtures.mjs run -- go test ./internal/infrastructure/bizbillingrepo -run 'TestBiz(Create|CAS|Retry)' -count=1`.
+- [x] **3. Implement:** Use actual ES sequence/term guards; retain unknown source keys while applying owned-field changes, including intentional removals. A blind full-document replace is not an OCC fix. Keep generic `BaseRepository` behavior outside this module unchanged.
+- [x] **4. Green:** Repeat against real ES; kill one response/force contention in fixtures and verify bounded retry behavior.
+- [x] **5. Commit:** Stage only listed files; `git commit -m "fix(biz-billing): fence concurrent document mutations"`.
+
+Evidence: owned ES regression suite 9/9 PASS (13.554s), gateway retry regression PASS; full short domain/repository/service/handler suites PASS. Unknown write response tested through a disconnected HTTP transport; only confirmed version conflicts are retried.
 
 ### Task 4: Ordered journal and resumable projections
 

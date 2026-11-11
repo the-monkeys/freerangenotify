@@ -13,7 +13,7 @@ services:
       test: ['CMD-SHELL', 'curl -fsS localhost:9200/_cluster/health >/dev/null']
       interval: 2s
       timeout: 3s
-      retries: 90
+      retries: 300
   redis:
     image: redis:7-alpine
     ports: ['127.0.0.1::6379']

@@ -77,7 +77,7 @@ async function main(args){
   const composeArgs=['compose','-p',project,'-f',compose];let manifest;
   try{
     const dockerHost=env.DOCKER_HOST||await run('docker',['context','inspect','--format','{{.Endpoints.docker.Host}}'],{env,capture:true});assertLocalDocker(dockerHost);
-    await run('docker',[...composeArgs,'up','-d','--wait','--wait-timeout','180'],{env});
+    await run('docker',[...composeArgs,'up','-d','--wait','--wait-timeout','600'],{env});
     const inspections=[];manifest={runID,project,services:{}};
     for(const [name,port] of [['elasticsearch','9200/tcp'],['redis','6379/tcp']]){
       const id=await run('docker',[...composeArgs,'ps','-q',name],{env,capture:true});

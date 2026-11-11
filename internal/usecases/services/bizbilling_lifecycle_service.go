@@ -746,27 +746,47 @@ func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string
 		return nil, mutationErr
 	}
 	defer releaseBizMutation(s.logger, finishMutation)
+	// Prepare external effects once. The mutation below can be retried by OCC;
+	// it must never create another gateway order or portal credential.
+	draft, err := s.getOwnedInvoice(ctx, appID, id)
+	if err != nil {
+		return nil, err
+	}
+	if draft.Status != bizbilling.InvoiceStatusDraft {
+		return nil, errors.BadRequest("only draft invoices can be issued")
+	}
+	now := time.Now().UTC()
+	orderID := draft.GatewayOrderID
+	if s.gateway != nil && draft.AmountDuePaisa > 0 && orderID == "" {
+		order, orderErr := s.gateway.CreateOrder(ctx, draft.AppID, "bizinv", draft.AmountDuePaisa)
+		if orderErr != nil {
+			s.logger.Warn("bizbilling: gateway order creation failed; invoice issued without order",
+				zap.String("invoice_id", draft.ID), zap.Error(orderErr))
+		} else {
+			orderID = order.OrderID
+		}
+	}
+	paymentLink := draft.PaymentLink
+	if s.portalSvc != nil {
+		if link := s.portalSvc.PaymentLinkFor(ctx, draft.AppID, draft.UserID, draft.ID); link != "" {
+			paymentLink = link
+		}
+	}
 	inv, err := s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status != bizbilling.InvoiceStatusDraft {
 			return errors.BadRequest("only draft invoices can be issued")
 		}
-		now := time.Now().UTC()
+		// An order prepared for an earlier price, owner, or revision cannot be
+		// attached to an invoice concurrently edited by another request.
+		if inv.UserID != draft.UserID || inv.Currency != draft.Currency || inv.AmountDuePaisa != draft.AmountDuePaisa ||
+			inv.TotalPaisa != draft.TotalPaisa || !inv.UpdatedAt.Equal(draft.UpdatedAt) || inv.GatewayOrderID != draft.GatewayOrderID {
+			return bizbilling.ErrConflict
+		}
 		inv.Status = bizbilling.InvoiceStatusOpen
 		inv.IssuedAt = &now
 		inv.UpdatedAt = now
-
-		if s.gateway != nil && inv.AmountDuePaisa > 0 {
-			order, err := s.gateway.CreateOrder(ctx, inv.AppID, "bizinv", inv.AmountDuePaisa)
-			if err != nil {
-				s.logger.Warn("bizbilling: gateway order creation failed — invoice issued without order",
-					zap.String("invoice_id", inv.ID), zap.Error(err))
-			} else {
-				inv.GatewayOrderID = order.OrderID
-			}
-		}
-		if link := s.portalSvc.PaymentLinkFor(ctx, inv.AppID, inv.UserID, inv.ID); link != "" {
-			inv.PaymentLink = link
-		}
+		inv.GatewayOrderID = orderID
+		inv.PaymentLink = paymentLink
 		return nil
 	})
 	if err != nil {

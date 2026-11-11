@@ -3,11 +3,13 @@ package bizbillingrepo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
 	"github.com/the-monkeys/freerangenotify/internal/infrastructure/repository"
 	"go.uber.org/zap"
 )
@@ -16,19 +18,21 @@ import (
 // BaseRepository so every biz billing entity gets Create/Get/Update/Delete/
 // Find without repeating marshal/unmarshal boilerplate.
 type Store[T any] struct {
-	base   *repository.BaseRepository
-	es     *elasticsearch.Client
-	index  string
-	logger *zap.Logger
+	base    *repository.BaseRepository
+	es      *elasticsearch.Client
+	index   string
+	logger  *zap.Logger
+	refresh repository.RefreshPolicy
 }
 
 // NewStore creates a typed store for the given index.
 func NewStore[T any](es *elasticsearch.Client, index string, logger *zap.Logger) *Store[T] {
 	return &Store[T]{
-		base:   repository.NewBaseRepository(es, index, logger, repository.RefreshWaitFor),
-		es:     es,
-		index:  index,
-		logger: logger,
+		base:    repository.NewBaseRepository(es, index, logger, repository.RefreshWaitFor),
+		es:      es,
+		index:   index,
+		logger:  logger,
+		refresh: repository.RefreshWaitFor,
 	}
 }
 
@@ -36,35 +40,50 @@ func (s *Store[T]) Create(ctx context.Context, id string, doc *T) error {
 	if id == "" {
 		return fmt.Errorf("bizbillingrepo: document ID is required")
 	}
-	return s.base.Create(ctx, id, doc)
+	created, err := s.CreateIfAbsent(ctx, id, doc)
+	if err == nil && !created {
+		return bizbilling.ErrConflict
+	}
+	return err
 }
 
 func (s *Store[T]) Get(ctx context.Context, id string) (*T, error) {
-	raw, err := s.base.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return decodeDoc[T](raw)
+	doc, _, err := s.GetVersioned(ctx, id)
+	return doc, err
 }
 
-// Update applies a read-modify-write cycle: fetch, mutate via fn, replace.
+// Update retries only version conflicts. fn must be pure: it may run more than
+// once and must never send notifications, create orders, or mint identifiers.
 func (s *Store[T]) Update(ctx context.Context, id string, fn func(*T) error) (*T, error) {
-	doc, err := s.Get(ctx, id)
-	if err != nil {
-		return nil, err
+	for attempt := 0; attempt < maxCASAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		doc, version, err := s.GetVersioned(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err = fn(doc); err != nil {
+			return nil, err
+		}
+		if err = s.ReplaceVersioned(ctx, id, doc, version); errors.Is(err, bizbilling.ErrConflict) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		return doc, nil
 	}
-	if err := fn(doc); err != nil {
-		return nil, err
-	}
-	if err := s.base.Replace(ctx, id, doc); err != nil {
-		return nil, err
-	}
-	return doc, nil
+	return nil, bizbilling.ErrConflict
 }
 
-// Replace overwrites the full document.
+// Replace replaces declared fields with a conditional write. Callers computing
+// changes from a previous read must use Update instead to avoid stale values.
 func (s *Store[T]) Replace(ctx context.Context, id string, doc *T) error {
-	return s.base.Replace(ctx, id, doc)
+	_, version, err := s.GetVersioned(ctx, id)
+	if err != nil {
+		return err
+	}
+	return s.ReplaceVersioned(ctx, id, doc, version)
 }
 
 func (s *Store[T]) Delete(ctx context.Context, id string) error {
