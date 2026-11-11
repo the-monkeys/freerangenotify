@@ -127,10 +127,11 @@ type RazorpayConfig struct {
 // BizBillingConfig configures the business billing module.
 // The module is feature-gated via features.biz_billing_enabled.
 type BizBillingConfig struct {
-	DefaultCurrency string `mapstructure:"default_currency" yaml:"default_currency"` // Default: "INR"
-	InvoicePrefix   string `mapstructure:"invoice_prefix" yaml:"invoice_prefix"`     // Default: "INV"
-	EstimatePrefix  string `mapstructure:"estimate_prefix" yaml:"estimate_prefix"`   // Default: "EST"
-	PortalBaseURL   string `mapstructure:"portal_base_url" yaml:"portal_base_url"`   // Public URL for customer portal
+	NewCollectionEnabled bool   `mapstructure:"new_collection_enabled" yaml:"new_collection_enabled"`
+	DefaultCurrency      string `mapstructure:"default_currency" yaml:"default_currency"` // Default: "INR"
+	InvoicePrefix        string `mapstructure:"invoice_prefix" yaml:"invoice_prefix"`     // Default: "INV"
+	EstimatePrefix       string `mapstructure:"estimate_prefix" yaml:"estimate_prefix"`   // Default: "EST"
+	PortalBaseURL        string `mapstructure:"portal_base_url" yaml:"portal_base_url"`   // Public URL for customer portal
 }
 
 // FeaturesConfig contains feature flags for Phase 1 features.
@@ -523,6 +524,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("billing.reservation_journal_enabled", false)
 	viper.SetDefault("billing.enforce_free_tier_daily_cap", true)
 
+	viper.SetDefault("biz_billing.new_collection_enabled", false)
+	_ = viper.BindEnv("biz_billing.new_collection_enabled", "FREERANGE_BIZ_BILLING_NEW_COLLECTION_ENABLED")
 	viper.SetDefault("biz_billing.default_currency", "INR")
 	viper.SetDefault("biz_billing.invoice_prefix", "INV")
 	viper.SetDefault("biz_billing.estimate_prefix", "EST")

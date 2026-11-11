@@ -28,6 +28,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	gate         *services.BizLifecycleGate
 	productSvc   *services.BizProductService
 	planSvc      *services.BizPlanService
 	configSvc    *services.BizConfigService
@@ -97,7 +98,7 @@ func (h *BizBillingHandler) CreateProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	product, err := h.productSvc.Create(c.Context(), appID, req)
+	product, err := h.productSvc.Create(c.UserContext(), appID, req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -136,7 +137,7 @@ func (h *BizBillingHandler) ListProducts(c *fiber.Ctx) error {
 		filter.Active = &active
 	}
 
-	products, total, err := h.productSvc.List(c.Context(), filter)
+	products, total, err := h.productSvc.List(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -166,7 +167,7 @@ func (h *BizBillingHandler) GetProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	product, err := h.productSvc.GetByID(c.Context(), c.Params("id"))
+	product, err := h.productSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -203,7 +204,7 @@ func (h *BizBillingHandler) UpdateProduct(c *fiber.Ctx) error {
 	}
 
 	// Verify ownership
-	product, err := h.productSvc.GetByID(c.Context(), c.Params("id"))
+	product, err := h.productSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -216,7 +217,7 @@ func (h *BizBillingHandler) UpdateProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	updated, err := h.productSvc.Update(c.Context(), c.Params("id"), req)
+	updated, err := h.productSvc.Update(c.UserContext(), c.Params("id"), req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -246,7 +247,7 @@ func (h *BizBillingHandler) DeleteProduct(c *fiber.Ctx) error {
 	}
 
 	// Verify ownership
-	product, err := h.productSvc.GetByID(c.Context(), c.Params("id"))
+	product, err := h.productSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -254,7 +255,7 @@ func (h *BizBillingHandler) DeleteProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "product not found"})
 	}
 
-	if err := h.productSvc.Delete(c.Context(), c.Params("id")); err != nil {
+	if err := h.productSvc.Delete(c.UserContext(), c.Params("id")); err != nil {
 		return h.handleError(c, err)
 	}
 
@@ -291,7 +292,7 @@ func (h *BizBillingHandler) CreatePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body", "details": err.Error()})
 	}
 
-	plan, err := h.planSvc.Create(c.Context(), appID, req)
+	plan, err := h.planSvc.Create(c.UserContext(), appID, req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -331,7 +332,7 @@ func (h *BizBillingHandler) ListPlans(c *fiber.Ctx) error {
 		filter.Active = &active
 	}
 
-	plans, total, err := h.planSvc.List(c.Context(), filter)
+	plans, total, err := h.planSvc.List(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -361,7 +362,7 @@ func (h *BizBillingHandler) GetPlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	plan, err := h.planSvc.GetByID(c.Context(), c.Params("id"))
+	plan, err := h.planSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -395,7 +396,7 @@ func (h *BizBillingHandler) UpdatePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	plan, err := h.planSvc.GetByID(c.Context(), c.Params("id"))
+	plan, err := h.planSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -408,7 +409,7 @@ func (h *BizBillingHandler) UpdatePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	updated, err := h.planSvc.Update(c.Context(), c.Params("id"), req)
+	updated, err := h.planSvc.Update(c.UserContext(), c.Params("id"), req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -437,7 +438,7 @@ func (h *BizBillingHandler) DeletePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	plan, err := h.planSvc.GetByID(c.Context(), c.Params("id"))
+	plan, err := h.planSvc.GetByID(c.UserContext(), c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -445,7 +446,7 @@ func (h *BizBillingHandler) DeletePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "plan not found"})
 	}
 
-	if err := h.planSvc.Archive(c.Context(), c.Params("id")); err != nil {
+	if err := h.planSvc.Archive(c.UserContext(), c.Params("id")); err != nil {
 		return h.handleError(c, err)
 	}
 
@@ -480,7 +481,7 @@ func (h *BizBillingHandler) AddPlanAddon(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	addon, err := h.planSvc.AddAddon(c.Context(), appID, c.Params("id"), req)
+	addon, err := h.planSvc.AddAddon(c.UserContext(), appID, c.Params("id"), req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -510,7 +511,7 @@ func (h *BizBillingHandler) RemovePlanAddon(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	if err := h.planSvc.RemoveAddon(c.Context(), appID, c.Params("id"), c.Params("addon_id")); err != nil {
+	if err := h.planSvc.RemoveAddon(c.UserContext(), appID, c.Params("id"), c.Params("addon_id")); err != nil {
 		return h.handleError(c, err)
 	}
 
@@ -538,7 +539,7 @@ func (h *BizBillingHandler) ListPlanAddons(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	addons, err := h.planSvc.ListAddons(c.Context(), appID, c.Params("id"))
+	addons, err := h.planSvc.ListAddons(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -570,7 +571,7 @@ func (h *BizBillingHandler) GetConfig(c *fiber.Ctx) error {
 	}
 
 	configType := h.configTypeParam(c)
-	cfg, err := h.configSvc.GetConfig(c.Context(), appID, configType)
+	cfg, err := h.configSvc.GetConfig(c.UserContext(), appID, configType)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -606,7 +607,7 @@ func (h *BizBillingHandler) UpdateConfig(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	cfg, err := h.configSvc.UpdateConfig(c.Context(), appID, configType, data)
+	cfg, err := h.configSvc.UpdateConfig(c.UserContext(), appID, configType, data)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -644,4 +645,28 @@ func (h *BizBillingHandler) queryInt(c *fiber.Ctx, key string, defaultVal int) i
 
 func (h *BizBillingHandler) configTypeParam(c *fiber.Ctx) bizbilling.ConfigType {
 	return bizbilling.ConfigType(strings.ReplaceAll(c.Params("config_type"), "-", "_"))
+}
+
+func (h *BizBillingHandler) SetLifecycleGate(g *services.BizLifecycleGate) { h.gate = g }
+
+// GuardMutations holds one permit for the complete authorized request.
+func (h *BizBillingHandler) GuardMutations(c *fiber.Ctx) error {
+	if c.Method() == fiber.MethodGet || c.Method() == fiber.MethodHead || c.Method() == fiber.MethodOptions {
+		return c.Next()
+	}
+	app, err := h.getAppID(c)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	ctx, done, err := services.BeginBizMutation(c.UserContext(), h.gate, app)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	c.SetUserContext(ctx)
+	defer func() {
+		if err := done(); err != nil {
+			h.logger.Warn("billing request permit requires reconciliation", zap.Error(err))
+		}
+	}()
+	return c.Next()
 }

@@ -47,6 +47,7 @@ var allIndices = []string{
 
 // bizBillingIndices are created only when features.biz_billing_enabled=true.
 var bizBillingIndices = []string{
+	"frn_biz_lifecycle_states",
 	"frn_biz_products",
 	"frn_biz_plans",
 	"frn_biz_plan_addons",
@@ -83,7 +84,17 @@ var rootCmd = &cobra.Command{
 }
 
 var upCmd = &cobra.Command{
-	Use:   "up",
+	Use: "up",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		timeout, err := cmd.Flags().GetDuration("timeout")
+		if err != nil {
+			return err
+		}
+		if timeout <= 0 {
+			return fmt.Errorf("migration timeout must be positive")
+		}
+		return nil
+	},
 	Short: "Run pending migrations",
 	Long:  `Run all pending database migrations and create necessary Elasticsearch indices.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -106,7 +117,8 @@ var upCmd = &cobra.Command{
 			log.Fatalf("Failed to connect to Elasticsearch: %v", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		timeout, _ := cmd.Flags().GetDuration("timeout")
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		// Verify connectivity
@@ -242,6 +254,7 @@ var statusCmd = &cobra.Command{
 }
 
 func init() {
+	upCmd.Flags().Duration("timeout", time.Minute, "Maximum duration for index setup (existing indices are retained)")
 	rootCmd.AddCommand(upCmd)
 	rootCmd.AddCommand(downCmd)
 	rootCmd.AddCommand(statusCmd)

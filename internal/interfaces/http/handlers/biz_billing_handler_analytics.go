@@ -47,7 +47,7 @@ func (h *BizBillingHandler) analyticsCall(c *fiber.Ctx, fn func(appID string) (i
 // @Router /v1/biz/analytics/revenue [get]
 func (h *BizBillingHandler) AnalyticsRevenue(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Revenue(c.Context(), appID)
+		return h.analyticsSvc.Revenue(c.UserContext(), appID)
 	})
 }
 
@@ -63,7 +63,7 @@ func (h *BizBillingHandler) AnalyticsRevenue(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/subscriptions [get]
 func (h *BizBillingHandler) AnalyticsSubscriptions(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Subscriptions(c.Context(), appID)
+		return h.analyticsSvc.Subscriptions(c.UserContext(), appID)
 	})
 }
 
@@ -79,7 +79,7 @@ func (h *BizBillingHandler) AnalyticsSubscriptions(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/invoices [get]
 func (h *BizBillingHandler) AnalyticsInvoices(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Invoices(c.Context(), appID)
+		return h.analyticsSvc.Invoices(c.UserContext(), appID)
 	})
 }
 
@@ -95,7 +95,7 @@ func (h *BizBillingHandler) AnalyticsInvoices(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/aging [get]
 func (h *BizBillingHandler) AnalyticsAging(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Aging(c.Context(), appID)
+		return h.analyticsSvc.Aging(c.UserContext(), appID)
 	})
 }
 
@@ -111,7 +111,7 @@ func (h *BizBillingHandler) AnalyticsAging(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/customers [get]
 func (h *BizBillingHandler) AnalyticsCustomers(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Customers(c.Context(), appID, h.queryInt(c, "limit", 10))
+		return h.analyticsSvc.Customers(c.UserContext(), appID, h.queryInt(c, "limit", 10))
 	})
 }
 
@@ -127,7 +127,7 @@ func (h *BizBillingHandler) AnalyticsCustomers(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/dunning [get]
 func (h *BizBillingHandler) AnalyticsDunning(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.Dunning(c.Context(), appID)
+		return h.analyticsSvc.Dunning(c.UserContext(), appID)
 	})
 }
 
@@ -143,7 +143,7 @@ func (h *BizBillingHandler) AnalyticsDunning(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/revenue-recognition [get]
 func (h *BizBillingHandler) AnalyticsRevenueRecognition(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.RevenueRecognition(c.Context(), appID)
+		return h.analyticsSvc.RevenueRecognition(c.UserContext(), appID)
 	})
 }
 
@@ -159,7 +159,7 @@ func (h *BizBillingHandler) AnalyticsRevenueRecognition(c *fiber.Ctx) error {
 // @Router /v1/biz/analytics/tax-summary [get]
 func (h *BizBillingHandler) AnalyticsTaxSummary(c *fiber.Ctx) error {
 	return h.analyticsCall(c, func(appID string) (interface{}, error) {
-		return h.analyticsSvc.TaxSummary(c.Context(), appID)
+		return h.analyticsSvc.TaxSummary(c.UserContext(), appID)
 	})
 }
 
@@ -192,7 +192,7 @@ func (h *BizBillingHandler) CreateConnector(c *fiber.Ctx) error {
 	}
 	req.AppID = appID // never trust the body for scoping
 
-	connector, err := h.connectorSvc.Create(c.Context(), appID, &req)
+	connector, err := h.connectorSvc.Create(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -215,7 +215,7 @@ func (h *BizBillingHandler) ListConnectors(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	connectors, err := h.connectorSvc.List(c.Context(), appID)
+	connectors, err := h.connectorSvc.List(c.UserContext(), appID)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -246,7 +246,7 @@ func (h *BizBillingHandler) UpdateConnector(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	connector, err := h.connectorSvc.Update(c.Context(), appID, c.Params("id"), &req)
+	connector, err := h.connectorSvc.Update(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -270,7 +270,7 @@ func (h *BizBillingHandler) DeleteConnector(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	if err := h.connectorSvc.Delete(c.Context(), appID, c.Params("id")); err != nil {
+	if err := h.connectorSvc.Delete(c.UserContext(), appID, c.Params("id")); err != nil {
 		return h.handleError(c, err)
 	}
 	return c.JSON(fiber.Map{"success": true, "message": "connector deleted"})
@@ -293,7 +293,7 @@ func (h *BizBillingHandler) HandleConnectorWebhook(c *fiber.Ctx) error {
 		signature = c.Get("X-Razorpay-Signature")
 	}
 
-	event, err := h.connectorSvc.HandleWebhook(c.Context(), c.Params("connector_id"), c.Body(), signature)
+	event, err := h.connectorSvc.HandleWebhook(c.UserContext(), c.Params("connector_id"), c.Body(), signature)
 	if err != nil {
 		return h.handleError(c, err)
 	}

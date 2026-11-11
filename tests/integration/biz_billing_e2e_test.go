@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
+	"github.com/the-monkeys/freerangenotify/internal/testutil"
 	jwtpkg "github.com/the-monkeys/freerangenotify/pkg/jwt"
 )
 
@@ -36,6 +37,11 @@ func TestBizBillingE2ESuite(t *testing.T) {
 }
 
 func (s *BizBillingE2ESuite) SetupSuite() {
+	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+		m := testutil.RequireOwnedBizFixture(s.T())
+		s.Require().NotEmpty(m.APIURL)
+		s.Require().Equal(m.APIURL, resolvedBaseURL())
+	}
 	s.IntegrationTestSuite.SetupSuite()
 	s.createdIndices = []string{
 		"frn_biz_products", "frn_biz_plans", "frn_biz_subscriptions",
@@ -45,16 +51,25 @@ func (s *BizBillingE2ESuite) SetupSuite() {
 }
 
 func (s *BizBillingE2ESuite) TearDownSuite() {
+	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+		testutil.RequireOwnedBizFixture(s.T())
+	}
 	s.cleanupBizIndices()
 	s.IntegrationTestSuite.TearDownSuite()
 }
 
 func (s *BizBillingE2ESuite) TearDownTest() {
+	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+		testutil.RequireOwnedBizFixture(s.T())
+	}
 	s.cleanupBizIndices()
 	s.IntegrationTestSuite.TearDownTest()
 }
 
 func (s *BizBillingE2ESuite) cleanupBizIndices() {
+	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+		testutil.RequireOwnedBizFixture(s.T())
+	}
 	for _, index := range s.createdIndices {
 		req, _ := http.NewRequest(http.MethodPost,
 			fmt.Sprintf("%s/%s/_delete_by_query?refresh=true", resolvedESURL(), index),
@@ -143,11 +158,17 @@ func (s *BizBillingE2ESuite) skipIfBizBillingUnavailable(status int, body []byte
 	s.T().Helper()
 	switch status {
 	case http.StatusNotFound:
+		if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+			s.T().Fatal("required business billing is unavailable")
+		}
 		s.T().Skip("biz billing routes not registered (handler nil / feature disabled at boot)")
 	case http.StatusPaymentRequired:
 		var result map[string]interface{}
 		_ = json.Unmarshal(body, &result)
 		if code, _ := result["code"].(string); code == "billing_module_required" {
+			if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+				s.T().Fatal("required business billing is unavailable")
+			}
 			s.T().Skip("biz billing feature flag is off (FREERANGE_FEATURES_BIZ_BILLING_ENABLED=false)")
 		}
 	}

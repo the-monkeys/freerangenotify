@@ -1,0 +1,30 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: 'false'
+      ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+    ports: ['127.0.0.1::9200']
+    volumes: ['elasticsearch_data:/usr/share/elasticsearch/data']
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS localhost:9200/_cluster/health >/dev/null']
+      interval: 2s
+      timeout: 3s
+      retries: 90
+  redis:
+    image: redis:7-alpine
+    ports: ['127.0.0.1::6379']
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  elasticsearch_data:
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'

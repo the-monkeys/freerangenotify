@@ -1,0 +1,13 @@
+package bizbilling
+
+import "errors"
+
+var (
+	ErrActiveLegacyWriter            = errors.New("billing upgrade is draining existing writers")
+	ErrStaleMutationPermit           = errors.New("billing mutation permit is stale")
+	ErrConflict                      = errors.New("billing revision conflict")
+	ErrIdempotencyConflict           = errors.New("billing idempotency key was used for a different intent")
+	ErrCurrencyMismatch              = errors.New("billing currencies do not match")
+	ErrReconciliationRequired        = errors.New("billing reconciliation is required")
+	ErrAutomaticCollectionInProgress = errors.New("automatic invoice collection is in progress")
+)

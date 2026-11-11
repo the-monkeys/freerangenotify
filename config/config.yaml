@@ -188,6 +188,8 @@ billing:
   enforce_free_tier_daily_cap: true
 
 biz_billing:
+  # Controls new v2 admission only; does not cancel existing Razorpay mandates.
+  new_collection_enabled: false
   default_currency: "INR"
   invoice_prefix: "INV"
   estimate_prefix: "EST"

@@ -34,7 +34,7 @@ func (h *BizBillingHandler) CreateContract(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	contract, err := h.contractSvc.Create(c.Context(), appID, &req)
+	contract, err := h.contractSvc.Create(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -65,7 +65,7 @@ func (h *BizBillingHandler) ListContracts(c *fiber.Ctx) error {
 		Offset: h.queryInt(c, "offset", 0),
 	}
 
-	contracts, total, err := h.contractSvc.List(c.Context(), filter)
+	contracts, total, err := h.contractSvc.List(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -89,7 +89,7 @@ func (h *BizBillingHandler) GetContract(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	contract, err := h.contractSvc.Get(c.Context(), appID, c.Params("id"))
+	contract, err := h.contractSvc.Get(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -120,7 +120,7 @@ func (h *BizBillingHandler) UpdateContract(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	contract, err := h.contractSvc.Update(c.Context(), appID, c.Params("id"), &req)
+	contract, err := h.contractSvc.Update(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -144,7 +144,7 @@ func (h *BizBillingHandler) SendContract(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	contract, err := h.contractSvc.Send(c.Context(), appID, c.Params("id"))
+	contract, err := h.contractSvc.Send(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -169,7 +169,7 @@ func (h *BizBillingHandler) AcceptContract(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	contract, err := h.contractSvc.Accept(c.Context(), appID, "", c.Params("id"))
+	contract, err := h.contractSvc.Accept(c.UserContext(), appID, "", c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -200,7 +200,7 @@ func (h *BizBillingHandler) AmendContract(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	contract, err := h.contractSvc.Amend(c.Context(), appID, c.Params("id"), &req)
+	contract, err := h.contractSvc.Amend(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -229,7 +229,7 @@ func (h *BizBillingHandler) RenewContract(c *fiber.Ctx) error {
 	}
 	_ = c.BodyParser(&req)
 
-	contract, err := h.contractSvc.Renew(c.Context(), appID, c.Params("id"), req.NewEndDate)
+	contract, err := h.contractSvc.Renew(c.UserContext(), appID, c.Params("id"), req.NewEndDate)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -253,7 +253,7 @@ func (h *BizBillingHandler) TerminateContract(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	contract, err := h.contractSvc.Terminate(c.Context(), appID, c.Params("id"))
+	contract, err := h.contractSvc.Terminate(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -285,7 +285,7 @@ func (h *BizBillingHandler) CreateUsageMeter(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "meter name is required"})
 	}
 
-	meter, err := h.usageSvc.CreateMeter(c.Context(), appID, &req)
+	meter, err := h.usageSvc.CreateMeter(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -308,7 +308,7 @@ func (h *BizBillingHandler) ListUsageMeters(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	meters, err := h.usageSvc.ListMeters(c.Context(), appID)
+	meters, err := h.usageSvc.ListMeters(c.UserContext(), appID)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -339,7 +339,7 @@ func (h *BizBillingHandler) ReportUsage(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	accepted, err := h.usageSvc.Report(c.Context(), appID, &req)
+	accepted, err := h.usageSvc.Report(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -372,7 +372,7 @@ func (h *BizBillingHandler) GetUsageSummary(c *fiber.Ctx) error {
 	from := h.queryTime(c, "from", now.AddDate(0, -1, 0))
 	to := h.queryTime(c, "to", now)
 
-	summaries, err := h.usageSvc.Summary(c.Context(), appID, userID, c.Query("subscription_id"), from, to)
+	summaries, err := h.usageSvc.Summary(c.UserContext(), appID, userID, c.Query("subscription_id"), from, to)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -404,7 +404,7 @@ func (h *BizBillingHandler) CreateExpense(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	expense, err := h.expenseSvc.Create(c.Context(), appID, &req)
+	expense, err := h.expenseSvc.Create(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -447,7 +447,7 @@ func (h *BizBillingHandler) ListExpenses(c *fiber.Ctx) error {
 		filter.To = &t
 	}
 
-	expenses, total, err := h.expenseSvc.List(c.Context(), filter)
+	expenses, total, err := h.expenseSvc.List(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -471,7 +471,7 @@ func (h *BizBillingHandler) GetExpense(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	expense, err := h.expenseSvc.Get(c.Context(), appID, c.Params("id"))
+	expense, err := h.expenseSvc.Get(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -502,7 +502,7 @@ func (h *BizBillingHandler) UpdateExpense(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	expense, err := h.expenseSvc.Update(c.Context(), appID, c.Params("id"), &req)
+	expense, err := h.expenseSvc.Update(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -526,7 +526,7 @@ func (h *BizBillingHandler) DeleteExpense(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	if err := h.expenseSvc.Delete(c.Context(), appID, c.Params("id")); err != nil {
+	if err := h.expenseSvc.Delete(c.UserContext(), appID, c.Params("id")); err != nil {
 		return h.handleError(c, err)
 	}
 	return c.JSON(fiber.Map{"success": true, "message": "expense deleted"})
@@ -557,7 +557,7 @@ func (h *BizBillingHandler) ConvertExpensesToInvoice(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id and expense_ids are required"})
 	}
 
-	inv, err := h.expenseSvc.ConvertToInvoice(c.Context(), appID, req.UserID, req.ExpenseIDs)
+	inv, err := h.expenseSvc.ConvertToInvoice(c.UserContext(), appID, req.UserID, req.ExpenseIDs)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -591,7 +591,7 @@ func (h *BizBillingHandler) GetExpenseSummary(c *fiber.Ctx) error {
 		to = &t
 	}
 
-	summary, err := h.expenseSvc.CategorySummary(c.Context(), appID, from, to)
+	summary, err := h.expenseSvc.CategorySummary(c.UserContext(), appID, from, to)
 	if err != nil {
 		return h.handleError(c, err)
 	}

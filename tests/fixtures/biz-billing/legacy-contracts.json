@@ -1,0 +1,15 @@
+{
+  "invoice": {
+    "id": "legacy-invoice", "app_id": "legacy-app", "user_id": "legacy-subscriber",
+    "invoice_number": "INV-000042", "invoice_type": "one_time", "status": "paid",
+    "currency": "INR", "subtotal_paisa": 10000, "tax_amount_paisa": 1800,
+    "total_paisa": 11800, "amount_paid_paisa": 11800, "amount_due_paisa": 0,
+    "payment_link": "https://portal.fixture.invalid/portal/legacy-link/invoices/legacy-invoice"
+  },
+  "subscription": {
+    "id": "legacy-subscription", "app_id": "legacy-app", "user_id": "legacy-subscriber",
+    "plan_id": "legacy-plan", "status": "active", "quantity": 1,
+    "current_period_start": "2026-10-31T12:00:00Z", "current_period_end": "2026-12-01T12:00:00Z",
+    "cancel_at_period_end": false, "non_renewing": false
+  }
+}

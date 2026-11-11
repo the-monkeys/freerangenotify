@@ -16,6 +16,7 @@ import (
 // BizCreditService manages credit notes, retainers, user credit balances,
 // and customer account statements.
 type BizCreditService struct {
+	gate      *BizLifecycleGate
 	stores    *bizbillingrepo.Stores
 	configSvc *BizConfigService
 	users     user.Repository
@@ -32,6 +33,11 @@ func NewBizCreditService(stores *bizbillingrepo.Stores, configSvc *BizConfigServ
 
 // CreateCreditNote issues a credit note for a user.
 func (s *BizCreditService) CreateCreditNote(ctx context.Context, appID string, req *bizbilling.CreateCreditNoteRequest) (*bizbilling.CreditNote, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	if req.AmountPaisa <= 0 {
 		return nil, errors.BadRequest("amount_paisa must be greater than 0")
 	}
@@ -87,6 +93,11 @@ func (s *BizCreditService) ListCreditNotes(ctx context.Context, filter bizbillin
 // ConsumeCreditNote draws down up to `maxPaisa` from an open credit note and
 // records the invoice it was applied to. Returns the amount consumed.
 func (s *BizCreditService) ConsumeCreditNote(ctx context.Context, appID, creditNoteID, invoiceID string, maxPaisa int64) (int64, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return 0, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	var consumed int64
 	_, err := s.stores.CreditNotes.Update(ctx, creditNoteID, func(cn *bizbilling.CreditNote) error {
 		if cn.AppID != appID {
@@ -112,6 +123,11 @@ func (s *BizCreditService) ConsumeCreditNote(ctx context.Context, appID, creditN
 
 // RefundCreditNote marks the remaining balance of a credit note as refunded.
 func (s *BizCreditService) RefundCreditNote(ctx context.Context, appID, id string) (*bizbilling.CreditNote, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	cn, err := s.stores.CreditNotes.Update(ctx, id, func(cn *bizbilling.CreditNote) error {
 		if cn.AppID != appID {
 			return errors.NotFound("credit_note", id)
@@ -137,6 +153,11 @@ func (s *BizCreditService) RefundCreditNote(ctx context.Context, appID, id strin
 
 // CreateRetainer creates an advance-payment retainer.
 func (s *BizCreditService) CreateRetainer(ctx context.Context, appID string, req *bizbilling.CreateRetainerRequest) (*bizbilling.Retainer, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	if req.AmountPaisa <= 0 {
 		return nil, errors.BadRequest("amount_paisa must be greater than 0")
 	}
@@ -179,6 +200,11 @@ func (s *BizCreditService) ListRetainers(ctx context.Context, filter bizbilling.
 
 // MarkRetainerPaid transitions an open retainer to paid (funds received).
 func (s *BizCreditService) MarkRetainerPaid(ctx context.Context, appID, id string) (*bizbilling.Retainer, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.stores.Retainers.Update(ctx, id, func(ret *bizbilling.Retainer) error {
 		if ret.AppID != appID {
 			return errors.NotFound("retainer", id)
@@ -194,6 +220,11 @@ func (s *BizCreditService) MarkRetainerPaid(ctx context.Context, appID, id strin
 
 // ConsumeRetainer draws down up to maxPaisa from a paid retainer.
 func (s *BizCreditService) ConsumeRetainer(ctx context.Context, appID, retainerID, invoiceID string, maxPaisa int64) (int64, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return 0, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	var consumed int64
 	_, err := s.stores.Retainers.Update(ctx, retainerID, func(ret *bizbilling.Retainer) error {
 		if ret.AppID != appID {
@@ -221,6 +252,11 @@ func (s *BizCreditService) ConsumeRetainer(ctx context.Context, appID, retainerI
 
 // AdjustBalance adds (or subtracts) credit on the user's stored balance.
 func (s *BizCreditService) AdjustBalance(ctx context.Context, appID, userID string, deltaPaisa int64) (int64, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return 0, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil {
 		return 0, errors.NotFound("user", userID)
@@ -241,6 +277,11 @@ func (s *BizCreditService) AdjustBalance(ctx context.Context, appID, userID stri
 
 // ConsumeBalance draws down up to maxPaisa from the user's credit balance.
 func (s *BizCreditService) ConsumeBalance(ctx context.Context, appID, userID string, maxPaisa int64) (int64, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return 0, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	u, err := s.users.GetByID(ctx, userID)
 	if err != nil || u.AppID != appID {
 		return 0, errors.NotFound("user", userID)
@@ -371,3 +412,5 @@ func formatThousands(n int64) string {
 func twoDigits(n int64) string {
 	return string([]byte{byte('0' + n/10), byte('0' + n%10)})
 }
+
+func (s *BizCreditService) SetLifecycleGate(g *BizLifecycleGate) { s.gate = g }

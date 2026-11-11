@@ -81,16 +81,16 @@ Go unit commands below use explicit package paths to avoid traversing `node_modu
 
 **Interfaces:** Produce shared `Scope`, `GatewayMode`, and `GatewayRef` in `scope.go`, then `LifecycleGate.State(ctx, appID) (LifecycleState,error)`, `AcquireMutation(ctx, appID) (MutationPermit,error)`, `CheckMutation(ctx, MutationPermit) error`, and `ReleaseMutation(ctx, MutationPermit) error`. Permits register in durable app state and expire only into a recovery/drain check, not permission to overwrite an unknown operation. Initial wiring selects legacy behavior; activation is implemented in Task 6.
 
-- [ ] **1. Tests:** Capture legacy create/list/get, manual payment, immediate change-plan, error envelopes, invoice units/statuses, portal links, API-key/JWT/RBAC, feature-off routes, and platform-billing/SSE noninterference. Characterization must pass before modifications. Then add failing `TestBizLifecycleMissingStateUsesLegacy` and `TestBizRequiredFixtureRejectsUnownedEndpoint`:
+- [x] **1. Tests:** Capture legacy create/list/get, manual payment, immediate change-plan, error envelopes, invoice units/statuses, portal links, API-key/JWT/RBAC, feature-off routes, and platform-billing/SSE noninterference. Characterization must pass before modifications. Then add failing `TestBizLifecycleMissingStateUsesLegacy` and `TestBizRequiredFixtureRejectsUnownedEndpoint`:
   ```go
   require.Equal(t, 1, state.LifecycleVersion)
   require.Equal(t, "legacy", state.Status)
   require.ErrorIs(t, unownedFixtureError, testutil.ErrUnownedFixture)
   ```
-- [ ] **2. Red:** `node --test scripts/biz-billing-fixtures.test.mjs`; `go test -short ./internal/interfaces/http/handlers ./internal/usecases/services -run 'TestBiz(Legacy|Lifecycle)' -count=1`. New gate/safety cases must fail; legacy fixture differences must be understood before proceeding.
-- [ ] **3. Implement:** Add the runner/Go fixture guard and disabled gate with the signatures above; generate fixture JWT/encryption secrets at runtime, redact output, and preserve all existing constructor behavior. Add the default-false v2 collection flag and only the lifecycle-state index initially; Task 4 extends its mapping file. Wrap legacy as well as v2 financial facade entrypoints in durable mutation permits, carried in context, so preparation can drain all writers; check the permit before persistence and release only after writes finish. Required-fixture guards must run before suite setup/cleanup. Do not activate v2 apps or change legacy API defaults.
-- [ ] **4. Green:** Repeat focused tests, then run the legacy `TestBizBillingE2ESuite` through the owned `--stack` runner. Verify expected cases execute and feature/RBAC setup does not skip.
-- [ ] **5. Commit:** Stage only listed files; `git commit -m "test(biz-billing): pin legacy contracts and isolated fixture safety"`.
+- [x] **2. Red:** `node --test scripts/biz-billing-fixtures.test.mjs`; `go test -short ./internal/interfaces/http/handlers ./internal/usecases/services -run 'TestBiz(Legacy|Lifecycle)' -count=1`. New gate/safety cases must fail; legacy fixture differences must be understood before proceeding.
+- [x] **3. Implement:** Add the runner/Go fixture guard and disabled gate with the signatures above; generate fixture JWT/encryption secrets at runtime, redact output, and preserve all existing constructor behavior. Add the default-false v2 collection flag and only the lifecycle-state index initially; Task 4 extends its mapping file. Wrap legacy as well as v2 financial facade entrypoints in durable mutation permits, carried in context, so preparation can drain all writers; check the permit before persistence and release only after writes finish. Required-fixture guards must run before suite setup/cleanup. Do not activate v2 apps or change legacy API defaults.
+- [x] **4. Green:** Repeat focused tests, then run the legacy `TestBizBillingE2ESuite` through the owned `--stack` runner. Verify expected cases execute and feature/RBAC setup does not skip.
+- [x] **5. Commit:** Stage only listed files; `git commit -m "test(biz-billing): pin legacy contracts and isolated fixture safety"`.
 
 ### Task 2: Checked money, explicit zero tax, and stable calendar anchors
 
@@ -547,3 +547,5 @@ Self-review completed 2026-11-11:
 - Plan is 25 independently testable tasks in six phases, with focused assertions, red/green commands, scoped commits, and one final independent branch review under native execution. It contains decisions and acceptance checks, not full implementation bodies.
 
 Status: detailed plan ready for user review. Native execution and phase order are preserved; no product implementation or production action has begun.
+
+Execution 2026-11-11: Task 1 compatibility/gate foundation verified: Node fixture safety 4/4; focused Go domain/config/service/handler/fixture/CLI tests pass; real ES/Redis legacy billing E2E 9/9, zero skips (101.855s). Owned fixture containers and volume removed. Task 2 independent math implementation is in progress; no v2 app activation or production change.

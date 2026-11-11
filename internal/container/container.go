@@ -917,6 +917,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			cfg.BizBilling.DefaultCurrency,
 			logger,
 		)
+		lifecycleGate := services.NewBizLifecycleGate(bizbillingrepo.NewLifecycleStateRepo(esClient))
+		lifecycleSvc.SetLifecycleGate(lifecycleGate)
+		creditSvc.SetLifecycleGate(lifecycleGate)
 		estimateSvc := services.NewBizEstimateService(bizStores, configSvc, lifecycleSvc, portalSvc, bizNotifier, logger)
 		couponSvc := services.NewBizCouponService(bizStores, logger)
 		contractSvc := services.NewBizContractService(bizStores, configSvc, portalSvc, bizNotifier, logger)
@@ -941,6 +944,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 			Portal:    portalSvc,
 		}
 		container.BizBillingHandler = handlers.NewBizBillingHandler(bizSvcs, logger)
+		container.BizBillingHandler.SetLifecycleGate(lifecycleGate)
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)

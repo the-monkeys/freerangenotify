@@ -19,6 +19,7 @@ import (
 // engine, sequential numbering, coupons, credits, the payment gateway, and
 // billing notifications.
 type BizLifecycleService struct {
+	gate            *BizLifecycleGate
 	repo            bizbilling.BizLifecycleRepository
 	stores          *bizbillingrepo.Stores
 	planSvc         *BizPlanService
@@ -131,6 +132,11 @@ func (s *BizLifecycleService) customerState(ctx context.Context, userID string) 
 // CreateSubscription creates a subscription and, unless trialing, generates
 // and issues its first invoice (plan charge + setup fee + addons).
 func (s *BizLifecycleService) CreateSubscription(ctx context.Context, appID string, req *bizbilling.CreateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	if req.UserID == "" || req.PlanID == "" {
 		return nil, errors.BadRequest("user_id and plan_id are required")
 	}
@@ -210,6 +216,11 @@ func (s *BizLifecycleService) GetSubscription(ctx context.Context, appID, id str
 // RenewSubscription advances the billing period and issues the renewal
 // invoice. Called by the scheduler when current_period_end has passed.
 func (s *BizLifecycleService) RenewSubscription(ctx context.Context, sub *bizbilling.BizSubscription) error {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, sub.AppID)
+	if mutationErr != nil {
+		return mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	plan, err := s.planSvc.GetByID(ctx, sub.PlanID)
 	if err != nil || plan.AppID != sub.AppID {
 		return errors.NotFound("plan", sub.PlanID)
@@ -235,6 +246,11 @@ func (s *BizLifecycleService) RenewSubscription(ctx context.Context, sub *bizbil
 // ConvertTrial activates a subscription whose trial has ended and issues the
 // first invoice. Called by the scheduler.
 func (s *BizLifecycleService) ConvertTrial(ctx context.Context, sub *bizbilling.BizSubscription) error {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, sub.AppID)
+	if mutationErr != nil {
+		return mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	plan, err := s.planSvc.GetByID(ctx, sub.PlanID)
 	if err != nil || plan.AppID != sub.AppID {
 		return errors.NotFound("plan", sub.PlanID)
@@ -269,6 +285,11 @@ func (s *BizLifecycleService) ConvertTrial(ctx context.Context, sub *bizbilling.
 // MarkOverdue flips a past-due invoice to overdue and moves its subscription
 // to past_due. Called by the scheduler.
 func (s *BizLifecycleService) MarkOverdue(ctx context.Context, inv *bizbilling.BizInvoice) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, inv.AppID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	updated, err := s.updateOwnedInvoice(ctx, inv.AppID, inv.ID, func(i *bizbilling.BizInvoice) error {
 		if !bizbilling.PayableStatuses[i.Status] {
 			return errors.BadRequest("invoice is not outstanding")
@@ -296,6 +317,11 @@ func (s *BizLifecycleService) MarkOverdue(ctx context.Context, inv *bizbilling.B
 // UpdateSubscription applies partial updates (addons, quantity, flags).
 // Plan changes go through ChangePlan for proper proration.
 func (s *BizLifecycleService) UpdateSubscription(ctx context.Context, appID, id string, req *bizbilling.UpdateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	if req.PlanID != nil {
 		return s.ChangePlan(ctx, appID, id, *req.PlanID, req.Quantity)
 	}
@@ -324,6 +350,11 @@ func (s *BizLifecycleService) UpdateSubscription(ctx context.Context, appID, id 
 // proration: the unused portion of the old plan becomes a credit note and the
 // prorated new-plan charge is invoiced immediately.
 func (s *BizLifecycleService) ChangePlan(ctx context.Context, appID, id, newPlanID string, quantity *int) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	newPlan, err := s.planSvc.GetByID(ctx, newPlanID)
 	if err != nil || newPlan.AppID != appID {
 		return nil, errors.NotFound("plan", newPlanID)
@@ -398,6 +429,11 @@ func (s *BizLifecycleService) ChangePlan(ctx context.Context, appID, id, newPlan
 
 // CancelSubscription cancels immediately or at period end.
 func (s *BizLifecycleService) CancelSubscription(ctx context.Context, appID, id string, atPeriodEnd bool) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	sub, err := s.updateOwnedSubscription(ctx, appID, id, func(sub *bizbilling.BizSubscription) error {
 		now := time.Now().UTC()
 		sub.UpdatedAt = now
@@ -428,6 +464,11 @@ func (s *BizLifecycleService) CancelSubscription(ctx context.Context, appID, id 
 
 // PauseSubscription pauses an active subscription.
 func (s *BizLifecycleService) PauseSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	sub, err := s.updateOwnedSubscription(ctx, appID, id, func(sub *bizbilling.BizSubscription) error {
 		if sub.Status != bizbilling.SubscriptionStatusActive && sub.Status != bizbilling.SubscriptionStatusPastDue {
 			return errors.BadRequest("only active or past-due subscriptions can be paused")
@@ -450,6 +491,11 @@ func (s *BizLifecycleService) PauseSubscription(ctx context.Context, appID, id s
 
 // ResumeSubscription resumes a paused subscription.
 func (s *BizLifecycleService) ResumeSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.updateOwnedSubscription(ctx, appID, id, func(sub *bizbilling.BizSubscription) error {
 		if sub.Status != bizbilling.SubscriptionStatusPaused {
 			return errors.BadRequest("only paused subscriptions can be resumed")
@@ -464,6 +510,11 @@ func (s *BizLifecycleService) ResumeSubscription(ctx context.Context, appID, id 
 
 // ReactivateSubscription reactivates a canceled subscription.
 func (s *BizLifecycleService) ReactivateSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.updateOwnedSubscription(ctx, appID, id, func(sub *bizbilling.BizSubscription) error {
 		if sub.Status != bizbilling.SubscriptionStatusCanceled {
 			return errors.BadRequest("only canceled subscriptions can be reactivated")
@@ -479,6 +530,11 @@ func (s *BizLifecycleService) ReactivateSubscription(ctx context.Context, appID,
 
 // SetNonRenewing flags a subscription to stop renewing at period end.
 func (s *BizLifecycleService) SetNonRenewing(ctx context.Context, appID, id string, nonRenewing bool) (*bizbilling.BizSubscription, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.updateOwnedSubscription(ctx, appID, id, func(sub *bizbilling.BizSubscription) error {
 		sub.NonRenewing = nonRenewing
 		sub.UpdatedAt = time.Now().UTC()
@@ -615,6 +671,11 @@ func (s *BizLifecycleService) generateSubscriptionInvoice(ctx context.Context, s
 
 // CreateOneTimeInvoice creates an ad-hoc draft invoice.
 func (s *BizLifecycleService) CreateOneTimeInvoice(ctx context.Context, appID string, req *bizbilling.CreateInvoiceRequest) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	if req.UserID == "" {
 		return nil, errors.BadRequest("user_id is required")
 	}
@@ -634,6 +695,11 @@ func (s *BizLifecycleService) CreateOneTimeInvoice(ctx context.Context, appID st
 
 // UpdateDraftInvoice updates a draft invoice and recomputes totals.
 func (s *BizLifecycleService) UpdateDraftInvoice(ctx context.Context, appID, id string, req *bizbilling.UpdateInvoiceRequest) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	taxCfg, err := s.configSvc.TaxConfig(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -675,6 +741,11 @@ func (s *BizLifecycleService) UpdateDraftInvoice(ctx context.Context, appID, id 
 // attaches a payment link, sends the invoice notification, and creates the
 // revenue recognition schedule.
 func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	inv, err := s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status != bizbilling.InvoiceStatusDraft {
 			return errors.BadRequest("only draft invoices can be issued")
@@ -722,6 +793,11 @@ func (s *BizLifecycleService) SendInvoice(ctx context.Context, appID, id string)
 
 // VoidInvoice voids an unpaid invoice.
 func (s *BizLifecycleService) VoidInvoice(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status == bizbilling.InvoiceStatusPaid {
 			return errors.BadRequest("paid invoices cannot be voided")
@@ -739,6 +815,11 @@ func (s *BizLifecycleService) VoidInvoice(ctx context.Context, appID, id string)
 
 // WriteOffInvoice marks an uncollectible invoice as written off.
 func (s *BizLifecycleService) WriteOffInvoice(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	return s.updateOwnedInvoice(ctx, appID, id, func(inv *bizbilling.BizInvoice) error {
 		if inv.Status == bizbilling.InvoiceStatusPaid {
 			return errors.BadRequest("paid invoices cannot be written off")
@@ -756,6 +837,11 @@ func (s *BizLifecycleService) WriteOffInvoice(ctx context.Context, appID, id str
 
 // ApplyCoupon applies a coupon code to a draft invoice.
 func (s *BizLifecycleService) ApplyCoupon(ctx context.Context, appID, id, code string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	coupons, _, err := s.stores.Coupons.Find(ctx,
 		bizbillingrepo.NewQuery(appID).Term("code", code).Body("created_at", 1, 0))
 	if err != nil || len(coupons) == 0 {
@@ -803,6 +889,11 @@ func (s *BizLifecycleService) ApplyCoupon(ctx context.Context, appID, id, code s
 
 // ApplyCredit applies the user's stored credit balance to an invoice.
 func (s *BizLifecycleService) ApplyCredit(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	inv, err := s.getOwnedInvoice(ctx, appID, id)
 	if err != nil {
 		return nil, err
@@ -845,6 +936,11 @@ func (s *BizLifecycleService) applyCreditToInvoice(ctx context.Context, appID, i
 
 // ApplyCreditNoteToInvoice consumes a credit note against an invoice.
 func (s *BizLifecycleService) ApplyCreditNoteToInvoice(ctx context.Context, appID, creditNoteID, invoiceID string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -861,6 +957,11 @@ func (s *BizLifecycleService) ApplyCreditNoteToInvoice(ctx context.Context, appI
 
 // ApplyRetainerToInvoice consumes a retainer balance against an invoice.
 func (s *BizLifecycleService) ApplyRetainerToInvoice(ctx context.Context, appID, retainerID, invoiceID string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -877,6 +978,11 @@ func (s *BizLifecycleService) ApplyRetainerToInvoice(ctx context.Context, appID,
 
 // AddLateFee manually applies the configured late fee to an overdue invoice.
 func (s *BizLifecycleService) AddLateFee(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	lateCfg, err := s.configSvc.LateFeeConfig(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -922,6 +1028,11 @@ func (s *BizLifecycleService) GetInvoice(ctx context.Context, appID, id string) 
 // RecordPayment records a manual or gateway payment against an invoice.
 // Supports partial payments; overpayments are credited to the user balance.
 func (s *BizLifecycleService) RecordPayment(ctx context.Context, appID, invoiceID string, req *bizbilling.RecordPaymentRequest) (*bizbilling.BizPayment, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	inv, err := s.getOwnedInvoice(ctx, appID, invoiceID)
 	if err != nil {
 		return nil, err
@@ -1011,6 +1122,11 @@ func (s *BizLifecycleService) RecordPayment(ctx context.Context, appID, invoiceI
 
 // RefundPayment records a full or partial refund.
 func (s *BizLifecycleService) RefundPayment(ctx context.Context, appID, paymentID string, req *bizbilling.RefundPaymentRequest) (*bizbilling.BizPayment, error) {
+	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
+	if mutationErr != nil {
+		return nil, mutationErr
+	}
+	defer releaseBizMutation(s.logger, finishMutation)
 	payment, err := s.repo.GetPayment(ctx, paymentID)
 	if err != nil || payment.AppID != appID {
 		return nil, errors.NotFound("payment", paymentID)
@@ -1176,3 +1292,6 @@ func dueDateFor(paymentTerms string, from time.Time) time.Time {
 		return from.AddDate(0, 0, 30)
 	}
 }
+
+// SetLifecycleGate installs the additive app-cutover guard.
+func (s *BizLifecycleService) SetLifecycleGate(g *BizLifecycleGate) { s.gate = g }

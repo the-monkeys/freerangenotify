@@ -428,6 +428,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 			biz.Use(middleware.RequirePermissionForWrites(auth.PermManageBilling, c.MembershipRepo, c.AppRepo, c.Logger))
 		}
 
+		biz.Use(c.BizBillingHandler.GuardMutations)
+
 		// ── Products ──
 		biz.Post("/products", c.BizBillingHandler.CreateProduct)
 		biz.Get("/products", c.BizBillingHandler.ListProducts)

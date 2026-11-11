@@ -33,7 +33,7 @@ func (h *BizBillingHandler) CreateSubscription(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	sub, err := h.lifecycleSvc.CreateSubscription(c.Context(), appID, &req)
+	sub, err := h.lifecycleSvc.CreateSubscription(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -65,7 +65,7 @@ func (h *BizBillingHandler) ListSubscriptions(c *fiber.Ctx) error {
 		Offset: h.queryInt(c, "offset", 0),
 	}
 
-	subs, total, err := h.lifecycleSvc.ListSubscriptions(c.Context(), filter)
+	subs, total, err := h.lifecycleSvc.ListSubscriptions(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -89,7 +89,7 @@ func (h *BizBillingHandler) GetSubscription(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	sub, err := h.lifecycleSvc.GetSubscription(c.Context(), appID, c.Params("id"))
+	sub, err := h.lifecycleSvc.GetSubscription(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -120,7 +120,7 @@ func (h *BizBillingHandler) UpdateSubscription(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	updated, err := h.lifecycleSvc.UpdateSubscription(c.Context(), appID, c.Params("id"), &req)
+	updated, err := h.lifecycleSvc.UpdateSubscription(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -153,7 +153,7 @@ func (h *BizBillingHandler) ChangePlan(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "plan_id is required"})
 	}
 
-	sub, err := h.lifecycleSvc.ChangePlan(c.Context(), appID, c.Params("id"), req.PlanID, req.Quantity)
+	sub, err := h.lifecycleSvc.ChangePlan(c.UserContext(), appID, c.Params("id"), req.PlanID, req.Quantity)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -178,7 +178,7 @@ func (h *BizBillingHandler) CancelSubscription(c *fiber.Ctx) error {
 	}
 
 	atPeriodEnd := c.Query("at_period_end") == "true"
-	sub, err := h.lifecycleSvc.CancelSubscription(c.Context(), appID, c.Params("id"), atPeriodEnd)
+	sub, err := h.lifecycleSvc.CancelSubscription(c.UserContext(), appID, c.Params("id"), atPeriodEnd)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -202,7 +202,7 @@ func (h *BizBillingHandler) PauseSubscription(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	sub, err := h.lifecycleSvc.PauseSubscription(c.Context(), appID, c.Params("id"))
+	sub, err := h.lifecycleSvc.PauseSubscription(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -226,7 +226,7 @@ func (h *BizBillingHandler) ResumeSubscription(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	sub, err := h.lifecycleSvc.ResumeSubscription(c.Context(), appID, c.Params("id"))
+	sub, err := h.lifecycleSvc.ResumeSubscription(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -250,7 +250,7 @@ func (h *BizBillingHandler) ReactivateSubscription(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	sub, err := h.lifecycleSvc.ReactivateSubscription(c.Context(), appID, c.Params("id"))
+	sub, err := h.lifecycleSvc.ReactivateSubscription(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -281,7 +281,7 @@ func (h *BizBillingHandler) SetNonRenewing(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	sub, err := h.lifecycleSvc.SetNonRenewing(c.Context(), appID, c.Params("id"), req.NonRenewing)
+	sub, err := h.lifecycleSvc.SetNonRenewing(c.UserContext(), appID, c.Params("id"), req.NonRenewing)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -313,7 +313,7 @@ func (h *BizBillingHandler) CreateInvoice(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	inv, err := h.lifecycleSvc.CreateOneTimeInvoice(c.Context(), appID, &req)
+	inv, err := h.lifecycleSvc.CreateOneTimeInvoice(c.UserContext(), appID, &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -345,7 +345,7 @@ func (h *BizBillingHandler) ListInvoices(c *fiber.Ctx) error {
 		Offset:         h.queryInt(c, "offset", 0),
 	}
 
-	invoices, total, err := h.lifecycleSvc.ListInvoices(c.Context(), filter)
+	invoices, total, err := h.lifecycleSvc.ListInvoices(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -369,7 +369,7 @@ func (h *BizBillingHandler) GetInvoice(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.GetInvoice(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.GetInvoice(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -400,7 +400,7 @@ func (h *BizBillingHandler) UpdateDraftInvoice(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	inv, err := h.lifecycleSvc.UpdateDraftInvoice(c.Context(), appID, c.Params("id"), &req)
+	inv, err := h.lifecycleSvc.UpdateDraftInvoice(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -424,7 +424,7 @@ func (h *BizBillingHandler) IssueInvoice(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.IssueInvoice(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.IssueInvoice(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -449,7 +449,7 @@ func (h *BizBillingHandler) SendInvoice(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.SendInvoice(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.SendInvoice(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -473,7 +473,7 @@ func (h *BizBillingHandler) VoidInvoice(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.VoidInvoice(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.VoidInvoice(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -497,7 +497,7 @@ func (h *BizBillingHandler) WriteOffInvoice(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.WriteOffInvoice(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.WriteOffInvoice(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -529,7 +529,7 @@ func (h *BizBillingHandler) ApplyCoupon(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "coupon code is required"})
 	}
 
-	inv, err := h.lifecycleSvc.ApplyCoupon(c.Context(), appID, c.Params("id"), req.Code)
+	inv, err := h.lifecycleSvc.ApplyCoupon(c.UserContext(), appID, c.Params("id"), req.Code)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -564,11 +564,11 @@ func (h *BizBillingHandler) ApplyCredit(c *fiber.Ctx) error {
 	var inv *bizbilling.BizInvoice
 	switch {
 	case req.CreditNoteID != "":
-		inv, err = h.lifecycleSvc.ApplyCreditNoteToInvoice(c.Context(), appID, req.CreditNoteID, c.Params("id"))
+		inv, err = h.lifecycleSvc.ApplyCreditNoteToInvoice(c.UserContext(), appID, req.CreditNoteID, c.Params("id"))
 	case req.RetainerID != "":
-		inv, err = h.lifecycleSvc.ApplyRetainerToInvoice(c.Context(), appID, req.RetainerID, c.Params("id"))
+		inv, err = h.lifecycleSvc.ApplyRetainerToInvoice(c.UserContext(), appID, req.RetainerID, c.Params("id"))
 	default:
-		inv, err = h.lifecycleSvc.ApplyCredit(c.Context(), appID, c.Params("id"))
+		inv, err = h.lifecycleSvc.ApplyCredit(c.UserContext(), appID, c.Params("id"))
 	}
 	if err != nil {
 		return h.handleError(c, err)
@@ -594,7 +594,7 @@ func (h *BizBillingHandler) AddLateFee(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	inv, err := h.lifecycleSvc.AddLateFee(c.Context(), appID, c.Params("id"))
+	inv, err := h.lifecycleSvc.AddLateFee(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -628,7 +628,7 @@ func (h *BizBillingHandler) RecordPayment(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	payment, err := h.lifecycleSvc.RecordPayment(c.Context(), appID, c.Params("id"), &req)
+	payment, err := h.lifecycleSvc.RecordPayment(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -660,7 +660,7 @@ func (h *BizBillingHandler) ListPayments(c *fiber.Ctx) error {
 		Offset:    h.queryInt(c, "offset", 0),
 	}
 
-	payments, total, err := h.lifecycleSvc.ListPayments(c.Context(), filter)
+	payments, total, err := h.lifecycleSvc.ListPayments(c.UserContext(), filter)
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -684,7 +684,7 @@ func (h *BizBillingHandler) GetPayment(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	payment, err := h.lifecycleSvc.GetPayment(c.Context(), appID, c.Params("id"))
+	payment, err := h.lifecycleSvc.GetPayment(c.UserContext(), appID, c.Params("id"))
 	if err != nil {
 		return h.handleError(c, err)
 	}
@@ -716,7 +716,7 @@ func (h *BizBillingHandler) RefundPayment(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
-	payment, err := h.lifecycleSvc.RefundPayment(c.Context(), appID, c.Params("id"), &req)
+	payment, err := h.lifecycleSvc.RefundPayment(c.UserContext(), appID, c.Params("id"), &req)
 	if err != nil {
 		return h.handleError(c, err)
 	}
