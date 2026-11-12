@@ -632,6 +632,8 @@ func (h *BizBillingHandler) handleError(c *fiber.Ctx, err error) error {
 	stderrors.As(err, &operation)
 	status, code, message, retryable := fiber.StatusInternalServerError, "INTERNAL_ERROR", "internal server error", false
 	switch {
+	case stderrors.Is(err, bizbilling.ErrModeMismatch):
+		status, code, message = 409, "BILLING_MODE_MISMATCH", "Test funds and live billing must remain separate."
 	case stderrors.Is(err, bizbilling.ErrInvalidGatewayProof):
 		status, code, message = 400, "BILLING_PAYMENT_NOT_VERIFIED", "The checkout result could not be verified. Check the invoice or payment status before trying again."
 	case stderrors.Is(err, bizbilling.ErrGatewayPending):

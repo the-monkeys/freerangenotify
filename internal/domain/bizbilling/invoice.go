@@ -83,7 +83,11 @@ type BizInvoice struct {
 }
 
 func (i BizInvoice) FinancialScope() Scope {
-	return Scope{AppID: i.AppID, UserID: i.UserID, Currency: i.Currency}
+	scope := Scope{AppID: i.AppID, UserID: i.UserID, Currency: i.Currency}
+	if i.GatewayMode == GatewayTest {
+		scope.Mode = GatewayTest
+	}
+	return scope
 }
 func (i BizInvoice) FinancialSequence() int64 { return i.LastSequence }
 func (i BizInvoice) FinancialID() string      { return i.ID }

@@ -16,6 +16,7 @@ const (
 
 // BizPayment represents a payment record for an invoice.
 type BizPayment struct {
+	BillingMode               GatewayMode            `json:"billing_mode,omitempty"`
 	GatewayBinding            *GatewayRef            `json:"gateway_binding,omitempty"`
 	CreditProvenanceKnown     bool                   `json:"credit_provenance_known,omitempty"`
 	LastSequence              int64                  `json:"billing_sequence,omitempty"`
@@ -42,7 +43,11 @@ type BizPayment struct {
 }
 
 func (p BizPayment) FinancialScope() Scope {
-	return Scope{AppID: p.AppID, UserID: p.UserID, Currency: p.Currency}
+	scope := Scope{AppID: p.AppID, UserID: p.UserID, Currency: p.Currency}
+	if p.BillingMode == GatewayTest || (p.GatewayBinding != nil && p.GatewayBinding.Mode == GatewayTest) {
+		scope.Mode = GatewayTest
+	}
+	return scope
 }
 func (p BizPayment) FinancialSequence() int64 { return p.LastSequence }
 func (p BizPayment) FinancialID() string      { return p.ID }

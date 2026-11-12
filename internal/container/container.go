@@ -115,6 +115,7 @@ type Container struct {
 	BizOperationService              *services.BizOperationService
 	BizGatewayConnections            *services.BizGatewayConnectionService
 	BizCheckoutService               *services.BizCheckoutService
+	BizRefundService                 *services.BizRefundService
 	BizGatewayEventService           *services.BizGatewayEventService
 	BizBillingGatewayCallbackHandler *handlers.BizBillingGatewayCallbackHandler
 	BizPortalHandler                 *handlers.BizPortalHandler
@@ -999,6 +1000,9 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizPortalHandler.SetCheckoutService(container.BizCheckoutService)
 		container.BizBillingHandler.SetCheckoutService(container.BizCheckoutService)
 		container.BizGatewayEventService = services.NewBizGatewayEventService(esClient, container.BizGatewayConnections, container.BizCheckoutService, logger)
+		container.BizRefundService = services.NewBizRefundService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
+		lifecycleSvc.SetRefundService(container.BizRefundService)
+		container.BizGatewayEventService.SetRefundProcessor(container.BizRefundService)
 		container.BizBillingHandler.SetGatewayEventService(container.BizGatewayEventService)
 		container.BizBillingGatewayCallbackHandler = handlers.NewBizBillingGatewayCallbackHandler(container.BizGatewayEventService, logger)
 
@@ -1016,6 +1020,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		scheduler.Start(schedCtx)
 		container.BizOperationService.Start(schedCtx)
 		container.BizGatewayEventService.Start(schedCtx)
+		container.BizRefundService.Start(schedCtx)
 		container.bizSchedulerCancel = schedCancel
 
 		logger.Info("Business Billing module enabled")

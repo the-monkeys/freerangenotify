@@ -29,6 +29,9 @@ func (s *BizLifecycleService) financialInvoiceScope(ctx context.Context, appID, 
 		return bizbilling.Scope{}, false, err
 	}
 	scope, upgraded, err := financialScopeFor(ctx, s.gate, appID, inv.UserID, inv.Currency)
+	if upgraded {
+		scope.Mode = inv.FinancialScope().Mode
+	}
 	if err == nil && upgraded && s.operations == nil {
 		err = bizbilling.ErrReconciliationRequired
 	}
@@ -69,6 +72,9 @@ func (s *BizLifecycleService) tryFinancialInvoiceChange(ctx context.Context, app
 
 func (s *BizLifecycleService) tryFinancialDraft(ctx context.Context, appID string, input bizbilling.InvoiceDraft) (*bizbilling.BizInvoice, bool, error) {
 	scope, upgraded, err := financialScopeFor(ctx, s.gate, appID, input.Request.UserID, input.Request.Currency)
+	if input.Request.GatewayMode == bizbilling.GatewayTest {
+		scope.Mode = bizbilling.GatewayTest
+	}
 	if err != nil || !upgraded {
 		return nil, upgraded, err
 	}

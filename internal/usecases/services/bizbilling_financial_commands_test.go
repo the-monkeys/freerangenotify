@@ -302,6 +302,14 @@ func ensureBillingIndex(t *testing.T, es *elasticsearch.Client, index string, te
 	exists := res.StatusCode == 200
 	res.Body.Close()
 	if exists {
+		if index == bizbillingrepo.GatewayEffectIndex {
+			data, err := json.Marshal(map[string]any{"properties": template["mappings"].(map[string]interface{})["properties"]})
+			require.NoError(t, err)
+			res, err := es.Indices.PutMapping([]string{index}, bytes.NewReader(data))
+			require.NoError(t, err)
+			defer res.Body.Close()
+			require.False(t, res.IsError(), "reuse owned fixture indices with the current additive metadata mapping")
+		}
 		return
 	}
 	data, err := json.Marshal(template)

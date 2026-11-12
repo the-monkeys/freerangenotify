@@ -45,6 +45,9 @@ type Command struct {
 var currencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
 
 func (s Scope) Validate() error {
+	if s.Mode != "" && s.Mode != GatewayTest {
+		return ErrModeMismatch
+	}
 	if strings.TrimSpace(s.AppID) == "" || strings.TrimSpace(s.UserID) == "" || len(s.AppID) > 200 || len(s.UserID) > 200 || !currencyCode.MatchString(s.Currency) {
 		return fmt.Errorf("invalid billing scope")
 	}
@@ -167,6 +170,9 @@ func (c Command) Validate() error {
 		}
 		if c.Kind == CommandGatewayCapture && (!p.VerifiedCapture || p.Method != "gateway" || p.GatewayPaymentID == "" || p.AmountPaisa <= 0 || p.GatewayBinding == nil || p.GatewayBinding.ConnectionID == "" || p.GatewayBinding.AccountID == "" || !p.GatewayBinding.Mode.Valid() || p.GatewayBinding.CredentialRevision < 1) {
 			return ErrInvalidMoney
+		}
+		if c.Kind == CommandGatewayCapture && (p.GatewayBinding.Mode == GatewayTest) != (c.Scope.Mode == GatewayTest) {
+			return ErrModeMismatch
 		}
 	case CommandBalanceApplication:
 		p := c.BalanceApplication

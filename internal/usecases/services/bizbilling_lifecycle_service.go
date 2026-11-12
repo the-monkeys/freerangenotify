@@ -19,6 +19,7 @@ import (
 // engine, sequential numbering, coupons, credits, the payment gateway, and
 // billing notifications.
 type BizLifecycleService struct {
+	refunds         *BizRefundService
 	operations      *BizOperationService
 	gate            *BizLifecycleGate
 	repo            bizbilling.BizLifecycleRepository
@@ -1253,7 +1254,27 @@ func (s *BizLifecycleService) RefundPayment(ctx context.Context, appID, paymentI
 	if err != nil || payment.AppID != appID {
 		return nil, errors.NotFound("payment", paymentID)
 	}
+	if payment.GatewayBinding != nil {
+		if s.refunds == nil {
+			return nil, bizbilling.ErrMerchantUnavailable
+		}
+		result, refundErr := s.refunds.Request(ctx, appID, paymentID, *req, bizOperationKey(ctx))
+		if refundErr != nil {
+			return nil, refundErr
+		}
+		event, readErr := s.operations.completedFinancialEvent(ctx, appID, result.OperationID)
+		if readErr != nil || event.PaymentAfter == nil {
+			return nil, &bizbilling.OperationFailure{Result: result, Cause: bizbilling.ErrGatewayPending}
+		}
+		return event.PaymentAfter, nil
+	}
+	if payment.Method == "gateway" || payment.Gateway != "" {
+		return nil, bizbilling.ErrLegacyReviewRequired
+	}
 	scope, upgraded, scopeErr := financialScopeFor(ctx, s.gate, appID, payment.UserID, payment.Currency)
+	if upgraded {
+		scope.Mode = payment.FinancialScope().Mode
+	}
 	if scopeErr != nil {
 		return nil, scopeErr
 	}

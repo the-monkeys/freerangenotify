@@ -576,6 +576,15 @@ components:
                 - count
                 - rules
             type: object
+        bizbilling.CheckoutProof:
+            properties:
+                razorpay_order_id:
+                    type: string
+                razorpay_payment_id:
+                    type: string
+                razorpay_signature:
+                    type: string
+            type: object
         bizbilling.CreateConnectorRequest:
             properties:
                 app_id:
@@ -718,6 +727,8 @@ components:
             properties:
                 currency:
                     type: string
+                gateway_mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
                 line_items:
                     items:
                         $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
@@ -885,6 +896,141 @@ components:
             x-enum-varnames:
                 - DiscountTypePercentage
                 - DiscountTypeFixed
+        bizbilling.GatewayEffect:
+            properties:
+                attempted:
+                    type: boolean
+                created_at:
+                    type: string
+                failure_code:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                gateway_payment_id:
+                    type: string
+                id:
+                    type: string
+                kind:
+                    type: string
+                next_effect_id:
+                    type: string
+                order:
+                    $ref: '#/components/schemas/bizbilling.GatewayOrder'
+                order_intent:
+                    $ref: '#/components/schemas/bizbilling.OrderIntent'
+                provider_id:
+                    type: string
+                refund:
+                    $ref: '#/components/schemas/bizbilling.GatewayRefund'
+                refund_intent:
+                    $ref: '#/components/schemas/bizbilling.RefundIntent'
+                refund_payment_id:
+                    type: string
+                refund_request:
+                    $ref: '#/components/schemas/bizbilling.RefundPaymentRequest'
+                request_hash:
+                    type: string
+                result:
+                    $ref: '#/components/schemas/bizbilling.OperationResult'
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+                state:
+                    type: string
+                updated_at:
+                    type: string
+            type: object
+        bizbilling.GatewayEventAcknowledgment:
+            properties:
+                header_conflict:
+                    type: boolean
+                id:
+                    type: string
+                state:
+                    type: string
+            type: object
+        bizbilling.GatewayEventData:
+            properties:
+                account_id:
+                    type: string
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                event:
+                    type: string
+                order_id:
+                    type: string
+                payment_id:
+                    type: string
+                refund_id:
+                    type: string
+            type: object
+        bizbilling.GatewayEventReceipt:
+            properties:
+                app_id:
+                    type: string
+                body_digest:
+                    type: string
+                created_at:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/bizbilling.GatewayEventData'
+                failure_code:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                header_conflict:
+                    type: boolean
+                id:
+                    type: string
+                kind:
+                    type: string
+                result:
+                    $ref: '#/components/schemas/bizbilling.OperationResult'
+                schema_version:
+                    type: integer
+                state:
+                    type: string
+                updated_at:
+                    type: string
+                verified_revision:
+                    type: integer
+            type: object
+        bizbilling.GatewayMode:
+            enum:
+                - test
+                - live
+            type: string
+            x-enum-varnames:
+                - GatewayTest
+                - GatewayLive
+        bizbilling.GatewayOrder:
+            properties:
+                id:
+                    type: string
+                intent:
+                    $ref: '#/components/schemas/bizbilling.OrderIntent'
+            type: object
+        bizbilling.GatewayRef:
+            properties:
+                account_id:
+                    type: string
+                connection_id:
+                    type: string
+                credential_revision:
+                    type: integer
+                mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
+            type: object
+        bizbilling.GatewayRefund:
+            properties:
+                id:
+                    type: string
+                intent:
+                    $ref: '#/components/schemas/bizbilling.RefundIntent'
+                status:
+                    type: string
+            type: object
         bizbilling.InvoiceLineItem:
             properties:
                 amount_paisa:
@@ -923,6 +1069,29 @@ components:
                     type: string
                 reference:
                     type: string
+            type: object
+        bizbilling.MerchantSnapshot:
+            properties:
+                account_id:
+                    type: string
+                account_verified:
+                    type: boolean
+                api_authenticated:
+                    type: boolean
+                app_id:
+                    type: string
+                automatic_ready:
+                    type: boolean
+                configured:
+                    type: boolean
+                connection_id:
+                    type: string
+                mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
+                readiness:
+                    type: string
+                revision:
+                    type: integer
             type: object
         bizbilling.MigrationIssue:
             properties:
@@ -1001,6 +1170,48 @@ components:
                 writer_id:
                     type: string
             type: object
+        bizbilling.OperationResult:
+            properties:
+                error_code:
+                    type: string
+                operation_id:
+                    type: string
+                resources:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.ResourceRef'
+                    type: array
+                state:
+                    $ref: '#/components/schemas/bizbilling.OperationState'
+            type: object
+        bizbilling.OperationState:
+            enum:
+                - accepted
+                - prepared
+                - completed
+                - rejected
+            type: string
+            x-enum-varnames:
+                - OperationAccepted
+                - OperationPrepared
+                - OperationCompleted
+                - OperationRejected
+        bizbilling.OrderIntent:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                invoice_id:
+                    type: string
+                operation_id:
+                    type: string
+                receipt:
+                    type: string
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+            type: object
         bizbilling.PricingModel:
             enum:
                 - flat
@@ -1053,6 +1264,25 @@ components:
             required:
                 - method
             type: object
+        bizbilling.RefundIntent:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                operation_id:
+                    type: string
+                payment_id:
+                    type: string
+                receipt:
+                    type: string
+                reservation_id:
+                    type: string
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+            type: object
         bizbilling.RefundPaymentRequest:
             properties:
                 amount_paisa:
@@ -1103,6 +1333,10 @@ components:
                     type: string
                 currency:
                     type: string
+                mode:
+                    allOf:
+                        - $ref: '#/components/schemas/bizbilling.GatewayMode'
+                    description: Omitted means live and preserves every existing stream/document ID.
                 user_id:
                     type: string
             type: object
@@ -2640,6 +2874,24 @@ components:
             required:
                 - event
                 - user_id
+            type: object
+        handlers.MerchantConnectionRequest:
+            properties:
+                account_id:
+                    type: string
+                expected_revision:
+                    type: integer
+                key_id:
+                    type: string
+                key_secret:
+                    type: string
+                webhook_secret:
+                    type: string
+            type: object
+        handlers.MerchantDisconnectRequest:
+            properties:
+                expected_revision:
+                    type: integer
             type: object
         handlers.MetaTemplateCreateRequestDoc:
             properties:
@@ -9014,6 +9266,301 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/gateway-connections/{mode}:
+        delete:
+            description: Stops using this slot for new collection. Retains encrypted revisions needed by existing orders and late events; does not cancel provider mandates or delete payment history.
+            parameters:
+                - description: test or live
+                  in: path
+                  name: mode
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/handlers.MerchantDisconnectRequest'
+                description: Current slot revision
+                required: true
+                x-originalParamName: body
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Forbidden
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Disconnect a business payment account
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+        get:
+            description: Optional for manual cash/UPI billing. API authentication is separate from verified account linkage and automatic-collection capability. Secrets are never returned.
+            parameters:
+                - description: test or live
+                  in: path
+                  name: mode
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.MerchantSnapshot'
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get business payment account readiness
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+        put:
+            description: Requires billing-write permission and the current slot revision. Credentials are write-only. A different account creates a new connection; old orders retain their original binding. Authentication uses a read-only provider API and does not enable automatic collection by itself.
+            parameters:
+                - description: test or live
+                  in: path
+                  name: mode
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/handlers.MerchantConnectionRequest'
+                description: Expected revision and write-only credentials
+                required: true
+                x-originalParamName: body
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.MerchantSnapshot'
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Forbidden
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Connect or rotate a business payment account
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/gateway-effects/{id}:
+        get:
+            description: A pending external attempt is not a paid invoice or a completed refund. Use the operation reference returned by checkout errors; scope is the authenticated application.
+            parameters:
+                - description: Gateway operation ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.GatewayEffect'
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get a business gateway operation
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/gateway-events:
+        get:
+            description: Use state=unmatched or quarantined to investigate unresolved events. Cursor is the last returned receipt ID. Payment history is not deleted when events are retried.
+            parameters:
+                - description: Processing state
+                  in: query
+                  name: state
+                  schema:
+                    type: string
+                - description: Last receipt ID
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
+                - description: Page size 1-200 (default 50)
+                  in: query
+                  name: limit
+                  schema:
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: List business gateway events
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/gateway-events/{id}:
+        get:
+            description: Processing status and reconciliation failure code; contains no raw customer/card payload or credentials. A durable receipt is distinct from payment or refund completion.
+            parameters:
+                - description: Gateway event receipt ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.GatewayEventReceipt'
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get a business gateway event
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/invoices:
         get:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
@@ -9833,12 +10380,17 @@ paths:
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/payments/{id}/refund:
         post:
-            description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+            description: Record a refund already made offline, or request a real refund of a verified merchant-bound gateway payment. Gateway requests require Idempotency-Key. A pending provider outcome returns 503 and Operation-Id; inspect /v1/biz/gateway-effects/{id} and retry the identical request with the same key. Never create a second refund because a response timed out. Unbound historical gateway payments require review.
             parameters:
                 - description: id
                   in: path
                   name: id
                   required: true
+                  schema:
+                    type: string
+                - description: Required for gateway refunds; reuse for an identical retry
+                  in: header
+                  name: Idempotency-Key
                   schema:
                     type: string
             requestBody:
@@ -9871,6 +10423,20 @@ paths:
                                 additionalProperties: true
                                 type: object
                     description: Unauthorized
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflicting request or historical payment needs review
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Provider outcome pending; includes operation_id when durably accepted
             security:
                 - ApiKeyAuth: []
                 - BearerAuth: []
@@ -13221,6 +13787,69 @@ paths:
             tags:
                 - BizPortal
             x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/invoices/{id}/verify-payment:
+        post:
+            description: Scoped by the portal token and the stored business payment account. Browser success alone never marks an invoice paid. Uncertain outcomes remain pending and can recover through signed callbacks.
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  schema:
+                    type: string
+                - description: Invoice ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/bizbilling.CheckoutProof'
+                description: Razorpay checkout result
+                required: true
+                x-originalParamName: body
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.OperationResult'
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            summary: Verify a customer invoice payment
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
     /v1/portal/{token}/statement:
         get:
             description: Public endpoint with its route-specific token, signature or authentication flow.
@@ -16487,6 +17116,59 @@ paths:
                                 type: object
                     description: Unauthorized
             summary: Handle Connector Webhook
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional webhooks feature and its configured service/provider.
+    /v1/webhooks/biz/razorpay/{connection_id}:
+        post:
+            description: Dedicated business-account inbox; separate from platform credit purchases. Requires a valid HMAC-SHA256 over the exact raw body. A 202 means durable receipt, not that the invoice or refund is complete. Unsigned event headers never determine financial idempotency.
+            parameters:
+                - description: Business merchant connection ID
+                  in: path
+                  name: connection_id
+                  required: true
+                  schema:
+                    type: string
+                - description: Raw-body webhook signature
+                  in: header
+                  name: X-Razorpay-Signature
+                  required: true
+                  schema:
+                    type: string
+                - description: Provider event reference
+                  in: header
+                  name: X-Razorpay-Event-Id
+                  schema:
+                    type: string
+            responses:
+                "202":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/bizbilling.GatewayEventAcknowledgment'
+                    description: Accepted
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            summary: Accept a signed business Razorpay callback
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional webhooks feature and its configured service/provider.

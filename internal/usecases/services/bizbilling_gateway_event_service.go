@@ -136,6 +136,9 @@ func (s *BizGatewayEventService) Process(ctx context.Context, id string) (bizbil
 		}
 		result, err := s.refunds.ProcessEvent(ctx, receipt)
 		if err != nil {
+			if apperrors.IsNotFound(err) {
+				return s.deferEvent(ctx, receipt, "unmatched", "refund_unmatched", err)
+			}
 			return s.deferEvent(ctx, receipt, "retry", "refund_pending", err)
 		}
 		if result.State != bizbilling.OperationCompleted {

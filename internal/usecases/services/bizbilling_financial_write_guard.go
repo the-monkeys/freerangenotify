@@ -9,15 +9,17 @@ import (
 )
 
 type financialWriteIdentity struct {
-	BilledToUser    string           `json:"billed_to_user"`
-	AppID           string           `json:"app_id"`
-	UserID          string           `json:"user_id"`
-	Currency        string           `json:"currency"`
-	Scope           bizbilling.Scope `json:"scope"`
-	Sequence        int64            `json:"billing_sequence"`
-	BalanceSequence int64            `json:"last_sequence"`
-	MirrorSequence  int64            `json:"biz_balance_sequence"`
-	MirrorCurrency  string           `json:"biz_balance_currency"`
+	GatewayMode     bizbilling.GatewayMode `json:"gateway_mode"`
+	BillingMode     bizbilling.GatewayMode `json:"billing_mode"`
+	BilledToUser    string                 `json:"billed_to_user"`
+	AppID           string                 `json:"app_id"`
+	UserID          string                 `json:"user_id"`
+	Currency        string                 `json:"currency"`
+	Scope           bizbilling.Scope       `json:"scope"`
+	Sequence        int64                  `json:"billing_sequence"`
+	BalanceSequence int64                  `json:"last_sequence"`
+	MirrorSequence  int64                  `json:"biz_balance_sequence"`
+	MirrorCurrency  string                 `json:"biz_balance_currency"`
 }
 
 func financialIdentity(raw json.RawMessage) (bizbilling.Scope, int64, error) {
@@ -34,6 +36,9 @@ func financialIdentity(raw json.RawMessage) (bizbilling.Scope, int64, error) {
 	}
 	if scope.Currency == "" {
 		scope.Currency = value.MirrorCurrency
+	}
+	if value.GatewayMode == bizbilling.GatewayTest || value.BillingMode == bizbilling.GatewayTest {
+		scope.Mode = bizbilling.GatewayTest
 	}
 	return scope, max(value.Sequence, value.BalanceSequence, value.MirrorSequence), nil
 }
@@ -60,7 +65,7 @@ func financialWriteGuard(gate *BizLifecycleGate, operations *BizOperationService
 			if err != nil {
 				return noop, err
 			}
-			if prior.AppID != scope.AppID || (index != bizbillingrepo.ExpenseIndex && prior.UserID != scope.UserID) || (prior.Currency != "" && prior.Currency != scope.Currency) {
+			if prior.AppID != scope.AppID || prior.Mode != scope.Mode || (index != bizbillingrepo.ExpenseIndex && prior.UserID != scope.UserID) || (prior.Currency != "" && prior.Currency != scope.Currency) {
 				return noop, bizbilling.ErrReconciliationRequired
 			}
 		}

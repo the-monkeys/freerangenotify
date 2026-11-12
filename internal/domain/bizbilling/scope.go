@@ -4,6 +4,8 @@ type Scope struct {
 	AppID    string `json:"app_id"`
 	UserID   string `json:"user_id"`
 	Currency string `json:"currency"`
+	// Omitted means live and preserves every existing stream/document ID.
+	Mode GatewayMode `json:"mode,omitempty"`
 }
 type GatewayMode string
 

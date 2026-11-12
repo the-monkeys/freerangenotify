@@ -35,6 +35,13 @@ type checkoutGateway struct {
 	lookupError bool
 }
 
+func (g *checkoutGateway) Refund(context.Context, bizbilling.RefundIntent) (bizbilling.GatewayRefund, error) {
+	return bizbilling.GatewayRefund{}, bizbilling.ErrMerchantNotReady
+}
+func (g *checkoutGateway) FindRefund(context.Context, bizbilling.RefundIntent) (*bizbilling.GatewayRefund, error) {
+	return nil, bizbilling.ErrMerchantNotReady
+}
+
 func (g *checkoutGateway) CreateOrder(_ context.Context, intent bizbilling.OrderIntent) (bizbilling.GatewayOrder, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -76,6 +83,7 @@ func (g *checkoutGateway) VerifyCheckout(order, payment, signature string) error
 func checkoutFixture(t *testing.T, faults ...*lostBillingResponse) (*BizCheckoutService, *BizGatewayConnectionService, *checkoutGateway, *BizLifecycleService, *BizOperationService, *elasticsearch.Client, bizbilling.Scope) {
 	t.Helper()
 	lifecycle, credit, ops, es, scope := financialFacadesFixture(t, faults...)
+	scope.Mode = bizbilling.GatewayTest
 	templates := &database.IndexTemplates{}
 	ensureBillingIndex(t, es, bizbillingrepo.LifecycleStateIndex, templates.GetBizLifecycleStatesTemplate())
 	ensureBillingIndex(t, es, bizbillingrepo.GatewayConnectionIndex, templates.GetBizGatewayConnectionsTemplate())

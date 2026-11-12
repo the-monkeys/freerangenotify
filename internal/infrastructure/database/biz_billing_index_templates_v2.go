@@ -14,6 +14,7 @@ func (it *IndexTemplates) GetBizGatewayEventsTemplate() map[string]interface{} {
 }
 func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{
+		"refund_payment_id": billingKeyword(), "gateway_payment_id": billingKeyword(), "request_hash": billingKeyword(), "refund_intent": map[string]interface{}{"type": "object", "enabled": false}, "refund": map[string]interface{}{"type": "object", "enabled": false}, "refund_request": map[string]interface{}{"type": "object", "enabled": false}, "result": map[string]interface{}{"type": "object", "enabled": false},
 		"id": billingKeyword(), "kind": billingKeyword(), "scope": billingScope(), "provider_id": billingKeyword(), "state": billingKeyword(),
 		"gateway":      map[string]interface{}{"type": "object", "properties": map[string]interface{}{"connection_id": billingKeyword(), "account_id": billingKeyword(), "mode": billingKeyword(), "credential_revision": billingLong()}},
 		"order_intent": map[string]interface{}{"type": "object", "enabled": false}, "order": map[string]interface{}{"type": "object", "enabled": false}, "attempted": map[string]interface{}{"type": "boolean"}, "created_at": map[string]interface{}{"type": "date"}, "updated_at": map[string]interface{}{"type": "date"},
@@ -21,7 +22,7 @@ func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} 
 }
 func billingLong() map[string]interface{} { return map[string]interface{}{"type": "long"} }
 func billingScope() map[string]interface{} {
-	return map[string]interface{}{"type": "object", "dynamic": false, "properties": map[string]interface{}{"app_id": billingKeyword(), "user_id": billingKeyword(), "currency": billingKeyword()}}
+	return map[string]interface{}{"type": "object", "dynamic": false, "properties": map[string]interface{}{"app_id": billingKeyword(), "user_id": billingKeyword(), "currency": billingKeyword(), "mode": billingKeyword()}}
 }
 func billingFactTemplate(properties map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{"settings": map[string]interface{}{"number_of_shards": 1, "number_of_replicas": 0}, "mappings": map[string]interface{}{"dynamic": false, "properties": properties}}

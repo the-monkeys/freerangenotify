@@ -8,6 +8,9 @@ import (
 )
 
 func financialScopeMatches(actual, expected bizbilling.Scope) error {
+	if actual.Mode != expected.Mode {
+		return bizbilling.ErrModeMismatch
+	}
 	if actual.AppID != expected.AppID || actual.UserID != expected.UserID {
 		return apperrors.NotFound("billing resource", "scope")
 	}
@@ -147,6 +150,7 @@ func (s *BizOperationService) buildManualPayment(ctx context.Context, command bi
 	}
 	paymentID := event.OperationID + "-payment"
 	payment := &bizbilling.BizPayment{CreditProvenanceKnown: true, ID: paymentID, AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, InvoiceIDs: []string{inv.ID}, AmountPaisa: amount, TDSPaisa: input.TDSPaisa, ExcessCreditPaisa: excess, Method: input.Method, GatewayPaymentID: input.GatewayPaymentID, Status: bizbilling.PaymentStatusSuccess, Notes: input.Notes, CreatedAt: event.CreatedAt, UpdatedAt: event.CreatedAt, LastSequence: event.Sequence}
+	payment.BillingMode = command.Scope.Mode
 	if input.VerifiedCapture {
 		payment.Gateway = "razorpay"
 		payment.GatewayBinding = input.GatewayBinding
@@ -295,6 +299,9 @@ func (s *BizOperationService) consumeFinancialCredit(ctx context.Context, event 
 			lot, err := s.stores.CreditLots.Get(ctx, candidate.ID)
 			if err != nil {
 				return err
+			}
+			if lot.Scope.Mode != event.Scope.Mode {
+				continue
 			}
 			if err = financialScopeMatches(lot.Scope, event.Scope); err != nil {
 				return err

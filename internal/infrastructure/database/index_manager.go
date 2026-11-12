@@ -162,6 +162,28 @@ func (im *IndexManager) createIndex(ctx context.Context, indexName string, templ
 	}
 
 	if exists {
+		// These new metadata indices evolve additively. Never recreate an index
+		// or change historical customer documents to add lookup fields.
+		switch indexName {
+		case "frn_biz_gateway_connections", "frn_biz_gateway_effects", "frn_biz_gateway_events":
+			mappings, ok := template["mappings"].(map[string]interface{})
+			if !ok || mappings["properties"] == nil {
+				return false, "gateway metadata mapping missing"
+			}
+			body, err := json.Marshal(map[string]interface{}{"properties": mappings["properties"]})
+			if err != nil {
+				return false, "gateway metadata mapping encoding failed"
+			}
+			res, err := im.client.GetClient().Indices.PutMapping([]string{indexName}, strings.NewReader(string(body)), im.client.GetClient().Indices.PutMapping.WithContext(ctx))
+			if err != nil {
+				return false, "gateway metadata mapping update unavailable"
+			}
+			defer res.Body.Close()
+			if res.IsError() {
+				return false, "gateway metadata mapping update rejected"
+			}
+			return true, "gateway metadata mapping updated additively"
+		}
 		return true, "index already exists"
 	}
 

@@ -31,6 +31,13 @@ type portalCheckoutGateway struct {
 	captured bool
 }
 
+func (g *portalCheckoutGateway) Refund(context.Context, bizbilling.RefundIntent) (bizbilling.GatewayRefund, error) {
+	return bizbilling.GatewayRefund{}, bizbilling.ErrMerchantNotReady
+}
+func (g *portalCheckoutGateway) FindRefund(context.Context, bizbilling.RefundIntent) (*bizbilling.GatewayRefund, error) {
+	return nil, bizbilling.ErrMerchantNotReady
+}
+
 func (g *portalCheckoutGateway) For(_ context.Context, ref bizbilling.GatewayRef) (bizbilling.BizGateway, error) {
 	if ref != g.ref {
 		return nil, errors.New("wrong fixture account")
@@ -59,6 +66,7 @@ func (g *portalCheckoutGateway) VerifyCheckout(_, _, signature string) error {
 }
 
 type portalHTTPFixture struct {
+	operations    *services.BizOperationService
 	es            *elasticsearch.Client
 	lifecycle     *services.BizLifecycleService
 	portal        *services.BizPortalService
@@ -82,6 +90,7 @@ func newPortalHTTPFixture(t *testing.T) portalHTTPFixture {
 		"users": templates.GetUsersTemplate(), "frn_biz_invoices": templates.GetBizInvoicesTemplate(), "frn_biz_payments": templates.GetBizPaymentsTemplate(), "frn_biz_configs": templates.GetBizConfigsTemplate(),
 		bizbillingrepo.OperationIndex: templates.GetBizOperationsTemplate(), bizbillingrepo.JournalIndex: templates.GetBizJournalTemplate(), bizbillingrepo.StreamIndex: templates.GetBizStreamsTemplate(), bizbillingrepo.CustomerBalanceIndex: templates.GetBizCustomerBalancesTemplate(),
 		bizbillingrepo.LifecycleStateIndex: templates.GetBizLifecycleStatesTemplate(), bizbillingrepo.GatewayConnectionIndex: templates.GetBizGatewayConnectionsTemplate(), bizbillingrepo.GatewayEffectIndex: templates.GetBizGatewayEffectsTemplate(), bizbillingrepo.PortalTokenIndex: templates.GetBizPortalTokensTemplate(),
+		bizbillingrepo.CreditNoteIndex: templates.GetBizCreditNotesTemplate(), bizbillingrepo.RetainerIndex: templates.GetBizRetainersTemplate(), bizbillingrepo.CreditApplicationIndex: templates.GetBizCreditApplicationsTemplate(), bizbillingrepo.CreditLotIndex: templates.GetBizCreditLotsTemplate(), bizbillingrepo.RefundReservationIndex: templates.GetBizRefundReservationsTemplate(),
 	} {
 		response, err := es.Indices.Exists([]string{index})
 		require.NoError(t, err)
@@ -122,7 +131,7 @@ func newPortalHTTPFixture(t *testing.T) portalHTTPFixture {
 	gateway := &portalCheckoutGateway{ref: bizbilling.GatewayRef{ConnectionID: snapshot.ConnectionID, AccountID: snapshot.AccountID, Mode: snapshot.Mode, CredentialRevision: snapshot.Revision}}
 	checkout := services.NewBizCheckoutService(es, lifecycle, merchants, gateway, logger)
 	checkout.SetNewCollectionEnabled(true)
-	return portalHTTPFixture{es: es, lifecycle: lifecycle, portal: portal, merchants: merchants, checkout: checkout, gateway: gateway, appID: appID, userID: userID}
+	return portalHTTPFixture{operations: ops, es: es, lifecycle: lifecycle, portal: portal, merchants: merchants, checkout: checkout, gateway: gateway, appID: appID, userID: userID}
 }
 
 func TestBizCheckoutPortalHTTPFlow(t *testing.T) {

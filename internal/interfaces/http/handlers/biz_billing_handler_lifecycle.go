@@ -693,13 +693,16 @@ func (h *BizBillingHandler) GetPayment(c *fiber.Ctx) error {
 
 // RefundPayment handles POST /v1/biz/payments/:id/refund
 // @Summary Refund Payment
-// @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
+// @Description Record a refund already made offline, or request a real refund of a verified merchant-bound gateway payment. Gateway requests require Idempotency-Key. A pending provider outcome returns 503 and Operation-Id; inspect /v1/biz/gateway-effects/{id} and retry the identical request with the same key. Never create a second refund because a response timed out. Unbound historical gateway payments require review.
 // @Tags BizBilling
 // @Produce json
 // @Param id path string true "id"
+// @Param Idempotency-Key header string false "Required for gateway refunds; reuse for an identical retry"
 // @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}
+// @Failure 409 {object} map[string]interface{} "Conflicting request or historical payment needs review"
+// @Failure 503 {object} map[string]interface{} "Provider outcome pending; includes operation_id when durably accepted"
 // @Security ApiKeyAuth
 // @Security BearerAuth
 // @Router /v1/biz/payments/{id}/refund [post]

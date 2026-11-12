@@ -56,6 +56,24 @@ For an upgraded application, excess cash becomes customer credit with its paymen
 
 Do not use manual payment requests to assert a gateway capture or gateway refund. Provider money must be verified through its original payment-account binding. An upgraded application's new online collection requires its own supported merchant connection. Never substitute the platform's payment account or move old orders to a newly connected account.
 
+## Optional online collection with Razorpay
+
+Cash, direct UPI and bank-transfer recording work without a gateway. Online collection uses **each business's own Razorpay account**; funds do not pass through FreeRangeNotify's notification-credit account. New merchant collection also requires the installation's collection feature flag and a reviewed lifecycle upgrade. A legacy application continues using its existing integration until that upgrade.
+
+Manage the connection from your backend with `GET`, `PUT` or `DELETE /v1/biz/gateway-connections/test` (or `/live`). Writes require billing-management permission. Read the current snapshot first and send its `revision` as `expected_revision`. Connecting takes `account_id`, `key_id`, `key_secret` and `webhook_secret`; secrets are write-only and encrypted with the installation's connection-encryption key. Keep encryption keys available while retained payments need them. Use a test key only in the test slot and a live key only in the live slot.
+
+Authentication checks the API credentials read-only. The account is not marked verified until a signed callback and a server-side payment lookup agree. This does not enable automatic renewals; those require separate authorization and capabilities. After connecting, configure your API origin plus `/v1/webhooks/biz/razorpay/CONNECTION_ID` on your Razorpay account, using the returned `connection_id` and the same webhook secret. This route is separate from platform-credit and notification webhooks. Callback acceptance means the event was stored, not that an invoice is paid.
+
+For an upgraded invoice, `gateway_mode` is pinned at creation; omitted means `live`. Use `gateway_mode: "test"` explicitly for sandbox invoices. Test invoice numbers start with `TEST-`; test funds have separate balances and cannot settle live invoices. Default customer statements and real-money totals exclude sandbox activity. Sandbox transactions do not represent actual customer money.
+
+A customer portal payment uses `POST /v1/portal/TOKEN/invoices/INVOICE_ID/pay`; the token must belong to the invoice's customer. The response supplies `key_id`, `gateway_order_id`, payable minor units, currency, state and `operation_id`. Use the returned public key for checkout. Submit `razorpay_order_id`, `razorpay_payment_id` and `razorpay_signature` to `POST /v1/portal/TOKEN/invoices/INVOICE_ID/verify-payment`. The server verifies the signature and independently fetches captured payment facts. An authorized payment alone is not paid. Keep portal tokens private.
+
+Gateway refunds use the same payment refund route above with an `Idempotency-Key` header. The request first reserves refundable money, then contacts the original merchant account. A pending or unknown result keeps its reservation; it does not increase `refunded_paisa`. Only a matching provider-confirmed processed refund settles it. A definitive failure releases its holds. A spent overpayment cannot be refunded again as customer credit, and a refund does not reopen the paid invoice. `amount_paisa: 0` requests the remaining refundable amount. Provider processing does not promise immediate bank credit.
+
+For a timeout or `BILLING_GATEWAY_PENDING`, inspect `GET /v1/biz/gateway-effects/OPERATION_ID` and retry the identical request with the **same key**. Recovery looks up the original attempt rather than sending another refund. `GET /v1/biz/gateway-events?state=unmatched&limit=50` lists stored events needing investigation; use `GET /v1/biz/gateway-events/EVENT_ID` for one event. A valid callback with no matching local refund remains visible for reconciliation and never silently changes a balance. Historical gateway payments without a provable account binding require explicit review.
+
+Disconnecting a merchant stops new collection through that slot; it retains encrypted revisions needed to reconcile old orders and refunds. Rotation may use a newer verified revision of the **same account** for API recovery. It never moves an old payment to a replacement account. Do not delete retained provider credentials or local payment history while outcomes are unresolved.
+
 ## Customer credit
 
 For a reviewed, upgraded application:

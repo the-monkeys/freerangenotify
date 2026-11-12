@@ -184,21 +184,22 @@ func (g *bizRazorpayGateway) FetchPayment(ctx context.Context, id string) (bizbi
 		return bizbilling.CapturedPayment{}, bizbilling.ErrInvalidGatewayProof
 	}
 	var response struct {
-		ID       string `json:"id"`
-		Entity   string `json:"entity"`
-		OrderID  string `json:"order_id"`
-		Amount   int64  `json:"amount"`
-		Currency string `json:"currency"`
-		Status   string `json:"status"`
-		Captured bool   `json:"captured"`
+		RefundedPaisa int64  `json:"amount_refunded"`
+		ID            string `json:"id"`
+		Entity        string `json:"entity"`
+		OrderID       string `json:"order_id"`
+		Amount        int64  `json:"amount"`
+		Currency      string `json:"currency"`
+		Status        string `json:"status"`
+		Captured      bool   `json:"captured"`
 	}
 	if err := g.request(ctx, http.MethodGet, "/payments/"+url.PathEscape(id), nil, &response); err != nil {
 		return bizbilling.CapturedPayment{}, err
 	}
-	if response.ID != id || response.Entity != "payment" || response.Amount <= 0 || !providerEntityID.MatchString(response.OrderID) {
+	if response.ID != id || response.Entity != "payment" || response.Amount <= 0 || response.RefundedPaisa < 0 || response.RefundedPaisa > response.Amount || !providerEntityID.MatchString(response.OrderID) {
 		return bizbilling.CapturedPayment{}, bizbilling.ErrInvalidGatewayProof
 	}
-	return bizbilling.CapturedPayment{ID: id, OrderID: response.OrderID, Gateway: g.credentials.Reference, AmountPaisa: response.Amount, Currency: response.Currency, Status: response.Status, Captured: response.Captured}, nil
+	return bizbilling.CapturedPayment{ID: id, OrderID: response.OrderID, Gateway: g.credentials.Reference, AmountPaisa: response.Amount, Currency: response.Currency, Status: response.Status, Captured: response.Captured, RefundedPaisa: response.RefundedPaisa}, nil
 }
 func (g *bizRazorpayGateway) VerifyCheckout(order, payment, signature string) error {
 	if !providerEntityID.MatchString(order) || !providerEntityID.MatchString(payment) {

@@ -84,7 +84,7 @@ func (s *BizOperationService) finalizeFinancialEvent(ctx context.Context, event 
 		if err != nil {
 			return event, err
 		}
-		if state.LifecycleVersion == 2 && state.Status == "active" && event.Scope.Currency == state.PrimaryCurrency {
+		if state.LifecycleVersion == 2 && state.Status == "active" && event.Scope.Currency == state.PrimaryCurrency && event.Scope.Mode != bizbilling.GatewayTest {
 			mirror, err := s.stores.UserBalances.Get(ctx, event.Scope.UserID)
 			if err != nil && !apperrors.IsNotFound(err) {
 				return event, err

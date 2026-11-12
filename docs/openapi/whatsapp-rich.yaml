@@ -576,6 +576,15 @@ components:
                 - count
                 - rules
             type: object
+        bizbilling.CheckoutProof:
+            properties:
+                razorpay_order_id:
+                    type: string
+                razorpay_payment_id:
+                    type: string
+                razorpay_signature:
+                    type: string
+            type: object
         bizbilling.CreateConnectorRequest:
             properties:
                 app_id:
@@ -718,6 +727,8 @@ components:
             properties:
                 currency:
                     type: string
+                gateway_mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
                 line_items:
                     items:
                         $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
@@ -885,6 +896,141 @@ components:
             x-enum-varnames:
                 - DiscountTypePercentage
                 - DiscountTypeFixed
+        bizbilling.GatewayEffect:
+            properties:
+                attempted:
+                    type: boolean
+                created_at:
+                    type: string
+                failure_code:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                gateway_payment_id:
+                    type: string
+                id:
+                    type: string
+                kind:
+                    type: string
+                next_effect_id:
+                    type: string
+                order:
+                    $ref: '#/components/schemas/bizbilling.GatewayOrder'
+                order_intent:
+                    $ref: '#/components/schemas/bizbilling.OrderIntent'
+                provider_id:
+                    type: string
+                refund:
+                    $ref: '#/components/schemas/bizbilling.GatewayRefund'
+                refund_intent:
+                    $ref: '#/components/schemas/bizbilling.RefundIntent'
+                refund_payment_id:
+                    type: string
+                refund_request:
+                    $ref: '#/components/schemas/bizbilling.RefundPaymentRequest'
+                request_hash:
+                    type: string
+                result:
+                    $ref: '#/components/schemas/bizbilling.OperationResult'
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+                state:
+                    type: string
+                updated_at:
+                    type: string
+            type: object
+        bizbilling.GatewayEventAcknowledgment:
+            properties:
+                header_conflict:
+                    type: boolean
+                id:
+                    type: string
+                state:
+                    type: string
+            type: object
+        bizbilling.GatewayEventData:
+            properties:
+                account_id:
+                    type: string
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                event:
+                    type: string
+                order_id:
+                    type: string
+                payment_id:
+                    type: string
+                refund_id:
+                    type: string
+            type: object
+        bizbilling.GatewayEventReceipt:
+            properties:
+                app_id:
+                    type: string
+                body_digest:
+                    type: string
+                created_at:
+                    type: string
+                data:
+                    $ref: '#/components/schemas/bizbilling.GatewayEventData'
+                failure_code:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                header_conflict:
+                    type: boolean
+                id:
+                    type: string
+                kind:
+                    type: string
+                result:
+                    $ref: '#/components/schemas/bizbilling.OperationResult'
+                schema_version:
+                    type: integer
+                state:
+                    type: string
+                updated_at:
+                    type: string
+                verified_revision:
+                    type: integer
+            type: object
+        bizbilling.GatewayMode:
+            enum:
+                - test
+                - live
+            type: string
+            x-enum-varnames:
+                - GatewayTest
+                - GatewayLive
+        bizbilling.GatewayOrder:
+            properties:
+                id:
+                    type: string
+                intent:
+                    $ref: '#/components/schemas/bizbilling.OrderIntent'
+            type: object
+        bizbilling.GatewayRef:
+            properties:
+                account_id:
+                    type: string
+                connection_id:
+                    type: string
+                credential_revision:
+                    type: integer
+                mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
+            type: object
+        bizbilling.GatewayRefund:
+            properties:
+                id:
+                    type: string
+                intent:
+                    $ref: '#/components/schemas/bizbilling.RefundIntent'
+                status:
+                    type: string
+            type: object
         bizbilling.InvoiceLineItem:
             properties:
                 amount_paisa:
@@ -923,6 +1069,29 @@ components:
                     type: string
                 reference:
                     type: string
+            type: object
+        bizbilling.MerchantSnapshot:
+            properties:
+                account_id:
+                    type: string
+                account_verified:
+                    type: boolean
+                api_authenticated:
+                    type: boolean
+                app_id:
+                    type: string
+                automatic_ready:
+                    type: boolean
+                configured:
+                    type: boolean
+                connection_id:
+                    type: string
+                mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
+                readiness:
+                    type: string
+                revision:
+                    type: integer
             type: object
         bizbilling.MigrationIssue:
             properties:
@@ -1001,6 +1170,48 @@ components:
                 writer_id:
                     type: string
             type: object
+        bizbilling.OperationResult:
+            properties:
+                error_code:
+                    type: string
+                operation_id:
+                    type: string
+                resources:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.ResourceRef'
+                    type: array
+                state:
+                    $ref: '#/components/schemas/bizbilling.OperationState'
+            type: object
+        bizbilling.OperationState:
+            enum:
+                - accepted
+                - prepared
+                - completed
+                - rejected
+            type: string
+            x-enum-varnames:
+                - OperationAccepted
+                - OperationPrepared
+                - OperationCompleted
+                - OperationRejected
+        bizbilling.OrderIntent:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                invoice_id:
+                    type: string
+                operation_id:
+                    type: string
+                receipt:
+                    type: string
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+            type: object
         bizbilling.PricingModel:
             enum:
                 - flat
@@ -1053,6 +1264,25 @@ components:
             required:
                 - method
             type: object
+        bizbilling.RefundIntent:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                operation_id:
+                    type: string
+                payment_id:
+                    type: string
+                receipt:
+                    type: string
+                reservation_id:
+                    type: string
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+            type: object
         bizbilling.RefundPaymentRequest:
             properties:
                 amount_paisa:
@@ -1103,6 +1333,10 @@ components:
                     type: string
                 currency:
                     type: string
+                mode:
+                    allOf:
+                        - $ref: '#/components/schemas/bizbilling.GatewayMode'
+                    description: Omitted means live and preserves every existing stream/document ID.
                 user_id:
                     type: string
             type: object
@@ -2640,6 +2874,24 @@ components:
             required:
                 - event
                 - user_id
+            type: object
+        handlers.MerchantConnectionRequest:
+            properties:
+                account_id:
+                    type: string
+                expected_revision:
+                    type: integer
+                key_id:
+                    type: string
+                key_secret:
+                    type: string
+                webhook_secret:
+                    type: string
+            type: object
+        handlers.MerchantDisconnectRequest:
+            properties:
+                expected_revision:
+                    type: integer
             type: object
         handlers.MetaTemplateCreateRequestDoc:
             properties:

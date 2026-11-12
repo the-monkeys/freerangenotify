@@ -64,15 +64,20 @@ func walkFinancialRows[T bizbilling.FinancialSnapshot](ctx context.Context, stor
 		if len(rows) == 0 {
 			return nil
 		}
-		if err = guardFinancialRows(ctx, gate, operations, rows); err != nil {
-			return err
-		}
 		for _, row := range rows {
 			value := *row
 			if value.FinancialID() == "" || value.FinancialID() <= after {
 				return bizbilling.ErrReconciliationRequired
 			}
 			after = value.FinancialID()
+			// Default statements/analytics describe real money. Sandbox records
+			// remain available in their own scoped operations and invoice views.
+			if value.FinancialScope().Mode == bizbilling.GatewayTest {
+				continue
+			}
+			if err = guardFinancialRead(ctx, gate, operations, value.FinancialScope(), value.FinancialSequence()); err != nil {
+				return err
+			}
 			if err = visit(row); err != nil {
 				return err
 			}

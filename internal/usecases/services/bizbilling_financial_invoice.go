@@ -44,6 +44,9 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 	if !mode.Valid() {
 		return bizbilling.ErrInvalidMoney
 	}
+	if (mode == bizbilling.GatewayTest) != (command.Scope.Mode == bizbilling.GatewayTest) {
+		return bizbilling.ErrModeMismatch
+	}
 	items := append([]bizbilling.InvoiceLineItem(nil), input.Request.LineItems...)
 	totals, err := s.invoiceTotals(ctx, command.Scope, items)
 	if err != nil {
@@ -57,9 +60,13 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 		}
 		terms = config.DefaultTerms
 	}
-	number, err := s.config.NextNumber(ctx, command.Scope.AppID, NumberKindInvoice)
-	if err != nil {
-		return err
+	// Sandbox documents must not consume the business's legal invoice sequence.
+	number := "TEST-INV-" + event.OperationID
+	if mode != bizbilling.GatewayTest {
+		number, err = s.config.NextNumber(ctx, command.Scope.AppID, NumberKindInvoice)
+		if err != nil {
+			return err
+		}
 	}
 	typeOf := input.InvoiceType
 	if typeOf == "" {
