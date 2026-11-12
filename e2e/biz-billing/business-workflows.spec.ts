@@ -176,3 +176,10 @@ test('dark financial screen and customer picker support keyboard at mobile width
   await page.screenshot({path:testInfo.outputPath('invoice-dark-mobile.png'),fullPage:true});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+
+test('retryable conflict retains the same payment key',async({page})=>{
+ await financialFixture(page);let first=true;const keys:string[]=[];
+ await page.route('**/v1/biz/invoices/unpaid/payments',route=>{keys.push(route.request().headers()['idempotency-key']);if(first){first=false;return route.fulfill({status:409,json:{code:'BILLING_CONFLICT',retryable:true}});}return route.fallback();});
+ await page.goto('/apps/billing-a?tab=biz-billing&billing_view=invoices');await page.getByTestId('invoice-unpaid').getByRole('button',{name:'Record payment',exact:true}).click();await page.getByLabel('I confirm this payment was received',{exact:true}).check();await page.getByRole('button',{name:'Save payment',exact:true}).click();
+ await page.getByRole('button',{name:'Retry saved request',exact:true}).click();await expect(page.getByTestId('invoice-unpaid').getByTestId('amount-paid')).toHaveText('USD 11.80');expect(new Set(keys).size).toBe(1);
+});

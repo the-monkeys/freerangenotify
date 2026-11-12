@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      headers: { "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" },
       port: 3000,
       host: "0.0.0.0",
       allowedHosts: true,
@@ -31,6 +32,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    preview: { headers: { "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" } },
     build: {
       outDir: "dist",
     },

@@ -1,4 +1,13 @@
 {
+  "headers": [
+    {
+      "source": "/portal/:path*",
+      "headers": [
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/v1/:path*",

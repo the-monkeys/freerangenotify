@@ -10263,6 +10263,29 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/portal-tokens/{id}/revoke:
+        post:
+            parameters:
+                - description: Portal token ID returned when creating the link
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Revoke a customer portal link
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/products:
         get:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
@@ -12935,6 +12958,31 @@ paths:
             tags:
                 - BizPortal
             x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/invoices/{id}/document:
+        get:
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Invoice ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Get issued customer invoice document
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
     /v1/portal/{token}/invoices/{id}/pay:
         post:
             description: Public endpoint with its route-specific token, signature or authentication flow.
@@ -13024,6 +13072,56 @@ paths:
             tags:
                 - BizPortal
             x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/operations/{id}:
+        get:
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Operation ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Check a customer payment or authorization action
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/payments/{id}/receipt:
+        get:
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Payment ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Get a customer payment receipt
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
     /v1/portal/{token}/statement:
         get:
             description: Public endpoint with its route-specific token, signature or authentication flow.
@@ -13052,6 +13150,55 @@ paths:
                         additionalProperties: true
                         type: object
             summary: Get Statement
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/subscriptions:
+        get:
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Page offset
+                  in: query
+                  name: offset
+                  type: integer
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: List customer subscriptions
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/subscriptions/{id}:
+        get:
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Subscription ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Get customer subscription
             tags:
                 - BizPortal
             x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.

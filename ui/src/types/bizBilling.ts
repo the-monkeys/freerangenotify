@@ -110,6 +110,7 @@ export interface BizInvoice {
 }
 
 export interface BizPayment {
+    refunds?:{id:string;reference?:string;amount_paisa:number;state:string}[];
     user_id?: string;
     app_id?: string;
     reference?: string;

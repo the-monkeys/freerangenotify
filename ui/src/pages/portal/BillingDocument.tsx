@@ -1,0 +1,18 @@
+import type { BillingDocumentData, BillingIdentity } from '../../types/bizBilling';
+import { formatBillingAmount as money } from '../../components/biz-billing/BillingForm';
+import './print.css';
+
+function Party({title,party}:{title:string;party:BillingIdentity}){return <section><h2 className="font-semibold">{title}</h2><p className="font-medium">{party.name||party.full_name||'Not recorded'}</p>{party.email&&<p className="break-all">{party.email}</p>}{party.phone&&<p>{party.phone}</p>}{party.address&&<p>{Object.values(party.address).filter(Boolean).join(', ')}</p>}{party.gstin&&<p>GSTIN: {party.gstin}</p>}</section>;}
+export default function BillingDocument({document:doc}:{document:BillingDocumentData}){
+  return <article className="billing-document min-w-0 space-y-6 rounded-xl border bg-card p-4 text-card-foreground sm:p-8" aria-label="Issued invoice document">
+    <header className="flex flex-wrap justify-between gap-4"><div><h1 className="text-2xl font-semibold">Invoice {doc.invoice_number}</h1><p>Status: {doc.status.replace(/_/g,' ')}</p></div><div className="text-sm">{doc.issued_at&&<p>Issued: {new Date(doc.issued_at).toLocaleDateString()}</p>}{doc.due_date&&<p>Due: {new Date(doc.due_date).toLocaleDateString()}</p>}<p>Currency: {doc.currency}</p></div></header>
+    <div className="grid gap-5 sm:grid-cols-2"><Party title="From" party={doc.issuer}/><Party title="Bill to" party={doc.customer}/></div>
+    <section aria-label="Invoice items" className="space-y-3">{doc.line_items?.map((row,index)=><div key={index} className="invoice-line grid min-w-0 grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-[1fr_auto]"><div className="min-w-0"><p className="break-all font-medium [overflow-wrap:anywhere]">{row.description}</p><p className="text-sm">Quantity {row.quantity} × {money(row.unit_price,doc.currency)}</p>{row.hsn_code&&<p className="text-sm">HSN/SAC {row.hsn_code}</p>}<p className="text-sm">Tax: {row.tax_rate??0}%</p></div><p>{money(row.amount_paisa??row.quantity*row.unit_price,doc.currency)}</p></div>)}</section>
+    <dl className="invoice-totals ml-auto grid max-w-md grid-cols-2 gap-2 text-sm">{[
+      ['Subtotal',doc.subtotal_paisa??0],['Discount',doc.discount_paisa??0],['Tax',doc.tax_amount_paisa??0],['Total',doc.total_paisa],['Amount paid',doc.amount_paid_paisa??0],['Credits applied',doc.credits_applied??0],['Amount due',doc.amount_due_paisa],['Cash refunded',doc.cash_refunded_paisa??0],
+    ].map(([label,value])=><div key={label} className="col-span-2 grid grid-cols-2 gap-2"><dt>{label}</dt><dd className="text-right font-medium">{money(value as number,doc.currency)}</dd></div>)}</dl>
+    {!!doc.payments?.length&&<section className="space-y-3"><h2 className="text-lg font-semibold">Payments and receipts</h2>{doc.payments.map(payment=><div key={payment.id} className="invoice-line rounded border p-3 text-sm"><p>{payment.method} — {money(payment.amount_paisa,doc.currency)}</p><p className="break-all">Receipt: {payment.reference||payment.id}</p><p>Refunded: {money(payment.refunded_paisa??0,doc.currency)}</p>{payment.refunds?.map(refund=><p key={refund.id} className="break-all">Refund {refund.reference||refund.id}: {money(refund.amount_paisa,doc.currency)} — {refund.state}</p>)}</div>)}</section>}
+    {doc.notes&&<p className="whitespace-pre-wrap break-words">{doc.notes}</p>}{doc.terms_text&&<section><h2 className="font-semibold">Terms</h2><p className="whitespace-pre-wrap break-words">{doc.terms_text}</p></section>}{doc.footer_text&&<footer className="whitespace-pre-wrap border-t pt-4 text-sm">{doc.footer_text}</footer>}
+    <p className="text-xs">This document uses the details saved when the invoice was issued.</p>
+  </article>;
+}

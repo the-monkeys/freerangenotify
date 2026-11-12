@@ -41,6 +41,7 @@ const TemplateLibrary = lazy(() => import('./pages/TemplateLibrary'));
 const DocsLayout = lazy(() => import('./pages/docs/DocsLayout'));
 const DocsPage = lazy(() => import('./pages/docs/DocsPage'));
 const ApiReferencePage = lazy(() => import('./pages/docs/ApiReferencePage'));
+const BillingPortal = lazy(() => import('./pages/portal/BillingPortal'));
 
 // Eager-loaded global components
 import CommandPalette from './components/CommandPalette';
@@ -53,6 +54,8 @@ const PageLoader = () => (
 );
 
 const App: React.FC = () => {
+  // Public bearer-link pages never mount dashboard session providers or analytics.
+  if (window.location.pathname.startsWith('/portal/')) return <Router><ThemeProvider><Suspense fallback={<PageLoader/>}><BillingPortal/></Suspense></ThemeProvider></Router>;
   return (
     <Router>
       <ThemeProvider>

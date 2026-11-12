@@ -32,9 +32,13 @@ export function BillingActions({apiKey,scope,actorID,children}:{apiKey:string;sc
     try{
       let result:any;
       if(check && saved.operationID){
-        result=saved.gateway
-          ? await bizBillingAPI.readBilling<any>(apiKey,`/biz/gateway-effects/${encodeURIComponent(saved.operationID)}`)
-          : await bizBillingAPI.submitBilling<any>(apiKey,`/biz/operations/${encodeURIComponent(saved.operationID)}/resume`,{},saved.key);
+        const operationID=encodeURIComponent(saved.operationID);
+        if(!saved.gateway){
+          try{result=await bizBillingAPI.readBilling<any>(apiKey,`/biz/operations/${operationID}`);}
+          catch(error:any){if(error?.response?.status!==404)throw error;saved={...saved,gateway:true};unfinished.set(scope,saved);}
+          if(!saved.gateway&&!['completed','rejected'].includes(result?.state))result=await bizBillingAPI.submitBilling<any>(apiKey,`/biz/operations/${operationID}/resume`,{},saved.key);
+        }
+        if(saved.gateway)result=await bizBillingAPI.readBilling<any>(apiKey,`/biz/gateway-effects/${operationID}`);
       }else result=await bizBillingAPI.submitBilling<any>(apiKey,saved.path,saved.body,saved.key,saved.method);
       if(result?.operation_id && result.state==='rejected'){
         unfinished.delete(scope);update({busy:false,pending:false,error:'The saved action was rejected. Review the record and your form before trying again.',message:''});return false;
@@ -50,7 +54,7 @@ export function BillingActions({apiKey,scope,actorID,children}:{apiKey:string;sc
       if(alive.current)window.dispatchEvent(new Event('billing:changed'));return true;
     }catch(error:any){
       const response=error?.response, data=response?.data??{};
-      const pending=!response || response.status>=500 || !!data.operation_id;
+      const pending=!response || response.status>=500 || data.retryable===true || !!data.operation_id || !!saved.operationID;
       if(pending){saved={...saved,operationID:data.operation_id??saved.operationID,gateway:data.code==='BILLING_GATEWAY_PENDING'||saved.gateway};unfinished.set(scope,saved);}
       else unfinished.delete(scope);
       update({saved:pending?saved:undefined,busy:false,pending,error:pending?'':(friendly[data.code]??'Could not complete this action. Your form is unchanged. Refresh the record and check its current status before trying again.'),message:pending?`${saved.label} pending. The response was interrupted or confirmation is still outstanding.`:''});return false;

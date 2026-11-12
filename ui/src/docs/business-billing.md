@@ -219,3 +219,24 @@ If a monetary response is interrupted, **Retry saved request** reuses the same d
 Use **Payments** to record a confirmed refund. Spent overpayment credit can prevent refunding that amount; the original payment remains visible. **Messages / receipts** shows delivery independently from financial success. A message accepted for sending is not yet delivered; an uncertain result requires review and cannot be blindly retried.
 
 Reports identify their reporting currency. Upgraded reports use the business primary currency; invoices and payments retain their own currencies. No exchange-rate conversion is performed.
+
+### Customer billing portal
+
+Create a customer link from the customer's billing tools, or call `POST /v1/biz/users/{user_id}/portal-link` from your backend with the application API key. The response contains `url`, `expires_at`, and an additive `token_id`. Treat the URL as a private credential. New links are stored as SHA-256 digests; existing links retain their original expiry. Revoke a link with `POST /v1/biz/portal-tokens/{token_id}/revoke`. Revocation does not delete invoices or payments.
+
+The customer opens the link without a dashboard login. They can view invoices, saved receipts and subscriptions. An invoice payment uses the business's connected account; a recurring authorization requires the customer's explicit consent. The server checks provider signatures and captured amounts before confirming payment. A completed internal action alone is not proof of payment or authorization. Pending results show a status-check action; do not ask the customer to pay again while confirmation is outstanding.
+
+**Print / Save as PDF** prints an isolated copy of the issued document, so the private portal URL is not copied into browser print headers. Issued business/customer details, prices, taxes and references come from the saved invoice snapshot. Refunds are shown separately from the original received payment.
+
+The public portal transport sends no dashboard Authorization/API-key headers or cookies. Access is scoped to the link's application and customer, rate-limited, and returned with `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. Its API and initial page requests do not log raw bearer URLs. A link that expires while checkout is open cannot regain access; a valid signed provider callback can still settle its payment independently.
+
+Public customer endpoints (the token is the credential):
+
+- `GET /v1/portal/{token}/invoices?limit=20&offset=0` and `GET /v1/portal/{token}/invoices/{id}`. The invoice list retains its historical default of 50 if `limit` is omitted.
+- `GET /v1/portal/{token}/invoices/{id}/document` for the issued invoice and recorded receipts; older invoices without saved issue-time identity need historical review.
+- `POST /v1/portal/{token}/invoices/{id}/pay` to obtain public checkout parameters, and `POST .../verify-payment` to verify the SDK result. Reuse one `Idempotency-Key` for an interrupted checkout request.
+- `GET /v1/portal/{token}/subscriptions` and `GET .../subscriptions/{id}`.
+- `POST /v1/portal/{token}/subscriptions/{id}/authorize` and `POST .../verify-authorization` for a business-selected automatic subscription. Authorization does not pay arrears.
+- `GET /v1/portal/{token}/operations/{id}` for a customer-owned financial/provider status, and `GET /v1/portal/{token}/payments/{id}/receipt` for a customer-owned payment receipt.
+
+Local automated checkout tests use deterministic provider fixtures. A real Razorpay test-mode SDK and signed-callback rehearsal must be completed with the business's test account before production rollout.

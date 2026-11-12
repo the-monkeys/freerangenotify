@@ -1,0 +1,10 @@
+@page { size: A4; margin: 14mm; }
+@media print {
+  html,body,#root,main { background:#fff !important; color:#111 !important; margin:0 !important; padding:0 !important; width:auto !important; max-width:none !important; }
+  .portal-controls { display:none !important; }
+  .billing-document { color:#111 !important; background:#fff !important; border:0 !important; border-radius:0 !important; padding:0 !important; box-shadow:none !important; font-size:10pt; }
+  .billing-document h1 { font-size:19pt; }
+  .invoice-line,.invoice-totals { break-inside:avoid; }
+  .billing-document * { color:#111 !important; border-color:#bbb !important; }
+  .billing-document a { text-decoration:none; }
+}
