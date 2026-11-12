@@ -21,6 +21,9 @@ func (s *BizOperationService) buildSubscriptionCollection(ctx context.Context, c
 	if sub.Status == bizbilling.SubscriptionStatusCanceled {
 		return bizbilling.ErrInvalidMoney
 	}
+	if sub.NativeTransitionID != "" && input.Action != "cancel" {
+		return bizbilling.ErrAutomaticCollectionInProgress
+	}
 	switch input.Action {
 	case "request":
 		if input.AutomaticCycles != nil {
@@ -61,10 +64,13 @@ func (s *BizOperationService) buildSubscriptionCollection(ctx context.Context, c
 		if input.Gateway.Mode != sub.EffectiveGatewayMode() {
 			return bizbilling.ErrModeMismatch
 		}
-		sub.AuthorizationEffectID, sub.GatewayBinding, sub.PriceSnapshot = input.EffectID, input.Gateway, input.Price
+		sub.AuthorizationEffectID, sub.GatewayBinding = input.EffectID, input.Gateway
+		if sub.PendingChange == nil {
+			sub.PriceSnapshot = input.Price
+		}
 		sub.CollectionState = "awaiting_authorization"
 	case "confirm":
-		if sub.CollectionState == "change_pending" {
+		if sub.CollectionState == "change_pending" || sub.NativeTransitionID != "" {
 			return bizbilling.ErrAutomaticCollectionInProgress
 		}
 		if sub.EffectiveCollectionMode() != bizbilling.CollectionAutomatic || sub.AuthorizationEffectID != input.EffectID || sub.GatewayBinding == nil || input.Gateway == nil || *sub.GatewayBinding != *input.Gateway || input.RemoteID == "" {
@@ -99,7 +105,7 @@ func (s *BizOperationService) buildSubscriptionCollection(ctx context.Context, c
 		if sub.GatewaySubscriptionID != input.RemoteID || sub.GatewayBinding == nil || input.Gateway == nil || *sub.GatewayBinding != *input.Gateway {
 			return bizbilling.ErrInvalidGatewayProof
 		}
-		sub.CollectionMode, sub.CollectionState = bizbilling.CollectionInvoice, "cancelled"
+		sub.CollectionMode, sub.CollectionState, sub.NativeTransitionID = bizbilling.CollectionInvoice, "cancelled", ""
 	default:
 		return bizbilling.ErrInvalidMoney
 	}

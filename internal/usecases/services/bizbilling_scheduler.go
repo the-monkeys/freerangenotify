@@ -85,7 +85,13 @@ func (s *BizBillingScheduler) RunOnce(ctx context.Context) {
 // processRenewals advances period-ended active subscriptions: cancel those
 // flagged for period-end cancellation, expire non-renewing ones, and generate
 // the next invoice for the rest.
-func (s *BizBillingScheduler) processRenewals(ctx context.Context) {
+func (s *BizBillingScheduler) processRenewals(ctx context.Context) { s.processRenewalsForApp(ctx, "") }
+func (s *BizBillingScheduler) processRenewalsForApp(ctx context.Context, app string) {
+	if s.lifecycleSvc.periods != nil {
+		if _, err := s.lifecycleSvc.periods.RunDueForApp(ctx, app, 100); err != nil {
+			s.logger.Warn("billing renewal recovery pending", zap.String("failure_code", "period_recovery_pending"))
+		}
+	}
 	now := time.Now().UTC()
 	subs, _, err := s.stores.Subscriptions.Find(ctx, map[string]interface{}{
 		"query": map[string]interface{}{
@@ -104,6 +110,15 @@ func (s *BizBillingScheduler) processRenewals(ctx context.Context) {
 	}
 
 	for _, sub := range subs {
+		if app != "" && sub.AppID != app {
+			continue
+		}
+		if s.lifecycleSvc.gate != nil {
+			state, err := s.lifecycleSvc.gate.State(ctx, sub.AppID)
+			if err != nil || state.LifecycleVersion != 1 {
+				continue
+			}
+		}
 		if sub.CancelAtPeriodEnd || sub.NonRenewing {
 			if _, err := s.lifecycleSvc.CancelSubscription(ctx, sub.AppID, sub.ID, false); err != nil {
 				s.logger.Warn("bizbilling: period-end cancellation failed",
@@ -141,6 +156,12 @@ func (s *BizBillingScheduler) processTrials(ctx context.Context) {
 	}
 
 	for _, sub := range subs {
+		if s.lifecycleSvc.gate != nil {
+			state, err := s.lifecycleSvc.gate.State(ctx, sub.AppID)
+			if err != nil || state.LifecycleVersion != 1 {
+				continue
+			}
+		}
 		if sub.TrialEnd == nil {
 			continue
 		}

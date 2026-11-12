@@ -36,6 +36,10 @@ func (s *BizOperationService) invoiceTotals(ctx context.Context, scope bizbillin
 }
 
 func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, command bizbilling.Command, event *bizbilling.JournalEvent) error {
+	return s.buildFinancialInvoiceDraftUsingPrice(ctx, command, event, nil)
+}
+
+func (s *BizOperationService) buildFinancialInvoiceDraftUsingPrice(ctx context.Context, command bizbilling.Command, event *bizbilling.JournalEvent, price *bizbilling.SubscriptionPriceSnapshot) error {
 	input := command.InvoiceDraft
 	mode := input.Request.GatewayMode
 	if mode == "" {
@@ -48,7 +52,13 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 		return bizbilling.ErrModeMismatch
 	}
 	items := append([]bizbilling.InvoiceLineItem(nil), input.Request.LineItems...)
-	totals, err := s.invoiceTotals(ctx, command.Scope, items)
+	var totals bizbilling.InvoiceTotals
+	var err error
+	if price == nil {
+		totals, err = s.invoiceTotals(ctx, command.Scope, items)
+	} else {
+		totals, err = validatedSnapshotTotals(price, command.Scope)
+	}
 	if err != nil {
 		return err
 	}

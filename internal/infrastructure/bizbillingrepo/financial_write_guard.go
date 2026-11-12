@@ -33,6 +33,7 @@ func (s *Stores) SetFinancialWriteGuard(guard FinancialWriteGuard) {
 	s.Coupons.SetFinancialWriteGuard(guard)
 	s.CouponRedemptions.SetFinancialWriteGuard(guard)
 	s.Subscriptions.SetFinancialWriteGuard(guard)
+	s.Periods.SetFinancialWriteGuard(guard)
 	s.Invoices.SetFinancialWriteGuard(guard)
 	s.Payments.SetFinancialWriteGuard(guard)
 	s.CreditNotes.SetFinancialWriteGuard(guard)

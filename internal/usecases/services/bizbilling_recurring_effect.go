@@ -13,7 +13,7 @@ func recurringPlanMatches(plan bizbilling.GatewayRecurringPlan, intent bizbillin
 
 func recurringSubscriptionMatches(remote bizbilling.GatewaySubscription, intent bizbilling.RecurringIntent) bool {
 	actual := remote.Intent
-	return remote.ID != "" && remote.PlanID == intent.PlanID && actual.PlanID == intent.PlanID && actual.OperationID == intent.OperationID && actual.SubscriptionID == intent.SubscriptionID && actual.Scope == intent.Scope && actual.Gateway == intent.Gateway && actual.AmountPaisa == intent.AmountPaisa && actual.Currency == intent.Currency && actual.Period == intent.Period && actual.Interval == intent.Interval && actual.TotalCount == intent.TotalCount && actual.StartAt.Equal(intent.StartAt) && actual.ExpireBy.Equal(intent.ExpireBy)
+	return remote.ID != "" && remote.PlanID == intent.PlanID && actual.PlanID == intent.PlanID && actual.OperationID == intent.OperationID && actual.SubscriptionID == intent.SubscriptionID && actual.Scope == intent.Scope && actual.Gateway == intent.Gateway && actual.AmountPaisa == intent.AmountPaisa && actual.Currency == intent.Currency && actual.Period == intent.Period && actual.Interval == intent.Interval && actual.TotalCount == intent.TotalCount && actual.StartOnAuthorization == intent.StartOnAuthorization && actual.StartAt.Equal(intent.StartAt) && actual.ExpireBy.Equal(intent.ExpireBy)
 }
 
 func (s *BizRecurringService) ensureRecurringPlan(ctx context.Context, effect *bizbilling.GatewayEffect, gateway bizbilling.RecurringGateway) (*bizbilling.GatewayEffect, error) {

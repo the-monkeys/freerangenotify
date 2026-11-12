@@ -11,12 +11,25 @@ import (
 
 func (s *BizRecurringService) recurringIntent(ctx context.Context, sub *bizbilling.BizSubscription, mode bizbilling.GatewayMode, id string) (bizbilling.RecurringIntent, error) {
 	var intent bizbilling.RecurringIntent
+	if sub.PendingChange != nil {
+		target := *sub
+		target.PlanID, target.Quantity, target.AddonIDs, target.PriceSnapshot = sub.PendingChange.PlanID, sub.PendingChange.Quantity, sub.PendingChange.AddonIDs, &sub.PendingChange.Price
+		sub = &target
+	}
 	plan, err := s.lifecycle.stores.Plans.Get(ctx, sub.PlanID)
 	if err != nil {
 		return intent, err
 	}
 	if plan.AppID != sub.AppID {
 		return intent, apperrors.NotFound("plan", sub.PlanID)
+	}
+	if sub.PriceSnapshot != nil {
+		if sub.PriceSnapshot.PlanID != plan.ID || sub.PriceSnapshot.Currency != sub.Currency {
+			return intent, bizbilling.ErrInvalidMoney
+		}
+		accepted := *plan
+		accepted.BillingCycle, accepted.CycleDays, accepted.Currency, accepted.Name = sub.PriceSnapshot.BillingCycle, sub.PriceSnapshot.CycleDays, sub.PriceSnapshot.Currency, sub.PriceSnapshot.PlanName
+		plan = &accepted
 	}
 	if plan.Currency != "INR" || sub.Currency != plan.Currency {
 		return intent, apperrors.BadRequest("Automatic collection currently supports fixed INR plans; use invoice collection for this currency")
@@ -43,47 +56,25 @@ func (s *BizRecurringService) recurringIntent(ctx context.Context, sub *bizbilli
 		return intent, apperrors.BadRequest("This billing cycle requires invoice collection")
 	}
 	now := time.Now().UTC()
-	if !sub.CurrentPeriodEnd.After(now.Add(10 * time.Minute)) {
+	if !sub.InitialAutomaticPeriod && !sub.CurrentPeriodEnd.After(now.Add(10*time.Minute)) {
 		return intent, apperrors.BadRequest("Renew the current billing period before authorizing future automatic collection")
 	}
-	if sub.Status != bizbilling.SubscriptionStatusActive && sub.Status != bizbilling.SubscriptionStatusTrialing && sub.Status != bizbilling.SubscriptionStatusPastDue {
+	if sub.Status != bizbilling.SubscriptionStatusActive && sub.Status != bizbilling.SubscriptionStatusTrialing && sub.Status != bizbilling.SubscriptionStatusPastDue && !(sub.InitialAutomaticPeriod && sub.Status == bizbilling.SubscriptionStatusAwaitingAuthorization) {
 		return intent, apperrors.BadRequest("This subscription cannot request automatic authorization")
 	}
-	amount, err := bizbilling.PlanChargeForChecked(plan, sub.Quantity)
-	if err != nil {
+	price := sub.PriceSnapshot
+	if price == nil {
+		price, err = s.lifecycle.operations.subscriptionPrice(ctx, sub.FinancialScope(), sub, false)
+		if err != nil {
+			return intent, err
+		}
+	}
+	if _, err = validatedSnapshotTotals(price, sub.FinancialScope()); err != nil {
 		return intent, err
 	}
-	items := []bizbilling.InvoiceLineItem{{Description: plan.Name, Quantity: 1, UnitPrice: amount}}
-	profile, err := s.lifecycle.users.GetByID(ctx, sub.UserID)
-	if err != nil {
-		return intent, err
-	}
-	if profile.AppID != sub.AppID {
-		return intent, apperrors.NotFound("customer", sub.UserID)
-	}
-	state := ""
-	if profile.BillingAddress != nil {
-		state = profile.BillingAddress.State
-	}
-	tax, err := s.lifecycle.configSvc.TaxConfig(ctx, sub.AppID)
-	if err != nil {
-		return intent, err
-	}
-	if plan.TaxInclusive {
-		tax.TaxInclusive = true
-	}
-	totals, err := bizbilling.ComputeInvoiceTotalsChecked(items, tax, state, nil)
-	if err != nil {
-		return intent, err
-	}
-	if totals.TotalPaisa < 100 || totals.TotalPaisa > math.MaxUint32 {
+	if price.TotalPaisa < 100 || price.TotalPaisa > math.MaxUint32 {
 		return intent, apperrors.BadRequest("This amount is outside the supported automatic plan range; use invoice collection")
 	}
-	terms, _, err := validatedInvoiceTerms(ctx, s.lifecycle.configSvc, sub.AppID, "", now)
-	if err != nil {
-		return intent, err
-	}
-	price := bizbilling.SubscriptionPriceSnapshot{PlanID: plan.ID, PlanName: plan.Name, BillingCycle: plan.BillingCycle, CycleDays: plan.CycleDays, InvoicePreview: bizbilling.InvoicePreview{Currency: plan.Currency, LineItems: items, SubtotalPaisa: totals.SubtotalPaisa, DiscountPaisa: totals.DiscountPaisa, TaxAmountPaisa: totals.TaxPaisa, TaxBreakdown: totals.Breakdown, TotalPaisa: totals.TotalPaisa, PaymentTerms: terms}}
 	merchant, err := s.merchants.Snapshot(ctx, sub.AppID, mode)
 	if err != nil {
 		return intent, err
@@ -102,13 +93,20 @@ func (s *BizRecurringService) recurringIntent(ctx context.Context, sub *bizbilli
 	if err = s.merchants.connections.RecordRecurringCapability(ctx, bizbilling.RecurringCapability{AppID: sub.AppID, Gateway: ref, VerifiedAt: now}); err != nil {
 		return intent, err
 	}
-	start := sub.CurrentPeriodEnd.Truncate(time.Second)
-	if start.Before(sub.CurrentPeriodEnd) {
+	startAt := sub.CurrentPeriodEnd
+	startOnAuthorization := sub.InitialAutomaticPeriod && (sub.TrialEnd == nil || !sub.TrialEnd.After(now.Add(10*time.Minute)))
+	if sub.InitialAutomaticPeriod && sub.TrialEnd != nil && !startOnAuthorization {
+		startAt = *sub.TrialEnd
+	}
+	start := startAt.Truncate(time.Second)
+	if start.Before(startAt) {
 		start = start.Add(time.Second)
 	}
 	expires := now.Add(24 * time.Hour).Truncate(time.Second)
-	if limit := start.Add(-time.Minute); limit.Before(expires) {
+	if startOnAuthorization {
+		start = time.Time{}
+	} else if limit := start.Add(-time.Minute); limit.Before(expires) {
 		expires = limit
 	}
-	return bizbilling.RecurringIntent{OperationID: id, SubscriptionID: sub.ID, Scope: sub.FinancialScope(), Gateway: ref, Name: plan.Name, Period: period, Interval: interval, TotalCount: sub.AutomaticCycles, AmountPaisa: totals.TotalPaisa, Currency: plan.Currency, StartAt: start, ExpireBy: expires, Price: price}, nil
+	return bizbilling.RecurringIntent{StartOnAuthorization: startOnAuthorization, OperationID: id, SubscriptionID: sub.ID, Scope: sub.FinancialScope(), Gateway: ref, Name: plan.Name, Period: period, Interval: interval, TotalCount: sub.AutomaticCycles, AmountPaisa: price.TotalPaisa, Currency: plan.Currency, StartAt: start, ExpireBy: expires, Price: *price}, nil
 }

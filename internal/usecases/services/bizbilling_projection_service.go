@@ -58,9 +58,6 @@ func (s *BizOperationService) applyFinancialProjection(ctx context.Context, clai
 	if event.BalanceAfter == nil {
 		return bizbilling.ErrReconciliationRequired
 	}
-	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Subscriptions, event.SubscriptionAfter, claim.Scope, claim.Sequence); err != nil {
-		return err
-	}
 	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Estimates, event.EstimateAfter, claim.Scope, claim.Sequence); err != nil {
 		return err
 	}
@@ -77,6 +74,12 @@ func (s *BizOperationService) applyFinancialProjection(ctx context.Context, clai
 		return err
 	}
 	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Invoices, event.InvoiceAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Periods, event.PeriodAfter, claim.Scope, claim.Sequence); err != nil {
+		return err
+	}
+	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Subscriptions, event.SubscriptionAfter, claim.Scope, claim.Sequence); err != nil {
 		return err
 	}
 	if err := bizbillingrepo.ProjectSnapshot(ctx, s.stores.Payments, event.PaymentAfter, claim.Scope, claim.Sequence); err != nil {

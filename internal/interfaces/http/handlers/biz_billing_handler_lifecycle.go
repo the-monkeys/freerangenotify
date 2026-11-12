@@ -130,6 +130,7 @@ func (h *BizBillingHandler) UpdateSubscription(c *fiber.Ctx) error {
 
 // ChangePlan handles POST /v1/biz/subscriptions/:id/change-plan
 // @Summary Change Plan
+// @Param request body bizbilling.ChangePlanRequest true "Plan change; omitted timing preserves immediate manual proration"
 // @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
 // @Tags BizBilling
 // @Produce json
@@ -146,15 +147,12 @@ func (h *BizBillingHandler) ChangePlan(c *fiber.Ctx) error {
 		return h.handleError(c, err)
 	}
 
-	var req struct {
-		PlanID   string `json:"plan_id"`
-		Quantity *int   `json:"quantity,omitempty"`
-	}
+	var req bizbilling.ChangePlanRequest
 	if err := c.BodyParser(&req); err != nil || req.PlanID == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "plan_id is required"})
 	}
 
-	sub, err := h.lifecycleSvc.ChangePlan(c.UserContext(), appID, c.Params("id"), req.PlanID, req.Quantity)
+	sub, err := h.lifecycleSvc.ChangePlanAt(c.UserContext(), appID, c.Params("id"), req.PlanID, req.Quantity, req.ChangeTiming)
 	if err != nil {
 		return h.handleError(c, err)
 	}

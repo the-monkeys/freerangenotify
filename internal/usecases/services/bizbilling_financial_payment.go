@@ -34,6 +34,9 @@ func (s *BizOperationService) financialInvoice(ctx context.Context, scope bizbil
 	if err = invoiceAccountingInvariant(i); err != nil {
 		return nil, err
 	}
+	if err = s.releaseStoppedInvoiceOwner(ctx, i); err != nil {
+		return nil, err
+	}
 	return i, nil
 }
 func invoiceAccountingInvariant(i *bizbilling.BizInvoice) error {
@@ -59,6 +62,12 @@ func invoiceAccountingInvariant(i *bizbilling.BizInvoice) error {
 func (s *BizOperationService) buildResourceFinancialEvent(ctx context.Context, command bizbilling.Command, claim bizbilling.StreamClaim, event bizbilling.JournalEvent, balance bizbilling.CustomerBalance) (bizbilling.JournalEvent, error) {
 	var err error
 	switch command.Kind {
+	case bizbilling.CommandSubscriptionCreate:
+		err = s.buildSubscriptionCreate(ctx, command, &event)
+	case bizbilling.CommandSubscriptionChange:
+		err = s.buildSubscriptionChange(ctx, command, &event)
+	case bizbilling.CommandSubscriptionPeriod:
+		err = s.buildSubscriptionPeriod(ctx, command, &event)
 	case bizbilling.CommandSubscriptionCollection:
 		err = s.buildSubscriptionCollection(ctx, command, &event)
 	case bizbilling.CommandInvoiceReminder:
@@ -103,6 +112,9 @@ func (s *BizOperationService) buildResourceFinancialEvent(ctx context.Context, c
 		if err = invoiceAccountingInvariant(event.InvoiceAfter); err != nil {
 			return event, err
 		}
+	}
+	if err = s.syncInvoiceSubscriptionStatus(ctx, &event); err != nil {
+		return event, err
 	}
 	if balance.AvailablePaisa < 0 || balance.ReservedPaisa < 0 || balance.NonRefundablePaisa < 0 || balance.NonRefundablePaisa > balance.AvailablePaisa {
 		return event, bizbilling.ErrReconciliationRequired

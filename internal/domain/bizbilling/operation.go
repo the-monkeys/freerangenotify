@@ -17,6 +17,9 @@ const (
 // Command is a closed set of financial intents. Persist typed inputs; never
 // store a generic patch or executable workflow received from an API client.
 type Command struct {
+	SubscriptionCreate     *SubscriptionCreate       `json:"subscription_create,omitempty"`
+	SubscriptionChange     *SubscriptionChange       `json:"subscription_change,omitempty"`
+	SubscriptionPeriod     *SubscriptionPeriod       `json:"subscription_period,omitempty"`
 	SubscriptionCollection *SubscriptionCollection   `json:"subscription_collection,omitempty"`
 	ExpenseConvert         *ExpenseConvert           `json:"expense_convert,omitempty"`
 	InvoiceReminder        *InvoiceReminder          `json:"invoice_reminder,omitempty"`
@@ -62,7 +65,7 @@ func (c Command) Validate() error {
 		return ErrInvalidMoney
 	}
 	payloads := 0
-	for _, present := range []bool{c.SubscriptionCollection != nil, c.OpeningBalance != nil, c.BalanceAdjustment != nil, c.ManualPayment != nil, c.BalanceApplication != nil, c.RefundReservation != nil, c.RefundSettlement != nil, c.InvoiceDraft != nil, c.InvoiceChange != nil, c.CreditSourceCreate != nil, c.CreditSourceChange != nil, c.CreditReversal != nil, c.CouponApply != nil, c.RefundRelease != nil, c.OfflineRefund != nil, c.BalanceSet != nil, c.EstimateConvert != nil, c.BalanceConsume != nil, c.ExpenseConvert != nil, c.InvoiceReminder != nil} {
+	for _, present := range []bool{c.SubscriptionCreate != nil, c.SubscriptionChange != nil, c.SubscriptionPeriod != nil, c.SubscriptionCollection != nil, c.OpeningBalance != nil, c.BalanceAdjustment != nil, c.ManualPayment != nil, c.BalanceApplication != nil, c.RefundReservation != nil, c.RefundSettlement != nil, c.InvoiceDraft != nil, c.InvoiceChange != nil, c.CreditSourceCreate != nil, c.CreditSourceChange != nil, c.CreditReversal != nil, c.CouponApply != nil, c.RefundRelease != nil, c.OfflineRefund != nil, c.BalanceSet != nil, c.EstimateConvert != nil, c.BalanceConsume != nil, c.ExpenseConvert != nil, c.InvoiceReminder != nil} {
 		if present {
 			payloads++
 		}
@@ -71,6 +74,26 @@ func (c Command) Validate() error {
 		return ErrInvalidMoney
 	}
 	switch c.Kind {
+	case CommandSubscriptionCreate:
+		p := c.SubscriptionCreate
+		if p == nil || p.Request.UserID != c.Scope.UserID || p.Request.PlanID == "" || p.Request.Quantity < 0 || p.Request.TrialDays < 0 || p.Request.TrialDays > 3650 || (p.Request.CollectionMode != "" && !p.Request.CollectionMode.Valid()) || (p.Request.GatewayMode != "" && !p.Request.GatewayMode.Valid()) {
+			return ErrInvalidMoney
+		}
+	case CommandSubscriptionChange:
+		p := c.SubscriptionChange
+		if p == nil || p.SubscriptionID == "" || (p.Update.Quantity != nil && *p.Update.Quantity < 1) || (p.Update.ChangeTiming != "" && p.Update.ChangeTiming != "immediate" && p.Update.ChangeTiming != "next_period") {
+			return ErrInvalidMoney
+		}
+		switch p.Action {
+		case "update", "pause", "resume", "cancel", "reactivate", "native_pending", "start_invoice":
+		default:
+			return ErrInvalidMoney
+		}
+	case CommandSubscriptionPeriod:
+		p := c.SubscriptionPeriod
+		if p == nil || p.SubscriptionID == "" || p.Start.IsZero() || !p.End.After(p.Start) || len(p.ProviderInvoiceID) > 200 {
+			return ErrInvalidPeriod
+		}
 	case CommandSubscriptionCollection:
 		p := c.SubscriptionCollection
 		if p == nil || p.SubscriptionID == "" || !p.Mode.Valid() || p.ExpectedGeneration < 0 || (p.AutomaticCycles != nil && (*p.AutomaticCycles < 1 || *p.AutomaticCycles > 120)) {
@@ -274,6 +297,7 @@ type StreamClaim struct {
 // JournalEvent is frozen before append. Absolute typed projections and their
 // sequence checkpoints make recovery independent of later configuration edits.
 type JournalEvent struct {
+	PeriodAfter            *BillingPeriod       `json:"period_after,omitempty"`
 	SubscriptionAfter      *BizSubscription     `json:"subscription_after,omitempty"`
 	ExpensesAfter          []Expense            `json:"expenses_after,omitempty"`
 	BalanceConsumedPaisa   int64                `json:"balance_consumed_paisa,omitempty"`

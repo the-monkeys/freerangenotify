@@ -588,6 +588,17 @@ components:
                 collection_mode:
                     $ref: '#/components/schemas/bizbilling.CollectionMode'
             type: object
+        bizbilling.ChangePlanRequest:
+            properties:
+                change_timing:
+                    type: string
+                plan_id:
+                    type: string
+                quantity:
+                    type: integer
+            required:
+                - plan_id
+            type: object
         bizbilling.CheckoutProof:
             properties:
                 razorpay_order_id:
@@ -1368,6 +1379,8 @@ components:
                     $ref: '#/components/schemas/bizbilling.Scope'
                 start_at:
                     type: string
+                start_on_authorization:
+                    type: boolean
                 subscription_id:
                     type: string
                 total_count:
@@ -1669,6 +1682,8 @@ components:
                     type: array
                 cancel_at_period_end:
                     type: boolean
+                change_timing:
+                    type: string
                 metadata:
                     additionalProperties: true
                     type: object
@@ -11568,6 +11583,14 @@ paths:
                   required: true
                   schema:
                     type: string
+            requestBody:
+                content:
+                    '*/*':
+                        schema:
+                            $ref: '#/components/schemas/bizbilling.ChangePlanRequest'
+                description: Plan change; omitted timing preserves immediate manual proration
+                required: true
+                x-originalParamName: request
             responses:
                 "200":
                     content:

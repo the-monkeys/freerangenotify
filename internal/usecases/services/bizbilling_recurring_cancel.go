@@ -111,6 +111,17 @@ func (s *BizRecurringService) resumeCancelEffect(ctx context.Context, sub *bizbi
 			return bizbilling.OperationResult{}, bizbilling.ErrGatewayPending
 		}
 	}
+	if _, supported := gateway.(bizbilling.RecurringInvoiceGateway); supported {
+		original, loadErr := s.effects.Get(ctx, sub.AuthorizationEffectID)
+		if loadErr != nil {
+			return bizbilling.OperationResult{}, loadErr
+		}
+		if _, syncErr := s.syncProviderEffect(ctx, sub, original); syncErr != nil {
+			return bizbilling.OperationResult{}, syncErr
+		}
+	} else if sub.InitialAutomaticPeriod {
+		return bizbilling.OperationResult{}, bizbilling.ErrGatewayPending
+	}
 	result, err := s.applyCollection(ctx, sub, bizbilling.SubscriptionCollection{Action: "cancel", Mode: bizbilling.CollectionInvoice, RemoteID: effect.ProviderID, Gateway: &effect.Gateway, ExpectedGeneration: effect.SubscriptionGeneration}, effect.ID+":settled")
 	if err != nil {
 		return result, err

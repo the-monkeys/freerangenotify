@@ -17,14 +17,29 @@ import (
 )
 
 func TestBizAutomaticRazorpayWireContracts(t *testing.T) {
+	for _, initial := range []bool{false, true} {
+		t.Run(map[bool]string{false: "future_existing", true: "initial_on_authorization"}[initial], func(t *testing.T) { testBizAutomaticRazorpayWireContracts(t, initial) })
+	}
+}
+func testBizAutomaticRazorpayWireContracts(t *testing.T, initial bool) {
 	ctx := context.Background()
 	ref := bizbilling.GatewayRef{ConnectionID: "fixture-business", AccountID: "acc_fixture", Mode: bizbilling.GatewayTest, CredentialRevision: 1}
 	intent := bizbilling.RecurringIntent{OperationID: "fixture-recurring", SubscriptionID: "fixture-subscription", Scope: bizbilling.Scope{AppID: "fixture-app", UserID: "fixture-user", Currency: "INR", Mode: bizbilling.GatewayTest}, Gateway: ref, Name: "Monthly service", AmountPaisa: 1180, Currency: "INR", Period: "monthly", Interval: 1, TotalCount: 12, StartAt: time.Unix(1900000000, 0).UTC(), ExpireBy: time.Unix(1899900000, 0).UTC()}
+	if initial {
+		intent.StartOnAuthorization, intent.StartAt = true, time.Time{}
+	}
+	providerStart := intent.StartAt.Unix()
+	if initial {
+		providerStart = 0
+	}
 	status := "created"
 	posts := 0
 	failPause := false
 	plan := map[string]any{"id": "plan_fixture", "entity": "plan", "period": "monthly", "interval": 1, "item": map[string]any{"name": intent.Name, "amount": int64(1180), "currency": "INR"}, "notes": map[string]string{"frn_operation": intent.OperationID, "frn_app": intent.Scope.AppID}}
 	notes := map[string]string{"frn_operation": intent.OperationID, "frn_subscription": intent.SubscriptionID, "frn_app": intent.Scope.AppID, "frn_user": intent.Scope.UserID, "frn_connection": ref.ConnectionID, "frn_account": ref.AccountID, "frn_mode": "test", "frn_revision": "1"}
+	if initial {
+		notes["frn_start"] = "authorization"
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key, secret, ok := r.BasicAuth()
 		require.True(t, ok)
@@ -35,7 +50,7 @@ func TestBizAutomaticRazorpayWireContracts(t *testing.T) {
 			posts++
 		}
 		remote := func() map[string]any {
-			return map[string]any{"id": "sub_fixture", "entity": "subscription", "plan_id": "plan_fixture", "status": status, "quantity": 1, "total_count": 12, "start_at": intent.StartAt.Unix(), "expire_by": intent.ExpireBy.Unix(), "notes": notes}
+			return map[string]any{"id": "sub_fixture", "entity": "subscription", "plan_id": "plan_fixture", "status": status, "quantity": 1, "total_count": 12, "start_at": providerStart, "expire_by": intent.ExpireBy.Unix(), "notes": notes}
 		}
 		switch r.Method + " " + r.URL.Path {
 		case "POST /v1/plans":
@@ -68,7 +83,7 @@ func TestBizAutomaticRazorpayWireContracts(t *testing.T) {
 				TotalCount     int               `json:"total_count"`
 				Quantity       int               `json:"quantity"`
 				CustomerNotify bool              `json:"customer_notify"`
-				StartAt        int64             `json:"start_at"`
+				StartAt        *int64            `json:"start_at"`
 				ExpireBy       int64             `json:"expire_by"`
 				Notes          map[string]string `json:"notes"`
 			}
@@ -79,7 +94,12 @@ func TestBizAutomaticRazorpayWireContracts(t *testing.T) {
 			require.Equal(t, 12, body.TotalCount)
 			require.Equal(t, 1, body.Quantity)
 			require.False(t, body.CustomerNotify)
-			require.Equal(t, intent.StartAt.Unix(), body.StartAt)
+			if initial {
+				require.Nil(t, body.StartAt, "omit start_at so the first cycle starts on authorization")
+			} else {
+				require.NotNil(t, body.StartAt)
+				require.Equal(t, intent.StartAt.Unix(), *body.StartAt)
+			}
 			require.Equal(t, intent.ExpireBy.Unix(), body.ExpireBy)
 			require.Equal(t, notes, body.Notes)
 			json.NewEncoder(w).Encode(remote())

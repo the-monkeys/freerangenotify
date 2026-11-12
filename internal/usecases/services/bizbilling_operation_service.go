@@ -18,6 +18,7 @@ import (
 // BizOperationService coordinates immutable financial facts and replayable
 // projections. It never waits for a gateway while holding a customer stream.
 type BizOperationService struct {
+	gatewayEffects  *bizbillingrepo.Store[bizbilling.GatewayEffect]
 	legacyReviews   *bizbillingrepo.MigrationReviewRepo
 	expenseClaims   *bizbillingrepo.ExpenseClaimRepo
 	couponCapacity  *bizbillingrepo.CouponCapacityRepo
@@ -35,7 +36,7 @@ type BizOperationService struct {
 }
 
 func NewBizOperationService(es *elasticsearch.Client, logger *zap.Logger) *BizOperationService {
-	return &BizOperationService{legacyReviews: bizbillingrepo.NewMigrationReviewRepo(es, logger), expenseClaims: bizbillingrepo.NewExpenseClaimRepo(es, logger), couponCapacity: bizbillingrepo.NewCouponCapacityRepo(es, logger), config: NewBizConfigService(bizbillingrepo.NewConfigRepo(es, logger), logger), profiles: bizbillingrepo.NewStore[user.User](es, "users", logger), stores: bizbillingrepo.NewStores(es, logger, repository.RefreshFalse), operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
+	return &BizOperationService{gatewayEffects: bizbillingrepo.NewStore[bizbilling.GatewayEffect](es, bizbillingrepo.GatewayEffectIndex, logger, repository.RefreshFalse), legacyReviews: bizbillingrepo.NewMigrationReviewRepo(es, logger), expenseClaims: bizbillingrepo.NewExpenseClaimRepo(es, logger), couponCapacity: bizbillingrepo.NewCouponCapacityRepo(es, logger), config: NewBizConfigService(bizbillingrepo.NewConfigRepo(es, logger), logger), profiles: bizbillingrepo.NewStore[user.User](es, "users", logger), stores: bizbillingrepo.NewStores(es, logger, repository.RefreshFalse), operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
 }
 
 // Start recovers persisted work independently of the hourly renewal job. It

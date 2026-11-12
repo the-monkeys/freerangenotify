@@ -19,6 +19,7 @@ import (
 // engine, sequential numbering, coupons, credits, the payment gateway, and
 // billing notifications.
 type BizLifecycleService struct {
+	periods         *BizPeriodService
 	refunds         *BizRefundService
 	operations      *BizOperationService
 	gate            *BizLifecycleGate
@@ -88,6 +89,11 @@ func (s *BizLifecycleService) getOwnedInvoice(ctx context.Context, appID, id str
 	if err := guardFinancialRead(ctx, s.gate, s.operations, inv.FinancialScope(), inv.LastSequence); err != nil {
 		return nil, err
 	}
+	if s.operations != nil {
+		if err = s.operations.releaseStoppedInvoiceOwner(ctx, inv); err != nil {
+			return nil, err
+		}
+	}
 	return inv, nil
 }
 
@@ -143,6 +149,9 @@ func (s *BizLifecycleService) customerState(ctx context.Context, userID string) 
 // CreateSubscription creates a subscription and, unless trialing, generates
 // and issues its first invoice (plan charge + setup fee + addons).
 func (s *BizLifecycleService) CreateSubscription(ctx context.Context, appID string, req *bizbilling.CreateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionCreate(ctx, appID, req); handled || err != nil {
+		return sub, err
+	}
 	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
 		return nil, err
 	}
@@ -343,6 +352,15 @@ func (s *BizLifecycleService) MarkOverdue(ctx context.Context, inv *bizbilling.B
 // UpdateSubscription applies partial updates (addons, quantity, flags).
 // Plan changes go through ChangePlan for proper proration.
 func (s *BizLifecycleService) UpdateSubscription(ctx context.Context, appID, id string, req *bizbilling.UpdateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
+	if req == nil {
+		return nil, bizbilling.ErrInvalidMoney
+	}
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "update", Update: *req}); handled || err != nil {
+		return sub, err
+	}
+	if req.ChangeTiming != "" && req.ChangeTiming != "immediate" {
+		return nil, errors.Conflict("Scheduled changes require the reviewed billing lifecycle")
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -376,6 +394,9 @@ func (s *BizLifecycleService) UpdateSubscription(ctx context.Context, appID, id 
 // proration: the unused portion of the old plan becomes a credit note and the
 // prorated new-plan charge is invoiced immediately.
 func (s *BizLifecycleService) ChangePlan(ctx context.Context, appID, id, newPlanID string, quantity *int) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "update", Update: bizbilling.UpdateSubscriptionRequest{PlanID: &newPlanID, Quantity: quantity}}); handled || err != nil {
+		return sub, err
+	}
 	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
 		return nil, err
 	}
@@ -458,6 +479,9 @@ func (s *BizLifecycleService) ChangePlan(ctx context.Context, appID, id, newPlan
 
 // CancelSubscription cancels immediately or at period end.
 func (s *BizLifecycleService) CancelSubscription(ctx context.Context, appID, id string, atPeriodEnd bool) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "cancel", AtPeriodEnd: atPeriodEnd}); handled || err != nil {
+		return sub, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -493,6 +517,9 @@ func (s *BizLifecycleService) CancelSubscription(ctx context.Context, appID, id 
 
 // PauseSubscription pauses an active subscription.
 func (s *BizLifecycleService) PauseSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "pause"}); handled || err != nil {
+		return sub, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -520,6 +547,9 @@ func (s *BizLifecycleService) PauseSubscription(ctx context.Context, appID, id s
 
 // ResumeSubscription resumes a paused subscription.
 func (s *BizLifecycleService) ResumeSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "resume"}); handled || err != nil {
+		return sub, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -539,6 +569,9 @@ func (s *BizLifecycleService) ResumeSubscription(ctx context.Context, appID, id 
 
 // ReactivateSubscription reactivates a canceled subscription.
 func (s *BizLifecycleService) ReactivateSubscription(ctx context.Context, appID, id string) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "reactivate"}); handled || err != nil {
+		return sub, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -559,6 +592,9 @@ func (s *BizLifecycleService) ReactivateSubscription(ctx context.Context, appID,
 
 // SetNonRenewing flags a subscription to stop renewing at period end.
 func (s *BizLifecycleService) SetNonRenewing(ctx context.Context, appID, id string, nonRenewing bool) (*bizbilling.BizSubscription, error) {
+	if sub, handled, err := s.trySubscriptionChange(ctx, appID, id, bizbilling.SubscriptionChange{Action: "update", Update: bizbilling.UpdateSubscriptionRequest{NonRenewing: &nonRenewing}}); handled || err != nil {
+		return sub, err
+	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {
 		return nil, mutationErr
@@ -575,6 +611,9 @@ func (s *BizLifecycleService) SetNonRenewing(ctx context.Context, appID, id stri
 func (s *BizLifecycleService) ListSubscriptions(ctx context.Context, filter bizbilling.SubscriptionFilter) ([]*bizbilling.BizSubscription, int, error) {
 	subs, total, err := s.repo.ListSubscriptions(ctx, filter)
 	if err != nil {
+		return nil, 0, err
+	}
+	if err = guardFinancialRows(ctx, s.gate, s.operations, subs); err != nil {
 		return nil, 0, err
 	}
 	for _, sub := range subs {

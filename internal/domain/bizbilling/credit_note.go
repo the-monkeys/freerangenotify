@@ -27,6 +27,7 @@ const (
 // CreditNote represents a credit issued to a customer for billing
 // corrections or partial refunds. BalancePaisa tracks the unconsumed amount.
 type CreditNote struct {
+	GatewayMode      GatewayMode      `json:"gateway_mode,omitempty"`
 	Currency         string           `json:"currency,omitempty"`
 	LastSequence     int64            `json:"billing_sequence,omitempty"`
 	RefundedPaisa    int64            `json:"refunded_paisa,omitempty"`
@@ -100,7 +101,11 @@ type RetainerFilter struct {
 }
 
 func (a CreditNote) FinancialScope() Scope {
-	return Scope{AppID: a.AppID, UserID: a.UserID, Currency: a.Currency}
+	scope := Scope{AppID: a.AppID, UserID: a.UserID, Currency: a.Currency}
+	if a.GatewayMode == GatewayTest {
+		scope.Mode = GatewayTest
+	}
+	return scope
 }
 func (a CreditNote) FinancialSequence() int64 { return a.LastSequence }
 func (a CreditNote) FinancialID() string      { return a.ID }

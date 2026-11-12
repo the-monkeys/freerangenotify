@@ -71,7 +71,7 @@ func (g *bizRazorpayGateway) CheckRecurring(ctx context.Context) error {
 }
 
 func (g *bizRazorpayGateway) validRecurringIntent(intent bizbilling.RecurringIntent) bool {
-	return intent.Scope.Validate() == nil && intent.Scope.AppID == g.credentials.AppID && intent.Gateway == g.credentials.Reference && (intent.Gateway.Mode == bizbilling.GatewayTest) == (intent.Scope.Mode == bizbilling.GatewayTest) && intent.OperationID != "" && intent.SubscriptionID != "" && intent.Currency == "INR" && intent.Scope.Currency == intent.Currency && intent.AmountPaisa >= 100 && intent.AmountPaisa <= 4294967295 && intent.TotalCount >= 1 && intent.TotalCount <= 120 && intent.Interval >= 1 && (intent.Period == "weekly" || intent.Period == "monthly" || intent.Period == "yearly") && intent.StartAt.Unix() > 0 && intent.ExpireBy.Unix() > 0
+	return intent.Scope.Validate() == nil && intent.Scope.AppID == g.credentials.AppID && intent.Gateway == g.credentials.Reference && (intent.Gateway.Mode == bizbilling.GatewayTest) == (intent.Scope.Mode == bizbilling.GatewayTest) && intent.OperationID != "" && intent.SubscriptionID != "" && intent.Currency == "INR" && intent.Scope.Currency == intent.Currency && intent.AmountPaisa >= 100 && intent.AmountPaisa <= 4294967295 && intent.TotalCount >= 1 && intent.TotalCount <= 120 && intent.Interval >= 1 && (intent.Period == "weekly" || intent.Period == "monthly" || intent.Period == "yearly") && ((intent.StartOnAuthorization && intent.StartAt.IsZero()) || (!intent.StartOnAuthorization && intent.StartAt.Unix() > 0)) && intent.ExpireBy.Unix() > 0
 }
 
 func (g *bizRazorpayGateway) checkedRecurringPlan(raw razorpayRecurringPlan, intent bizbilling.RecurringIntent) (bizbilling.GatewayRecurringPlan, error) {
@@ -134,12 +134,16 @@ func (g *bizRazorpayGateway) FindRecurringPlan(ctx context.Context, intent bizbi
 }
 
 func recurringSubscriptionNotes(intent bizbilling.RecurringIntent) map[string]string {
-	return map[string]string{"frn_operation": intent.OperationID, "frn_subscription": intent.SubscriptionID, "frn_app": intent.Scope.AppID, "frn_user": intent.Scope.UserID, "frn_connection": intent.Gateway.ConnectionID, "frn_account": intent.Gateway.AccountID, "frn_mode": string(intent.Gateway.Mode), "frn_revision": strconv.FormatInt(intent.Gateway.CredentialRevision, 10)}
+	notes := map[string]string{"frn_operation": intent.OperationID, "frn_subscription": intent.SubscriptionID, "frn_app": intent.Scope.AppID, "frn_user": intent.Scope.UserID, "frn_connection": intent.Gateway.ConnectionID, "frn_account": intent.Gateway.AccountID, "frn_mode": string(intent.Gateway.Mode), "frn_revision": strconv.FormatInt(intent.Gateway.CredentialRevision, 10)}
+	if intent.StartOnAuthorization {
+		notes["frn_start"] = "authorization"
+	}
+	return notes
 }
 
 func (g *bizRazorpayGateway) checkedSubscription(ctx context.Context, raw razorpaySubscription) (bizbilling.GatewaySubscription, error) {
 	var result bizbilling.GatewaySubscription
-	if !providerEntityID.MatchString(raw.ID) || !providerEntityID.MatchString(raw.PlanID) || raw.Entity != "subscription" || raw.Quantity != 1 || raw.StartAt <= 0 || raw.ExpireBy <= 0 || raw.TotalCount < 1 || raw.TotalCount > 120 {
+	if !providerEntityID.MatchString(raw.ID) || !providerEntityID.MatchString(raw.PlanID) || raw.Entity != "subscription" || raw.Quantity != 1 || (raw.Notes["frn_start"] != "authorization" && raw.StartAt <= 0) || raw.StartAt < 0 || raw.ExpireBy <= 0 || raw.TotalCount < 1 || raw.TotalCount > 120 {
 		return result, bizbilling.ErrInvalidGatewayProof
 	}
 	switch raw.Status {
@@ -167,6 +171,9 @@ func (g *bizRazorpayGateway) checkedSubscription(ctx context.Context, raw razorp
 		scope.Mode = bizbilling.GatewayTest
 	}
 	intent := bizbilling.RecurringIntent{OperationID: raw.Notes["frn_operation"], SubscriptionID: raw.Notes["frn_subscription"], Scope: scope, Gateway: ref, Name: plan.Item.Name, PlanID: plan.ID, Period: plan.Period, Interval: plan.Interval, AmountPaisa: plan.Item.Amount, Currency: plan.Item.Currency, TotalCount: raw.TotalCount, StartAt: time.Unix(raw.StartAt, 0).UTC(), ExpireBy: time.Unix(raw.ExpireBy, 0).UTC()}
+	if raw.Notes["frn_start"] == "authorization" {
+		intent.StartOnAuthorization, intent.StartAt = true, time.Time{}
+	}
 	if !g.validRecurringIntent(intent) {
 		return result, bizbilling.ErrInvalidGatewayProof
 	}
@@ -185,6 +192,9 @@ func (g *bizRazorpayGateway) CreateSubscription(ctx context.Context, intent bizb
 		return bizbilling.GatewaySubscription{}, bizbilling.ErrInvalidGatewayProof
 	}
 	request := map[string]any{"plan_id": intent.PlanID, "quantity": 1, "total_count": intent.TotalCount, "customer_notify": false, "start_at": intent.StartAt.Unix(), "expire_by": intent.ExpireBy.Unix(), "notes": recurringSubscriptionNotes(intent)}
+	if intent.StartOnAuthorization {
+		delete(request, "start_at")
+	}
 	var result razorpaySubscription
 	if err := g.request(ctx, http.MethodPost, "/subscriptions", request, &result); err != nil {
 		return bizbilling.GatewaySubscription{}, err

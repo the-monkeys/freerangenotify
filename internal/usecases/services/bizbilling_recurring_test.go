@@ -80,7 +80,14 @@ func (g *recurringGateway) ChangeSubscription(_ context.Context, id string, acti
 	if g.cancelPending {
 		return bizbilling.GatewaySubscription{}, bizbilling.ErrGatewayPending
 	}
-	g.remote.Status = "cancelled"
+	switch action {
+	case bizbilling.SubscriptionPause:
+		g.remote.Status = "paused"
+	case bizbilling.SubscriptionResume:
+		g.remote.Status = "active"
+	default:
+		g.remote.Status = "cancelled"
+	}
 	return *g.remote, nil
 }
 

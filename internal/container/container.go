@@ -1006,6 +1006,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizGatewayEventService.SetRefundProcessor(container.BizRefundService)
 		container.BizRecurringService = services.NewBizRecurringService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
 		container.BizRecurringService.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
+		lifecycleSvc.SetPeriodService(services.NewBizPeriodService(esClient, lifecycleSvc, container.BizRecurringService, logger))
 		container.BizGatewayEventService.SetRecurringProcessor(container.BizRecurringService)
 		container.BizBillingHandler.SetRecurringService(container.BizRecurringService)
 		container.BizPortalHandler.SetRecurringService(container.BizRecurringService)

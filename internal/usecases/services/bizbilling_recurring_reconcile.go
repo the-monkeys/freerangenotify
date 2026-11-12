@@ -18,7 +18,7 @@ func (s *BizRecurringService) Reconcile(ctx context.Context, limit int) (int, er
 	if err := s.effects.Refresh(ctx); err != nil {
 		return 0, err
 	}
-	query := bizbillingrepo.NewQuery("").Terms("kind", []string{"subscription_authorize", "subscription_cancel"}).Terms("state", []string{"pending", "provider_created"})
+	query := bizbillingrepo.NewQuery("").Terms("kind", []string{"subscription_authorize", "subscription_cancel", "subscription_native_pause", "subscription_native_resume"}).Terms("state", []string{"pending", "provider_created", "provider_confirmed", "authorized", "active"})
 	body := query.Body("id", limit, 0)
 	body["sort"] = []map[string]any{{"id": "asc"}}
 	if s.cursor != "" {
@@ -46,12 +46,17 @@ func (s *BizRecurringService) Reconcile(ctx context.Context, limit int) (int, er
 		}
 		sub, err := s.lifecycle.GetSubscription(run, effect.Scope.AppID, effect.SubscriptionID)
 		if err == nil {
-			if effect.StopRequested && effect.Kind == "subscription_authorize" {
+			if effect.Kind == "subscription_native_pause" || effect.Kind == "subscription_native_resume" {
+				_, err = s.resumeNative(run, sub, effect)
+			} else if effect.StopRequested && effect.Kind == "subscription_authorize" {
 				_, err = s.stopAuthorization(run, sub, effect, "recover-stop-"+effect.ID)
 			} else if effect.Kind == "subscription_cancel" {
 				_, err = s.resumeCancelEffect(run, sub, effect)
 			} else {
 				_, err = s.resumeAuthorization(run, sub, effect)
+				if err == nil && (effect.State == "authorized" || effect.State == "active") {
+					_, err = s.syncProviderEffect(run, sub, effect)
+				}
 			}
 		}
 		releaseBizMutation(s.logger, done)

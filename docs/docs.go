@@ -876,6 +876,23 @@ const docTemplate = `{
             },
             "type": "object"
         },
+        "bizbilling.ChangePlanRequest": {
+            "properties": {
+                "change_timing": {
+                    "type": "string"
+                },
+                "plan_id": {
+                    "type": "string"
+                },
+                "quantity": {
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "plan_id"
+            ],
+            "type": "object"
+        },
         "bizbilling.CheckoutProof": {
             "properties": {
                 "razorpay_order_id": {
@@ -2025,6 +2042,9 @@ const docTemplate = `{
                 "start_at": {
                     "type": "string"
                 },
+                "start_on_authorization": {
+                    "type": "boolean"
+                },
                 "subscription_id": {
                     "type": "string"
                 },
@@ -2472,6 +2492,9 @@ const docTemplate = `{
                 },
                 "cancel_at_period_end": {
                     "type": "boolean"
+                },
+                "change_timing": {
+                    "type": "string"
                 },
                 "metadata": {
                     "additionalProperties": true,
@@ -15952,6 +15975,15 @@ const docTemplate = `{
             "post": {
                 "description": "Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.",
                 "parameters": [
+                    {
+                        "description": "Plan change; omitted timing preserves immediate manual proration",
+                        "in": "body",
+                        "name": "request",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/bizbilling.ChangePlanRequest"
+                        }
+                    },
                     {
                         "description": "id",
                         "in": "path",

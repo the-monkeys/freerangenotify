@@ -60,20 +60,21 @@ const (
 )
 
 type RecurringIntent struct {
-	OperationID    string                    `json:"operation_id"`
-	SubscriptionID string                    `json:"subscription_id"`
-	Scope          Scope                     `json:"scope"`
-	Gateway        GatewayRef                `json:"gateway"`
-	Name           string                    `json:"name"`
-	PlanID         string                    `json:"plan_id,omitempty"`
-	Period         string                    `json:"period"`
-	Interval       int                       `json:"interval"`
-	TotalCount     int                       `json:"total_count"`
-	AmountPaisa    int64                     `json:"amount_paisa"`
-	Currency       string                    `json:"currency"`
-	StartAt        time.Time                 `json:"start_at"`
-	ExpireBy       time.Time                 `json:"expire_by"`
-	Price          SubscriptionPriceSnapshot `json:"price"`
+	StartOnAuthorization bool                      `json:"start_on_authorization,omitempty"`
+	OperationID          string                    `json:"operation_id"`
+	SubscriptionID       string                    `json:"subscription_id"`
+	Scope                Scope                     `json:"scope"`
+	Gateway              GatewayRef                `json:"gateway"`
+	Name                 string                    `json:"name"`
+	PlanID               string                    `json:"plan_id,omitempty"`
+	Period               string                    `json:"period"`
+	Interval             int                       `json:"interval"`
+	TotalCount           int                       `json:"total_count"`
+	AmountPaisa          int64                     `json:"amount_paisa"`
+	Currency             string                    `json:"currency"`
+	StartAt              time.Time                 `json:"start_at"`
+	ExpireBy             time.Time                 `json:"expire_by"`
+	Price                SubscriptionPriceSnapshot `json:"price"`
 }
 
 type SubscriptionPriceSnapshot struct {

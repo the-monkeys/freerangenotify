@@ -118,7 +118,15 @@ func (s *BizMigrationService) inventory(ctx context.Context, appID, currency str
 	decisions := map[string]bizbilling.LegacyReviewDecision{}
 	normalized := map[string]migrationHeader{}
 	subscriptions := map[string]bool{}
+	subscriptionPlans := map[string]*bizbilling.Plan{}
 	for _, source := range sources {
+		if source.Index == "frn_biz_plans" {
+			var plan bizbilling.Plan
+			if err = json.Unmarshal(source.Source, &plan); err != nil {
+				return nil, nil, err
+			}
+			subscriptionPlans[source.ID] = &plan
+		}
 		report.SourceHashes[source.Index+"/"+source.ID] = source.Hash
 		report.ResourceCounts[source.Index]++
 		if source.Index == "users" {
@@ -149,7 +157,7 @@ func (s *BizMigrationService) inventory(ctx context.Context, appID, currency str
 			value.UserID = source.ID
 			value.Currency = value.BalanceCurrency
 		}
-		isMoney := source.Index == "users" || source.Index == "frn_biz_invoices" || source.Index == "frn_biz_payments" || source.Index == bizbillingrepo.CreditNoteIndex || source.Index == bizbillingrepo.RetainerIndex || source.Index == bizbillingrepo.EstimateIndex || source.Index == bizbillingrepo.ExpenseIndex
+		isMoney := source.Index == "users" || source.Index == "frn_biz_subscriptions" || source.Index == "frn_biz_invoices" || source.Index == "frn_biz_payments" || source.Index == bizbillingrepo.CreditNoteIndex || source.Index == bizbillingrepo.RetainerIndex || source.Index == bizbillingrepo.EstimateIndex || source.Index == bizbillingrepo.ExpenseIndex
 		if isMoney && value.Currency == "" && (source.Index != "users" || value.Balance != 0) {
 			id := bizbillingrepo.LegacyDecisionID(appID, source.Index, source.ID, source.ContentHash)
 			decision, readErr := s.reviews.Decisions.Get(ctx, id)
@@ -216,7 +224,31 @@ func (s *BizMigrationService) inventory(ctx context.Context, appID, currency str
 			issue(source, "legacy_gateway_adapter_required")
 		}
 		if source.Index == "frn_biz_subscriptions" && value.Status != string(bizbilling.SubscriptionStatusCanceled) {
-			issue(source, "subscription_lifecycle_not_ready")
+			var sub bizbilling.BizSubscription
+			if err = json.Unmarshal(source.Source, &sub); err != nil {
+				return nil, nil, err
+			}
+			if sub.EffectiveCollectionMode() != bizbilling.CollectionInvoice || sub.GatewaySubscriptionID != "" || sub.AuthorizationEffectID != "" || sub.Quantity < 1 {
+				issue(source, "subscription_collection_needs_review")
+			}
+			if sub.Status == bizbilling.SubscriptionStatusTrialing {
+				if sub.TrialEnd == nil || sub.TrialEnd.IsZero() {
+					issue(source, "subscription_period_needs_review")
+				}
+			} else if _, anchorErr := subscriptionAnchor(&sub); anchorErr != nil || !sub.CurrentPeriodEnd.After(sub.CurrentPeriodStart) {
+				issue(source, "subscription_period_needs_review")
+			}
+			plan := subscriptionPlans[sub.PlanID]
+			if plan == nil || plan.AppID != appID {
+				issue(source, "subscription_plan_missing")
+			} else {
+				if value.Currency != "" && plan.Currency != value.Currency {
+					issue(source, "subscription_currency_mismatch")
+				}
+				if _, priceErr := bizbilling.PlanChargeForChecked(plan, sub.Quantity); priceErr != nil || !bizbilling.ValidBillingCycles[plan.BillingCycle] || plan.BillingCycle == bizbilling.BillingCycleCustom && plan.CycleDays < 1 {
+					issue(source, "subscription_price_needs_review")
+				}
+			}
 		}
 		if source.Index == "frn_biz_payments" && value.ExcessCredit > 0 {
 			issue(source, "legacy_excess_provenance_requires_reconciliation")

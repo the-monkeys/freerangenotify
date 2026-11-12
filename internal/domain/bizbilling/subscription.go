@@ -9,18 +9,25 @@ import (
 type SubscriptionStatus string
 
 const (
-	SubscriptionStatusActive   SubscriptionStatus = "active"
-	SubscriptionStatusPaused   SubscriptionStatus = "paused"
-	SubscriptionStatusCanceled SubscriptionStatus = "canceled"
-	SubscriptionStatusTrialing SubscriptionStatus = "trialing"
-	SubscriptionStatusPastDue  SubscriptionStatus = "past_due"
-	SubscriptionStatusUnpaid   SubscriptionStatus = "unpaid"
+	SubscriptionStatusAwaitingAuthorization SubscriptionStatus = "awaiting_authorization"
+	SubscriptionStatusActive                SubscriptionStatus = "active"
+	SubscriptionStatusPaused                SubscriptionStatus = "paused"
+	SubscriptionStatusCanceled              SubscriptionStatus = "canceled"
+	SubscriptionStatusTrialing              SubscriptionStatus = "trialing"
+	SubscriptionStatusPastDue               SubscriptionStatus = "past_due"
+	SubscriptionStatusUnpaid                SubscriptionStatus = "unpaid"
 )
 
 // ─── Domain Models ───────────────────────────────────────────────────────
 
 // BizSubscription represents a customer's subscription to a plan.
 type BizSubscription struct {
+	InitialPriceSnapshot    *SubscriptionPriceSnapshot `json:"initial_price_snapshot,omitempty"`
+	NativeTransitionID      string                     `json:"native_transition_id,omitempty"`
+	InitialAutomaticPeriod  bool                       `json:"initial_automatic_period,omitempty"`
+	PendingChange           *PendingSubscriptionChange `json:"pending_change,omitempty"`
+	AnchorDay               int                        `json:"anchor_day,omitempty"`
+	LastPeriodID            string                     `json:"last_period_id,omitempty"`
 	Currency                string                     `json:"currency,omitempty"`
 	GatewayMode             GatewayMode                `json:"gateway_mode,omitempty"`
 	CollectionMode          CollectionMode             `json:"collection_mode,omitempty"`
@@ -76,10 +83,25 @@ type CreateSubscriptionRequest struct {
 
 // UpdateSubscriptionRequest represents the payload for updating a subscription.
 type UpdateSubscriptionRequest struct {
+	ChangeTiming      string                 `json:"change_timing,omitempty"`
 	PlanID            *string                `json:"plan_id,omitempty"`
 	AddonIDs          []string               `json:"addon_ids,omitempty"`
 	Quantity          *int                   `json:"quantity,omitempty"`
 	CancelAtPeriodEnd *bool                  `json:"cancel_at_period_end,omitempty"`
 	NonRenewing       *bool                  `json:"non_renewing,omitempty"`
 	Metadata          map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type ChangePlanRequest struct {
+	PlanID       string `json:"plan_id" validate:"required"`
+	Quantity     *int   `json:"quantity,omitempty"`
+	ChangeTiming string `json:"change_timing,omitempty"`
+}
+
+type PendingSubscriptionChange struct {
+	InitialPrice *SubscriptionPriceSnapshot `json:"initial_price,omitempty"`
+	PlanID       string                     `json:"plan_id"`
+	Quantity     int                        `json:"quantity"`
+	AddonIDs     []string                   `json:"addon_ids,omitempty"`
+	Price        SubscriptionPriceSnapshot  `json:"price"`
 }

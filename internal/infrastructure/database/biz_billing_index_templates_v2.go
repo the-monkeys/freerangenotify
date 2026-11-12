@@ -23,6 +23,10 @@ func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} 
 	})
 }
 func billingLong() map[string]interface{} { return map[string]interface{}{"type": "long"} }
+
+func (it *IndexTemplates) GetBizBillingPeriodsTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "scope": billingScope(), "subscription_id": billingKeyword(), "start": map[string]interface{}{"type": "date"}, "end": map[string]interface{}{"type": "date"}, "invoice_id": billingKeyword(), "provider_invoice_id": billingKeyword(), "billing_sequence": billingLong()})
+}
 func billingScope() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "dynamic": false, "properties": map[string]interface{}{"app_id": billingKeyword(), "user_id": billingKeyword(), "currency": billingKeyword(), "mode": billingKeyword()}}
 }

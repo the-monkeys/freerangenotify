@@ -94,7 +94,7 @@ The business's choice does not authorize a customer mandate. Request authorizati
 
 The initial automatic-collection support is for fixed INR plans with weekly, monthly, quarterly, half-yearly or yearly cycles. It includes the saved quantity and tax calculation. Choose 1–120 billing cycles explicitly. Tiered or usage-based prices, custom cycles, contracts, setup fees and add-ons continue to use invoice collection. Unsupported combinations are rejected before a provider plan or mandate is created. No currency conversion is performed.
 
-For a subscription already in progress, authorization applies to future periods after its existing period ends; outstanding invoices are not charged automatically. The authorization response shows its amount, currency, start, cycle count and expiry. Provider timestamps use whole seconds, so a new future start can be rounded up by less than one second without changing a historical period. New-subscription first-period invoicing and renewal synchronization use the separate period lifecycle.
+For a subscription already in progress, authorization applies to future periods after its existing period ends; outstanding invoices are not charged automatically. The authorization response shows its amount, currency, start, cycle count and expiry. Provider timestamps use whole seconds, so a new future start can be rounded up by less than one second without changing a historical period. New automatic subscriptions wait for authorization and their first provider-confirmed billing period; they do not generate a manual first bill or wait a free month before the first charge. Trial subscriptions start their first paid period after the trial. Invoice collection creates its own unpaid bills, with recovery that keeps one invoice per billing period. Neither a renewal nor authorization proves payment.
 
 To return to invoice collection, send `{"collection_mode":"invoice"}` with a new key. If an authorization or cancellation outcome is unknown, the subscription remains pending until lookup and confirmed cancellation establish that future automatic debits stopped. A cancellation retry stays bound to its original mandate; it cannot cancel a later authorization. Keep the original request key and operation reference instead of creating another mandate. Use `GET /v1/biz/gateway-effects/OPERATION_ID` to inspect saved external work.
 
@@ -131,9 +131,17 @@ A temporary failure can include `operation_id` and `operation_state`. Keep them.
 These journal and operation guarantees apply after an application's reviewed upgrade. Legacy applications retain their existing API behavior until that cutover.
 
 
+## Renewals and subscription changes
+
+Keep an `Idempotency-Key` when creating or changing a subscription. For reviewed applications, creation and the first manual invoice recover together; trial conversion retains the accepted price, setup fee and tax. Existing subscription IDs and stored billing dates are preserved. Short months retain the original anniversary rather than drifting permanently to February's date.
+
+`POST /v1/biz/subscriptions/SUBSCRIPTION_ID/change-plan` keeps immediate manual proration when `change_timing` is omitted. Send `{"plan_id":"PLAN_ID","change_timing":"next_period"}` to freeze a change for the next billing period instead. Issued invoices are not rewritten. Changing currency requires a separate subscription. Stop and confirm an existing automatic mandate before changing its price, then request fresh customer authorization for automatic collection.
+
+Automatic pause/resume waits for provider confirmation. Pause is available once the provider mandate is active. A future authorization can be stopped through invoice collection without creating a pending pause. A timeout remains pending and is looked up rather than blindly submitted again. Cancelling renewal first stops the automatic mandate; period-end cancellation keeps service access until the already stored period end. It does not create a refund. Re-enabling automatic billing requires new consent. Cash and direct UPI payments remain available with invoice collection.
+
 ## Review an existing application's upgrade
 
-This release adds the financial foundation. Existing applications stay on their current lifecycle. New automatic renewals and merchant collection require their later supported phases; an upgrade does not silently enable them.
+Existing applications stay on their current lifecycle until their sources have been reviewed and an operator explicitly activates the new lifecycle. Merchant collection also requires enabled installation settings, the business's own connected account and customer authorization; an upgrade does not silently enable automatic charges.
 
 1. Send `POST /v1/biz/lifecycle/prepare` with `{"primary_currency":"INR"}`. This is a read-only inventory by default. It returns a report ID, source revision hashes, counts, readiness and unresolved issues.
 2. To save the reviewed inventory, send the same request with `"dry_run":false` and `"expected_report_id":"REPORT_ID"`. Saving a review does not change original balances or activate the new lifecycle.

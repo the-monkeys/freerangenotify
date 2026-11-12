@@ -10,7 +10,11 @@ import (
 )
 
 func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbilling.GatewayEventReceipt) (bizbilling.OperationResult, error) {
-	if !strings.HasPrefix(receipt.Data.Event, "subscription.") || receipt.Data.SubscriptionID == "" {
+	subscriptionID, err := s.callbackSubscription(ctx, receipt)
+	if err != nil {
+		return bizbilling.OperationResult{}, err
+	}
+	if subscriptionID == "" {
 		return bizbilling.OperationResult{}, bizbilling.ErrGatewayPending
 	}
 	if err := s.effects.Refresh(ctx); err != nil {
@@ -20,7 +24,7 @@ func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbill
 		map[string]any{"term": map[string]any{"kind": "subscription_authorize"}},
 		map[string]any{"term": map[string]any{"scope.app_id": receipt.AppID}},
 		map[string]any{"term": map[string]any{"gateway.connection_id": receipt.Gateway.ConnectionID}},
-		map[string]any{"term": map[string]any{"provider_id": receipt.Data.SubscriptionID}},
+		map[string]any{"term": map[string]any{"provider_id": subscriptionID}},
 	}}}})
 	if err != nil {
 		return bizbilling.OperationResult{}, err
@@ -39,11 +43,11 @@ func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbill
 	if err != nil {
 		return bizbilling.OperationResult{}, err
 	}
-	remote, err := gateway.FetchSubscription(ctx, receipt.Data.SubscriptionID)
+	remote, err := gateway.FetchSubscription(ctx, subscriptionID)
 	if err != nil {
 		return bizbilling.OperationResult{}, err
 	}
-	if !recurringSubscriptionMatches(remote, *effect.RecurringIntent) || remote.ID != receipt.Data.SubscriptionID {
+	if !recurringSubscriptionMatches(remote, *effect.RecurringIntent) || remote.ID != subscriptionID {
 		return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
 	}
 	// Only an exact API revision can establish a new revision's account proof.
@@ -77,6 +81,9 @@ func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbill
 	}
 	if state == "awaiting_account_verification" {
 		return bizbilling.OperationResult{}, bizbilling.ErrGatewayPending
+	}
+	if receipt.Data.InvoiceID != "" || receipt.Data.Event == "subscription.charged" || strings.HasPrefix(receipt.Data.Event, "payment.") || strings.HasPrefix(receipt.Data.Event, "invoice.") {
+		return s.reconcileProviderCallback(ctx, sub, effect, gateway, receipt)
 	}
 	updated, err := s.effects.Get(ctx, effect.ID)
 	if err != nil {

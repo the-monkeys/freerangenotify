@@ -34,6 +34,8 @@ var PayableStatuses = map[InvoiceStatus]bool{
 
 // BizInvoice represents an invoice generated for a customer.
 type BizInvoice struct {
+	PeriodID           string                 `json:"period_id,omitempty"`
+	ProviderInvoiceID  string                 `json:"provider_invoice_id,omitempty"`
 	IssuedSnapshot     *InvoiceSnapshot       `json:"issued_snapshot,omitempty"`
 	GatewayMode        GatewayMode            `json:"gateway_mode,omitempty"`
 	CouponRedemptionID string                 `json:"coupon_redemption_id,omitempty"`

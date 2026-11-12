@@ -192,6 +192,9 @@ func (s *BizRecurringService) ChangeCollection(ctx context.Context, app, subscri
 }
 
 func (s *BizRecurringService) ConfigureCollection(ctx context.Context, app, subscription string, request bizbilling.ChangeCollectionRequest, key string) (bizbilling.OperationResult, error) {
+	return s.configureCollection(ctx, app, subscription, request, key, true)
+}
+func (s *BizRecurringService) configureCollection(ctx context.Context, app, subscription string, request bizbilling.ChangeCollectionRequest, key string, startInvoice bool) (bizbilling.OperationResult, error) {
 	mode := request.CollectionMode
 	if !recurringKeyValid(key) || !mode.Valid() {
 		return bizbilling.OperationResult{}, apperrors.BadRequest("Choose invoice or automatic collection and provide an idempotency key")
@@ -205,7 +208,17 @@ func (s *BizRecurringService) ConfigureCollection(ctx context.Context, app, subs
 	if err != nil {
 		return bizbilling.OperationResult{}, err
 	}
-	return s.configureCollectionChoice(ctx, sub, request, key)
+	if sub.NativeTransitionID != "" {
+		return bizbilling.OperationResult{}, bizbilling.ErrAutomaticCollectionInProgress
+	}
+	result, err := s.configureCollectionChoice(ctx, sub, request, key)
+	if err != nil {
+		return result, err
+	}
+	if startInvoice && mode == bizbilling.CollectionInvoice {
+		return s.completeInvoiceCollectionChoice(ctx, app, subscription, key, result)
+	}
+	return result, nil
 }
 
 func (s *BizRecurringService) authorizationEffect(ctx context.Context, sub *bizbilling.BizSubscription, mode bizbilling.GatewayMode, key string) (*bizbilling.GatewayEffect, error) {
