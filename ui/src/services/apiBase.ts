@@ -20,4 +20,3 @@ export const buildApiUrl = (path: string) => {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   return `${API_V1_BASE_URL}${normalizedPath}`;
 };
-
