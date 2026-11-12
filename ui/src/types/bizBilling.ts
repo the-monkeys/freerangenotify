@@ -61,7 +61,13 @@ export interface BizSubscription {
     user_id: string;
     plan_id: string;
     addon_ids?: string[];
-    status: 'active' | 'paused' | 'canceled' | 'trialing' | 'past_due' | 'unpaid';
+    status: 'active' | 'paused' | 'canceled' | 'trialing' | 'past_due' | 'unpaid' | 'awaiting_authorization';
+    currency?: string;
+    gateway_mode?: BillingMode;
+    collection_mode?: 'invoice' | 'automatic';
+    collection_state?: string;
+    automatic_cycles?: number;
+    pending_change?: { plan_id?: string; quantity?: number; effective_at?: string };
     quantity: number;
     cancel_at_period_end?: boolean;
     current_period_start: string;
@@ -82,7 +88,19 @@ export interface BizInvoice {
     user_id: string;
     subscription_id?: string;
     invoice_number: string;
-    status: 'draft' | 'open' | 'paid' | 'void' | 'uncollectible' | 'overdue';
+    status: 'draft' | 'open' | 'partially_paid' | 'paid' | 'void' | 'uncollectible' | 'overdue';
+    amount_paid_paisa?: number;
+    credits_applied?: number;
+    cash_refunded_paisa?: number;
+    subtotal_paisa?: number;
+    discount_paisa?: number;
+    tax_amount_paisa?: number;
+    late_fee_paisa?: number;
+    collection_owner?: string;
+    gateway_mode?: BillingMode;
+    line_items?: BizInvoiceLineItem[];
+    due_date?: string;
+    issued_snapshot?: { customer?: BillingIdentity; issuer?: BillingIdentity };
     total_paisa: number;
     amount_due_paisa: number;
     currency: string;
@@ -92,12 +110,19 @@ export interface BizInvoice {
 }
 
 export interface BizPayment {
+    user_id?: string;
+    app_id?: string;
+    reference?: string;
+    refunded_paisa?: number;
+    refund_reserved_paisa?: number;
+    excess_credit_paisa?: number;
+    credit_provenance_known?: boolean;
     id: string;
     invoice_ids: string[];
     amount_paisa: number;
     currency: string;
     method: string;
-    status: 'pending' | 'success' | 'failed' | 'refunded';
+    status: 'pending' | 'success' | 'failed' | 'refunded' | 'partially_refunded';
     gateway_payment_id?: string;
     created_at: string;
 }
@@ -105,6 +130,9 @@ export interface BizPayment {
 // ── Phase 2: Request Types ──
 
 export interface CreateBizSubscriptionRequest {
+    collection_mode?: 'invoice' | 'automatic';
+    automatic_cycles?: number;
+    gateway_mode?: BillingMode;
     user_id: string;
     plan_id: string;
     quantity?: number;
@@ -114,6 +142,7 @@ export interface CreateBizSubscriptionRequest {
 }
 
 export interface UpdateBizSubscriptionRequest {
+    change_timing?: 'immediate' | 'next_period';
     plan_id?: string;
     quantity?: number;
     addon_ids?: string[];
@@ -122,6 +151,8 @@ export interface UpdateBizSubscriptionRequest {
 }
 
 export interface CreateBizInvoiceRequest {
+    notes?: string;
+    gateway_mode?: BillingMode;
     user_id: string;
     subscription_id?: string;
     line_items?: BizInvoiceLineItem[];
@@ -144,10 +175,13 @@ export interface BizInvoiceLineItem {
     unit_price: number;
     discount_paisa?: number;
     tax_rate?: number;
+    tax_rate_override?: number;
+    tax_exempt?: boolean;
     amount_paisa?: number;
 }
 
 export interface RecordPaymentRequest {
+    reference?: string;
     method: string;
     gateway_payment_id?: string;
     amount_paisa?: number;
@@ -157,6 +191,7 @@ export interface RecordPaymentRequest {
 }
 
 export interface ChangeBizPlanRequest {
+    change_timing?: 'immediate' | 'next_period';
     plan_id: string;
     quantity?: number;
 }
@@ -395,6 +430,7 @@ export interface UpdateBizConnectorRequest {
 }
 
 export interface BizStatement {
+    currency?: string;
     user_id: string;
     entries: Array<{
         date: string;
@@ -481,3 +517,8 @@ export interface BillingConfigMap {
     numbering: BillingNumbering; payment_terms: BillingPaymentTerms; dunning: BillingDunning;
 }
 export interface BillingPage { limit?: number; offset?: number; search?: string; active?: boolean; product_id?: string }
+export interface BillingIdentity { name?:string; full_name?:string; email?:string; phone?:string; address?:Record<string,string>; gstin?:string }
+export interface BillingDocumentData extends BizInvoice { invoice_id:string; issuer:BillingIdentity; customer:BillingIdentity; payments:BizPayment[]; credits:unknown[]; notes?:string; footer_text?:string; terms_text?:string }
+export interface BillingInvoicePreview {currency:string;subtotal_paisa:number;discount_paisa:number;tax_amount_paisa:number;total_paisa:number;line_items:BizInvoiceLineItem[]}
+export interface BillingCreditBalance {available_paisa:number;reserved_paisa:number;unresolved_legacy:boolean}
+export interface BillingDelivery {id:string;status:string;failure_code?:string;attempts:number;may_have_dispatched:boolean;intent:{user_id:string;template_id:string;invoice_id?:string;channel:string}}

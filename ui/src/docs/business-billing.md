@@ -205,3 +205,17 @@ migrate biz-billing-v2 --app-id APP_ID --currency INR --apply --report-id REPORT
 ```
 
 Select multiple abandoned writers with comma-separated IDs. Other registered writers must finish first. Recovery fences the application, verifies source revisions and pending operations, records the decision, and removes only the reviewed permits. It preserves money and invalidates the removed writers' old epoch. The same request can be retried after an uncertain acknowledgement. Recovery stays available when new collection is disabled. Do not clear permits directly in the database.
+
+### Dashboard invoice and payment workflow
+
+Under **Business billing → Invoices**, choose **New invoice**, search an existing subscriber by name or email, and add line items. Prices are entered in major currency units with at most two decimal places; requests use integer minor units. Leave a tax override blank to use business settings; explicit `0` means zero tax. Preview the server-calculated totals, save a draft, then issue it. Issuing does not collect money.
+
+**Amount paid** shows saved payments. Credits, amount due and refunds are shown separately. For cash, direct UPI, bank transfer or cheque, choose **Record payment** only after receiving the money, enter a reference, and confirm receipt. Automatically collected invoices disable manual payment recording. A business can use this path without connecting Razorpay.
+
+Subscriptions use the same searchable subscriber picker. Choose invoice collection or automatic collection. Automatic collection requires a supported fixed INR recurring plan, a ready merchant account and customer authorization; creating the subscription is not payment confirmation. Plan/quantity changes explicitly choose immediately or next billing period.
+
+If a monetary response is interrupted, **Retry saved request** reuses the same details and request key. If an operation reference was returned, **Check saved action** resumes the saved operation. Pending actions remain available while navigating this dashboard session, scoped to the business and signed-in administrator. Do not start a replacement payment after closing/reloading the browser; first check the invoice and payments, because unfinished request details are intentionally not stored in browser storage.
+
+Use **Payments** to record a confirmed refund. Spent overpayment credit can prevent refunding that amount; the original payment remains visible. **Messages / receipts** shows delivery independently from financial success. A message accepted for sending is not yet delivered; an uncertain result requires review and cannot be blindly retried.
+
+Reports identify their reporting currency. Upgraded reports use the business primary currency; invoices and payments retain their own currencies. No exchange-rate conversion is performed.

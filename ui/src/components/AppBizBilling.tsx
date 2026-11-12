@@ -10,12 +10,17 @@ import BizBillingSettings from './biz-billing/BizBillingSettings';
 import BizBillingCatalog from './biz-billing/BizBillingCatalog';
 import { BillingLoadError } from './biz-billing/BillingForm';
 import { useBizBillingResource } from './biz-billing/useBizBillingResource';
+import { BillingActions } from './biz-billing/BillingActions';
 
-const LegacyWorkflows = lazy(() => import('./biz-billing/BizBillingLegacyWorkflows'));
+const Invoices = lazy(() => import('./biz-billing/BizBillingInvoices'));
+const Subscriptions = lazy(() => import('./biz-billing/BizBillingSubscriptions'));
+const Payments = lazy(() => import('./biz-billing/BizBillingPayments'));
+const Deliveries = lazy(() => import('./biz-billing/BizBillingDeliveries'));
+const Overview = lazy(() => import('./biz-billing/BizBillingOverview'));
 const Sales = lazy(() => import('./biz-billing/BizBillingSalesPanel'));
 const Operations = lazy(() => import('./biz-billing/BizBillingOpsPanel'));
 const Insights = lazy(() => import('./biz-billing/BizBillingInsightsPanel'));
-const views = ['setup', 'catalog', 'subscriptions', 'invoices', 'payments', 'settings', 'advanced'] as const;
+const views = ['setup', 'overview', 'catalog', 'subscriptions', 'invoices', 'payments', 'deliveries', 'settings', 'advanced'] as const;
 type View = typeof views[number];
 type Props = { apiKey: string; appId: string; role?: TeamRole; ownerId?: string };
 
@@ -38,7 +43,7 @@ function BillingShell({ apiKey, appId, role, ownerId }: Props) {
     if (!window.dispatchEvent(new Event('billing:payment-mode-change', { cancelable: true })) && !window.confirm('Discard unsaved payment-account credentials?')) return;
     setMode(next);
   }
-  const labels: Record<View, string> = { setup: 'Setup', catalog: 'Catalog', subscriptions: 'Subscriptions', invoices: 'Invoices', payments: 'Payments', settings: 'Business settings', advanced: 'Advanced' };
+  const labels: Record<View, string> = { setup: 'Setup', overview:'Overview', catalog: 'Catalog', subscriptions: 'Subscriptions', invoices: 'Invoices', payments: 'Payments', deliveries:'Messages / receipts', settings: 'Business settings', advanced: 'Advanced' };
   return <section className="min-w-0 space-y-5" aria-label="Business billing">
     <header><h2 className="text-2xl font-semibold">Business billing</h2><p className="mt-1 text-sm text-muted-foreground">Bill your own customers for your products and services.</p></header>
     {!canManage && <p role="status" className="rounded-md border p-3 text-sm">Read-only billing access</p>}
@@ -47,10 +52,16 @@ function BillingShell({ apiKey, appId, role, ownerId }: Props) {
     {view === 'setup' && <BizBillingSetup apiKey={apiKey} appId={appId} canManage={canManage} currency={preferences.data?.default_currency ?? 'INR'} mode={mode} onMode={changeMode} onSettings={() => navigate('settings')} onCatalog={() => navigate('catalog')} />}
     {view === 'settings' && <BizBillingSettings apiKey={apiKey} appId={appId} canManage={canManage} mode={mode} onMode={changeMode} onCurrencySaved={preferences.retry} />}
     {view === 'catalog' && <BizBillingCatalog apiKey={apiKey} appId={appId} canManage={canManage} preferences={preferences.error ? undefined : preferences.data} />}
+    <BillingActions apiKey={apiKey} scope={`${appId}:${user?.user_id}`} actorID={user?.user_id??''}>
     <Suspense fallback={<p role="status">Loading billing section…</p>}>
-      {(view === 'subscriptions' || view === 'invoices' || view === 'payments') && <fieldset disabled={!canManage} className="min-w-0"><LegacyWorkflows key={`${appId}:${view}`} apiKey={apiKey} appId={appId} view={view} /></fieldset>}
+      {view==='overview'&&<Overview apiKey={apiKey} appId={appId}/>}
+      {view==='subscriptions'&&<Subscriptions apiKey={apiKey} appId={appId} canManage={canManage} preferences={preferences.error?undefined:preferences.data}/>}
+      {view==='invoices'&&<Invoices apiKey={apiKey} appId={appId} canManage={canManage} preferences={preferences.error?undefined:preferences.data}/>}
+      {view==='payments'&&<Payments apiKey={apiKey} appId={appId} canManage={canManage}/>}
+      {view==='deliveries'&&<Deliveries apiKey={apiKey} appId={appId} canManage={canManage}/>}
       {view === 'advanced' && <div className="min-w-0 space-y-4"><div className="flex flex-wrap gap-2">{['sales', 'operations', 'insights'].map(item => <Button key={item} variant={advanced === item ? 'default' : 'outline'} onClick={() => setAdvanced(item)}>{item[0].toUpperCase() + item.slice(1)}</Button>)}</div><fieldset disabled={!canManage} className="min-w-0">{advanced === 'sales' && <Sales apiKey={apiKey} />}{advanced === 'operations' && <Operations apiKey={apiKey} />}{advanced === 'insights' && <Insights apiKey={apiKey} />}</fieldset></div>}
     </Suspense>
+    </BillingActions>
   </section>;
 }
 export default function AppBizBilling(props: Props) { return <BillingShell key={props.appId} {...props} />; }

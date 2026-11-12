@@ -308,7 +308,7 @@ interface UserListResponse {
 }
 
 export const usersAPI = {
-  list: async (apiKey: string, page = 1, pageSize = 20, search?: string) => {
+  list: async (apiKey: string, page = 1, pageSize = 20, search?: string, signal?: AbortSignal) => {
     const params = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
@@ -316,7 +316,7 @@ export const usersAPI = {
     const trimmed = search?.trim();
     if (trimmed) params.set('search', trimmed);
     const { data } = await api.get<ApiResponse<UserListResponse>>(`/users/?${params.toString()}`, {
-      headers: getAuthHeaders(apiKey)
+      headers: getAuthHeaders(apiKey), signal
     });
     return data.data;
   },

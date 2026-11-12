@@ -49,6 +49,9 @@ type BizOne<T> = { success: boolean; data: T };
 const bizOpts = (apiKey: string, key?: string) => ({ headers: { ...authHeaders(apiKey), ...(key ? {"Idempotency-Key": key} : {}) } });
 
 return {
+  readBilling: async <T>(apiKey:string,path:string,params:Record<string,unknown>={},signal?:AbortSignal):Promise<T> => (await client.get<BizOne<T>>(path,{...bizOpts(apiKey),params,signal})).data.data,
+  listBilling: async <T>(apiKey:string,path:string,params:Record<string,unknown>={},signal?:AbortSignal):Promise<BizListResponse<T>> => (await client.get<BizListResponse<T>>(path,{...bizOpts(apiKey),params,signal})).data,
+  submitBilling: async <T>(apiKey:string,path:string,payload:unknown,key:string,method:'POST'|'PUT'|'DELETE'='POST',signal?:AbortSignal):Promise<T> => (await client.request<BizOne<T>>({url:path,method,data:payload,...bizOpts(apiKey,key),signal})).data.data,
   getLifecycle: async (apiKey:string, signal?:AbortSignal) => (await client.get<BizOne<BillingLifecycle>>('/biz/lifecycle',{...bizOpts(apiKey),signal})).data.data,
   getBillingConfig: async <K extends keyof BillingConfigMap>(apiKey:string,kind:K,signal?:AbortSignal):Promise<BillingConfigMap[K]> => {
     const result=await client.get<BizOne<{data:BillingConfigMap[K]}>>(`/biz/config/${kind}`,{...bizOpts(apiKey),signal});

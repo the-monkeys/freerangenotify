@@ -11,6 +11,7 @@ import { Label } from '../ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { type BizPanelProps, paisa } from './shared';
+import { formatBillingAmount } from './BillingForm';
 
 function MetricGrid({ data }: { data: Record<string, unknown> | null }) {
   if (!data) return <p className="text-sm text-muted-foreground">No data.</p>;
@@ -23,7 +24,7 @@ function MetricGrid({ data }: { data: Record<string, unknown> | null }) {
           <div className="text-xs text-muted-foreground uppercase tracking-wide">{k.replace(/_/g, ' ')}</div>
           <div className="mt-1 text-lg font-semibold break-all">
             {typeof v === 'number' && (k.includes('paisa') || k.includes('mrr') || k.includes('arr') || k.includes('revenue'))
-              ? `₹${paisa(v)}`
+              ? typeof data.currency === 'string' ? formatBillingAmount(v, data.currency) : `${v} minor units (currency unavailable)`
               : typeof v === 'object'
                 ? JSON.stringify(v)
                 : String(v)}
@@ -54,12 +55,12 @@ export default function BizBillingInsightsPanel({ apiKey }: BizPanelProps) {
     setLoading(true);
     try {
       const [r, s, i, a, d, t] = await Promise.all([
-        bizBillingAPI.analyticsRevenue(apiKey).catch(() => null),
-        bizBillingAPI.analyticsSubscriptions(apiKey).catch(() => null),
-        bizBillingAPI.analyticsInvoices(apiKey).catch(() => null),
-        bizBillingAPI.analyticsAging(apiKey).catch(() => null),
-        bizBillingAPI.analyticsDunning(apiKey).catch(() => null),
-        bizBillingAPI.analyticsTaxSummary(apiKey).catch(() => null),
+        bizBillingAPI.analyticsRevenue(apiKey),
+        bizBillingAPI.analyticsSubscriptions(apiKey),
+        bizBillingAPI.analyticsInvoices(apiKey),
+        bizBillingAPI.analyticsAging(apiKey),
+        bizBillingAPI.analyticsDunning(apiKey),
+        bizBillingAPI.analyticsTaxSummary(apiKey),
       ]);
       setRevenue(r);
       setSubs(s);
@@ -98,7 +99,7 @@ export default function BizBillingInsightsPanel({ apiKey }: BizPanelProps) {
         amount_paisa: Math.round(balanceAdj * 100),
         reason: balanceReason || undefined,
       });
-      toast.success(`Balance: ₹${paisa(res.balance_paisa)}`);
+      toast.success(`Balance: ${res.balance_paisa} minor units`);
       void loadStatement();
     } catch (err) {
       toast.error(extractErrorMessage(err));
@@ -191,7 +192,7 @@ export default function BizBillingInsightsPanel({ apiKey }: BizPanelProps) {
 
               <div className="flex flex-wrap gap-2 items-end border-t pt-4">
                 <div className="space-y-1">
-                  <Label>Adjust balance (₹)</Label>
+                  <Label>Adjust balance (business primary currency)</Label>
                   <Input type="number" value={balanceAdj} onChange={e => setBalanceAdj(+e.target.value)} />
                 </div>
                 <div className="space-y-1 grow min-w-[160px]">
@@ -206,10 +207,10 @@ export default function BizBillingInsightsPanel({ apiKey }: BizPanelProps) {
               {statement && (
                 <div className="space-y-3 border-t pt-4">
                   <div className="grid gap-3 sm:grid-cols-4 text-sm">
-                    <div>Billed: <strong>₹{paisa(statement.total_billed_paisa)}</strong></div>
-                    <div>Paid: <strong>₹{paisa(statement.total_paid_paisa)}</strong></div>
-                    <div>Owed: <strong>₹{paisa(statement.balance_owed_paisa)}</strong></div>
-                    <div>Credit: <strong>₹{paisa(statement.credit_balance_paisa)}</strong></div>
+                    <div>Billed: <strong>{statement.currency || 'Currency unspecified'} {paisa(statement.total_billed_paisa)}</strong></div>
+                    <div>Paid: <strong>{statement.currency || 'Currency unspecified'} {paisa(statement.total_paid_paisa)}</strong></div>
+                    <div>Owed: <strong>{statement.currency || 'Currency unspecified'} {paisa(statement.balance_owed_paisa)}</strong></div>
+                    <div>Credit: <strong>{statement.currency || 'Currency unspecified'} {paisa(statement.credit_balance_paisa)}</strong></div>
                   </div>
                   <Table>
                     <TableHeader>
@@ -227,8 +228,8 @@ export default function BizBillingInsightsPanel({ apiKey }: BizPanelProps) {
                           <TableCell className="text-xs">{e.date ? new Date(e.date).toLocaleDateString() : '–'}</TableCell>
                           <TableCell>{e.type}</TableCell>
                           <TableCell className="text-xs">{e.reference}</TableCell>
-                          <TableCell>{e.debit_paisa ? `₹${paisa(e.debit_paisa)}` : '–'}</TableCell>
-                          <TableCell>{e.credit_paisa ? `₹${paisa(e.credit_paisa)}` : '–'}</TableCell>
+                          <TableCell>{e.debit_paisa ? `${statement.currency || 'Currency unspecified'} ${paisa(e.debit_paisa)}` : '–'}</TableCell>
+                          <TableCell>{e.credit_paisa ? `${statement.currency || 'Currency unspecified'} ${paisa(e.credit_paisa)}` : '–'}</TableCell>
                         </TableRow>
                       ))}
                       {(!statement.entries || statement.entries.length === 0) && (

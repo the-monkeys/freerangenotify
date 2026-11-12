@@ -17,6 +17,7 @@ export function useBizBillingResource<T>(key: string, load: (signal: AbortSignal
     return () => { current = false; controller.abort(); };
   }, [key, attempt]);
   const retry = useCallback(() => setAttempt(n => n + 1), []);
+  useEffect(() => { window.addEventListener('billing:changed', retry); return () => window.removeEventListener('billing:changed', retry); }, [retry]);
   // The key fence also protects the render before effect cleanup runs.
   return { data: state.key === key ? state.data : undefined, loading: state.key !== key || state.loading, error: state.key === key ? state.error : undefined, retry };
 }

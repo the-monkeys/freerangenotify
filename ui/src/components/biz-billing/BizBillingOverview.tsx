@@ -1,0 +1,7 @@
+import { bizBillingAPI } from '../../services/api';
+import { BillingCard, BillingLoadError, formatBillingAmount } from './BillingForm';
+import { useBizBillingResource } from './useBizBillingResource';
+export default function BizBillingOverview({apiKey,appId}:{apiKey:string;appId:string}){
+  const result=useBizBillingResource(`${appId}:revenue`,signal=>bizBillingAPI.readBilling<Record<string,unknown>>(apiKey,'/biz/analytics/revenue',{},signal));
+  return <BillingCard title="Billing overview">{result.loading&&<p role="status">Loading overview…</p>}{!!result.error&&<BillingLoadError label="overview" retry={result.retry}/>}{result.data&&<><p>Reporting currency: {typeof result.data.currency==='string'?result.data.currency:'Not provided — no currency conversion is applied'}</p><p className="text-sm">Reports use the business primary currency. Invoices and payments retain their own currency; different currencies are never added together.</p><dl className="grid grid-cols-2 gap-2 text-sm">{Object.entries(result.data).filter(([key,value])=>key!=='currency'&&typeof value==='number').map(([key,value])=><div key={key} className="col-span-2 grid grid-cols-2 gap-2"><dt className="break-words">{key.replace(/_/g,' ')}</dt><dd>{key.includes('paisa')&&typeof result.data?.currency==='string'?formatBillingAmount(value as number,result.data.currency):String(value)}</dd></div>)}</dl></>}</BillingCard>;
+}
