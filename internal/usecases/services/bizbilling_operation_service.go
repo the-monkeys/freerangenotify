@@ -18,25 +18,26 @@ import (
 // BizOperationService coordinates immutable financial facts and replayable
 // projections. It never waits for a gateway while holding a customer stream.
 type BizOperationService struct {
-	gatewayEffects  *bizbillingrepo.Store[bizbilling.GatewayEffect]
-	legacyReviews   *bizbillingrepo.MigrationReviewRepo
-	expenseClaims   *bizbillingrepo.ExpenseClaimRepo
-	couponCapacity  *bizbillingrepo.CouponCapacityRepo
-	config          *BizConfigService
-	profiles        *bizbillingrepo.Store[user.User]
-	gate            *BizLifecycleGate
-	operations      *bizbillingrepo.OperationRepo
-	journal         *bizbillingrepo.JournalRepo
-	streams         *bizbillingrepo.StreamRepo
-	balances        *bizbillingrepo.Store[bizbilling.CustomerBalance]
-	logger          *zap.Logger
-	reconcileMu     sync.Mutex
-	reconcileCursor string
-	stores          *bizbillingrepo.Stores
+	notificationOutbox *bizbillingrepo.NotificationOutboxRepo
+	gatewayEffects     *bizbillingrepo.Store[bizbilling.GatewayEffect]
+	legacyReviews      *bizbillingrepo.MigrationReviewRepo
+	expenseClaims      *bizbillingrepo.ExpenseClaimRepo
+	couponCapacity     *bizbillingrepo.CouponCapacityRepo
+	config             *BizConfigService
+	profiles           *bizbillingrepo.Store[user.User]
+	gate               *BizLifecycleGate
+	operations         *bizbillingrepo.OperationRepo
+	journal            *bizbillingrepo.JournalRepo
+	streams            *bizbillingrepo.StreamRepo
+	balances           *bizbillingrepo.Store[bizbilling.CustomerBalance]
+	logger             *zap.Logger
+	reconcileMu        sync.Mutex
+	reconcileCursor    string
+	stores             *bizbillingrepo.Stores
 }
 
 func NewBizOperationService(es *elasticsearch.Client, logger *zap.Logger) *BizOperationService {
-	return &BizOperationService{gatewayEffects: bizbillingrepo.NewStore[bizbilling.GatewayEffect](es, bizbillingrepo.GatewayEffectIndex, logger, repository.RefreshFalse), legacyReviews: bizbillingrepo.NewMigrationReviewRepo(es, logger), expenseClaims: bizbillingrepo.NewExpenseClaimRepo(es, logger), couponCapacity: bizbillingrepo.NewCouponCapacityRepo(es, logger), config: NewBizConfigService(bizbillingrepo.NewConfigRepo(es, logger), logger), profiles: bizbillingrepo.NewStore[user.User](es, "users", logger), stores: bizbillingrepo.NewStores(es, logger, repository.RefreshFalse), operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
+	return &BizOperationService{notificationOutbox: bizbillingrepo.NewNotificationOutboxRepo(es, logger), gatewayEffects: bizbillingrepo.NewStore[bizbilling.GatewayEffect](es, bizbillingrepo.GatewayEffectIndex, logger, repository.RefreshFalse), legacyReviews: bizbillingrepo.NewMigrationReviewRepo(es, logger), expenseClaims: bizbillingrepo.NewExpenseClaimRepo(es, logger), couponCapacity: bizbillingrepo.NewCouponCapacityRepo(es, logger), config: NewBizConfigService(bizbillingrepo.NewConfigRepo(es, logger), logger), profiles: bizbillingrepo.NewStore[user.User](es, "users", logger), stores: bizbillingrepo.NewStores(es, logger, repository.RefreshFalse), operations: bizbillingrepo.NewOperationRepo(es, logger), journal: bizbillingrepo.NewJournalRepo(es, logger), streams: bizbillingrepo.NewStreamRepo(es, logger), balances: bizbillingrepo.NewCustomerBalanceStore(es, logger), logger: logger}
 }
 
 // Start recovers persisted work independently of the hourly renewal job. It
@@ -131,6 +132,9 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 		if fact.OperationID != op.ID {
 			return result, bizbilling.ErrReconciliationRequired
 		}
+		if err = s.notificationOutbox.Materialize(ctx, *fact); err != nil {
+			return result, err
+		}
 		if err = s.operations.Finish(ctx, op.ID); err != nil {
 			return result, err
 		}
@@ -213,6 +217,9 @@ func (s *BizOperationService) Resume(ctx context.Context, appID, id string) (biz
 		return result, err
 	}
 	if err = s.streams.Complete(ctx, *claim); err != nil {
+		return result, err
+	}
+	if err = s.notificationOutbox.Materialize(ctx, *op.Event); err != nil {
 		return result, err
 	}
 	if err = s.operations.Finish(ctx, id); err != nil {

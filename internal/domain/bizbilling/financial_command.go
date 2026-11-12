@@ -2,12 +2,12 @@ package bizbilling
 
 // FinancialOperationSchemaVersion changes when a known command gains required
 // projections. Older binaries must refuse recovery, not commit only part of it.
-const FinancialOperationSchemaVersion = 4
+const FinancialOperationSchemaVersion = 5
 
 // Historical facts remain readable and recoverable without rewriting them.
-// Schema 4 fences readers that would discard subscription period identity.
+// Schema 5 also fences recovery which would omit durable delivery progress.
 func SupportsFinancialSchema(version int) bool {
-	return version == 2 || version == 3 || version == FinancialOperationSchemaVersion
+	return version == 2 || version == 3 || version == 4 || version == FinancialOperationSchemaVersion
 }
 
 const (

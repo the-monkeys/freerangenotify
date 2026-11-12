@@ -118,6 +118,16 @@ Omitting currency on a new credit request uses the primary currency reviewed for
 
 Reserved money is held for an unfinished action and is not available to spend. A confirmed cancellation can release a reservation. An unknown provider outcome must be reconciled before it can be released; waiting alone is not proof that no payment occurred.
 
+## Invoice and receipt delivery
+
+For upgraded applications, invoice notices, payment receipts and overdue reminders have their own saved delivery progress. A failed notice never reverses a recorded payment. Notification sending still requires the application's configured channel, recipient readiness and notification credits. Businesses recording cash or direct UPI payments do not need a Razorpay account.
+
+Use `GET /v1/biz/notification-deliveries?limit=20&offset=0` to list progress for the authenticated application. `GET /v1/biz/notification-deliveries/DELIVERY_ID` reads one item. `pending` means admission is waiting or retrying, `accepted` means the notification pipeline accepted the message, and `delivered` requires an observed delivery/read result. Provider acceptance alone is not recipient delivery. `failed` is a known stopped attempt; `unknown` needs reconciliation and must not be treated as delivered.
+
+After fixing a known admission problem, an authorized billing manager can use `POST /v1/biz/notification-deliveries/DELIVERY_ID/retry`. This retries notification admission only; it cannot charge or refund a customer. Accepted, delivered, uncertain and sandbox-suppressed notices cannot be resent through this action. Uncertain admissions are looked up using their saved notification identity before any further action. Automatic admission retries are bounded; unknown provider outcomes remain visible.
+
+New delivery processing does not replay historical invoices or legacy reminder markers. Sandbox financial actions suppress customer notices by default. Immutable billing journal facts contain document references rather than bearer links. A retryable link is encrypted in the delivery record and omitted from delivery API responses. The ordinary notification engine can retain the rendered message containing that link under its existing notification retention policy; this does not mean every copy of a delivered link is hashed or encrypted.
+
 ## Retry an action safely
 
 For an upgraded application, send a fresh `Idempotency-Key` for each intended financial action and reuse that exact key and payload when retrying it. Keep keys at most 200 characters. Use different keys for creating a draft, issuing it, recording a payment and refunding it.

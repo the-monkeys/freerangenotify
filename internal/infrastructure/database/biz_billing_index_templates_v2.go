@@ -24,6 +24,14 @@ func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} 
 }
 func billingLong() map[string]interface{} { return map[string]interface{}{"type": "long"} }
 
+func (it *IndexTemplates) GetBizNotificationOutboxTemplate() map[string]interface{} {
+	return billingFactTemplate(map[string]interface{}{
+		"id": billingKeyword(), "app_id": billingKeyword(), "scope": billingScope(), "billing_sequence": billingLong(), "notification_id": billingKeyword(), "status": billingKeyword(), "failure_code": billingKeyword(), "attempts": billingLong(), "retry_after_attempt": billingLong(), "lease_owner": billingKeyword(), "may_have_dispatched": map[string]interface{}{"type": "boolean"},
+		"intent": map[string]interface{}{"type": "object", "enabled": false}, "sensitive_payload": map[string]interface{}{"type": "object", "enabled": false},
+		"next_attempt_at": map[string]interface{}{"type": "date"}, "lease_until": map[string]interface{}{"type": "date"}, "created_at": map[string]interface{}{"type": "date"}, "updated_at": map[string]interface{}{"type": "date"},
+	})
+}
+
 func (it *IndexTemplates) GetBizBillingPeriodsTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{"id": billingKeyword(), "scope": billingScope(), "subscription_id": billingKeyword(), "start": map[string]interface{}{"type": "date"}, "end": map[string]interface{}{"type": "date"}, "invoice_id": billingKeyword(), "provider_invoice_id": billingKeyword(), "billing_sequence": billingLong()})
 }

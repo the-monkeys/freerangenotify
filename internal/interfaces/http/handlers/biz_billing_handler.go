@@ -29,6 +29,7 @@ type BizBillingServices struct {
 
 // BizBillingHandler handles HTTP requests for the business billing module.
 type BizBillingHandler struct {
+	outbox        *services.BizOutboxService
 	recurring     *services.BizRecurringService
 	gatewayEvents *services.BizGatewayEventService
 	checkout      *services.BizCheckoutService

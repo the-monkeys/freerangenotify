@@ -88,7 +88,7 @@ func newPortalHTTPFixture(t *testing.T) portalHTTPFixture {
 	templates := &database.IndexTemplates{}
 	for index, template := range map[string]map[string]interface{}{
 		"users": templates.GetUsersTemplate(), "frn_biz_invoices": templates.GetBizInvoicesTemplate(), "frn_biz_payments": templates.GetBizPaymentsTemplate(), "frn_biz_configs": templates.GetBizConfigsTemplate(),
-		bizbillingrepo.OperationIndex: templates.GetBizOperationsTemplate(), bizbillingrepo.JournalIndex: templates.GetBizJournalTemplate(), bizbillingrepo.StreamIndex: templates.GetBizStreamsTemplate(), bizbillingrepo.CustomerBalanceIndex: templates.GetBizCustomerBalancesTemplate(),
+		bizbillingrepo.NotificationOutboxIndex: templates.GetBizNotificationOutboxTemplate(), bizbillingrepo.OperationIndex: templates.GetBizOperationsTemplate(), bizbillingrepo.JournalIndex: templates.GetBizJournalTemplate(), bizbillingrepo.StreamIndex: templates.GetBizStreamsTemplate(), bizbillingrepo.CustomerBalanceIndex: templates.GetBizCustomerBalancesTemplate(),
 		bizbillingrepo.LifecycleStateIndex: templates.GetBizLifecycleStatesTemplate(), bizbillingrepo.GatewayConnectionIndex: templates.GetBizGatewayConnectionsTemplate(), bizbillingrepo.GatewayEffectIndex: templates.GetBizGatewayEffectsTemplate(), bizbillingrepo.PortalTokenIndex: templates.GetBizPortalTokensTemplate(),
 		bizbillingrepo.CreditNoteIndex: templates.GetBizCreditNotesTemplate(), bizbillingrepo.RetainerIndex: templates.GetBizRetainersTemplate(), bizbillingrepo.CreditApplicationIndex: templates.GetBizCreditApplicationsTemplate(), bizbillingrepo.CreditLotIndex: templates.GetBizCreditLotsTemplate(), bizbillingrepo.RefundReservationIndex: templates.GetBizRefundReservationsTemplate(),
 	} {

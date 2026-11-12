@@ -1012,6 +1012,8 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizPortalHandler.SetRecurringService(container.BizRecurringService)
 		container.BizBillingHandler.SetGatewayEventService(container.BizGatewayEventService)
 		container.BizBillingGatewayCallbackHandler = handlers.NewBizBillingGatewayCallbackHandler(container.BizGatewayEventService, logger)
+		outboxSvc := services.NewBizOutboxService(esClient, container.BizOperationService, bizNotifier, portalSvc, connectionCodec, logger)
+		container.BizBillingHandler.SetOutboxService(outboxSvc)
 
 		// Route biz-invoice gateway payments from the Razorpay webhook.
 		if container.PaymentHandler != nil {
@@ -1029,6 +1031,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizGatewayEventService.Start(schedCtx)
 		container.BizRefundService.Start(schedCtx)
 		container.BizRecurringService.Start(schedCtx)
+		outboxSvc.Start(schedCtx)
 		container.bizSchedulerCancel = schedCancel
 
 		logger.Info("Business Billing module enabled")

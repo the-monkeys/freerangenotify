@@ -10475,6 +10475,145 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/notification-deliveries:
+        get:
+            description: Delivery progress is separate from payment completion. Accepted is not delivered. Failure codes contain no provider credentials or bearer links.
+            parameters:
+                - description: pending, accepted, delivered, failed or unknown
+                  in: query
+                  name: status
+                  schema:
+                    type: string
+                - description: Page size, maximum 100
+                  in: query
+                  name: limit
+                  schema:
+                    type: integer
+                - description: Page offset, maximum 9900
+                  in: query
+                  name: offset
+                  schema:
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "503":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Service Unavailable
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: List billing notification deliveries
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/notification-deliveries/{id}:
+        get:
+            parameters:
+                - description: Delivery ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get billing notification delivery
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/notification-deliveries/{id}/retry:
+        post:
+            description: Requires manage-billing permission for dashboard users. Never charges or refunds. Unknown, accepted, delivered and sandbox-suppressed items cannot be resent through this action.
+            parameters:
+                - description: Delivery ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "403":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Forbidden
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Retry billing notification admission
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/operations/{id}:
         get:
             description: Use the operation_id from a pending request. Results belong to the authenticated application and contain no payment credentials.
