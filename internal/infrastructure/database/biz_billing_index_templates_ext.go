@@ -18,11 +18,11 @@ func bizMapping(props map[string]interface{}) map[string]interface{} {
 	}
 }
 
-func kw() map[string]interface{}   { return map[string]interface{}{"type": "keyword"} }
-func date() map[string]interface{} { return map[string]interface{}{"type": "date"} }
-func long() map[string]interface{} { return map[string]interface{}{"type": "long"} }
+func kw() map[string]interface{}      { return map[string]interface{}{"type": "keyword"} }
+func date() map[string]interface{}    { return map[string]interface{}{"type": "date"} }
+func long() map[string]interface{}    { return map[string]interface{}{"type": "long"} }
 func boolean() map[string]interface{} { return map[string]interface{}{"type": "boolean"} }
-func text() map[string]interface{} { return map[string]interface{}{"type": "text"} }
+func text() map[string]interface{}    { return map[string]interface{}{"type": "text"} }
 func object() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "enabled": false}
 }
@@ -244,6 +244,7 @@ func (it *IndexTemplates) GetBizConnectorsTemplate() map[string]interface{} {
 // GetBizPortalTokensTemplate returns the mapping for frn_biz_portal_tokens.
 func (it *IndexTemplates) GetBizPortalTokensTemplate() map[string]interface{} {
 	return bizMapping(map[string]interface{}{
+		"id": kw(), "version": long(), "revoked_at": date(),
 		"token":      kw(),
 		"app_id":     kw(),
 		"user_id":    kw(),

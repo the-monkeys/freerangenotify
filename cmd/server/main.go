@@ -102,6 +102,8 @@ func main() {
 		ErrorHandler: middleware.ErrorHandler(zapLogger),                      // Custom error handler
 	})
 
+	app.Use(middleware.BizPortalPrivacy(c.Limiter, zapLogger))
+
 	// Ordinary requests retain their existing 16 MiB ceiling. The multipart
 	// file route applies this guard after API authentication.
 	ordinaryBodyLimit := middleware.NonUploadBodyLimit(16 << 20)
@@ -112,10 +114,11 @@ func main() {
 		return ordinaryBodyLimit(ctx)
 	})
 	// Add global middleware
-	app.Use(recover.New())          // Panic recovery
-	app.Use(requestid.New())        // Request ID
-	app.Use(otelfiber.Middleware()) // OTel HTTP spans (opt-in via env)
+	app.Use(recover.New())                                       // Panic recovery
+	app.Use(requestid.New())                                     // Request ID
+	app.Use(middleware.BizPortalTracing(otelfiber.Middleware())) // URL credentials never enter automatic spans
 	app.Use(logger.New(logger.Config{
+		Next:   middleware.IsBizPortalRequest,
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
 	app.Use(cors.New(cors.Config{

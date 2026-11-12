@@ -66,9 +66,19 @@ type UpdateConnectorRequest struct {
 // PortalToken grants an end customer time-limited access to the self-service
 // portal without a login.
 type PortalToken struct {
-	Token     string    `json:"token"`
-	AppID     string    `json:"app_id"`
-	UserID    string    `json:"user_id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id,omitempty"`
+	Version   int        `json:"version,omitempty"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	Token     string     `json:"token,omitempty"`
+	AppID     string     `json:"app_id"`
+	UserID    string     `json:"user_id"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type PortalScope struct {
+	AppID     string
+	UserID    string
+	TokenID   string
+	ExpiresAt time.Time
 }

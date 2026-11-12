@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -51,13 +53,17 @@ func (s *BizPortalService) CreateToken(ctx context.Context, appID, userID string
 
 	now := time.Now().UTC()
 	token := &bizbilling.PortalToken{
-		Token:     base64.RawURLEncoding.EncodeToString(raw),
+		Token:     "pt2_" + base64.RawURLEncoding.EncodeToString(raw),
+		Version:   2,
 		AppID:     appID,
 		UserID:    userID,
 		ExpiresAt: now.Add(ttl),
 		CreatedAt: now,
 	}
-	if err := s.tokens.Create(ctx, token.Token, token); err != nil {
+	token.ID = portalTokenDigest(token.Token)
+	stored := *token
+	stored.Token = ""
+	if err := s.tokens.Create(ctx, token.ID, &stored); err != nil {
 		return nil, err
 	}
 	return token, nil
@@ -65,17 +71,59 @@ func (s *BizPortalService) CreateToken(ctx context.Context, appID, userID string
 
 // Resolve validates a token and returns it. Expired or unknown tokens fail.
 func (s *BizPortalService) Resolve(ctx context.Context, token string) (*bizbilling.PortalToken, error) {
-	if token == "" {
+	if token == "" || len(token) > 256 || strings.ContainsAny(token, "/\\?#%\r\n\t ") {
 		return nil, errors.Unauthorized("portal token required")
 	}
-	pt, err := s.tokens.Get(ctx, token)
+	id := portalTokenDigest(token)
+	pt, err := s.tokens.Get(ctx, id)
+	if err != nil && !strings.HasPrefix(token, "pt2_") {
+		// Historical links are read only at their original key and expiry.
+		// Never migrate them by minting a replacement credential on access.
+		id = token
+		pt, err = s.tokens.Get(ctx, id)
+		if err == nil && (pt.Version != 0 || pt.Token != token) {
+			return nil, errors.Unauthorized("invalid portal token")
+		}
+	}
 	if err != nil {
 		return nil, errors.Unauthorized("invalid portal token")
 	}
-	if time.Now().UTC().After(pt.ExpiresAt) {
+	if pt.AppID == "" || pt.UserID == "" || pt.RevokedAt != nil || !time.Now().UTC().Before(pt.ExpiresAt) || (pt.Version == 2 && pt.ID != id) {
 		return nil, errors.Unauthorized("portal token expired")
 	}
+	pt.ID = id
+	pt.Token = token // compatibility return only; never written back
 	return pt, nil
+}
+
+func portalTokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "v2_" + hex.EncodeToString(sum[:])
+}
+
+func (s *BizPortalService) ResolveScope(ctx context.Context, token string) (bizbilling.PortalScope, error) {
+	pt, err := s.Resolve(ctx, token)
+	if err != nil {
+		return bizbilling.PortalScope{}, err
+	}
+	return bizbilling.PortalScope{AppID: pt.AppID, UserID: pt.UserID, TokenID: pt.ID, ExpiresAt: pt.ExpiresAt}, nil
+}
+
+func (s *BizPortalService) Revoke(ctx context.Context, appID, tokenID string) error {
+	if appID == "" || tokenID == "" || len(tokenID) > 256 {
+		return errors.NotFound("portal link", "")
+	}
+	_, err := s.tokens.Update(ctx, tokenID, func(token *bizbilling.PortalToken) error {
+		if token.AppID != appID {
+			return errors.NotFound("portal link", "")
+		}
+		if token.RevokedAt == nil {
+			now := time.Now().UTC()
+			token.RevokedAt = &now
+		}
+		return nil
+	})
+	return err
 }
 
 // PortalLink returns a full portal URL for the token, or just the token when

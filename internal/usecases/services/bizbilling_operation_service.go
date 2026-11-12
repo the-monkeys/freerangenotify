@@ -91,6 +91,17 @@ func (s *BizOperationService) Get(ctx context.Context, appID, id string) (bizbil
 	}
 	return op.Result(), nil
 }
+
+func (s *BizOperationService) GetCustomer(ctx context.Context, appID, userID, id string) (bizbilling.OperationResult, error) {
+	op, err := s.ownedOperation(ctx, appID, id)
+	if err != nil {
+		return bizbilling.OperationResult{}, err
+	}
+	if op.Scope.UserID != userID {
+		return bizbilling.OperationResult{}, apperrors.NotFound("billing action", "")
+	}
+	return op.Result(), nil
+}
 func (s *BizOperationService) ownedOperation(ctx context.Context, appID, id string) (*bizbilling.Operation, error) {
 	op, err := s.operations.Get(ctx, id)
 	if err != nil {

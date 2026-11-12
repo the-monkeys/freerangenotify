@@ -150,6 +150,11 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		portal.Get("/", c.BizPortalHandler.Overview)
 		portal.Get("/invoices", c.BizPortalHandler.ListInvoices)
 		portal.Get("/invoices/:id", c.BizPortalHandler.GetInvoice)
+		portal.Get("/invoices/:id/document", c.BizPortalHandler.GetInvoiceDocument)
+		portal.Get("/payments/:id/receipt", c.BizPortalHandler.GetPaymentReceipt)
+		portal.Get("/subscriptions", c.BizPortalHandler.ListSubscriptions)
+		portal.Get("/subscriptions/:id", c.BizPortalHandler.GetSubscription)
+		portal.Get("/operations/:id", c.BizPortalHandler.GetOperation)
 		portal.Post("/invoices/:id/pay", c.BizPortalHandler.PayInvoice)
 		portal.Post("/invoices/:id/verify-payment", c.BizPortalHandler.VerifyInvoicePayment)
 		portal.Post("/subscriptions/:id/authorize", c.BizPortalHandler.AuthorizeSubscription)
@@ -573,6 +578,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		biz.Post("/users/:user_id/balance", c.BizBillingHandler.AdjustUserBalance)
 		biz.Get("/users/:user_id/balance", c.BizBillingHandler.GetCustomerBalance)
 		biz.Post("/users/:user_id/portal-link", c.BizBillingHandler.CreatePortalLink)
+		biz.Post("/portal-tokens/:id/revoke", c.BizBillingHandler.RevokePortalToken)
 
 		// ── Analytics (same API-key auth as rest of /v1/biz; dashboard sends X-API-Key) ──
 		biz.Get("/analytics/revenue", c.BizBillingHandler.AnalyticsRevenue)

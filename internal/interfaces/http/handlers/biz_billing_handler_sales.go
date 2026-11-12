@@ -730,6 +730,7 @@ func (h *BizBillingHandler) CreatePortalLink(c *fiber.Ctx) error {
 		"success": true,
 		"data": fiber.Map{
 			"url":        h.portalSvc.PortalLink(token.Token),
+			"token_id":   token.ID,
 			"expires_at": token.ExpiresAt,
 		},
 	})

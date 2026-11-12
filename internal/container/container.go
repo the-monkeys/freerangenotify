@@ -994,6 +994,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizBillingHandler.SetAnalyticsService(analyticsSvc)
 		container.BizBillingHandler.SetConnectorService(connectorSvc)
 		container.BizPortalHandler = handlers.NewBizPortalHandler(bizSvcs, logger)
+		container.BizPortalHandler.SetOperationService(container.BizOperationService)
 		merchantGatewayFactory := payment.NewBizRazorpayFactory(container.BizGatewayConnections.Resolve, nil)
 		merchantGatewayFactory.SetAPIResolver(container.BizGatewayConnections.ResolveAPI)
 		container.BizCheckoutService = services.NewBizCheckoutService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)

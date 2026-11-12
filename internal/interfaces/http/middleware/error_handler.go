@@ -36,16 +36,16 @@ func ErrorHandler(logger *zap.Logger) fiber.ErrorHandler {
 					zap.String("code", appErr.Code),
 					zap.String("message", appErr.Message),
 					zap.Error(appErr.Underlying),
-					zap.String("path", c.Path()),
+					zap.String("path", SafeRequestPath(c)),
 					zap.String("method", c.Method()),
 				)
-		} else {
-			logger.Debug("Client error",
-				zap.String("code", appErr.Code),
-				zap.String("message", appErr.Message),
-				zap.String("path", c.Path()),
-				zap.String("method", c.Method()),
-			)
+			} else {
+				logger.Debug("Client error",
+					zap.String("code", appErr.Code),
+					zap.String("message", appErr.Message),
+					zap.String("path", SafeRequestPath(c)),
+					zap.String("method", c.Method()),
+				)
 			}
 		} else if fiberErr, ok := err.(*fiber.Error); ok {
 			// Handle Fiber errors
@@ -58,7 +58,7 @@ func ErrorHandler(logger *zap.Logger) fiber.ErrorHandler {
 			// Unknown error
 			logger.Error("Unexpected error",
 				zap.Error(err),
-				zap.String("path", c.Path()),
+				zap.String("path", SafeRequestPath(c)),
 				zap.String("method", c.Method()),
 			)
 		}

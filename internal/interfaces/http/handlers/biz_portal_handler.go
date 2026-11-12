@@ -15,6 +15,7 @@ import (
 // authenticated by an opaque, time-limited portal token in the URL, which
 // resolves to (app_id, user_id) — all data access is scoped to both.
 type BizPortalHandler struct {
+	operations   *services.BizOperationService
 	recurring    *services.BizRecurringService
 	checkout     *services.BizCheckoutService
 	portalSvc    *services.BizPortalService
@@ -45,7 +46,7 @@ func NewBizPortalHandler(svcs BizBillingServices, logger *zap.Logger) *BizPortal
 
 // resolve validates the :token path param and returns (appID, userID).
 func (h *BizPortalHandler) resolve(c *fiber.Ctx) (string, string, error) {
-	pt, err := h.portalSvc.Resolve(c.Context(), c.Params("token"))
+	pt, err := h.portalSvc.ResolveScope(c.UserContext(), c.Params("token"))
 	if err != nil {
 		return "", "", err
 	}
@@ -122,7 +123,8 @@ func (h *BizPortalHandler) ListInvoices(c *fiber.Ctx) error {
 		AppID:  appID,
 		UserID: userID,
 		Status: bizbilling.InvoiceStatus(c.Query("status")),
-		Limit:  50,
+		Limit:  portalLimit(c, 50),
+		Offset: portalOffset(c),
 	})
 	if err != nil {
 		return h.handleError(c, err)
