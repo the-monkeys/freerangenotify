@@ -16,13 +16,15 @@ type GatewayEventAcknowledgment struct {
 // Only the fields needed for reconciliation are retained. Raw customer/card
 // data is deliberately excluded; the digest identifies the exact signed bytes.
 type GatewayEventData struct {
-	Event       string `json:"event"`
-	AccountID   string `json:"account_id"`
-	PaymentID   string `json:"payment_id,omitempty"`
-	OrderID     string `json:"order_id,omitempty"`
-	RefundID    string `json:"refund_id,omitempty"`
-	AmountPaisa int64  `json:"amount_paisa,omitempty"`
-	Currency    string `json:"currency,omitempty"`
+	SubscriptionID string `json:"subscription_id,omitempty"`
+	InvoiceID      string `json:"invoice_id,omitempty"`
+	Event          string `json:"event"`
+	AccountID      string `json:"account_id"`
+	PaymentID      string `json:"payment_id,omitempty"`
+	OrderID        string `json:"order_id,omitempty"`
+	RefundID       string `json:"refund_id,omitempty"`
+	AmountPaisa    int64  `json:"amount_paisa,omitempty"`
+	Currency       string `json:"currency,omitempty"`
 }
 type GatewayEventReceipt struct {
 	SchemaVersion    int              `json:"schema_version"`
@@ -57,9 +59,10 @@ type GatewayHeaderCollision struct {
 }
 
 type MerchantAccountProof struct {
-	AppID       string     `json:"app_id"`
-	Gateway     GatewayRef `json:"gateway"`
-	EventDigest string     `json:"event_digest"`
-	PaymentID   string     `json:"payment_id"`
-	VerifiedAt  time.Time  `json:"verified_at"`
+	SubscriptionID string     `json:"subscription_id,omitempty"`
+	AppID          string     `json:"app_id"`
+	Gateway        GatewayRef `json:"gateway"`
+	EventDigest    string     `json:"event_digest"`
+	PaymentID      string     `json:"payment_id"`
+	VerifiedAt     time.Time  `json:"verified_at"`
 }

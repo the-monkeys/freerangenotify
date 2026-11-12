@@ -26,7 +26,7 @@ func (r *GatewayEventRepo) Get(ctx context.Context, id string) (*bizbilling.Gate
 	if err != nil {
 		return nil, err
 	}
-	if receipt.ID != id || receipt.Kind != "receipt" || receipt.SchemaVersion != 1 || receipt.AppID == "" || receipt.Gateway.ConnectionID == "" {
+	if receipt.ID != id || receipt.Kind != "receipt" || (receipt.SchemaVersion != 1 && receipt.SchemaVersion != 2) || receipt.AppID == "" || receipt.Gateway.ConnectionID == "" {
 		return nil, bizbilling.ErrReconciliationRequired
 	}
 	return receipt, nil

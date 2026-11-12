@@ -77,6 +77,29 @@ For an upgraded invoice, `gateway_mode` is pinned at creation; omitted means `li
 
 A customer portal payment uses `POST /v1/portal/TOKEN/invoices/INVOICE_ID/pay`; the token must belong to the invoice's customer. The response supplies `key_id`, `gateway_order_id`, payable minor units, currency, state and `operation_id`. Use the returned public key for checkout. Submit `razorpay_order_id`, `razorpay_payment_id` and `razorpay_signature` to `POST /v1/portal/TOKEN/invoices/INVOICE_ID/verify-payment`. The server verifies the signature and independently fetches captured payment facts. An authorized payment alone is not paid. Keep portal tokens private.
 
+## Choose how a subscription collects money
+
+Missing `collection_mode` means `invoice`. Existing subscriptions do not acquire a payment mandate when the application is upgraded. Invoice collection works without Razorpay: issue the bill and record confirmed cash, direct UPI or bank payments, or let the customer pay online if a gateway is connected.
+
+For an upgraded subscription, choose a collection method with `POST /v1/biz/subscriptions/SUBSCRIPTION_ID/collection-mode`. Send an `Idempotency-Key` and reuse it for an identical retry:
+
+```json
+{
+  "collection_mode": "automatic",
+  "automatic_cycles": 12
+}
+```
+
+The business's choice does not authorize a customer mandate. Request authorization through `POST /v1/portal/TOKEN/subscriptions/SUBSCRIPTION_ID/authorize`, with an `Idempotency-Key` and `{"mode":"test"}` or `{"mode":"live"}` matching that subscription. The token must belong to its customer. Use the returned public `key_id` and `gateway_subscription_id` with the Razorpay subscription checkout. After checkout, send `razorpay_subscription_id`, `razorpay_payment_id` and `razorpay_signature` to `POST /v1/portal/TOKEN/subscriptions/SUBSCRIPTION_ID/verify-authorization`. The server verifies the saved business key and fetches provider state. Browser success and mandate authorization do not record an invoice payment.
+
+The initial automatic-collection support is for fixed INR plans with weekly, monthly, quarterly, half-yearly or yearly cycles. It includes the saved quantity and tax calculation. Choose 1–120 billing cycles explicitly. Tiered or usage-based prices, custom cycles, contracts, setup fees and add-ons continue to use invoice collection. Unsupported combinations are rejected before a provider plan or mandate is created. No currency conversion is performed.
+
+For a subscription already in progress, authorization applies to future periods after its existing period ends; outstanding invoices are not charged automatically. The authorization response shows its amount, currency, start, cycle count and expiry. Provider timestamps use whole seconds, so a new future start can be rounded up by less than one second without changing a historical period. New-subscription first-period invoicing and renewal synchronization use the separate period lifecycle.
+
+To return to invoice collection, send `{"collection_mode":"invoice"}` with a new key. If an authorization or cancellation outcome is unknown, the subscription remains pending until lookup and confirmed cancellation establish that future automatic debits stopped. A cancellation retry stays bound to its original mandate; it cannot cancel a later authorization. Keep the original request key and operation reference instead of creating another mandate. Use `GET /v1/biz/gateway-effects/OPERATION_ID` to inspect saved external work.
+
+Payment-account readiness distinguishes authenticated API credentials, verified account linkage and automatic capability. Account linkage requires a signed callback checked against server-fetched facts. Configure the callback for that connection and retain access to the original account for existing mandates. Disconnecting the current gateway slot prevents new setup; it does not cancel an existing provider subscription. See the [Razorpay subscription API](https://razorpay.com/docs/api/payments/subscriptions/) for the hosted authorization flow.
+
 Gateway refunds use the same payment refund route above with an `Idempotency-Key` header. The request first reserves refundable money, then contacts the original merchant account. A pending or unknown result keeps its reservation; it does not increase `refunded_paisa`. Only a matching provider-confirmed processed refund settles it. A definitive failure releases its holds. A spent overpayment cannot be refunded again as customer credit, and a refund does not reopen the paid invoice. `amount_paisa: 0` requests the remaining refundable amount. Provider processing does not promise immediate bank credit.
 
 For a timeout or `BILLING_GATEWAY_PENDING`, inspect `GET /v1/biz/gateway-effects/OPERATION_ID` and retry the identical request with the **same key**. Recovery looks up the original attempt rather than sending another refund. `GET /v1/biz/gateway-events?state=unmatched&limit=50` lists stored events needing investigation; use `GET /v1/biz/gateway-events/EVENT_ID` for one event. A valid callback with no matching local refund remains visible for reconciliation and never silently changes a balance. Historical gateway payments without a provable account binding require explicit review.

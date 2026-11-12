@@ -537,6 +537,11 @@ components:
             required:
                 - code
             type: object
+        bizbilling.AuthorizeSubscriptionRequest:
+            properties:
+                mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
+            type: object
         bizbilling.BillingCycle:
             enum:
                 - weekly
@@ -576,6 +581,13 @@ components:
                 - count
                 - rules
             type: object
+        bizbilling.ChangeCollectionRequest:
+            properties:
+                automatic_cycles:
+                    type: integer
+                collection_mode:
+                    $ref: '#/components/schemas/bizbilling.CollectionMode'
+            type: object
         bizbilling.CheckoutProof:
             properties:
                 razorpay_order_id:
@@ -585,6 +597,14 @@ components:
                 razorpay_signature:
                     type: string
             type: object
+        bizbilling.CollectionMode:
+            enum:
+                - invoice
+                - automatic
+            type: string
+            x-enum-varnames:
+                - CollectionInvoice
+                - CollectionAutomatic
         bizbilling.CreateConnectorRequest:
             properties:
                 app_id:
@@ -854,6 +874,12 @@ components:
                     items:
                         type: string
                     type: array
+                automatic_cycles:
+                    type: integer
+                collection_mode:
+                    $ref: '#/components/schemas/bizbilling.CollectionMode'
+                gateway_mode:
+                    $ref: '#/components/schemas/bizbilling.GatewayMode'
                 metadata:
                     additionalProperties: true
                     type: object
@@ -918,8 +944,16 @@ components:
                     $ref: '#/components/schemas/bizbilling.GatewayOrder'
                 order_intent:
                     $ref: '#/components/schemas/bizbilling.OrderIntent'
+                plan_attempted:
+                    type: boolean
                 provider_id:
                     type: string
+                recurring_intent:
+                    $ref: '#/components/schemas/bizbilling.RecurringIntent'
+                recurring_plan:
+                    $ref: '#/components/schemas/bizbilling.GatewayRecurringPlan'
+                recurring_subscription:
+                    $ref: '#/components/schemas/bizbilling.GatewaySubscription'
                 refund:
                     $ref: '#/components/schemas/bizbilling.GatewayRefund'
                 refund_intent:
@@ -935,6 +969,14 @@ components:
                 scope:
                     $ref: '#/components/schemas/bizbilling.Scope'
                 state:
+                    type: string
+                stop_requested:
+                    type: boolean
+                subscription_action:
+                    $ref: '#/components/schemas/bizbilling.SubscriptionAction'
+                subscription_generation:
+                    type: integer
+                subscription_id:
                     type: string
                 updated_at:
                     type: string
@@ -958,11 +1000,15 @@ components:
                     type: string
                 event:
                     type: string
+                invoice_id:
+                    type: string
                 order_id:
                     type: string
                 payment_id:
                     type: string
                 refund_id:
+                    type: string
+                subscription_id:
                     type: string
             type: object
         bizbilling.GatewayEventReceipt:
@@ -1011,6 +1057,21 @@ components:
                 intent:
                     $ref: '#/components/schemas/bizbilling.OrderIntent'
             type: object
+        bizbilling.GatewayRecurringPlan:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                id:
+                    type: string
+                interval:
+                    type: integer
+                operation_id:
+                    type: string
+                period:
+                    type: string
+            type: object
         bizbilling.GatewayRef:
             properties:
                 account_id:
@@ -1028,6 +1089,21 @@ components:
                     type: string
                 intent:
                     $ref: '#/components/schemas/bizbilling.RefundIntent'
+                status:
+                    type: string
+            type: object
+        bizbilling.GatewaySubscription:
+            properties:
+                current_end:
+                    type: string
+                current_start:
+                    type: string
+                id:
+                    type: string
+                intent:
+                    $ref: '#/components/schemas/bizbilling.RecurringIntent'
+                plan_id:
+                    type: string
                 status:
                     type: string
             type: object
@@ -1266,6 +1342,37 @@ components:
             required:
                 - method
             type: object
+        bizbilling.RecurringIntent:
+            properties:
+                amount_paisa:
+                    type: integer
+                currency:
+                    type: string
+                expire_by:
+                    type: string
+                gateway:
+                    $ref: '#/components/schemas/bizbilling.GatewayRef'
+                interval:
+                    type: integer
+                name:
+                    type: string
+                operation_id:
+                    type: string
+                period:
+                    type: string
+                plan_id:
+                    type: string
+                price:
+                    $ref: '#/components/schemas/bizbilling.SubscriptionPriceSnapshot'
+                scope:
+                    $ref: '#/components/schemas/bizbilling.Scope'
+                start_at:
+                    type: string
+                subscription_id:
+                    type: string
+                total_count:
+                    type: integer
+            type: object
         bizbilling.RefundIntent:
             properties:
                 amount_paisa:
@@ -1341,6 +1448,63 @@ components:
                     description: Omitted means live and preserves every existing stream/document ID.
                 user_id:
                     type: string
+            type: object
+        bizbilling.SubscriptionAction:
+            enum:
+                - cancel
+                - pause
+                - resume
+            type: string
+            x-enum-varnames:
+                - SubscriptionCancel
+                - SubscriptionPause
+                - SubscriptionResume
+        bizbilling.SubscriptionAuthorizationProof:
+            properties:
+                razorpay_payment_id:
+                    type: string
+                razorpay_signature:
+                    type: string
+                razorpay_subscription_id:
+                    type: string
+            type: object
+        bizbilling.SubscriptionPriceSnapshot:
+            properties:
+                billing_cycle:
+                    $ref: '#/components/schemas/bizbilling.BillingCycle'
+                currency:
+                    type: string
+                cycle_days:
+                    type: integer
+                discount_paisa:
+                    type: integer
+                line_items:
+                    items:
+                        $ref: '#/components/schemas/bizbilling.InvoiceLineItem'
+                    type: array
+                payment_terms:
+                    type: string
+                plan_id:
+                    type: string
+                plan_name:
+                    type: string
+                subtotal_paisa:
+                    type: integer
+                tax_amount_paisa:
+                    type: integer
+                tax_breakdown:
+                    $ref: '#/components/schemas/bizbilling.TaxBreakdown'
+                total_paisa:
+                    type: integer
+            type: object
+        bizbilling.TaxBreakdown:
+            properties:
+                cgst_paisa:
+                    type: integer
+                igst_paisa:
+                    type: integer
+                sgst_paisa:
+                    type: integer
             type: object
         bizbilling.UpdateConnectorRequest:
             properties:

@@ -15,6 +15,38 @@ import (
 const GatewayConnectionIndex = "frn_biz_gateway_connections"
 const GatewayEffectIndex = "frn_biz_gateway_effects"
 
+func (r *GatewayConnectionRepo) RecurringCapability(ctx context.Context, ref bizbilling.GatewayRef) (*bizbilling.RecurringCapability, error) {
+	store := NewStore[bizbilling.RecurringCapability](r.store.es, GatewayConnectionIndex, r.store.logger, repository.RefreshFalse)
+	capability, err := store.Get(ctx, GatewayConnectionRevisionID(ref)+"_recurring_capability")
+	if err != nil {
+		return nil, err
+	}
+	if capability.Gateway != ref || capability.AppID == "" || capability.VerifiedAt.IsZero() {
+		return nil, bizbilling.ErrReconciliationRequired
+	}
+	return capability, nil
+}
+
+func (r *GatewayConnectionRepo) RecordRecurringCapability(ctx context.Context, capability bizbilling.RecurringCapability) error {
+	connection, err := r.Get(ctx, capability.Gateway)
+	if err != nil {
+		return err
+	}
+	if connection.AppID != capability.AppID || capability.VerifiedAt.IsZero() {
+		return bizbilling.ErrReconciliationRequired
+	}
+	store := NewStore[bizbilling.RecurringCapability](r.store.es, GatewayConnectionIndex, r.store.logger, repository.RefreshFalse)
+	_, _ = store.CreateIfAbsent(ctx, GatewayConnectionRevisionID(capability.Gateway)+"_recurring_capability", &capability)
+	confirmed, err := r.RecurringCapability(ctx, capability.Gateway)
+	if err != nil {
+		return err
+	}
+	if confirmed.AppID != capability.AppID {
+		return bizbilling.ErrReconciliationRequired
+	}
+	return nil
+}
+
 type GatewayConnectionRepo struct {
 	store  *Store[bizbilling.MerchantConnection]
 	proofs *Store[bizbilling.MerchantAccountProof]
@@ -29,7 +61,7 @@ func (r *GatewayConnectionRepo) AccountProof(ctx context.Context, ref bizbilling
 	if err != nil {
 		return nil, err
 	}
-	if proof.Gateway != ref || proof.AppID == "" || proof.EventDigest == "" || proof.PaymentID == "" {
+	if proof.Gateway != ref || proof.AppID == "" || proof.EventDigest == "" || (proof.PaymentID == "" && proof.SubscriptionID == "") {
 		return nil, bizbilling.ErrReconciliationRequired
 	}
 	return proof, nil
@@ -39,7 +71,7 @@ func (r *GatewayConnectionRepo) RecordAccountProof(ctx context.Context, proof *b
 	if err != nil {
 		return err
 	}
-	if connection.AppID != proof.AppID || proof.EventDigest == "" || proof.PaymentID == "" {
+	if connection.AppID != proof.AppID || proof.EventDigest == "" || (proof.PaymentID == "" && proof.SubscriptionID == "") {
 		return bizbilling.ErrReconciliationRequired
 	}
 	_, _ = r.proofs.CreateIfAbsent(ctx, GatewayConnectionRevisionID(proof.Gateway)+"_account_proof", proof)

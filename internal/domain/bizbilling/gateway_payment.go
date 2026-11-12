@@ -65,26 +65,34 @@ type CheckoutDescriptor struct {
 // External intents and attempt markers survive timeouts. They do not themselves
 // represent a payment; only a verified financial journal operation can do that.
 type GatewayEffect struct {
-	RefundPaymentID  string                `json:"refund_payment_id,omitempty"`
-	GatewayPaymentID string                `json:"gateway_payment_id,omitempty"`
-	RefundRequest    *RefundPaymentRequest `json:"refund_request,omitempty"`
-	RequestHash      string                `json:"request_hash,omitempty"`
-	RefundIntent     *RefundIntent         `json:"refund_intent,omitempty"`
-	Refund           *GatewayRefund        `json:"refund,omitempty"`
-	Result           *OperationResult      `json:"result,omitempty"`
-	FailureCode      string                `json:"failure_code,omitempty"`
-	NextEffectID     string                `json:"next_effect_id,omitempty"`
-	ID               string                `json:"id"`
-	Kind             string                `json:"kind"`
-	Scope            Scope                 `json:"scope"`
-	Gateway          GatewayRef            `json:"gateway"`
-	OrderIntent      *OrderIntent          `json:"order_intent,omitempty"`
-	Order            *GatewayOrder         `json:"order,omitempty"`
-	ProviderID       string                `json:"provider_id,omitempty"`
-	Attempted        bool                  `json:"attempted"`
-	State            string                `json:"state"`
-	CreatedAt        time.Time             `json:"created_at"`
-	UpdatedAt        time.Time             `json:"updated_at"`
+	StopRequested          bool                  `json:"stop_requested,omitempty"`
+	RecurringIntent        *RecurringIntent      `json:"recurring_intent,omitempty"`
+	RecurringPlan          *GatewayRecurringPlan `json:"recurring_plan,omitempty"`
+	RecurringSubscription  *GatewaySubscription  `json:"recurring_subscription,omitempty"`
+	SubscriptionID         string                `json:"subscription_id,omitempty"`
+	SubscriptionAction     SubscriptionAction    `json:"subscription_action,omitempty"`
+	PlanAttempted          bool                  `json:"plan_attempted,omitempty"`
+	SubscriptionGeneration int64                 `json:"subscription_generation,omitempty"`
+	RefundPaymentID        string                `json:"refund_payment_id,omitempty"`
+	GatewayPaymentID       string                `json:"gateway_payment_id,omitempty"`
+	RefundRequest          *RefundPaymentRequest `json:"refund_request,omitempty"`
+	RequestHash            string                `json:"request_hash,omitempty"`
+	RefundIntent           *RefundIntent         `json:"refund_intent,omitempty"`
+	Refund                 *GatewayRefund        `json:"refund,omitempty"`
+	Result                 *OperationResult      `json:"result,omitempty"`
+	FailureCode            string                `json:"failure_code,omitempty"`
+	NextEffectID           string                `json:"next_effect_id,omitempty"`
+	ID                     string                `json:"id"`
+	Kind                   string                `json:"kind"`
+	Scope                  Scope                 `json:"scope"`
+	Gateway                GatewayRef            `json:"gateway"`
+	OrderIntent            *OrderIntent          `json:"order_intent,omitempty"`
+	Order                  *GatewayOrder         `json:"order,omitempty"`
+	ProviderID             string                `json:"provider_id,omitempty"`
+	Attempted              bool                  `json:"attempted"`
+	State                  string                `json:"state"`
+	CreatedAt              time.Time             `json:"created_at"`
+	UpdatedAt              time.Time             `json:"updated_at"`
 }
 
 type RefundIntent struct {

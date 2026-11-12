@@ -78,6 +78,9 @@ func verifySnapshot[T bizbilling.FinancialSnapshot](ctx context.Context, store *
 }
 
 func (s *Stores) VerifyFinancialProjections(ctx context.Context, event bizbilling.JournalEvent) error {
+	if err := verifySnapshot(ctx, s.Subscriptions, event.SubscriptionAfter, event.Scope, event.Sequence); err != nil {
+		return err
+	}
 	for i := range event.ExpensesAfter {
 		if err := verifySnapshot(ctx, s.Expenses, &event.ExpensesAfter[i], event.Scope, event.Sequence); err != nil {
 			return err

@@ -152,6 +152,8 @@ func setupPublicRoutes(v1 fiber.Router, c *container.Container) {
 		portal.Get("/invoices/:id", c.BizPortalHandler.GetInvoice)
 		portal.Post("/invoices/:id/pay", c.BizPortalHandler.PayInvoice)
 		portal.Post("/invoices/:id/verify-payment", c.BizPortalHandler.VerifyInvoicePayment)
+		portal.Post("/subscriptions/:id/authorize", c.BizPortalHandler.AuthorizeSubscription)
+		portal.Post("/subscriptions/:id/verify-authorization", c.BizPortalHandler.VerifySubscriptionAuthorization)
 		portal.Get("/estimates", c.BizPortalHandler.ListEstimates)
 		portal.Post("/estimates/:id/accept", c.BizPortalHandler.AcceptEstimate)
 		portal.Post("/estimates/:id/reject", c.BizPortalHandler.RejectEstimate)
@@ -488,6 +490,7 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 
 		// ── Invoices ──
 		biz.Post("/invoices", c.BizBillingHandler.CreateInvoice)
+		biz.Post("/subscriptions/:id/collection-mode", c.BizBillingHandler.ChangeSubscriptionCollection)
 		biz.Get("/invoices", c.BizBillingHandler.ListInvoices)
 		biz.Post("/invoices/preview", c.BizBillingHandler.PreviewInvoice)
 		biz.Get("/invoices/:id/document", c.BizBillingHandler.GetInvoiceDocument)

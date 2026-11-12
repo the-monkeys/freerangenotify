@@ -116,6 +116,7 @@ type Container struct {
 	BizGatewayConnections            *services.BizGatewayConnectionService
 	BizCheckoutService               *services.BizCheckoutService
 	BizRefundService                 *services.BizRefundService
+	BizRecurringService              *services.BizRecurringService
 	BizGatewayEventService           *services.BizGatewayEventService
 	BizBillingGatewayCallbackHandler *handlers.BizBillingGatewayCallbackHandler
 	BizPortalHandler                 *handlers.BizPortalHandler
@@ -1003,6 +1004,11 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizRefundService = services.NewBizRefundService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
 		lifecycleSvc.SetRefundService(container.BizRefundService)
 		container.BizGatewayEventService.SetRefundProcessor(container.BizRefundService)
+		container.BizRecurringService = services.NewBizRecurringService(esClient, lifecycleSvc, container.BizGatewayConnections, merchantGatewayFactory, logger)
+		container.BizRecurringService.SetNewCollectionEnabled(container.Config.BizBilling.NewCollectionEnabled)
+		container.BizGatewayEventService.SetRecurringProcessor(container.BizRecurringService)
+		container.BizBillingHandler.SetRecurringService(container.BizRecurringService)
+		container.BizPortalHandler.SetRecurringService(container.BizRecurringService)
 		container.BizBillingHandler.SetGatewayEventService(container.BizGatewayEventService)
 		container.BizBillingGatewayCallbackHandler = handlers.NewBizBillingGatewayCallbackHandler(container.BizGatewayEventService, logger)
 
@@ -1021,6 +1027,7 @@ func NewContainer(cfg *config.Config, logger *zap.Logger) (*Container, error) {
 		container.BizOperationService.Start(schedCtx)
 		container.BizGatewayEventService.Start(schedCtx)
 		container.BizRefundService.Start(schedCtx)
+		container.BizRecurringService.Start(schedCtx)
 		container.bizSchedulerCancel = schedCancel
 
 		logger.Info("Business Billing module enabled")

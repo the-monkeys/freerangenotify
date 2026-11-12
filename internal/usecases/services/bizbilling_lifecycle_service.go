@@ -74,6 +74,9 @@ func (s *BizLifecycleService) getOwnedSubscription(ctx context.Context, appID, i
 	if err != nil || sub.AppID != appID {
 		return nil, errors.NotFound("subscription", id)
 	}
+	if err := guardFinancialRead(ctx, s.gate, s.operations, sub.FinancialScope(), sub.LastSequence); err != nil {
+		return nil, err
+	}
 	return sub, nil
 }
 
@@ -142,6 +145,9 @@ func (s *BizLifecycleService) customerState(ctx context.Context, userID string) 
 func (s *BizLifecycleService) CreateSubscription(ctx context.Context, appID string, req *bizbilling.CreateSubscriptionRequest) (*bizbilling.BizSubscription, error) {
 	if err := s.requireSubscriptionLifecycle(ctx, appID); err != nil {
 		return nil, err
+	}
+	if req.CollectionMode != "" && req.CollectionMode != bizbilling.CollectionInvoice || req.AutomaticCycles != 0 || req.GatewayMode != "" {
+		return nil, errors.Conflict("Automatic collection requires the reviewed billing lifecycle; existing invoice subscriptions remain available")
 	}
 	ctx, finishMutation, mutationErr := BeginBizMutation(ctx, s.gate, appID)
 	if mutationErr != nil {

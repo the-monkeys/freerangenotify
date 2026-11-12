@@ -537,6 +537,11 @@ definitions:
         required:
             - code
         type: object
+    bizbilling.AuthorizeSubscriptionRequest:
+        properties:
+            mode:
+                $ref: '#/definitions/bizbilling.GatewayMode'
+        type: object
     bizbilling.BillingCycle:
         enum:
             - weekly
@@ -576,6 +581,13 @@ definitions:
             - count
             - rules
         type: object
+    bizbilling.ChangeCollectionRequest:
+        properties:
+            automatic_cycles:
+                type: integer
+            collection_mode:
+                $ref: '#/definitions/bizbilling.CollectionMode'
+        type: object
     bizbilling.CheckoutProof:
         properties:
             razorpay_order_id:
@@ -585,6 +597,14 @@ definitions:
             razorpay_signature:
                 type: string
         type: object
+    bizbilling.CollectionMode:
+        enum:
+            - invoice
+            - automatic
+        type: string
+        x-enum-varnames:
+            - CollectionInvoice
+            - CollectionAutomatic
     bizbilling.CreateConnectorRequest:
         properties:
             app_id:
@@ -854,6 +874,12 @@ definitions:
                 items:
                     type: string
                 type: array
+            automatic_cycles:
+                type: integer
+            collection_mode:
+                $ref: '#/definitions/bizbilling.CollectionMode'
+            gateway_mode:
+                $ref: '#/definitions/bizbilling.GatewayMode'
             metadata:
                 additionalProperties: true
                 type: object
@@ -918,8 +944,16 @@ definitions:
                 $ref: '#/definitions/bizbilling.GatewayOrder'
             order_intent:
                 $ref: '#/definitions/bizbilling.OrderIntent'
+            plan_attempted:
+                type: boolean
             provider_id:
                 type: string
+            recurring_intent:
+                $ref: '#/definitions/bizbilling.RecurringIntent'
+            recurring_plan:
+                $ref: '#/definitions/bizbilling.GatewayRecurringPlan'
+            recurring_subscription:
+                $ref: '#/definitions/bizbilling.GatewaySubscription'
             refund:
                 $ref: '#/definitions/bizbilling.GatewayRefund'
             refund_intent:
@@ -935,6 +969,14 @@ definitions:
             scope:
                 $ref: '#/definitions/bizbilling.Scope'
             state:
+                type: string
+            stop_requested:
+                type: boolean
+            subscription_action:
+                $ref: '#/definitions/bizbilling.SubscriptionAction'
+            subscription_generation:
+                type: integer
+            subscription_id:
                 type: string
             updated_at:
                 type: string
@@ -958,11 +1000,15 @@ definitions:
                 type: string
             event:
                 type: string
+            invoice_id:
+                type: string
             order_id:
                 type: string
             payment_id:
                 type: string
             refund_id:
+                type: string
+            subscription_id:
                 type: string
         type: object
     bizbilling.GatewayEventReceipt:
@@ -1011,6 +1057,21 @@ definitions:
             intent:
                 $ref: '#/definitions/bizbilling.OrderIntent'
         type: object
+    bizbilling.GatewayRecurringPlan:
+        properties:
+            amount_paisa:
+                type: integer
+            currency:
+                type: string
+            id:
+                type: string
+            interval:
+                type: integer
+            operation_id:
+                type: string
+            period:
+                type: string
+        type: object
     bizbilling.GatewayRef:
         properties:
             account_id:
@@ -1028,6 +1089,21 @@ definitions:
                 type: string
             intent:
                 $ref: '#/definitions/bizbilling.RefundIntent'
+            status:
+                type: string
+        type: object
+    bizbilling.GatewaySubscription:
+        properties:
+            current_end:
+                type: string
+            current_start:
+                type: string
+            id:
+                type: string
+            intent:
+                $ref: '#/definitions/bizbilling.RecurringIntent'
+            plan_id:
+                type: string
             status:
                 type: string
         type: object
@@ -1266,6 +1342,37 @@ definitions:
         required:
             - method
         type: object
+    bizbilling.RecurringIntent:
+        properties:
+            amount_paisa:
+                type: integer
+            currency:
+                type: string
+            expire_by:
+                type: string
+            gateway:
+                $ref: '#/definitions/bizbilling.GatewayRef'
+            interval:
+                type: integer
+            name:
+                type: string
+            operation_id:
+                type: string
+            period:
+                type: string
+            plan_id:
+                type: string
+            price:
+                $ref: '#/definitions/bizbilling.SubscriptionPriceSnapshot'
+            scope:
+                $ref: '#/definitions/bizbilling.Scope'
+            start_at:
+                type: string
+            subscription_id:
+                type: string
+            total_count:
+                type: integer
+        type: object
     bizbilling.RefundIntent:
         properties:
             amount_paisa:
@@ -1341,6 +1448,63 @@ definitions:
                 description: Omitted means live and preserves every existing stream/document ID.
             user_id:
                 type: string
+        type: object
+    bizbilling.SubscriptionAction:
+        enum:
+            - cancel
+            - pause
+            - resume
+        type: string
+        x-enum-varnames:
+            - SubscriptionCancel
+            - SubscriptionPause
+            - SubscriptionResume
+    bizbilling.SubscriptionAuthorizationProof:
+        properties:
+            razorpay_payment_id:
+                type: string
+            razorpay_signature:
+                type: string
+            razorpay_subscription_id:
+                type: string
+        type: object
+    bizbilling.SubscriptionPriceSnapshot:
+        properties:
+            billing_cycle:
+                $ref: '#/definitions/bizbilling.BillingCycle'
+            currency:
+                type: string
+            cycle_days:
+                type: integer
+            discount_paisa:
+                type: integer
+            line_items:
+                items:
+                    $ref: '#/definitions/bizbilling.InvoiceLineItem'
+                type: array
+            payment_terms:
+                type: string
+            plan_id:
+                type: string
+            plan_name:
+                type: string
+            subtotal_paisa:
+                type: integer
+            tax_amount_paisa:
+                type: integer
+            tax_breakdown:
+                $ref: '#/definitions/bizbilling.TaxBreakdown'
+            total_paisa:
+                type: integer
+        type: object
+    bizbilling.TaxBreakdown:
+        properties:
+            cgst_paisa:
+                type: integer
+            igst_paisa:
+                type: integer
+            sgst_paisa:
+                type: integer
         type: object
     bizbilling.UpdateConnectorRequest:
         properties:
@@ -10477,6 +10641,63 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/subscriptions/{id}/collection-mode:
+        post:
+            consumes:
+                - application/json
+            description: Invoice collection supports cash, direct UPI and bank payments without a gateway. Automatic collection requires explicit customer authorization for future periods. Switching back waits for verified cancellation of future automatic debits. Retry an identical request with the same key after a pending outcome.
+            parameters:
+                - description: Subscription ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+                - description: Stable key for this request
+                  in: header
+                  name: Idempotency-Key
+                  required: true
+                  type: string
+                - description: Collection choice and explicit automatic cycle count
+                  in: body
+                  name: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/bizbilling.ChangeCollectionRequest'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "400":
+                    description: Bad Request
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "401":
+                    description: Unauthorized
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "409":
+                    description: Conflict
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "503":
+                    description: Service Unavailable
+                    schema:
+                        additionalProperties: true
+                        type: object
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Choose subscription collection
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/subscriptions/{id}/non-renewing:
         post:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
@@ -12692,6 +12913,124 @@ paths:
                         additionalProperties: true
                         type: object
             summary: Get Statement
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/subscriptions/{id}/authorize:
+        post:
+            consumes:
+                - application/json
+            description: The portal token must belong to this subscription's customer. Returns public Razorpay SDK parameters after the business explicitly selected automatic collection. Existing arrears are not charged. Authorization is not an invoice payment; the server verifies provider state and account linkage.
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Subscription ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+                - description: Reuse this key when retrying authorization
+                  in: header
+                  name: Idempotency-Key
+                  required: true
+                  type: string
+                - description: Test or live mode matching the subscription
+                  in: body
+                  name: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/bizbilling.AuthorizeSubscriptionRequest'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "400":
+                    description: Bad Request
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "401":
+                    description: Unauthorized
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "404":
+                    description: Not Found
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "409":
+                    description: Conflict
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "503":
+                    description: Service Unavailable
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Authorize future subscription payments
+            tags:
+                - BizPortal
+            x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.
+    /v1/portal/{token}/subscriptions/{id}/verify-authorization:
+        post:
+            consumes:
+                - application/json
+            description: Verify the Razorpay checkout signature against the saved subscription and its original business key, then fetch provider state. Authorization never records an invoice payment.
+            parameters:
+                - description: Customer portal token
+                  in: path
+                  name: token
+                  required: true
+                  type: string
+                - description: Subscription ID
+                  in: path
+                  name: id
+                  required: true
+                  type: string
+                - description: Razorpay authorization result
+                  in: body
+                  name: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/bizbilling.SubscriptionAuthorizationProof'
+            produces:
+                - application/json
+            responses:
+                "200":
+                    description: OK
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "400":
+                    description: Bad Request
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "401":
+                    description: Unauthorized
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "404":
+                    description: Not Found
+                    schema:
+                        additionalProperties: true
+                        type: object
+                "503":
+                    description: Service Unavailable
+                    schema:
+                        additionalProperties: true
+                        type: object
+            summary: Verify subscription authorization
             tags:
                 - BizPortal
             x-feature-prerequisites: Requires this deployment's optional portal feature and its configured service/provider.

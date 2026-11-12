@@ -30,6 +30,12 @@ func digest(value any) string {
 	return hex.EncodeToString(sum[:])
 }
 func ScopeID(scope bizbilling.Scope) string { return digest(scope) }
+func OperationIDForKey(scope bizbilling.Scope, key string) string {
+	return digest(struct {
+		Scope bizbilling.Scope
+		Key   string
+	}{scope, key})
+}
 func intentHash(command bizbilling.Command) string {
 	command.IdempotencyKey = ""
 	return digest(command)
@@ -48,10 +54,7 @@ func (r *OperationRepo) Begin(ctx context.Context, command bizbilling.Command) (
 	}
 	id := uuid.NewString()
 	if command.IdempotencyKey != "" {
-		id = digest(struct {
-			Scope bizbilling.Scope
-			Key   string
-		}{command.Scope, command.IdempotencyKey})
+		id = OperationIDForKey(command.Scope, command.IdempotencyKey)
 	}
 	now := time.Now().UTC()
 	op := &bizbilling.Operation{SchemaVersion: bizbilling.FinancialOperationSchemaVersion, ID: id, AppID: command.Scope.AppID, Scope: command.Scope, IntentHash: intentHash(command), Command: command, State: bizbilling.OperationAccepted, CreatedAt: now, UpdatedAt: now}

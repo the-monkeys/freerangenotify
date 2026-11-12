@@ -14,6 +14,8 @@ func (it *IndexTemplates) GetBizGatewayEventsTemplate() map[string]interface{} {
 }
 func (it *IndexTemplates) GetBizGatewayEffectsTemplate() map[string]interface{} {
 	return billingFactTemplate(map[string]interface{}{
+		"subscription_id": billingKeyword(), "subscription_generation": billingLong(), "subscription_action": billingKeyword(), "plan_attempted": map[string]interface{}{"type": "boolean"},
+		"recurring_intent": map[string]interface{}{"type": "object", "enabled": false}, "recurring_plan": map[string]interface{}{"type": "object", "enabled": false}, "recurring_subscription": map[string]interface{}{"type": "object", "enabled": false},
 		"refund_payment_id": billingKeyword(), "gateway_payment_id": billingKeyword(), "request_hash": billingKeyword(), "refund_intent": map[string]interface{}{"type": "object", "enabled": false}, "refund": map[string]interface{}{"type": "object", "enabled": false}, "refund_request": map[string]interface{}{"type": "object", "enabled": false}, "result": map[string]interface{}{"type": "object", "enabled": false},
 		"id": billingKeyword(), "kind": billingKeyword(), "scope": billingScope(), "provider_id": billingKeyword(), "state": billingKeyword(),
 		"gateway":      map[string]interface{}{"type": "object", "properties": map[string]interface{}{"connection_id": billingKeyword(), "account_id": billingKeyword(), "mode": billingKeyword(), "credential_revision": billingLong()}},

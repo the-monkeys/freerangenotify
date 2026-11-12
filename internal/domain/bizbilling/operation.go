@@ -17,29 +17,30 @@ const (
 // Command is a closed set of financial intents. Persist typed inputs; never
 // store a generic patch or executable workflow received from an API client.
 type Command struct {
-	ExpenseConvert     *ExpenseConvert           `json:"expense_convert,omitempty"`
-	InvoiceReminder    *InvoiceReminder          `json:"invoice_reminder,omitempty"`
-	BalanceConsume     *BalanceConsume           `json:"balance_consume,omitempty"`
-	EstimateConvert    *EstimateConvert          `json:"estimate_convert,omitempty"`
-	BalanceSet         *BalanceSet               `json:"balance_set,omitempty"`
-	OfflineRefund      *RefundReservationRequest `json:"offline_refund,omitempty"`
-	RefundRelease      *RefundRelease            `json:"refund_release,omitempty"`
-	CouponApply        *CouponApply              `json:"coupon_apply,omitempty"`
-	CreditSourceCreate *CreditSourceCreate       `json:"credit_source_create,omitempty"`
-	CreditSourceChange *CreditSourceChange       `json:"credit_source_change,omitempty"`
-	CreditReversal     *CreditReversal           `json:"credit_reversal,omitempty"`
-	InvoiceDraft       *InvoiceDraft             `json:"invoice_draft,omitempty"`
-	InvoiceChange      *InvoiceChange            `json:"invoice_change,omitempty"`
-	Kind               CommandKind               `json:"kind"`
-	Scope              Scope                     `json:"scope"`
-	IdempotencyKey     string                    `json:"idempotency_key,omitempty"`
-	ActorID            string                    `json:"actor_id,omitempty"`
-	OpeningBalance     *OpeningBalance           `json:"opening_balance,omitempty"`
-	BalanceAdjustment  *BalanceAdjustment        `json:"balance_adjustment,omitempty"`
-	ManualPayment      *ManualPayment            `json:"manual_payment,omitempty"`
-	BalanceApplication *BalanceApplication       `json:"balance_application,omitempty"`
-	RefundReservation  *RefundReservationRequest `json:"refund_reservation,omitempty"`
-	RefundSettlement   *RefundSettlement         `json:"refund_settlement,omitempty"`
+	SubscriptionCollection *SubscriptionCollection   `json:"subscription_collection,omitempty"`
+	ExpenseConvert         *ExpenseConvert           `json:"expense_convert,omitempty"`
+	InvoiceReminder        *InvoiceReminder          `json:"invoice_reminder,omitempty"`
+	BalanceConsume         *BalanceConsume           `json:"balance_consume,omitempty"`
+	EstimateConvert        *EstimateConvert          `json:"estimate_convert,omitempty"`
+	BalanceSet             *BalanceSet               `json:"balance_set,omitempty"`
+	OfflineRefund          *RefundReservationRequest `json:"offline_refund,omitempty"`
+	RefundRelease          *RefundRelease            `json:"refund_release,omitempty"`
+	CouponApply            *CouponApply              `json:"coupon_apply,omitempty"`
+	CreditSourceCreate     *CreditSourceCreate       `json:"credit_source_create,omitempty"`
+	CreditSourceChange     *CreditSourceChange       `json:"credit_source_change,omitempty"`
+	CreditReversal         *CreditReversal           `json:"credit_reversal,omitempty"`
+	InvoiceDraft           *InvoiceDraft             `json:"invoice_draft,omitempty"`
+	InvoiceChange          *InvoiceChange            `json:"invoice_change,omitempty"`
+	Kind                   CommandKind               `json:"kind"`
+	Scope                  Scope                     `json:"scope"`
+	IdempotencyKey         string                    `json:"idempotency_key,omitempty"`
+	ActorID                string                    `json:"actor_id,omitempty"`
+	OpeningBalance         *OpeningBalance           `json:"opening_balance,omitempty"`
+	BalanceAdjustment      *BalanceAdjustment        `json:"balance_adjustment,omitempty"`
+	ManualPayment          *ManualPayment            `json:"manual_payment,omitempty"`
+	BalanceApplication     *BalanceApplication       `json:"balance_application,omitempty"`
+	RefundReservation      *RefundReservationRequest `json:"refund_reservation,omitempty"`
+	RefundSettlement       *RefundSettlement         `json:"refund_settlement,omitempty"`
 }
 
 var currencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
@@ -61,7 +62,7 @@ func (c Command) Validate() error {
 		return ErrInvalidMoney
 	}
 	payloads := 0
-	for _, present := range []bool{c.OpeningBalance != nil, c.BalanceAdjustment != nil, c.ManualPayment != nil, c.BalanceApplication != nil, c.RefundReservation != nil, c.RefundSettlement != nil, c.InvoiceDraft != nil, c.InvoiceChange != nil, c.CreditSourceCreate != nil, c.CreditSourceChange != nil, c.CreditReversal != nil, c.CouponApply != nil, c.RefundRelease != nil, c.OfflineRefund != nil, c.BalanceSet != nil, c.EstimateConvert != nil, c.BalanceConsume != nil, c.ExpenseConvert != nil, c.InvoiceReminder != nil} {
+	for _, present := range []bool{c.SubscriptionCollection != nil, c.OpeningBalance != nil, c.BalanceAdjustment != nil, c.ManualPayment != nil, c.BalanceApplication != nil, c.RefundReservation != nil, c.RefundSettlement != nil, c.InvoiceDraft != nil, c.InvoiceChange != nil, c.CreditSourceCreate != nil, c.CreditSourceChange != nil, c.CreditReversal != nil, c.CouponApply != nil, c.RefundRelease != nil, c.OfflineRefund != nil, c.BalanceSet != nil, c.EstimateConvert != nil, c.BalanceConsume != nil, c.ExpenseConvert != nil, c.InvoiceReminder != nil} {
 		if present {
 			payloads++
 		}
@@ -70,6 +71,16 @@ func (c Command) Validate() error {
 		return ErrInvalidMoney
 	}
 	switch c.Kind {
+	case CommandSubscriptionCollection:
+		p := c.SubscriptionCollection
+		if p == nil || p.SubscriptionID == "" || !p.Mode.Valid() || p.ExpectedGeneration < 0 || (p.AutomaticCycles != nil && (*p.AutomaticCycles < 1 || *p.AutomaticCycles > 120)) {
+			return ErrInvalidMoney
+		}
+		switch p.Action {
+		case "request", "bind", "confirm", "cancel", "cancel_unattempted", "pending":
+		default:
+			return ErrInvalidMoney
+		}
 	case CommandExpenseConvert:
 		if c.ExpenseConvert == nil || len(c.ExpenseConvert.ExpenseIDs) == 0 {
 			return ErrInvalidMoney
@@ -263,6 +274,7 @@ type StreamClaim struct {
 // JournalEvent is frozen before append. Absolute typed projections and their
 // sequence checkpoints make recovery independent of later configuration edits.
 type JournalEvent struct {
+	SubscriptionAfter      *BizSubscription     `json:"subscription_after,omitempty"`
 	ExpensesAfter          []Expense            `json:"expenses_after,omitempty"`
 	BalanceConsumedPaisa   int64                `json:"balance_consumed_paisa,omitempty"`
 	EstimateAfter          *Estimate            `json:"estimate_after,omitempty"`

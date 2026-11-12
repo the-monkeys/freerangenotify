@@ -15,6 +15,7 @@ import (
 // authenticated by an opaque, time-limited portal token in the URL, which
 // resolves to (app_id, user_id) — all data access is scoped to both.
 type BizPortalHandler struct {
+	recurring    *services.BizRecurringService
 	checkout     *services.BizCheckoutService
 	portalSvc    *services.BizPortalService
 	lifecycleSvc *services.BizLifecycleService

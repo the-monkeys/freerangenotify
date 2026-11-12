@@ -150,6 +150,16 @@ func (s *BizGatewayConnectionService) Snapshot(ctx context.Context, app string, 
 		}
 		connection.AccountVerified = true
 		connection.Readiness = "verified_for_checkout"
+		capability, capabilityErr := s.connections.RecurringCapability(ctx, merchantRef(connection))
+		if capabilityErr != nil && !apperrors.IsNotFound(capabilityErr) {
+			return snapshot, capabilityErr
+		}
+		if capabilityErr == nil {
+			if capability.AppID != app {
+				return snapshot, bizbilling.ErrReconciliationRequired
+			}
+			connection.AutomaticReady = true
+		}
 	}
 	return bizbilling.MerchantSnapshot{Configured: true, ConnectionID: id, AppID: app, AccountID: connection.AccountID, Mode: mode, Revision: connection.Revision, Readiness: connection.Readiness, APIAuthenticated: connection.APIAuthenticated, AccountVerified: connection.AccountVerified, AutomaticReady: connection.AutomaticReady}, nil
 }

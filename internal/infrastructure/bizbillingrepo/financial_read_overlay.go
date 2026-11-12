@@ -17,6 +17,7 @@ func (s *Stores) SetFinancialReadOverlay(reader FinancialReadOverlay) {
 		return
 	}
 	s.Invoices.SetFinancialReadOverlay(reader)
+	s.Subscriptions.SetFinancialReadOverlay(reader)
 	s.Payments.SetFinancialReadOverlay(reader)
 	s.CreditNotes.SetFinancialReadOverlay(reader)
 	s.Retainers.SetFinancialReadOverlay(reader)
@@ -25,5 +26,6 @@ func (s *Stores) SetFinancialReadOverlay(reader FinancialReadOverlay) {
 }
 func (r *LifecycleRepo) SetFinancialReadOverlay(reader FinancialReadOverlay) {
 	r.invoices.SetFinancialReadOverlay(reader)
+	r.subscriptions.SetFinancialReadOverlay(reader)
 	r.payments.SetFinancialReadOverlay(reader)
 }

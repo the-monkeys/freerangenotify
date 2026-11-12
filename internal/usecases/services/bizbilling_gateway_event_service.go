@@ -17,14 +17,15 @@ import (
 	"go.uber.org/zap"
 )
 
-type gatewayRefundEventProcessor interface {
+type gatewayEventProcessor interface {
 	ProcessEvent(context.Context, *bizbilling.GatewayEventReceipt) (bizbilling.OperationResult, error)
 }
 type BizGatewayEventService struct {
 	inbox     *bizbillingrepo.GatewayEventRepo
 	merchants *BizGatewayConnectionService
 	checkout  *BizCheckoutService
-	refunds   gatewayRefundEventProcessor
+	refunds   gatewayEventProcessor
+	recurring gatewayEventProcessor
 	logger    *zap.Logger
 	mu        sync.Mutex
 	cursor    string
@@ -33,8 +34,12 @@ type BizGatewayEventService struct {
 func NewBizGatewayEventService(es *elasticsearch.Client, merchants *BizGatewayConnectionService, checkout *BizCheckoutService, logger *zap.Logger) *BizGatewayEventService {
 	return &BizGatewayEventService{inbox: bizbillingrepo.NewGatewayEventRepo(es, logger), merchants: merchants, checkout: checkout, logger: logger}
 }
-func (s *BizGatewayEventService) SetRefundProcessor(processor gatewayRefundEventProcessor) {
+func (s *BizGatewayEventService) SetRefundProcessor(processor gatewayEventProcessor) {
 	s.refunds = processor
+}
+
+func (s *BizGatewayEventService) SetRecurringProcessor(processor gatewayEventProcessor) {
+	s.recurring = processor
 }
 
 func (s *BizGatewayEventService) Accept(ctx context.Context, connection, eventID string, raw []byte, signature string) (bizbilling.GatewayEventReceipt, error) {
@@ -66,12 +71,24 @@ func (s *BizGatewayEventService) Accept(ctx context.Context, connection, eventID
 		AccountID string `json:"account_id"`
 		Event     string `json:"event"`
 		Payload   struct {
+			Subscription struct {
+				Entity struct {
+					ID string `json:"id"`
+				} `json:"entity"`
+			} `json:"subscription"`
+			Invoice struct {
+				Entity struct {
+					ID             string `json:"id"`
+					SubscriptionID string `json:"subscription_id"`
+				} `json:"entity"`
+			} `json:"invoice"`
 			Payment struct {
 				Entity struct {
-					ID       string `json:"id"`
-					OrderID  string `json:"order_id"`
-					Amount   int64  `json:"amount"`
-					Currency string `json:"currency"`
+					ID        string `json:"id"`
+					OrderID   string `json:"order_id"`
+					InvoiceID string `json:"invoice_id"`
+					Amount    int64  `json:"amount"`
+					Currency  string `json:"currency"`
 				} `json:"entity"`
 			} `json:"payment"`
 			Refund struct {
@@ -88,6 +105,13 @@ func (s *BizGatewayEventService) Accept(ctx context.Context, connection, eventID
 		return empty, bizbilling.ErrInvalidGatewayProof
 	}
 	data := bizbilling.GatewayEventData{Event: payload.Event, AccountID: payload.AccountID, PaymentID: payload.Payload.Payment.Entity.ID, OrderID: payload.Payload.Payment.Entity.OrderID, AmountPaisa: payload.Payload.Payment.Entity.Amount, Currency: payload.Payload.Payment.Entity.Currency}
+	data.SubscriptionID, data.InvoiceID = payload.Payload.Subscription.Entity.ID, payload.Payload.Invoice.Entity.ID
+	if data.SubscriptionID == "" {
+		data.SubscriptionID = payload.Payload.Invoice.Entity.SubscriptionID
+	}
+	if data.InvoiceID == "" {
+		data.InvoiceID = payload.Payload.Payment.Entity.InvoiceID
+	}
 	if strings.HasPrefix(payload.Event, "refund.") {
 		refund := payload.Payload.Refund.Entity
 		data.RefundID = refund.ID
@@ -95,7 +119,7 @@ func (s *BizGatewayEventService) Accept(ctx context.Context, connection, eventID
 		data.AmountPaisa = refund.Amount
 		data.Currency = refund.Currency
 	}
-	if len(data.PaymentID) > 200 || len(data.OrderID) > 200 || len(data.RefundID) > 200 || len(data.Currency) > 3 || data.AmountPaisa < 0 {
+	if len(data.PaymentID) > 200 || len(data.OrderID) > 200 || len(data.RefundID) > 200 || len(data.SubscriptionID) > 200 || len(data.InvoiceID) > 200 || len(data.Currency) > 3 || data.AmountPaisa < 0 {
 		return empty, bizbilling.ErrInvalidGatewayProof
 	}
 	digest := sha256.Sum256(raw)
@@ -108,6 +132,9 @@ func (s *BizGatewayEventService) Accept(ctx context.Context, connection, eventID
 	collisionID := gatewayEffectID("event_collision", aliasID, digestHex)
 	now := time.Now().UTC()
 	receipt := &bizbilling.GatewayEventReceipt{SchemaVersion: 1, ID: id, Kind: "receipt", AppID: signer.AppID, Gateway: signer.Reference, BodyDigest: digestHex, Data: data, State: "pending", CreatedAt: now, UpdatedAt: now}
+	if data.SubscriptionID != "" || data.InvoiceID != "" || strings.HasPrefix(data.Event, "subscription.") {
+		receipt.SchemaVersion = 2
+	}
 	stored, err := s.inbox.Accept(ctx, receipt, aliasID, collisionID)
 	if err != nil {
 		return empty, err
@@ -129,6 +156,22 @@ func (s *BizGatewayEventService) Process(ctx context.Context, id string) (bizbil
 	}
 	if receipt.State == "completed" && receipt.Result != nil && receipt.VerifiedRevision == receipt.Gateway.CredentialRevision {
 		return *receipt.Result, nil
+	}
+	if !strings.HasPrefix(receipt.Data.Event, "refund.") && (strings.HasPrefix(receipt.Data.Event, "subscription.") || receipt.Data.SubscriptionID != "" || receipt.Data.InvoiceID != "") {
+		if s.recurring == nil {
+			return s.deferEvent(ctx, receipt, "retry", "recurring_processor_unavailable", bizbilling.ErrGatewayPending)
+		}
+		result, processErr := s.recurring.ProcessEvent(ctx, receipt)
+		if processErr != nil {
+			if apperrors.IsNotFound(processErr) {
+				return s.deferEvent(ctx, receipt, "unmatched", "subscription_unmatched", processErr)
+			}
+			return s.deferEvent(ctx, receipt, "retry", "subscription_pending", processErr)
+		}
+		if result.State != bizbilling.OperationCompleted {
+			return s.deferEvent(ctx, receipt, "retry", "subscription_pending", bizbilling.ErrGatewayPending)
+		}
+		return s.completeEvent(ctx, receipt, result)
 	}
 	if strings.HasPrefix(receipt.Data.Event, "refund.") {
 		if s.refunds == nil {
