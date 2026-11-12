@@ -76,7 +76,7 @@ func (r *OperationRepo) Get(ctx context.Context, id string) (*bizbilling.Operati
 	if err != nil {
 		return nil, err
 	}
-	if op.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || (op.Event != nil && op.Event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion) || op.ID != id || op.AppID != op.Scope.AppID || op.Command.Scope != op.Scope || op.Command.Validate() != nil || intentHash(op.Command) != op.IntentHash {
+	if !bizbilling.SupportsFinancialSchema(op.SchemaVersion) || (op.Event != nil && op.Event.SchemaVersion != op.SchemaVersion) || op.ID != id || op.AppID != op.Scope.AppID || op.Command.Scope != op.Scope || op.Command.Validate() != nil || intentHash(op.Command) != op.IntentHash {
 		return nil, bizbilling.ErrReconciliationRequired
 	}
 	switch op.State {
@@ -103,7 +103,7 @@ func (r *OperationRepo) Get(ctx context.Context, id string) (*bizbilling.Operati
 }
 func (r *OperationRepo) Freeze(ctx context.Context, id string, event bizbilling.JournalEvent) (*bizbilling.Operation, error) {
 	return r.store.Update(ctx, id, func(op *bizbilling.Operation) error {
-		if op.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || op.Scope != event.Scope || op.ID != event.OperationID || event.Sequence <= 0 || op.Command.Kind != event.Kind {
+		if !bizbilling.SupportsFinancialSchema(op.SchemaVersion) || event.SchemaVersion != bizbilling.FinancialOperationSchemaVersion || op.Scope != event.Scope || op.ID != event.OperationID || event.Sequence <= 0 || op.Command.Kind != event.Kind {
 			return bizbilling.ErrReconciliationRequired
 		}
 		if op.Event != nil {
@@ -112,6 +112,9 @@ func (r *OperationRepo) Freeze(ctx context.Context, id string, event bizbilling.
 		if op.State != bizbilling.OperationAccepted {
 			return bizbilling.ErrConflict
 		}
+		// Only an accepted intent without a frozen fact is promoted. Existing
+		// prepared/completed facts keep their original schema and exact content.
+		op.SchemaVersion = event.SchemaVersion
 		op.Event = &event
 		op.Resources = event.Resources
 		op.State = bizbilling.OperationPrepared

@@ -149,7 +149,7 @@ func (s *BizOperationService) buildManualPayment(ctx context.Context, command bi
 		return bizbilling.ErrInvalidMoney
 	}
 	paymentID := event.OperationID + "-payment"
-	payment := &bizbilling.BizPayment{CreditProvenanceKnown: true, ID: paymentID, AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, InvoiceIDs: []string{inv.ID}, AmountPaisa: amount, TDSPaisa: input.TDSPaisa, ExcessCreditPaisa: excess, Method: input.Method, GatewayPaymentID: input.GatewayPaymentID, Status: bizbilling.PaymentStatusSuccess, Notes: input.Notes, CreatedAt: event.CreatedAt, UpdatedAt: event.CreatedAt, LastSequence: event.Sequence}
+	payment := &bizbilling.BizPayment{Reference: input.Reference, CreditProvenanceKnown: true, ID: paymentID, AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, InvoiceIDs: []string{inv.ID}, AmountPaisa: amount, TDSPaisa: input.TDSPaisa, ExcessCreditPaisa: excess, Method: input.Method, GatewayPaymentID: input.GatewayPaymentID, Status: bizbilling.PaymentStatusSuccess, Notes: input.Notes, CreatedAt: event.CreatedAt, UpdatedAt: event.CreatedAt, LastSequence: event.Sequence}
 	payment.BillingMode = command.Scope.Mode
 	if input.VerifiedCapture {
 		payment.Gateway = "razorpay"

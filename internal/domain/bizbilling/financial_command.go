@@ -2,7 +2,13 @@ package bizbilling
 
 // FinancialOperationSchemaVersion changes when a known command gains required
 // projections. Older binaries must refuse recovery, not commit only part of it.
-const FinancialOperationSchemaVersion = 2
+const FinancialOperationSchemaVersion = 3
+
+// Schema 2 financial facts remain readable and recoverable. New facts use 3
+// so previous workers refuse to project invoices without their issue snapshot.
+func SupportsFinancialSchema(version int) bool {
+	return version == 2 || version == FinancialOperationSchemaVersion
+}
 
 const (
 	CommandGatewayCapture     CommandKind = "gateway_capture"
@@ -75,6 +81,7 @@ type InvoiceChange struct {
 }
 
 type ManualPayment struct {
+	Reference        string      `json:"reference,omitempty"`
 	GatewayBinding   *GatewayRef `json:"gateway_binding,omitempty"`
 	InvoiceID        string      `json:"invoice_id"`
 	AmountPaisa      int64       `json:"amount_paisa"`

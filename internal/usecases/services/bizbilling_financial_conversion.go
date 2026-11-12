@@ -36,7 +36,9 @@ func (s *BizOperationService) buildEstimateConversion(ctx context.Context, comma
 	if err = s.buildFinancialInvoiceDraft(ctx, draft, event); err != nil {
 		return err
 	}
-	issueFinancialInvoice(event, event.InvoiceAfter)
+	if err = s.issueFinancialInvoice(ctx, event, event.InvoiceAfter); err != nil {
+		return err
+	}
 	est.Status = bizbilling.EstimateStatusConverted
 	est.ConvertedInvoiceID = event.InvoiceAfter.ID
 	est.LastSequence = event.Sequence
@@ -46,10 +48,20 @@ func (s *BizOperationService) buildEstimateConversion(ctx context.Context, comma
 	return nil
 }
 
-func issueFinancialInvoice(event *bizbilling.JournalEvent, inv *bizbilling.BizInvoice) {
+func (s *BizOperationService) issueFinancialInvoice(ctx context.Context, event *bizbilling.JournalEvent, inv *bizbilling.BizInvoice) error {
+	profile, err := s.profiles.Get(ctx, inv.UserID)
+	if err != nil {
+		return err
+	}
+	snapshot, err := invoiceIssueSnapshot(ctx, s.config, profile, inv, event.CreatedAt)
+	if err != nil {
+		return err
+	}
+	inv.IssuedSnapshot = snapshot
 	inv.Status, inv.IssuedAt = bizbilling.InvoiceStatusOpen, &event.CreatedAt
 	if inv.AmountDuePaisa == 0 {
 		inv.Status, inv.PaidAt = bizbilling.InvoiceStatusPaid, &event.CreatedAt
 	}
 	event.Notifications = append(event.Notifications, bizbilling.NotificationIntent{ID: event.OperationID + "-invoice-issued", AppID: inv.AppID, UserID: inv.UserID, TemplateID: "biz_invoice_issued", InvoiceID: inv.ID, EventID: event.ID, Channel: "email"})
+	return nil
 }

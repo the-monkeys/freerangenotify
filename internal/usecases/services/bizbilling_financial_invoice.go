@@ -52,13 +52,9 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 	if err != nil {
 		return err
 	}
-	terms := input.Request.PaymentTerms
-	if terms == "" {
-		config, err := s.config.PaymentTermsConfig(ctx, command.Scope.AppID)
-		if err != nil {
-			return err
-		}
-		terms = config.DefaultTerms
+	terms, due, err := validatedInvoiceTerms(ctx, s.config, command.Scope.AppID, input.Request.PaymentTerms, event.CreatedAt)
+	if err != nil {
+		return err
 	}
 	// Sandbox documents must not consume the business's legal invoice sequence.
 	number := "TEST-INV-" + event.OperationID
@@ -75,7 +71,6 @@ func (s *BizOperationService) buildFinancialInvoiceDraft(ctx context.Context, co
 	if typeOf != bizbilling.InvoiceTypeOneTime && typeOf != bizbilling.InvoiceTypeRecurring && typeOf != bizbilling.InvoiceTypeRetainer {
 		return bizbilling.ErrInvalidMoney
 	}
-	due := dueDateFor(terms, event.CreatedAt)
 	invoice := &bizbilling.BizInvoice{ID: event.OperationID + "-invoice", AppID: command.Scope.AppID, UserID: command.Scope.UserID, Currency: command.Scope.Currency, LastSequence: event.Sequence,
 		GatewayMode:   mode,
 		InvoiceNumber: number, InvoiceType: typeOf, Status: bizbilling.InvoiceStatusDraft, SubscriptionID: input.SubscriptionID, EstimateID: input.EstimateID,
@@ -124,8 +119,11 @@ func (s *BizOperationService) buildFinancialInvoiceChange(ctx context.Context, c
 			inv.AmountDuePaisa = totals.TotalPaisa - settled
 		}
 		if update.PaymentTerms != nil {
-			inv.PaymentTerms = *update.PaymentTerms
-			due := dueDateFor(inv.PaymentTerms, event.CreatedAt)
+			terms, due, err := validatedInvoiceTerms(ctx, s.config, command.Scope.AppID, *update.PaymentTerms, event.CreatedAt)
+			if err != nil {
+				return err
+			}
+			inv.PaymentTerms = terms
 			inv.DueDate = &due
 		}
 		if update.Notes != nil {
@@ -139,7 +137,9 @@ func (s *BizOperationService) buildFinancialInvoiceChange(ctx context.Context, c
 			return bizbilling.ErrInvalidMoney
 		}
 		// Merchant collection runs separately from the customer money lock.
-		issueFinancialInvoice(event, inv)
+		if err = s.issueFinancialInvoice(ctx, event, inv); err != nil {
+			return err
+		}
 
 	case "void", "write_off":
 		if inv.Status == bizbilling.InvoiceStatusPaid || inv.Status == bizbilling.InvoiceStatusVoid || inv.Status == bizbilling.InvoiceStatusUncollectible {

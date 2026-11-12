@@ -34,6 +34,7 @@ var PayableStatuses = map[InvoiceStatus]bool{
 
 // BizInvoice represents an invoice generated for a customer.
 type BizInvoice struct {
+	IssuedSnapshot     *InvoiceSnapshot       `json:"issued_snapshot,omitempty"`
 	GatewayMode        GatewayMode            `json:"gateway_mode,omitempty"`
 	CouponRedemptionID string                 `json:"coupon_redemption_id,omitempty"`
 	LastSequence       int64                  `json:"billing_sequence,omitempty"`
@@ -136,6 +137,7 @@ type UpdateInvoiceRequest struct {
 // RecordPaymentRequest records a manual or gateway payment against an invoice.
 // AmountPaisa = 0 means "pay the full amount due" (partial payments supported).
 type RecordPaymentRequest struct {
+	Reference    string `json:"reference,omitempty"`
 	AmountPaisa  int64  `json:"amount_paisa,omitempty" validate:"min=0"`
 	Method       string `json:"method" validate:"required"` // cash | bank_transfer | cheque | card | upi | gateway
 	GatewayTxnID string `json:"gateway_txn_id,omitempty"`

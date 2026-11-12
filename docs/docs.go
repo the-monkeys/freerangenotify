@@ -1859,6 +1859,9 @@ const docTemplate = `{
                 "notes": {
                     "type": "string"
                 },
+                "reference": {
+                    "type": "string"
+                },
                 "tds_paisa": {
                     "minimum": 0,
                     "type": "integer"
@@ -13278,6 +13281,64 @@ const docTemplate = `{
                 "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
             }
         },
+        "/v1/biz/invoices/preview": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "description": "Calculate the current customer's tax and line totals without creating an invoice or payment. Issue the saved draft separately.",
+                "parameters": [
+                    {
+                        "description": "Invoice details",
+                        "in": "body",
+                        "name": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/bizbilling.CreateInvoiceRequest"
+                        }
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Preview an invoice",
+                "tags": [
+                    "BizBilling"
+                ],
+                "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
+            }
+        },
         "/v1/biz/invoices/{id}": {
             "get": {
                 "description": "Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.",
@@ -13506,6 +13567,66 @@ const docTemplate = `{
                     }
                 ],
                 "summary": "Apply Credit",
+                "tags": [
+                    "BizBilling"
+                ],
+                "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
+            }
+        },
+        "/v1/biz/invoices/{id}/document": {
+            "get": {
+                "description": "Original issuer, customer, line and tax details stay fixed. Settlement and payment references reflect recorded payments. Historical invoices without an issued snapshot require review; their existing invoice endpoint remains available.",
+                "parameters": [
+                    {
+                        "description": "Invoice ID",
+                        "in": "path",
+                        "name": "id",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Get an issued invoice document",
                 "tags": [
                     "BizBilling"
                 ],

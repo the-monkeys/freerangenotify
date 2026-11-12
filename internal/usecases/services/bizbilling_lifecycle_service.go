@@ -803,6 +803,14 @@ func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string
 		return nil, errors.BadRequest("only draft invoices can be issued")
 	}
 	now := time.Now().UTC()
+	profile, err := s.users.GetByID(ctx, draft.UserID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := invoiceIssueSnapshot(ctx, s.configSvc, profile, draft, now)
+	if err != nil {
+		return nil, err
+	}
 	orderID := draft.GatewayOrderID
 	if s.gateway != nil && draft.AmountDuePaisa > 0 && orderID == "" {
 		order, orderErr := s.gateway.CreateOrder(ctx, draft.AppID, "bizinv", draft.AmountDuePaisa)
@@ -834,6 +842,7 @@ func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string
 		inv.UpdatedAt = now
 		inv.GatewayOrderID = orderID
 		inv.PaymentLink = paymentLink
+		inv.IssuedSnapshot = snapshot
 		return nil
 	})
 	if err != nil {
@@ -1150,7 +1159,7 @@ func (s *BizLifecycleService) RecordPayment(ctx context.Context, appID, invoiceI
 		return nil, err
 	}
 	if upgraded {
-		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandManualPayment, Scope: scope, ManualPayment: &bizbilling.ManualPayment{InvoiceID: invoiceID, AmountPaisa: req.AmountPaisa, TDSPaisa: req.TDSPaisa, Method: req.Method, Notes: req.Notes, GatewayPaymentID: req.GatewayTxnID}})
+		event, err := s.applyFinancialCommand(ctx, bizbilling.Command{Kind: bizbilling.CommandManualPayment, Scope: scope, ManualPayment: &bizbilling.ManualPayment{InvoiceID: invoiceID, AmountPaisa: req.AmountPaisa, TDSPaisa: req.TDSPaisa, Method: req.Method, Reference: req.Reference, Notes: req.Notes, GatewayPaymentID: req.GatewayTxnID}})
 		if err != nil {
 			return nil, err
 		}
@@ -1182,6 +1191,7 @@ func (s *BizLifecycleService) RecordPayment(ctx context.Context, appID, invoiceI
 		Currency:         inv.Currency,
 		Method:           req.Method,
 		GatewayPaymentID: req.GatewayTxnID,
+		Reference:        req.Reference,
 		Status:           bizbilling.PaymentStatusSuccess,
 		TDSPaisa:         req.TDSPaisa,
 		Notes:            req.Notes,

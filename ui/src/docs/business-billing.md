@@ -38,6 +38,12 @@ Read the returned invoice total, tax and amount due; do not calculate the payabl
 
 Use `PUT /v1/biz/invoices/INVOICE_ID` to edit an unissued draft, then `POST /v1/biz/invoices/INVOICE_ID/issue` to issue it. Use `GET /v1/biz/invoices/INVOICE_ID` to read its saved state. Issued amounts are historical facts; changes require an explicit supported adjustment.
 
+To check the calculation first, send the same creation payload to `POST /v1/biz/invoices/preview`. Preview does not save a draft or consume an invoice number. Its result uses the current customer and tax settings; creating the draft saves those calculated amounts.
+
+After issue, `GET /v1/biz/invoices/INVOICE_ID/document` returns the original business identity, customer identity, lines, tax and invoice total alongside current settlement amounts and payment references. Editing a customer or business profile does not change that issued document. Historical invoices without a saved issue snapshot require review for this new document view; the existing invoice endpoint still returns their original saved records. No historical identity or amount is reconstructed automatically.
+
+Razorpay is optional for offline billing. You can issue invoices and record money received in cash, direct UPI, bank transfer or cheque without connecting a payment gateway. Staff must confirm receipt independently before recording an offline payment.
+
 ## Record a payment or refund
 
 Record money already received offline with `POST /v1/biz/invoices/INVOICE_ID/payments`:
@@ -46,11 +52,14 @@ Record money already received offline with `POST /v1/biz/invoices/INVOICE_ID/pay
 {
   "method": "bank_transfer",
   "amount_paisa": 11800,
-  "notes": "Bank statement reference"
+  "reference": "BANK-STATEMENT-REFERENCE",
+  "notes": "Received and confirmed by staff"
 }
 ```
 
 Supported amounts depend on the invoice's current due balance. `amount_paisa: 0` requests the full amount due. A supplied TDS amount also settles that part of the invoice; TDS is not extra customer credit.
+
+Use `method: "cash"` or `method: "upi"` for those offline methods. The optional `reference` is a staff-recorded receipt or transaction reference; it is not provider verification. A partial payment leaves the remaining amount due. Credit notes, retainers and write-offs remain separate from cash received.
 
 For an upgraded application, excess cash becomes customer credit with its payment source retained. Record an authorized offline refund through `POST /v1/biz/payments/PAYMENT_ID/refund`, supplying `amount_paisa` and `reason`. This records a return already made offline; it does not send a bank transfer. A cash refund remains separate from the invoice's historical paid state.
 

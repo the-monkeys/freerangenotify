@@ -489,6 +489,8 @@ func setupProtectedRoutes(v1 fiber.Router, c *container.Container) {
 		// ── Invoices ──
 		biz.Post("/invoices", c.BizBillingHandler.CreateInvoice)
 		biz.Get("/invoices", c.BizBillingHandler.ListInvoices)
+		biz.Post("/invoices/preview", c.BizBillingHandler.PreviewInvoice)
+		biz.Get("/invoices/:id/document", c.BizBillingHandler.GetInvoiceDocument)
 		biz.Get("/invoices/:id", c.BizBillingHandler.GetInvoice)
 		biz.Put("/invoices/:id", c.BizBillingHandler.UpdateDraftInvoice)
 		biz.Post("/invoices/:id/issue", c.BizBillingHandler.IssueInvoice)

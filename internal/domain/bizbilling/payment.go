@@ -16,6 +16,7 @@ const (
 
 // BizPayment represents a payment record for an invoice.
 type BizPayment struct {
+	Reference                 string                 `json:"reference,omitempty"`
 	BillingMode               GatewayMode            `json:"billing_mode,omitempty"`
 	GatewayBinding            *GatewayRef            `json:"gateway_binding,omitempty"`
 	CreditProvenanceKnown     bool                   `json:"credit_provenance_known,omitempty"`

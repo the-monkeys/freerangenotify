@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/the-monkeys/freerangenotify/internal/domain/bizbilling"
+	"github.com/the-monkeys/freerangenotify/internal/usecases/services"
 )
 
 // The lifecycle service performs app-ownership checks internally, so every
@@ -289,6 +290,60 @@ func (h *BizBillingHandler) SetNonRenewing(c *fiber.Ctx) error {
 }
 
 // ─── Invoices ────────────────────────────────────────────────────────────
+
+// PreviewInvoice calculates a draft without saving or allocating a number.
+// @Summary Preview an invoice
+// @Description Calculate the current customer's tax and line totals without creating an invoice or payment. Issue the saved draft separately.
+// @Tags BizBilling
+// @Accept json
+// @Produce json
+// @Param body body bizbilling.CreateInvoiceRequest true "Invoice details"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/invoices/preview [post]
+func (h *BizBillingHandler) PreviewInvoice(c *fiber.Ctx) error {
+	appID, err := h.getAppID(c)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	var req bizbilling.CreateInvoiceRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid request body"})
+	}
+	preview, err := services.NewBizInvoiceService(h.lifecycleSvc).Preview(c.UserContext(), appID, req)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	return c.JSON(fiber.Map{"success": true, "data": preview})
+}
+
+// GetInvoiceDocument returns original issue details with current settlement.
+// @Summary Get an issued invoice document
+// @Description Original issuer, customer, line and tax details stay fixed. Settlement and payment references reflect recorded payments. Historical invoices without an issued snapshot require review; their existing invoice endpoint remains available.
+// @Tags BizBilling
+// @Produce json
+// @Param id path string true "Invoice ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 401 {object} map[string]interface{}
+// @Failure 404 {object} map[string]interface{}
+// @Failure 409 {object} map[string]interface{}
+// @Security ApiKeyAuth
+// @Security BearerAuth
+// @Router /v1/biz/invoices/{id}/document [get]
+func (h *BizBillingHandler) GetInvoiceDocument(c *fiber.Ctx) error {
+	appID, err := h.getAppID(c)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	document, err := services.NewBizInvoiceService(h.lifecycleSvc).Document(c.UserContext(), appID, "", c.Params("id"))
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	return c.JSON(fiber.Map{"success": true, "data": document})
+}
 
 // @Summary Create Invoice
 // @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.

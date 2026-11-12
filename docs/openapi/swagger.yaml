@@ -1258,6 +1258,8 @@ components:
                     type: string
                 notes:
                     type: string
+                reference:
+                    type: string
                 tds_paisa:
                     minimum: 0
                     type: integer
@@ -9803,6 +9805,52 @@ paths:
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/invoices/{id}/document:
+        get:
+            description: Original issuer, customer, line and tax details stay fixed. Settlement and payment references reflect recorded payments. Historical invoices without an issued snapshot require review; their existing invoice endpoint remains available.
+            parameters:
+                - description: Invoice ID
+                  in: path
+                  name: id
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+                "404":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Not Found
+                "409":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Conflict
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Get an issued invoice document
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
     /v1/biz/invoices/{id}/issue:
         post:
             description: Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
@@ -10042,6 +10090,46 @@ paths:
                 - ApiKeyAuth: []
                 - BearerAuth: []
             summary: Write Off Invoice
+            tags:
+                - BizBilling
+            x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.
+    /v1/biz/invoices/preview:
+        post:
+            description: Calculate the current customer's tax and line totals without creating an invoice or payment. Issue the saved draft separately.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/bizbilling.CreateInvoiceRequest'
+                description: Invoice details
+                required: true
+                x-originalParamName: body
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: OK
+                "400":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Bad Request
+                "401":
+                    content:
+                        application/json:
+                            schema:
+                                additionalProperties: true
+                                type: object
+                    description: Unauthorized
+            security:
+                - ApiKeyAuth: []
+                - BearerAuth: []
+            summary: Preview an invoice
             tags:
                 - BizBilling
             x-feature-prerequisites: Requires this deployment's optional biz feature and its configured service/provider.

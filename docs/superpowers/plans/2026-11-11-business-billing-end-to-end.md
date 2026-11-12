@@ -15,7 +15,8 @@
 ## Current state and handoff — updated 2026-11-12
 
 - **Scope:** Business billing inside an application for the business's own customers. Gateway-free invoicing and recording received cash/direct-UPI/bank payments remain available. A business choosing online collection uses its own Razorpay account; connecting a gateway is optional for manual billing. Support invoice/payment-link and customer-authorized automatic collection, selected per subscription. Notification delivery credits and platform subscriptions remain separate financial systems.
-- **Completed implementation:** Phases 1 and 2 (Tasks 1-11) are complete locally on `codex/business-billing-end-to-end`. Phase 2 adds optional encrypted per-business Razorpay connections, scoped checkout, durable signed callbacks and real refundable-money recovery. **Stop here and wait for the user before Phase 3.** No push, PR or production deployment was performed. The broader billing UI changes remain Phase 4.
+- **Completed implementation:** Phases 1 and 2 (Tasks 1-11) are complete locally on `codex/business-billing-end-to-end`. Phase 2 adds optional encrypted per-business Razorpay connections, scoped checkout, durable signed callbacks and real refundable-money recovery. **Latest instruction: implement Phase 3, verify it, then implement Phase 4; stop after Phase 4 for the user’s joint smoke test.** No push, PR or production deployment was performed. The broader billing UI changes remain Phase 4.
+- **Phase 3 progress:** Task 12 is complete locally; Tasks 13–15 remain. Phase 3 is not complete and Phase 4 has not started.
 - **Phase 1 verification evidence:** 115 top-level billing tests across seven packages; broader short suite across 63 packages; nine legacy HTTP end-to-end scenarios; six live lifecycle HTTP boundary checks; four fixture-safety tests; generated API check and UI production build all passed. This is local evidence, not live-provider or production verification.
 - **Phase 2 verification evidence:** 149 billing regressions across nine packages passed with zero skipped cases; the final terminal-refund correction was followed by 17 refund/provider/HTTP regressions passing with zero skips. The broader short suite passed (36 tested packages plus 32 packages compiled without tests), as did generated-reference consistency, documentation contracts, TypeScript examples, webhook examples, seven Node safety checks, UI type checking and the Vite production build. Native main-Compose backend/UI builds and additive setup passed. One cluster/five services are running with zero restart counts and telemetry disabled. Read-only API checks verified merchant readiness/status routes and rejection of an unsigned callback with 401. The smoke subscription/invoice/payment documents match their pre-rebuild snapshot exactly; the UI serves the updated guide and API reference. Payment/refund execution used local fixtures only; a real Razorpay test-mode canary remains unperformed.
 - **Guided setup/lifecycle smoke:** Created Smoke Test Product, Smoke Test Monthly (USD 10/month), and Smoke Test Customer in the local test application LocalOnly-Billing. Created a quantity-one subscription with no trial, generated its first invoice, and verified pause/resume restored the subscription to active without creating an extra invoice or payment.
@@ -328,16 +329,18 @@ Local verification is available at `http://127.0.0.1:18762`. The user’s smoke 
 
 **Interfaces:** Produce `BizInvoiceService.Issue(ctx,appID,invoiceID,key string) (*BizInvoice,error)`, `Preview(ctx,appID string,req CreateInvoiceRequest) (InvoicePreview,error)` and `Document(ctx,appID,userID,invoiceID string) (BillingDocument,error)`. `BillingDocument` contains immutable issued issuer/customer identity, line items, currency, rounding/tax totals, invoice number, timestamps, and applied payment/refund references. Product/plan edits cannot mutate an issued snapshot. Subscriber references must belong to the app.
 
-- [ ] **1. Tests:** `TestBizManualInvoiceEndToEnd`, `TestBizIssuedSnapshotSurvivesProfileEdit`, `TestBizPreviewEqualsIssue`, `TestBizDraftAndReferencedEntityValidation`. Cover zero/partial/full payment, coupon/credit/retainer application, void/write-off, and archived products/plans with existing subscriptions.
+- [x] **1. Tests:** `TestBizManualInvoiceEndToEnd`, `TestBizIssuedSnapshotSurvivesProfileEdit`, `TestBizPreviewEqualsIssue`, `TestBizDraftAndReferencedEntityValidation`. Cover zero/partial/full payment, coupon/credit/retainer application, void/write-off, and archived products/plans with existing subscriptions.
   ```go
   require.Equal(t, preview.TotalPaisa, issued.TotalPaisa)
   require.Equal(t, originalIssuer, document.Issuer)
   require.Equal(t, "partially_paid", partiallyPaid.Status)
   ```
-- [ ] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBiz(ManualInvoice|Issued|Preview|Draft)' -count=1`.
-- [ ] **3. Implement:** Keep old paths/envelopes, checked totals, currency-aware adjustments, stable numbering, and one issue event. Separate gateway order preparation from invoice issue CAS; a gateway outage leaves a valid issued invoice with visible checkout-pending state, not a fake payment link or duplicate number. Snapshot data only at issue; preserve historical issued totals as-is.
-- [ ] **4. Green:** Repeat; validate statements/analytics by currency and advanced estimate/contract/retainer integrations touched by this refactor.
-- [ ] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): complete recoverable invoice and document lifecycle"`.
+- [x] **2. Red:** Owned runner: `go test ./internal/usecases/services ./internal/interfaces/http/handlers -run 'TestBiz(ManualInvoice|Issued|Preview|Draft)' -count=1`.
+- [x] **3. Implement:** Keep old paths/envelopes, checked totals, currency-aware adjustments, stable numbering, and one issue event. Separate gateway order preparation from invoice issue CAS; a gateway outage leaves a valid issued invoice with visible checkout-pending state, not a fake payment link or duplicate number. Snapshot data only at issue; preserve historical issued totals as-is.
+- [x] **4. Green:** Repeat; validate statements/analytics by currency and advanced estimate/contract/retainer integrations touched by this refactor.
+- [x] **5. Commit:** Stage listed files; `git commit -m "feat(biz-billing): complete recoverable invoice and document lifecycle"`.
+
+**Task 12 local checkpoint:** Invoice preview, issue snapshots, staff-confirmed cash/UPI references and scoped document payment/credit/refund history are implemented. Thirty-seven selected top-level billing regressions passed across four packages, including schema-2 completed/frozen/accepted recovery. New facts use schema 3 to prevent older workers discarding snapshots; historical schema-2 facts remain intact. Archived-catalog renewal coverage is tracked with Task 14, where the period engine is implemented. Receipt delivery remains Task 15 and dashboard controls remain Phase 4.
 
 ### Task 13: Explicit mandate authorization and collection-mode transitions
 
@@ -595,10 +598,10 @@ Additional future usability requirement: support nontechnical businesses end to 
 - [ ] Verify an existing notification reaches a synthetic/test recipient, and distinguish queued/admitted from delivered. Verify pause/resume does not duplicate an invoice or payment.
 - [ ] Rehearse the demonstrated flow on the intended desktop and mobile widths, check permissions/errors, and retain the tested commit/results and known limitations for the presentation.
 
-After each phase, send a concise update containing its delivered behavior, commits, verification evidence, and pending risks. The latest user instruction overrides continuous execution: complete Phase 2, then stop and wait for instructions before Phase 3. Do not push, open a PR or deploy to production. All six phases remain on this branch when the user resumes the work.
+After each phase, send a concise update containing its delivered behavior, commits, verification evidence, and pending risks. The latest user instruction authorizes native execution of Phases 3 and 4 in sequence: verify Phase 3 before starting Phase 4, then stop for the user’s joint smoke test. Do not push, open a PR or deploy to production. All six phases remain on this branch when the user resumes the work.
 
 - [x] Phase 1 implementation: Tasks 1–7; automated verification and guided setup/lifecycle check performed. Three known UI findings are assigned to Phase 4 at the user's request; payment collection through the UI remains unverified. Phase 2 is now complete locally.
-- [x] Phase 2: Tasks 8–11; local merchant, checkout, callback and refund verification complete. Wait for instructions before Phase 3; no real-provider canary or production deployment claimed.
+- [x] Phase 2: Tasks 8–11; local merchant, checkout, callback and refund verification complete. Complete locally; the user has now authorized Phase 3, then Phase 4. No real-provider canary or production deployment claimed.
 - [ ] Phase 3: Tasks 12–15; evidence pending implementation.
 - [ ] Phase 4: Tasks 16–19; evidence pending implementation.
 - [ ] Phase 5: Tasks 20–22; evidence pending implementation.

@@ -98,11 +98,14 @@ type PaymentTermsConfig struct {
 
 // BrandingConfig holds invoice/portal branding.
 type BrandingConfig struct {
-	LogoFileID   string `json:"logo_file_id,omitempty"`
-	PrimaryColor string `json:"primary_color,omitempty"` // Hex color
-	CompanyName  string `json:"company_name,omitempty"`
-	FooterText   string `json:"footer_text,omitempty"`
-	TermsText    string `json:"terms_text,omitempty"`
+	Email        string         `json:"email,omitempty"`
+	Phone        string         `json:"phone,omitempty"`
+	Address      BillingAddress `json:"address,omitempty"`
+	LogoFileID   string         `json:"logo_file_id,omitempty"`
+	PrimaryColor string         `json:"primary_color,omitempty"` // Hex color
+	CompanyName  string         `json:"company_name,omitempty"`
+	FooterText   string         `json:"footer_text,omitempty"`
+	TermsText    string         `json:"terms_text,omitempty"`
 }
 
 // ─── Repository Interface ────────────────────────────────────────────────
