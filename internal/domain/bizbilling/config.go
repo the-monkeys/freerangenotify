@@ -11,6 +11,7 @@ import (
 type ConfigType string
 
 const (
+	ConfigTypePreferences       ConfigType = "preferences"
 	ConfigTypeTax               ConfigType = "tax"
 	ConfigTypeDunning           ConfigType = "dunning"
 	ConfigTypeBranding          ConfigType = "branding"
@@ -22,6 +23,7 @@ const (
 
 // ValidConfigTypes contains all valid config type values.
 var ValidConfigTypes = map[ConfigType]bool{
+	ConfigTypePreferences:       true,
 	ConfigTypeTax:               true,
 	ConfigTypeDunning:           true,
 	ConfigTypeBranding:          true,
@@ -119,3 +121,12 @@ type BizConfigRepository interface {
 	// Upsert creates or updates a config. Uses the composite key (app_id + config_type).
 	Upsert(ctx context.Context, config *BizConfig) error
 }
+
+// Currency preferences select defaults for new UI forms. They never convert
+// existing money or change a customer's financial account currency.
+type BillingPreferences struct {
+	DefaultCurrency     string   `json:"default_currency"`
+	SupportedCurrencies []string `json:"supported_currencies,omitempty"`
+}
+
+func BillingDefaultCurrencies() []string { return []string{"INR", "USD", "EUR", "GBP"} }

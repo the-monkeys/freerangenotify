@@ -50,6 +50,16 @@ func (s *BizConfigService) GetConfig(ctx context.Context, appID string, configTy
 		}, nil
 	}
 
+	if configType == bizbilling.ConfigTypePreferences {
+		copy := *cfg
+		copy.Data = s.defaultData(configType)
+		for key, value := range cfg.Data {
+			if key != "supported_currencies" {
+				copy.Data[key] = value
+			}
+		}
+		cfg = &copy
+	}
 	return cfg, nil
 }
 
@@ -236,6 +246,17 @@ func orDefaultN(v int64) int64 {
 // validateConfigData performs type-specific validation.
 func (s *BizConfigService) validateConfigData(configType bizbilling.ConfigType, data map[string]interface{}) error {
 	switch configType {
+	case bizbilling.ConfigTypePreferences:
+		currency, ok := data["default_currency"].(string)
+		if !ok {
+			return errors.BadRequest("default_currency must be a supported currency code")
+		}
+		for _, supported := range bizbilling.BillingDefaultCurrencies() {
+			if currency == supported {
+				return nil
+			}
+		}
+		return errors.BadRequest("default_currency must be INR, USD, EUR or GBP")
 	case bizbilling.ConfigTypeTax:
 		return s.validateTaxConfig(data)
 	case bizbilling.ConfigTypeLateFees:
@@ -284,6 +305,8 @@ func (s *BizConfigService) validateLateFeeConfig(data map[string]interface{}) er
 // defaultData returns sensible defaults for each config type.
 func (s *BizConfigService) defaultData(configType bizbilling.ConfigType) map[string]interface{} {
 	switch configType {
+	case bizbilling.ConfigTypePreferences:
+		return map[string]interface{}{"default_currency": "INR", "supported_currencies": bizbilling.BillingDefaultCurrencies()}
 	case bizbilling.ConfigTypeTax:
 		return map[string]interface{}{
 			"default_tax_rate":  18,

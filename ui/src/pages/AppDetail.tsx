@@ -260,7 +260,7 @@ const AppDetail: React.FC = () => {
         }
     }, [activeTab, id]);
 
-    if (loading) return <div className="flex justify-center items-center min-h-screen"><Spinner /></div>;
+    if (loading || (app && app.app_id !== id)) return <div className="flex justify-center items-center min-h-screen"><Spinner /></div>;
     if (!app) return <div className="flex justify-center items-center min-h-screen">Application not found</div>;
 
     const selectedTenantName = tenantId
@@ -1212,7 +1212,7 @@ const AppDetail: React.FC = () => {
 
                 {/* Business Billing Tab */}
                 {activeTab === 'biz-billing' && app && (
-                    <AppBizBilling apiKey={app.api_key} appId={app.app_id} />
+                    <AppBizBilling apiKey={app.api_key} appId={app.app_id} role={app.role} ownerId={app.admin_user_id} />
                 )}
 
                 {/* Integration Tab */}

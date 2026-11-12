@@ -178,12 +178,13 @@ func (h *ApplicationHandler) GetByID(c *fiber.Ctx) error {
 		return errors.BadRequest("app_id is required")
 	}
 
-	app, _, err := h.authorizeAppAccess(c, appID, userID)
+	app, role, err := h.authorizeAppAccess(c, appID, userID)
 	if err != nil {
 		return err
 	}
 
 	response := dto.ToApplicationResponse(app)
+	response.Role = string(role)
 	response.RateLimitEnforced = &h.rateLimitEnabled
 
 	return c.JSON(fiber.Map{

@@ -4,6 +4,22 @@ Use **Applications > your application > Billing Setup** to manage your own produ
 
 Business billing must be enabled on your installation. Existing applications keep their current billing lifecycle until an explicit, reviewed upgrade. Installing a release does not activate new payment collection or change historical invoices.
 
+## Set up billing in the dashboard
+
+1. Open your application and choose **Billing Setup > Setup**. This area bills your own customers.
+2. Open **Business settings**. Set the business name, contact details, tax, invoice prefixes and payment terms.
+3. Choose the **Default currency** for new forms. New setups start with INR; USD, EUR and GBP are also available. Existing configured choices, catalog prices, issued invoices and payments retain their original currencies and amounts. Add-ons inherit their parent plan's currency. Currency conversion is separate future work.
+4. Open **Catalog** and create a product, then a plan with its price and frequency. Use search and pagination to find existing offerings. Archiving an offering retains its records.
+5. For online payments, select **Test** or **Live** and connect that business's own Razorpay account in Business settings. Credentials are write-only. Configure signed callbacks at the saved connection's webhook URL. API authentication, verified account linkage and automatic-payment readiness are separate checks.
+
+Cash, direct UPI and bank payments can be recorded without connecting Razorpay. A staff-entered receipt records an externally confirmed payment; it does not verify a UPI transfer automatically. Viewer access is read-only. Owners, admins and editors retain the billing-write permission enforced by the API.
+
+If another administrator changes a payment account while you edit it, refresh its saved status and review your inputs before explicitly retrying. Unsaved credential fields stay in memory during a failed save and clear after a successful save. New collection can be disconnected while original payment recovery records are retained.
+
+Existing applications require a reviewed upgrade before the new recoverable lifecycle is activated. Setup shows unresolved balances and retained account references. A deployment administrator must attest service readiness; a dashboard checkbox cannot substitute for that check. Review failures remain visible and never activate collection automatically.
+
+The form default is available through `GET /v1/biz/config/preferences`. To change it, send `PUT /v1/biz/config/preferences` with the flat body `{"default_currency":"INR"}`. API integrations continue to select currency explicitly in their requests. This setting does not convert money or change existing financial account scopes.
+
 ## Connect your backend
 
 Create an application in the dashboard, open **Integration**, and copy its application key. Keep the key on your backend. The key selects the application; an application ID alone does not authorize billing requests. See [Authentication](/docs/authentication).

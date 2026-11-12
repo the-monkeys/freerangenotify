@@ -51,6 +51,7 @@ type DefaultPreferencesDTO struct {
 
 // ApplicationResponse represents an application response
 type ApplicationResponse struct {
+	Role              string                  `json:"role,omitempty"` // Resolved for the authenticated caller; does not grant permissions.
 	AppID             string                  `json:"app_id"`
 	RateLimitEnforced *bool                   `json:"rate_limit_enforced,omitempty"`
 	AppName           string                  `json:"app_name"`
