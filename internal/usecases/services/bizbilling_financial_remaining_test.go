@@ -158,6 +158,7 @@ func TestBizAnalyticsUsesCurrencyAndExactMinorUnits(t *testing.T) {
 
 func TestBizUnreadySubscriptionWritesHaveNoPartialEffects(t *testing.T) {
 	lifecycle, _, ops, es, scope := financialFacadesFixture(t)
+	require.Nil(t, lifecycle.periods, "this fixture deliberately has no v2 subscription-cycle service")
 	ctx := context.Background()
 	ensureBillingIndex(t, es, "frn_biz_subscriptions", (&database.IndexTemplates{}).GetBizSubscriptionsTemplate())
 	sub := &bizbilling.BizSubscription{ID: uuid.NewString(), AppID: scope.AppID, UserID: scope.UserID, PlanID: "not-yet-configured", Status: bizbilling.SubscriptionStatusActive, Quantity: 1}
@@ -169,11 +170,11 @@ func TestBizUnreadySubscriptionWritesHaveNoPartialEffects(t *testing.T) {
 		require.Equal(t, 409, appErr.GetHTTPStatus())
 	}
 	_, err := lifecycle.CreateSubscription(ctx, scope.AppID, &bizbilling.CreateSubscriptionRequest{UserID: scope.UserID, PlanID: sub.PlanID})
-	assertBlocked(err)
+	require.ErrorIs(t, err, bizbilling.ErrReconciliationRequired)
 	assertBlocked(lifecycle.RenewSubscription(ctx, sub))
 	assertBlocked(lifecycle.ConvertTrial(ctx, sub))
 	_, err = lifecycle.ChangePlan(ctx, scope.AppID, sub.ID, "other-plan", nil)
-	assertBlocked(err)
+	require.ErrorIs(t, err, bizbilling.ErrReconciliationRequired)
 	head, err := ops.streams.Get(ctx, scope)
 	require.True(t, apperrors.IsNotFound(err))
 	require.Nil(t, head)
