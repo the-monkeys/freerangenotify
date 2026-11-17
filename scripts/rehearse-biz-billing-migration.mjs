@@ -15,8 +15,8 @@ if (!result.ok) throw new Error('Owned snapshot repository unavailable; check fi
 env.FRN_BIZ_SNAPSHOT_REPO = repo;
 try {
   for (let run = 1; run <= 2; run++) {
-    const result = await execute('go', ['test', '-json', '-p', '2', '-count=1', './tests/integration', './internal/usecases/services', '-run', '^(TestBizMigrationRehearsalPreservesHistory|TestBizMigrationRehearsalKeepsUnknownFields|TestBizMigrationInterruptedStagesPreserveSources|TestBizAmbiguousCurrencyNeedsReview|TestBizMigrationCurrencySidecarPreservesCreditSource)$'], { env, json: true });
-    const summary = verifyGoEvents(result.events, ['TestBizMigrationRehearsalPreservesHistory', 'TestBizMigrationRehearsalKeepsUnknownFields', 'TestBizMigrationInterruptedStagesPreserveSources', 'TestBizAmbiguousCurrencyNeedsReview', 'TestBizMigrationCurrencySidecarPreservesCreditSource']);
+    const result = await execute('go', ['test', '-json', '-p', '2', '-count=1', './tests/integration', './internal/usecases/services', '-run', '^(TestBizMigrationRehearsalPreservesHistory|TestBizMigrationRehearsalKeepsUnknownFields|TestBizMigrationInterruptedStagesPreserveSources|TestBizAmbiguousCurrencyNeedsReview|TestBizMigrationCurrencySidecarPreservesCreditSource|TestBizMigrationSubscriptionReviewPreservesDatesAndIDs)$'], { env, json: true });
+    const summary = verifyGoEvents(result.events, ['TestBizMigrationRehearsalPreservesHistory', 'TestBizMigrationRehearsalKeepsUnknownFields', 'TestBizMigrationInterruptedStagesPreserveSources', 'TestBizAmbiguousCurrencyNeedsReview', 'TestBizMigrationCurrencySidecarPreservesCreditSource', 'TestBizMigrationSubscriptionReviewPreservesDatesAndIDs']);
     console.log(`Fresh synthetic migration/restore rehearsal ${run}:`, summary);
   }
 } finally {

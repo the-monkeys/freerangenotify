@@ -26,6 +26,7 @@ export const requiredCases = [
   'TestBizReviewSandboxSubscriptionsDoNotInflateReports',
   'TestBizObsoleteOrderRequiresPositiveUnpaidProof',
   'TestBizRecurringProofUsesExactSuccessorAndRetainsBinding',
+  'TestBizMigrationSubscriptionReviewPreservesDatesAndIDs',
 ];
 
 export function verifyGoEvents(events, required = requiredCases) {

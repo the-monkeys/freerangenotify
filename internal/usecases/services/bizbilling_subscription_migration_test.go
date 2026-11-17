@@ -18,6 +18,7 @@ func TestBizMigrationSubscriptionReviewPreservesDatesAndIDs(t *testing.T) {
 	ctx := context.Background()
 	plan := &bizbilling.Plan{ID: uuid.NewString(), AppID: scope.AppID, Name: "Legacy monthly", Currency: scope.Currency, AmountPaisa: 1000, BillingCycle: bizbilling.BillingCycleMonthly}
 	require.NoError(t, ops.stores.Plans.Create(ctx, plan.ID, plan))
+	require.NoError(t, ops.stores.Plans.Refresh(ctx), "migration inventory must see the seeded plan")
 	end := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	start := end.AddDate(0, -1, 0)
 	sub := &bizbilling.BizSubscription{ID: uuid.NewString(), AppID: scope.AppID, UserID: scope.UserID, PlanID: plan.ID, Status: bizbilling.SubscriptionStatusActive, Quantity: 1, CurrentPeriodStart: start, CurrentPeriodEnd: end, AnchorDay: end.Day(), CreatedAt: start, UpdatedAt: start}
