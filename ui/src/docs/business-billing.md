@@ -1,5 +1,7 @@
 # Billing your customers
 
+For a short dashboard walkthrough, see [receiving payments](/docs/business-billing-payments) and [the customer portal](/docs/customer-billing-portal). Operators can also review [monitoring and privacy](/docs/observability).
+
 Use **Applications > your application > Billing Setup** to manage your own products, plans, customer subscriptions, invoices and payments. Your customers are the subscribers in that application. Notification delivery credits are managed separately under [Pricing & Credits](/docs/pricing).
 
 Business billing must be enabled on your installation. Existing applications keep their current billing lifecycle until an explicit, reviewed upgrade. Installing a release does not activate new payment collection or change historical invoices.
@@ -240,3 +242,134 @@ Public customer endpoints (the token is the credential):
 - `GET /v1/portal/{token}/operations/{id}` for a customer-owned financial/provider status, and `GET /v1/portal/{token}/payments/{id}/receipt` for a customer-owned payment receipt.
 
 Local automated checkout tests use deterministic provider fixtures. A real Razorpay test-mode SDK and signed-callback rehearsal must be completed with the business's test account before production rollout.
+
+## Executable configuration examples
+
+These examples use `BASE_URL` ending in `/v1` and a backend application key. The saved default only affects new forms. Configure an approved provider template before enabling WhatsApp reminders; a billing template is not vendor approval.
+
+### Default currency
+
+<!-- api-example:biz-default-currency:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "app_id": "${APP_ID}",
+    "config_type": "preferences",
+    "data": {
+      "default_currency": "INR"
+    }
+  }
+}
+```
+
+<!-- api-example:biz-default-currency:curl -->
+```sh
+curl -X GET "$BASE_URL/biz/config/preferences" -H "Authorization: Bearer $API_KEY"
+```
+
+### Select currency
+
+<!-- api-example:biz-select-currency:request -->
+```json
+{
+  "default_currency": "USD"
+}
+```
+
+<!-- api-example:biz-select-currency:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "app_id": "${APP_ID}",
+    "config_type": "preferences",
+    "data": {
+      "default_currency": "USD"
+    }
+  }
+}
+```
+
+<!-- api-example:biz-select-currency:curl -->
+```sh
+curl -X PUT "$BASE_URL/biz/config/preferences" -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" --data-binary @- <<JSON
+{
+  "default_currency": "USD"
+}
+JSON
+```
+
+### Saved currency
+
+<!-- api-example:biz-saved-currency:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "app_id": "${APP_ID}",
+    "config_type": "preferences",
+    "data": {
+      "default_currency": "USD"
+    }
+  }
+}
+```
+
+<!-- api-example:biz-saved-currency:curl -->
+```sh
+curl -X GET "$BASE_URL/biz/config/preferences" -H "Authorization: Bearer $API_KEY"
+```
+
+### Manual dunning
+
+<!-- api-example:biz-manual-dunning:request -->
+```json
+{
+  "enabled": true,
+  "steps": [
+    {
+      "day_offset": 1,
+      "channel": "whatsapp",
+      "template": "biz_reminder_whatsapp"
+    }
+  ]
+}
+```
+
+<!-- api-example:biz-manual-dunning:response -->
+```json
+{
+  "success": true,
+  "data": {
+    "app_id": "${APP_ID}",
+    "config_type": "dunning",
+    "data": {
+      "enabled": true,
+      "steps": [
+        {
+          "day_offset": 1,
+          "channel": "whatsapp",
+          "template": "biz_reminder_whatsapp"
+        }
+      ]
+    }
+  }
+}
+```
+
+<!-- api-example:biz-manual-dunning:curl -->
+```sh
+curl -X PUT "$BASE_URL/biz/config/dunning" -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" --data-binary @- <<JSON
+{
+  "enabled": true,
+  "steps": [
+    {
+      "day_offset": 1,
+      "channel": "whatsapp",
+      "template": "biz_reminder_whatsapp"
+    }
+  ]
+}
+JSON
+```

@@ -24,6 +24,98 @@
     }
   },
   {
+    "id": "biz-default-currency",
+    "method": "GET",
+    "path": "/biz/config/preferences",
+    "auth": "api-key",
+    "guide": "business-billing",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "config_type": "preferences",
+        "data": {
+          "default_currency": "INR"
+        }
+      }
+    }
+  },
+  {
+    "id": "biz-select-currency",
+    "method": "PUT",
+    "path": "/biz/config/preferences",
+    "auth": "api-key",
+    "guide": "business-billing",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "config_type": "preferences",
+        "data": {
+          "default_currency": "USD"
+        }
+      }
+    },
+    "request": {
+      "default_currency": "USD"
+    }
+  },
+  {
+    "id": "biz-saved-currency",
+    "method": "GET",
+    "path": "/biz/config/preferences",
+    "auth": "api-key",
+    "guide": "business-billing",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "config_type": "preferences",
+        "data": {
+          "default_currency": "USD"
+        }
+      }
+    }
+  },
+  {
+    "id": "biz-manual-dunning",
+    "method": "PUT",
+    "path": "/biz/config/dunning",
+    "auth": "api-key",
+    "guide": "business-billing",
+    "status": 200,
+    "response": {
+      "success": true,
+      "data": {
+        "app_id": "${APP_ID}",
+        "config_type": "dunning",
+        "data": {
+          "enabled": true,
+          "steps": [
+            {
+              "day_offset": 1,
+              "channel": "whatsapp",
+              "template": "biz_reminder_whatsapp"
+            }
+          ]
+        }
+      }
+    },
+    "request": {
+      "enabled": true,
+      "steps": [
+        {
+          "day_offset": 1,
+          "channel": "whatsapp",
+          "template": "biz_reminder_whatsapp"
+        }
+      ]
+    }
+  },
+  {
     "id": "create-user",
     "method": "POST",
     "path": "/users",

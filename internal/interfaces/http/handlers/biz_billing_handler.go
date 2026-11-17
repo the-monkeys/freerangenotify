@@ -594,8 +594,10 @@ func (h *BizBillingHandler) GetConfig(c *fiber.Ctx) error {
 // @Summary Update Config
 // @Description Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.
 // @Tags BizBilling
+// @Accept json
 // @Produce json
 // @Param config_type path string true "config_type"
+// @Param body body map[string]interface{} true "Flat fields for the selected configuration category; see the customer billing guide"
 // @Success 200 {object} map[string]interface{} "Response; see the operation guide for the resource envelope"
 // @Failure 400 {object} map[string]interface{}
 // @Failure 401 {object} map[string]interface{}

@@ -155,6 +155,7 @@ func newExampleRouter(t *testing.T) *fiber.App {
 	lifecycle := lifecycleRoutes(app, ah, th, nh, tr, logger)
 	v1 := app.Group("/v1", middleware.APIKeyAuth(as, logger))
 	lifecycle(v1)
+	billingGuideRoutes(v1, logger)
 	richRoutes(v1, ns, ar, ur, logger)
 	v1.Post("/users", uh.Create)
 	v1.Get("/users/:id", uh.GetByID)

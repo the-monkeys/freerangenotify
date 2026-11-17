@@ -83,7 +83,7 @@ const DocsPage: React.FC = () => {
     }
 
     return (
-        <article className="prose-custom">
+        <article className="prose-custom min-w-0 [overflow-wrap:anywhere]">
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{

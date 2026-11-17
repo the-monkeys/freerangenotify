@@ -7912,6 +7912,15 @@ paths:
                   required: true
                   schema:
                     type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            additionalProperties: true
+                            type: object
+                description: Flat fields for the selected configuration category; see the customer billing guide
+                required: true
+                x-originalParamName: body
             responses:
                 "200":
                     content:

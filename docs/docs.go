@@ -10939,6 +10939,9 @@ const docTemplate = `{
                 "x-feature-prerequisites": "Requires this deployment's optional biz feature and its configured service/provider."
             },
             "put": {
+                "consumes": [
+                    "application/json"
+                ],
                 "description": "Use an application API key on your backend. Feature and provider configuration must be enabled for this operation.",
                 "parameters": [
                     {
@@ -10947,6 +10950,16 @@ const docTemplate = `{
                         "name": "config_type",
                         "required": true,
                         "type": "string"
+                    },
+                    {
+                        "description": "Flat fields for the selected configuration category; see the customer billing guide",
+                        "in": "body",
+                        "name": "body",
+                        "required": true,
+                        "schema": {
+                            "additionalProperties": true,
+                            "type": "object"
+                        }
                     }
                 ],
                 "produces": [
