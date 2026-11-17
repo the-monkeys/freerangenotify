@@ -10,7 +10,8 @@
  * routing-key leak fails fast at PR time.
  */
 import { test, expect, captureRequestBody, openTab } from './fixtures';
-import { test as browserTest, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test as browserTest } from './biz-billing/fixtures';
 
 test.describe('Quick Send', () => {
     test.beforeEach(async ({ appNotificationsPage }) => {

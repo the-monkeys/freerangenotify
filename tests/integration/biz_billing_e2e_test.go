@@ -21,12 +21,13 @@ import (
 // cross-app isolation, and customer portal token access.
 type BizBillingE2ESuite struct {
 	IntegrationTestSuite
-	productID      string
-	planID         string
-	subscriptionID string
-	invoiceID      string
-	billingUserID  string
-	createdIndices []string
+	productID         string
+	planID            string
+	subscriptionID    string
+	invoiceID         string
+	billingUserID     string
+	createdIndices    []string
+	disposableFixture bool
 }
 
 func TestBizBillingE2ESuite(t *testing.T) {
@@ -37,11 +38,11 @@ func TestBizBillingE2ESuite(t *testing.T) {
 }
 
 func (s *BizBillingE2ESuite) SetupSuite() {
-	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
-		m := testutil.RequireOwnedBizFixture(s.T())
-		s.Require().NotEmpty(m.APIURL)
-		s.Require().Equal(m.APIURL, resolvedBaseURL())
-	}
+	m := testutil.RequireOwnedBizFixture(s.T())
+	s.Require().True(m.Disposable, "legacy suite clears indices; use a fresh disposable fixture, never the saved walkthrough cluster")
+	s.Require().NotEmpty(m.APIURL)
+	s.Require().Equal(m.APIURL, resolvedBaseURL())
+	s.disposableFixture = true
 	s.IntegrationTestSuite.SetupSuite()
 	s.createdIndices = []string{
 		"frn_biz_products", "frn_biz_plans", "frn_biz_subscriptions",
@@ -51,6 +52,9 @@ func (s *BizBillingE2ESuite) SetupSuite() {
 }
 
 func (s *BizBillingE2ESuite) TearDownSuite() {
+	if !s.disposableFixture {
+		return
+	}
 	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
 		testutil.RequireOwnedBizFixture(s.T())
 	}
@@ -59,6 +63,9 @@ func (s *BizBillingE2ESuite) TearDownSuite() {
 }
 
 func (s *BizBillingE2ESuite) TearDownTest() {
+	if !s.disposableFixture {
+		return
+	}
 	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
 		testutil.RequireOwnedBizFixture(s.T())
 	}
@@ -67,6 +74,9 @@ func (s *BizBillingE2ESuite) TearDownTest() {
 }
 
 func (s *BizBillingE2ESuite) cleanupBizIndices() {
+	if !s.disposableFixture {
+		return
+	}
 	if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
 		testutil.RequireOwnedBizFixture(s.T())
 	}
@@ -229,6 +239,9 @@ func (s *BizBillingE2ESuite) mintJWT(userID, email string) string {
 		secret = strings.TrimSpace(os.Getenv("JWT_SECRET"))
 	}
 	if secret == "" {
+		if os.Getenv("FRN_BIZ_REQUIRED") == "1" {
+			s.Require().FailNow("required owned fixture signing key is missing")
+		}
 		s.T().Skip("JWT secret not available; cannot mint dashboard tokens for RBAC tests")
 	}
 	mgr := jwtpkg.NewManager(secret, time.Hour, 24*time.Hour)

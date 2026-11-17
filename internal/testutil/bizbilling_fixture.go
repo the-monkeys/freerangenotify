@@ -19,10 +19,11 @@ type BizFixtureService struct {
 	URL string `json:"url"`
 }
 type BizFixture struct {
-	RunID    string                       `json:"runID"`
-	Project  string                       `json:"project"`
-	APIURL   string                       `json:"apiURL"`
-	Services map[string]BizFixtureService `json:"services"`
+	Disposable bool                         `json:"disposable"`
+	RunID      string                       `json:"runID"`
+	Project    string                       `json:"project"`
+	APIURL     string                       `json:"apiURL"`
+	Services   map[string]BizFixtureService `json:"services"`
 }
 
 func ValidateBizFixture() (BizFixture, error) {

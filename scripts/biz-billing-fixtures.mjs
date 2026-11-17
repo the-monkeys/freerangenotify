@@ -9,6 +9,13 @@ import {createServer} from 'node:net';
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 const compose=join(root,'tests/fixtures/biz-billing.compose.yml');
 const ownerLabel='com.freerangenotify.fixture.owner';
+export function sanitizeOutput(text,secrets=[]){
+  let clean=text.replace(/(\/portal\/)[^/\s?"']+/g,'$1[REDACTED]')
+    .replace(/\bpt2_[A-Za-z0-9_-]+/g,'[REDACTED]')
+    .replace(/("(?:token|access_token|key_secret|webhook_secret|authorization)"\s*:\s*")[^"]*"/gi,'$1[REDACTED]"');
+  for(const value of secrets.filter(Boolean))clean=clean.replaceAll(value,'[REDACTED]');
+  return clean;
+}
 export function childEnvironment(source=process.env){
   const names=['PATH','Path','SYSTEMROOT','SystemRoot','WINDIR','COMSPEC','ComSpec','PATHEXT','TEMP','TMP','USERPROFILE','HOME','HOMEDRIVE','HOMEPATH','ProgramData','PROGRAMDATA','ProgramFiles','PROGRAMFILES','LOCALAPPDATA','APPDATA','GOROOT','GOPATH','GOCACHE','GOMODCACHE','GOTOOLCHAIN','GOMAXPROCS','CGO_ENABLED','DOCKER_HOST','DOCKER_CONTEXT'];
   const env=Object.fromEntries(names.filter(k=>source[k]).map(k=>[k,source[k]]));
@@ -24,6 +31,33 @@ export function parseRun(args){
 }
 export function assertLocalDocker(host){
   if(!host?.startsWith('npipe://')&&!host?.startsWith('unix://')&&!/^tcp:\/\/(127\.0\.0\.1|localhost):[0-9]+$/.test(host??''))throw new Error('Billing fixtures require a local Docker engine');
+}
+export function assertNoRunningBillingProject(projects){
+  if(projects.some(name=>/^(frn-biz-|freerangenotify)/i.test(name)))throw new Error('A FreeRangeNotify cluster is already running; stop it without deleting its volumes before disposable verification');
+}
+export async function cleanupOwnedFixture({runID,project},docker){
+  if(!/^[a-f0-9]{32}$/.test(runID)||project!==`frn-biz-${runID}`)throw new Error('Unowned cleanup identity');
+  const discover=async args=>(await docker(args)).split(/\s+/).filter(Boolean);
+  const verify=(rows,ids,kind)=>{
+    if(rows.length!==ids.length)throw new Error('Incomplete cleanup ownership inventory');
+    for(const row of rows){
+      const labels=kind==='container'?row.Config?.Labels:row.Labels;
+      const id=kind==='volume'?row.Name:row.Id;
+      if(!ids.includes(id)||labels?.[ownerLabel]!==runID||labels?.['com.docker.compose.project']!==project)throw new Error('Cleanup resource ownership mismatch');
+    }
+  };
+  // Discover by nonce, not a possibly missing or partially constructed manifest.
+  const containers=await discover(['ps','-aq','--no-trunc','--filter',`label=${ownerLabel}=${runID}`]);
+  if(containers.length)verify(JSON.parse(await docker(['inspect',...containers])),containers,'container');
+  const volumes=await discover(['volume','ls','-q','--filter',`label=${ownerLabel}=${runID}`]);
+  if(volumes.length)verify(JSON.parse(await docker(['volume','inspect',...volumes])),volumes,'volume');
+  const networks=await discover(['network','ls','-q','--no-trunc','--filter',`label=${ownerLabel}=${runID}`]);
+  if(networks.length)verify(JSON.parse(await docker(['network','inspect',...networks])),networks,'network');
+  // Volume/network removal is deliberately not forced: Docker refuses any
+  // remaining unowned attachment. Container IDs were verified above.
+  if(containers.length)await docker(['rm','-f','-v',...containers]);
+  if(volumes.length)await docker(['volume','rm',...volumes]);
+  if(networks.length)await docker(['network','rm',...networks]);
 }
 export function validateManifest(manifest,inspections){
   if(!/^[a-f0-9]{32}$/.test(manifest.runID)||manifest.project!==`frn-biz-${manifest.runID}`)throw new Error('Unowned fixture identity');
@@ -55,9 +89,9 @@ async function startStack(dir,env,manifest,processes){
   Object.assign(env,{INTEGRATION_BASE_URL:`http://127.0.0.1:${port}`,INTEGRATION_ES_URL:manifest.services.elasticsearch.url,
     FREERANGE_DATABASE_URLS:manifest.services.elasticsearch.url,FREERANGE_REDIS_HOST:'127.0.0.1',FREERANGE_REDIS_PORT:redis.port,
     FREERANGE_SECURITY_JWT_SECRET:secret,JWT_SECRET:secret,FREERANGE_SECURITY_OPS_SECRET:randomBytes(32).toString('hex'),FREERANGE_SECURITY_OPS_ENABLED:'true',FREERANGE_OTP_REDIS_ADDR:`127.0.0.1:${redis.port}`,
-    FREERANGE_FEATURES_BIZ_BILLING_ENABLED:'true',FREERANGE_FEATURES_BILLING_ENABLED:'false',FREERANGE_PAYMENT_PROVIDER:'mock',FREERANGE_OTEL_ENABLED:'false',FREERANGE_SERVER_PORT:String(port),FREERANGE_SERVER_HOST:'127.0.0.1',FREERANGE_BIZ_BILLING_PORTAL_BASE_URL:'https://portal.fixture.invalid/portal',FREERANGE_CONNECTION_ENCRYPTION_KEYS:`fixture:${randomBytes(32).toString('base64')}`});
+    FREERANGE_FEATURES_BIZ_BILLING_ENABLED:'true',FREERANGE_FEATURES_BILLING_ENABLED:'false',FREERANGE_BIZ_BILLING_NEW_COLLECTION_ENABLED:'true',FREERANGE_PAYMENT_PROVIDER:'mock',FREERANGE_OTEL_ENABLED:'false',FREERANGE_SERVER_PORT:String(port),FREERANGE_SERVER_HOST:'127.0.0.1',FREERANGE_BIZ_BILLING_PORTAL_BASE_URL:'https://portal.fixture.invalid/portal',FREERANGE_CONNECTION_ENCRYPTION_KEYS:`fixture:${randomBytes(32).toString('base64')}`});
   await writeFile(join(dir,'config.yaml'),JSON.stringify({features:{biz_billing_enabled:true},database:{urls:[manifest.services.elasticsearch.url]},redis:{host:'127.0.0.1',port:Number(redis.port)},server:{host:'127.0.0.1',port},payment:{provider:'mock'},biz_billing:{portal_base_url:'https://portal.fixture.invalid/portal'}}));
-  for(const binary of ['migrate','server','worker'])await run('go',['build','-o',join(dir,binary+ext),`./cmd/${binary}`],{env});
+  for(const binary of ['migrate','server','worker'])await run('go',['build','-p','2','-o',join(dir,binary+ext),`./cmd/${binary}`],{env});
   await run(join(dir,'migrate'+ext),['up','--timeout','3m'],{env,cwd:dir,capture:true});
   const adminID='00000000-0000-0000-0000-000000000001';
   const seed=await fetch(`${env.INTEGRATION_ES_URL}/auth_users/_doc/${adminID}?refresh=true`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_id:adminID,email:'ci-admin@test.local',password_hash:'',full_name:'Fixture admin',is_active:true,created_at:new Date().toISOString(),updated_at:new Date().toISOString()})});
@@ -77,8 +111,9 @@ async function main(args){
   const composeArgs=['compose','-p',project,'-f',compose];let manifest;
   try{
     const dockerHost=env.DOCKER_HOST||await run('docker',['context','inspect','--format','{{.Endpoints.docker.Host}}'],{env,capture:true});assertLocalDocker(dockerHost);
-    await run('docker',[...composeArgs,'up','-d','--wait','--wait-timeout','600'],{env});
-    const inspections=[];manifest={runID,project,services:{}};
+    const projects=await run('docker',['ps','--format','{{.Label "com.docker.compose.project"}}'],{env,capture:true});assertNoRunningBillingProject(projects.split(/\s+/).filter(Boolean));
+    await run('docker',[...composeArgs,'up','-d','--wait','--wait-timeout','600','elasticsearch','redis'],{env});
+    const inspections=[];manifest={runID,project,disposable:true,services:{}};
     for(const [name,port] of [['elasticsearch','9200/tcp'],['redis','6379/tcp']]){
       const id=await run('docker',[...composeArgs,'ps','-q',name],{env,capture:true});
       const [info]=JSON.parse(await run('docker',['inspect',id],{env,capture:true}));inspections.push(info);
@@ -92,18 +127,13 @@ async function main(args){
   }catch(error){
     const ids=await run('docker',['ps','-aq','--filter',`label=${ownerLabel}=${runID}`],{env,capture:true}).catch(()=>'');
     for(const id of ids.split(/\s+/).filter(Boolean))await run('docker',['logs','--tail','35',id],{env}).catch(()=>{});
-    if(stack){for(const name of ['server','worker']){let log=await readFile(join(dir,`${name}.log`),'utf8').catch(()=>'');for(const [key,value] of Object.entries(env)){if(/secret|token|encryption/i.test(key)&&value)log=log.replaceAll(value,'[REDACTED]');}if(log)console.error(log.slice(-4000));}}
+    if(stack){for(const name of ['server','worker']){const log=await readFile(join(dir,`${name}.log`),'utf8').catch(()=>'');if(log)console.error(sanitizeOutput(log.slice(-4000),Object.entries(env).filter(([key])=>/secret|token|encryption/i.test(key)).map(([,value])=>value)));}}
     throw error;
   }finally{
     for(const child of processes){child.kill();await new Promise(ok=>{if(child.exitCode!==null)return ok();child.once('exit',ok);setTimeout(ok,5000);});}
-    if(manifest){
-      const inspections=JSON.parse(await run('docker',['inspect',...Object.values(manifest.services).map(s=>s.id)],{env,capture:true}));
-      validateManifest(manifest,inspections);await run('docker',[...composeArgs,'down','-v','--remove-orphans'],{env});
-    }else{
-      // A partial start still has a unique project and unguessable ownership label.
-      const ids=await run('docker',['ps','-aq','--filter',`label=${ownerLabel}=${runID}`],{env,capture:true});
-      if(ids)await run('docker',['rm','-f','-v',...ids.split(/\s+/)],{env});
-    }
+    const docker=args=>run('docker',args,{env,capture:true});
+    assertLocalDocker(env.DOCKER_HOST||await docker(['context','inspect','--format','{{.Endpoints.docker.Host}}']));
+    await cleanupOwnedFixture({runID,project},docker);
     if(resolve(dir).startsWith(resolve(tmpdir(),'frn-biz-fixture-')))await rm(dir,{recursive:true,force:true});
   }
 }

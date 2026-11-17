@@ -25,3 +25,43 @@ test('billing fixtures cannot start on a remote Docker engine',()=>{
   assert.throws(()=>fixture.assertLocalDocker('tcp://192.168.1.15:2376'),/local/i);
   assert.doesNotThrow(()=>fixture.assertLocalDocker('npipe:////./pipe/dockerDesktopLinuxEngine'));
 });
+
+test('a saved or another disposable FreeRangeNotify cluster prevents a second cluster',()=>{
+  assert.equal(typeof fixture.assertNoRunningBillingProject,'function');
+  assert.throws(()=>fixture.assertNoRunningBillingProject(['frn-biz-saved']),/already running/i);
+  assert.throws(()=>fixture.assertNoRunningBillingProject(['freerangenotify']),/already running/i);
+  assert.doesNotThrow(()=>fixture.assertNoRunningBillingProject(['unrelated-project']));
+});
+
+test('partial-start cleanup discovers and removes only owned containers, volumes and networks',async()=>{
+  assert.equal(typeof fixture.cleanupOwnedFixture,'function');
+  const runID='a'.repeat(32),project='frn-biz-'+runID,container='b'.repeat(64),network='c'.repeat(64),volume=project+'_data';
+  const labels={'com.freerangenotify.fixture.owner':runID,'com.docker.compose.project':project};
+  const mutations=[];
+  const docker=async args=>{
+    if(args[0]==='ps'){assert.ok(args.includes('--no-trunc'),'cleanup must compare complete container IDs');return container;}
+    if(args[0]==='inspect')return JSON.stringify([{Id:container,Config:{Labels:labels}}]);
+    if(args[0]==='volume'&&args[1]==='ls')return volume;
+    if(args[0]==='volume'&&args[1]==='inspect')return JSON.stringify([{Name:volume,Labels:labels}]);
+    if(args[0]==='network'&&args[1]==='ls'){assert.ok(args.includes('--no-trunc'),'cleanup must compare complete network IDs');return network;}
+    if(args[0]==='network'&&args[1]==='inspect')return JSON.stringify([{Id:network,Labels:labels}]);
+    mutations.push(args);return '';
+  };
+  await fixture.cleanupOwnedFixture({runID,project},docker);
+  assert.ok(mutations.some(args=>args[0]==='rm'&&args.includes(container)));
+  assert.ok(mutations.some(args=>args[0]==='volume'&&args[1]==='rm'&&args.includes(volume)));
+  assert.ok(mutations.some(args=>args[0]==='network'&&args[1]==='rm'&&args.includes(network)));
+});
+
+test('cleanup refuses an ownership mismatch before mutating resources',async()=>{
+  assert.equal(typeof fixture.cleanupOwnedFixture,'function');
+  let mutations=0;
+  const docker=async args=>{
+    if(args[0]==='ps')return 'b'.repeat(64);
+    if(args[0]==='inspect')return JSON.stringify([{Id:'b'.repeat(64),Config:{Labels:{'com.freerangenotify.fixture.owner':'other'}}}]);
+    if(args.includes('rm'))mutations++;
+    return '';
+  };
+  await assert.rejects(()=>fixture.cleanupOwnedFixture({runID:'a'.repeat(32),project:'frn-biz-'+'a'.repeat(32)},docker),/owner|identity/i);
+  assert.equal(mutations,0);
+});
