@@ -1,12 +1,24 @@
 services:
+  snapshot-init:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
+    user: '0:0'
+    entrypoint: ['sh', '-c', 'chown 1000:0 /snapshots']
+    network_mode: none
+    volumes: ['billing_snapshots:/snapshots']
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.18.0
     environment:
       discovery.type: single-node
       xpack.security.enabled: 'false'
       ES_JAVA_OPTS: '-Xms512m -Xmx512m'
+      path.repo: /snapshots
     ports: ['127.0.0.1::9200']
-    volumes: ['elasticsearch_data:/usr/share/elasticsearch/data']
+    volumes: ['elasticsearch_data:/usr/share/elasticsearch/data', 'billing_snapshots:/snapshots']
+    depends_on:
+      snapshot-init:
+        condition: service_completed_successfully
     labels:
       com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
     healthcheck:
@@ -25,6 +37,13 @@ services:
       timeout: 3s
       retries: 30
 volumes:
+  billing_snapshots:
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
   elasticsearch_data:
+    labels:
+      com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
+networks:
+  default:
     labels:
       com.freerangenotify.fixture.owner: '${FRN_BIZ_FIXTURE_ID:?fixture owner is required}'
