@@ -147,7 +147,13 @@ func (s *BizRecurringService) verifiedSubscriptionState(ctx context.Context, sub
 	if state == "authorized" || state == "active" {
 		proof, err := s.merchants.connections.AccountProof(ctx, effect.Gateway)
 		if apperrors.IsNotFound(err) {
-			state = "awaiting_account_verification"
+			refs, successorErr := s.merchants.VerifiedCheckoutRevisions(ctx, effect.Gateway)
+			if successorErr != nil {
+				return "pending", successorErr
+			}
+			if len(refs) == 0 {
+				state = "awaiting_account_verification"
+			}
 		} else if err != nil {
 			return "pending", err
 		} else if proof.AppID != sub.AppID {

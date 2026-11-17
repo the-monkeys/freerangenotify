@@ -28,6 +28,9 @@ func (s *BizOperationService) buildCreditSourceCreate(ctx context.Context, comma
 			return err
 		}
 		event.CreditNoteAfter = &bizbilling.CreditNote{ID: event.OperationID + "-credit-note", AppID: scope.AppID, UserID: scope.UserID, Currency: scope.Currency, LastSequence: event.Sequence, InvoiceID: input.InvoiceID, CreditNoteNumber: number, AmountPaisa: input.AmountPaisa, BalancePaisa: input.AmountPaisa, Reason: input.Reason, Status: bizbilling.CreditNoteStatusOpen, CreatedAt: now, UpdatedAt: now}
+		if scope.Mode == bizbilling.GatewayTest {
+			event.CreditNoteAfter.GatewayMode = bizbilling.GatewayTest
+		}
 		event.Resources = []bizbilling.ResourceRef{{Kind: "credit_note", ID: event.CreditNoteAfter.ID}}
 	case "retainer":
 		event.RetainerAfter = &bizbilling.Retainer{ID: event.OperationID + "-retainer", AppID: scope.AppID, UserID: scope.UserID, Currency: scope.Currency, LastSequence: event.Sequence, AmountPaisa: input.AmountPaisa, BalancePaisa: input.AmountPaisa, Notes: input.Notes, Status: bizbilling.RetainerStatusOpen, CreatedAt: now, UpdatedAt: now}

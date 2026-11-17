@@ -34,6 +34,29 @@ async function portalFixture(page:import('@playwright/test').Page,options:{parti
   return {invoice,subscription,writes,privateRequests,headers,listLimits,expire:()=>{expired=true;},capture:()=>{captured=true;invoice.status='paid';invoice.amount_paid_paisa=1180;invoice.amount_due_paisa=0;}};
 }
 
+for(const status of ['trialing','active'])test(`automatic ${status} customer can authorize an awaiting arrangement`,async({page})=>{
+  const fixture=await portalFixture(page);
+  fixture.subscription.status=status;
+  fixture.subscription.collection_state='awaiting_authorization';
+  await page.goto(`/portal/${token}/subscriptions/subscription-1`);
+  const authorize=page.getByRole('button',{name:'Authorize automatic payments',exact:true});
+  await expect(authorize).toBeVisible();await expect(authorize).toBeDisabled();
+  await page.getByRole('checkbox').check();await expect(authorize).toBeEnabled();
+  await authorize.click();await expect.poll(()=>fixture.writes.filter(x=>x.path.endsWith('/authorize')).length).toBe(1);
+});
+
+test('closing an unpaid checkout starts a fresh intent for a changed remaining balance',async({page})=>{
+  const fixture=await portalFixture(page,{cancel:true});
+  await page.goto(`/portal/${token}/invoices/invoice-1`);
+  await page.getByRole('button',{name:'Pay invoice',exact:true}).click();
+  await expect(page.getByText('Checkout closed. No payment has been confirmed.',{exact:true})).toBeVisible();
+  fixture.invoice.amount_due_paisa=600;fixture.invoice.amount_paid_paisa=580;
+  await page.getByRole('button',{name:'Pay invoice',exact:true}).click();
+  await expect.poll(()=>fixture.writes.filter(row=>row.path.endsWith('/pay')).length).toBe(2);
+  const requests=fixture.writes.filter(row=>row.path.endsWith('/pay'));
+  expect(requests[0].key).not.toBe(requests[1].key);
+});
+
 test('public customer portal needs no dashboard session or private headers',async({page})=>{
   const fixture=await portalFixture(page);const response=await page.goto(`/portal/${token}`);
   expect(response?.headers()['referrer-policy']).toBe('no-referrer');

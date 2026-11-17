@@ -17,6 +17,19 @@ func (s *BizCreditService) tryFinancialSourceCreate(ctx context.Context, appID, 
 	if err != nil || !upgraded {
 		return nil, upgraded, err
 	}
+	if input.InvoiceID != "" {
+		invoice, err := s.stores.Invoices.Get(ctx, input.InvoiceID)
+		if err != nil {
+			return nil, true, err
+		}
+		if invoice.AppID != appID || invoice.UserID != userID {
+			return nil, true, apperrors.NotFound("invoice", input.InvoiceID)
+		}
+		if invoice.Currency != scope.Currency {
+			return nil, true, bizbilling.ErrCurrencyMismatch
+		}
+		scope.Mode = invoice.FinancialScope().Mode
+	}
 	event, err := applyRequestedFinancialCommand(ctx, s.operations, bizbilling.Command{Kind: bizbilling.CommandCreditSourceCreate, Scope: scope, CreditSourceCreate: &input})
 	return event, true, err
 }
@@ -43,6 +56,7 @@ func (s *BizCreditService) sourceFinancialScope(ctx context.Context, appID, kind
 		return actual, false, apperrors.NotFound("billing credit", id)
 	}
 	scope, upgraded, err := financialScopeFor(ctx, s.gate, appID, actual.UserID, actual.Currency)
+	scope.Mode = actual.Mode
 	if upgraded && actual.Currency == "" {
 		return scope, true, bizbilling.ErrReconciliationRequired
 	}

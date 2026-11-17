@@ -98,7 +98,7 @@ func (s *BizOperationService) buildFinancialInvoiceChange(ctx context.Context, c
 	if err != nil {
 		return err
 	}
-	if inv.CollectionOwner != "" {
+	if inv.CollectionOwner != "" && input.Action != "send" {
 		return bizbilling.ErrAutomaticCollectionInProgress
 	}
 	switch input.Action {
@@ -151,6 +151,11 @@ func (s *BizOperationService) buildFinancialInvoiceChange(ctx context.Context, c
 			return err
 		}
 
+	case "send":
+		if inv.Status == bizbilling.InvoiceStatusDraft {
+			return bizbilling.ErrInvalidMoney
+		}
+		event.Notifications = append(event.Notifications, bizbilling.NotificationIntent{ID: event.OperationID + "-invoice-resent", AppID: inv.AppID, UserID: inv.UserID, TemplateID: "biz_invoice_issued", InvoiceID: inv.ID, EventID: event.ID, Channel: "email"})
 	case "void", "write_off":
 		if inv.Status == bizbilling.InvoiceStatusPaid || inv.Status == bizbilling.InvoiceStatusVoid || inv.Status == bizbilling.InvoiceStatusUncollectible {
 			return bizbilling.ErrInvalidMoney

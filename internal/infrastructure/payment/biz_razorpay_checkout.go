@@ -50,6 +50,24 @@ func (f *BizRazorpayFactory) SetAPIResolver(resolve func(context.Context, bizbil
 func (f *BizRazorpayFactory) ForExact(ctx context.Context, ref bizbilling.GatewayRef) (bizbilling.BizGateway, error) {
 	return f.exact(ctx, ref)
 }
+
+// This read alone may use an unproved replacement revision. It verifies the
+// retained mandate using that exact API key, without changing its saved binding.
+func (f *BizRazorpayFactory) FetchSubscriptionForProof(ctx context.Context, binding, revision bizbilling.GatewayRef, id string) (bizbilling.GatewaySubscription, error) {
+	original, err := f.exact(ctx, binding)
+	if err != nil {
+		return bizbilling.GatewaySubscription{}, err
+	}
+	proof, err := f.exact(ctx, revision)
+	if err != nil {
+		return bizbilling.GatewaySubscription{}, err
+	}
+	if original.credentials.AppID != proof.credentials.AppID || binding.ConnectionID != revision.ConnectionID || binding.AccountID != revision.AccountID || binding.Mode != revision.Mode || revision.CredentialRevision < binding.CredentialRevision {
+		return bizbilling.GatewaySubscription{}, bizbilling.ErrInvalidGatewayProof
+	}
+	original.apiCredentials = proof.credentials
+	return original.FetchSubscription(ctx, id)
+}
 func (f *BizRazorpayFactory) exact(ctx context.Context, ref bizbilling.GatewayRef) (*bizRazorpayGateway, error) {
 	if f.resolve == nil {
 		return nil, bizbilling.ErrMerchantUnavailable
@@ -114,12 +132,33 @@ func (g *bizRazorpayGateway) request(ctx context.Context, method, path string, i
 }
 
 type razorpayBizOrder struct {
-	ID       string            `json:"id"`
-	Entity   string            `json:"entity"`
-	Amount   int64             `json:"amount"`
-	Currency string            `json:"currency"`
-	Receipt  string            `json:"receipt"`
-	Notes    map[string]string `json:"notes"`
+	ID         string            `json:"id"`
+	Entity     string            `json:"entity"`
+	Amount     int64             `json:"amount"`
+	Currency   string            `json:"currency"`
+	Receipt    string            `json:"receipt"`
+	Notes      map[string]string `json:"notes"`
+	Status     string            `json:"status"`
+	AmountPaid *int64            `json:"amount_paid"`
+	Attempts   *int              `json:"attempts"`
+}
+
+// Only a positively identified, never-attempted order can be superseded.
+// Missing fields, attempted payments and unavailable results remain uncertain.
+// The original order remains retained for any later signed capture.
+func (g *bizRazorpayGateway) OrderIsUnpaid(ctx context.Context, order bizbilling.GatewayOrder) (bool, error) {
+	if !providerEntityID.MatchString(order.ID) {
+		return false, bizbilling.ErrInvalidGatewayProof
+	}
+	var remote razorpayBizOrder
+	if err := g.request(ctx, http.MethodGet, "/orders/"+url.PathEscape(order.ID), nil, &remote); err != nil {
+		return false, err
+	}
+	verified, err := g.checkedOrder(remote, order.Intent)
+	if err != nil || verified.ID != order.ID {
+		return false, bizbilling.ErrInvalidGatewayProof
+	}
+	return remote.Status == "created" && remote.AmountPaid != nil && *remote.AmountPaid == 0 && remote.Attempts != nil && *remote.Attempts == 0, nil
 }
 
 func (g *bizRazorpayGateway) checkedOrder(order razorpayBizOrder, intent bizbilling.OrderIntent) (bizbilling.GatewayOrder, error) {

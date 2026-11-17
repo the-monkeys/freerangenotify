@@ -123,7 +123,7 @@ func (s *BizCheckoutService) Start(ctx context.Context, app, user, invoice strin
 	if effect.Kind != "order" || effect.Scope != inv.FinancialScope() || effect.OrderIntent == nil || effect.OrderIntent.InvoiceID != invoice || effect.Gateway.Mode != mode {
 		return descriptor, bizbilling.ErrIdempotencyConflict
 	}
-	if effect.State == "settled" || effect.OrderIntent.AmountPaisa != inv.AmountDuePaisa {
+	if effect.State == "settled" || effect.State == "superseded" || effect.NextEffectID != "" || effect.OrderIntent.AmountPaisa != inv.AmountDuePaisa {
 		return pendingCheckout(effect), bizbilling.ErrConflict
 	}
 	order, err := s.ensureOrder(ctx, effect)
@@ -143,6 +143,14 @@ func pendingCheckout(effect *bizbilling.GatewayEffect) bizbilling.CheckoutDescri
 	return bizbilling.CheckoutDescriptor{OperationID: effect.ID, State: "pending", AmountPaisa: effect.OrderIntent.AmountPaisa, Currency: effect.Scope.Currency}
 }
 func (s *BizCheckoutService) ensureOrder(ctx context.Context, effect *bizbilling.GatewayEffect) (*bizbilling.GatewayOrder, error) {
+	current, _, err := s.effects.GetVersioned(ctx, effect.ID)
+	if err != nil {
+		return nil, bizbilling.ErrGatewayPending
+	}
+	if current.State == "superseded" || current.NextEffectID != "" {
+		return nil, bizbilling.ErrConflict
+	}
+	effect = current
 	if effect.Order != nil {
 		if effect.Order.ID == "" || effect.Order.Intent != *effect.OrderIntent {
 			return nil, bizbilling.ErrReconciliationRequired
@@ -162,6 +170,9 @@ func (s *BizCheckoutService) ensureOrder(ctx context.Context, effect *bizbilling
 			return nil, bizbilling.ErrGatewayPending
 		}
 		if !current.Attempted {
+			if current.State == "superseded" || current.NextEffectID != "" {
+				return nil, bizbilling.ErrConflict
+			}
 			current.Attempted = true
 			current.UpdatedAt = time.Now().UTC()
 			err = s.effects.ReplaceVersioned(ctx, effect.ID, current, version)
@@ -193,7 +204,9 @@ func (s *BizCheckoutService) ensureOrder(ctx context.Context, effect *bizbilling
 		}
 		current.Order = order
 		current.ProviderID = order.ID
-		current.State = "ready"
+		if current.State != "settled" && current.State != "superseded" {
+			current.State = "ready"
+		}
 		current.UpdatedAt = time.Now().UTC()
 		return nil
 	})
@@ -329,8 +342,8 @@ func (s *BizCheckoutService) findOrder(ctx context.Context, connectionID, orderI
 	return rows[0], nil
 }
 
-// Walk only the retained chain for this invoice. An unsettled attempt is never
-// superseded. New attempts are conditional children of a settled money fact.
+// Walk the retained invoice chain. A changed balance can supersede an obsolete
+// order only after a positive read-only provider check; unknown money blocks it.
 func (s *BizCheckoutService) currentAttempt(ctx context.Context, inv *bizbilling.BizInvoice, mode bizbilling.GatewayMode) (*bizbilling.GatewayEffect, error) {
 	id := checkoutEffectID(inv.AppID, inv.ID)
 	for depth := 0; depth < 1024; depth++ {
@@ -348,8 +361,41 @@ func (s *BizCheckoutService) currentAttempt(ctx context.Context, inv *bizbilling
 			id = effect.NextEffectID
 			continue
 		}
-		if effect.State != "settled" {
-			return effect, nil
+		if effect.State != "settled" && effect.State != "superseded" {
+			if effect.OrderIntent.AmountPaisa == inv.AmountDuePaisa {
+				return effect, nil
+			}
+			order, err := s.ensureOrder(ctx, effect)
+			if err != nil {
+				return nil, err
+			}
+			gateway, err := s.factory.For(ctx, effect.Gateway)
+			if err != nil {
+				return nil, bizbilling.ErrGatewayPending
+			}
+			reader, ok := gateway.(interface {
+				OrderIsUnpaid(context.Context, bizbilling.GatewayOrder) (bool, error)
+			})
+			if !ok {
+				return nil, bizbilling.ErrGatewayPending
+			}
+			unpaid, err := reader.OrderIsUnpaid(ctx, *order)
+			if err != nil || !unpaid {
+				return nil, bizbilling.ErrGatewayPending
+			}
+			effect, err = s.effects.Update(ctx, effect.ID, func(current *bizbilling.GatewayEffect) error {
+				if current.State == "settled" || current.State == "superseded" {
+					return nil
+				}
+				if current.Order == nil || *current.Order != *order || current.NextEffectID != "" {
+					return bizbilling.ErrConflict
+				}
+				current.State, current.UpdatedAt = "superseded", time.Now().UTC()
+				return nil
+			})
+			if err != nil {
+				return nil, bizbilling.ErrGatewayPending
+			}
 		}
 		nextID := gatewayEffectID("order_next", effect.ID, strconv.FormatInt(inv.LastSequence, 10))
 		_, err = s.createOrderIntent(ctx, inv, mode, nextID)
@@ -357,7 +403,7 @@ func (s *BizCheckoutService) currentAttempt(ctx context.Context, inv *bizbilling
 			return nil, err
 		}
 		updated, err := s.effects.Update(ctx, effect.ID, func(current *bizbilling.GatewayEffect) error {
-			if current.State != "settled" {
+			if current.State != "settled" && current.State != "superseded" {
 				return bizbilling.ErrConflict
 			}
 			if current.NextEffectID == "" {

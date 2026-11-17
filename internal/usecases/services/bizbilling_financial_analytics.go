@@ -182,6 +182,9 @@ func (s *BizAnalyticsService) financialSubscriptionMetrics(ctx context.Context, 
 	var mrr, canceled int64
 	since := time.Now().UTC().AddDate(0, 0, -30)
 	err := walkReportDefinitions(ctx, s.stores.Subscriptions, appID, func(p *bizbilling.BizSubscription) string { return p.ID }, func(sub *bizbilling.BizSubscription) error {
+		if sub.GatewayMode == bizbilling.GatewayTest {
+			return nil
+		}
 		counts[string(sub.Status)]++
 		if sub.Status == bizbilling.SubscriptionStatusCanceled && sub.CanceledAt != nil && !sub.CanceledAt.Before(since) {
 			canceled++

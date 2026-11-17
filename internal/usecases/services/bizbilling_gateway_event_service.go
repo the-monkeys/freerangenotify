@@ -382,7 +382,7 @@ func (s *BizGatewayEventService) ListForApp(ctx context.Context, app, state, cur
 		return nil, err
 	}
 	for _, row := range rows {
-		if row.AppID != app || row.Kind != "receipt" || row.SchemaVersion != 1 {
+		if row.AppID != app || row.Kind != "receipt" || (row.SchemaVersion != 1 && row.SchemaVersion != 2) || row.ID == "" || row.Gateway.ConnectionID == "" {
 			return nil, bizbilling.ErrReconciliationRequired
 		}
 	}

@@ -197,61 +197,77 @@ func (s *BizBillingScheduler) processTrials(ctx context.Context) {
 // (pause/cancel) once the configured overdue age is reached.
 func (s *BizBillingScheduler) processOverdueInvoices(ctx context.Context) {
 	now := time.Now().UTC()
-	invoices, _, err := s.stores.Invoices.Find(ctx, map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{"terms": map[string]interface{}{"status": []string{
-						string(bizbilling.InvoiceStatusOpen),
-						string(bizbilling.InvoiceStatusPartiallyPaid),
-						string(bizbilling.InvoiceStatusOverdue),
-					}}},
-					{"range": map[string]interface{}{"due_date": map[string]interface{}{"lt": now}}},
+	dunningByApp := map[string]bizbilling.DunningConfig{}
+	after := ""
+	for ctx.Err() == nil {
+		body := map[string]interface{}{
+			"query": map[string]interface{}{
+				"bool": map[string]interface{}{
+					"must": []map[string]interface{}{
+						{"terms": map[string]interface{}{"status": []string{
+							string(bizbilling.InvoiceStatusOpen),
+							string(bizbilling.InvoiceStatusPartiallyPaid),
+							string(bizbilling.InvoiceStatusOverdue),
+						}}},
+						{"range": map[string]interface{}{"due_date": map[string]interface{}{"lt": now}}},
+					},
 				},
 			},
-		},
-		"size": 200,
-	})
-	if err != nil {
-		s.logger.Error("bizbilling: overdue scan failed", zap.Error(err))
-		return
-	}
+			"size": 200,
+			"sort": []any{map[string]any{"id": "asc"}},
+		}
+		if after != "" {
+			body["search_after"] = []any{after}
+		}
+		invoices, _, err := s.stores.Invoices.Find(ctx, body)
+		if err != nil {
+			s.logger.Error("bizbilling: overdue scan failed", zap.Error(err))
+			return
+		}
 
-	dunningByApp := map[string]bizbilling.DunningConfig{}
-	for _, inv := range invoices {
-		// 1. Mark overdue.
-		if inv.Status != bizbilling.InvoiceStatusOverdue {
-			updated, err := s.lifecycleSvc.MarkOverdue(ctx, inv)
-			if err != nil {
+		if len(invoices) == 0 {
+			return
+		}
+		for _, inv := range invoices {
+			if inv.ID == "" || inv.ID <= after {
+				s.logger.Error("bizbilling: invalid overdue scan cursor")
+				return
+			}
+			after = inv.ID
+			// 1. Mark overdue.
+			if inv.Status != bizbilling.InvoiceStatusOverdue {
+				updated, err := s.lifecycleSvc.MarkOverdue(ctx, inv)
+				if err != nil {
+					continue
+				}
+				inv = updated
+			}
+
+			// 2. Dunning sequence per app config.
+			cfg, ok := dunningByApp[inv.AppID]
+			if !ok {
+				c, err := s.configSvc.DunningConfig(ctx, inv.AppID)
+				if err != nil {
+					continue
+				}
+				cfg = c
+				dunningByApp[inv.AppID] = cfg
+			}
+			if !cfg.Enabled || inv.DueDate == nil {
 				continue
 			}
-			inv = updated
-		}
 
-		// 2. Dunning sequence per app config.
-		cfg, ok := dunningByApp[inv.AppID]
-		if !ok {
-			c, err := s.configSvc.DunningConfig(ctx, inv.AppID)
-			if err != nil {
-				continue
+			daysOverdue := int(now.Sub(*inv.DueDate).Hours() / 24)
+			s.runDunningSteps(ctx, inv, &cfg, daysOverdue)
+
+			// 3. Auto-action once the invoice is old enough.
+			autoDay := cfg.AutoActionDay
+			if autoDay <= 0 {
+				autoDay = 10
 			}
-			cfg = c
-			dunningByApp[inv.AppID] = cfg
-		}
-		if !cfg.Enabled || inv.DueDate == nil {
-			continue
-		}
-
-		daysOverdue := int(now.Sub(*inv.DueDate).Hours() / 24)
-		s.runDunningSteps(ctx, inv, &cfg, daysOverdue)
-
-		// 3. Auto-action once the invoice is old enough.
-		autoDay := cfg.AutoActionDay
-		if autoDay <= 0 {
-			autoDay = 10
-		}
-		if daysOverdue >= autoDay && cfg.AutoAction != "" && cfg.AutoAction != "none" && inv.SubscriptionID != "" {
-			s.applyAutoAction(ctx, inv, cfg.AutoAction)
+			if daysOverdue >= autoDay && cfg.AutoAction != "" && cfg.AutoAction != "none" && inv.SubscriptionID != "" {
+				s.applyAutoAction(ctx, inv, cfg.AutoAction)
+			}
 		}
 	}
 }

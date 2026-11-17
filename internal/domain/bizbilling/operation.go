@@ -181,7 +181,7 @@ func (c Command) Validate() error {
 			if c.InvoiceChange.Update == nil {
 				return ErrInvalidMoney
 			}
-		case "issue", "void", "write_off", "late_fee", "overdue":
+		case "issue", "send", "void", "write_off", "late_fee", "overdue":
 			if c.InvoiceChange.Update != nil {
 				return ErrInvalidMoney
 			}

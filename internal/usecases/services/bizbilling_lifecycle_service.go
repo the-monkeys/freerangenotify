@@ -901,6 +901,9 @@ func (s *BizLifecycleService) IssueInvoice(ctx context.Context, appID, id string
 
 // SendInvoice re-sends the invoice notification.
 func (s *BizLifecycleService) SendInvoice(ctx context.Context, appID, id string) (*bizbilling.BizInvoice, error) {
+	if inv, upgraded, err := s.tryFinancialInvoiceChange(ctx, appID, id, "send", nil); upgraded || err != nil {
+		return inv, err
+	}
 	inv, err := s.getOwnedInvoice(ctx, appID, id)
 	if err != nil {
 		return nil, err

@@ -63,7 +63,7 @@ export function useBizRazorpayCheckout(token:string,id:string,kind:'invoice'|'su
       operation.current=descriptor.operation_id;
       if(!descriptor.key_id||!(kind==='invoice'?descriptor.gateway_order_id:descriptor.gateway_subscription_id)){schedule();return;}
       const Constructor=(window as unknown as SDKWindow).Razorpay!;
-      const instance=new Constructor({key:descriptor.key_id,...(kind==='invoice'?{order_id:descriptor.gateway_order_id}:{subscription_id:descriptor.gateway_subscription_id}),name:descriptor.merchant_display_name||'Business billing',description:kind==='invoice'?'Invoice payment':'Recurring payment authorization',handler:result=>{void verify(result);},modal:{ondismiss:()=>{if(alive.current&&!proof.current)setState('canceled');}}});
+      const instance=new Constructor({key:descriptor.key_id,...(kind==='invoice'?{order_id:descriptor.gateway_order_id}:{subscription_id:descriptor.gateway_subscription_id}),name:descriptor.merchant_display_name||'Business billing',description:kind==='invoice'?'Invoice payment':'Recurring payment authorization',handler:result=>{void verify(result);},modal:{ondismiss:()=>{if(alive.current&&!proof.current){key.current=crypto.randomUUID();operation.current='';setState('canceled');}}}});
       instance.on('payment.failed',()=>fail(new Error('Checkout failed. No payment has been confirmed. Check the invoice status before retrying.')));instance.open();
     }catch(cause){if(cause instanceof PortalError&&cause.operationID){operation.current=cause.operationID;schedule();}else fail(cause);}finally{busy.current=false;}
   }

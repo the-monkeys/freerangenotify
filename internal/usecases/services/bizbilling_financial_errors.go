@@ -16,6 +16,8 @@ func financialRejection(err error) (string, bool) {
 
 	case errors.Is(err, bizbilling.ErrCurrencyMismatch):
 		return "currency_mismatch", true
+	case errors.Is(err, bizbilling.ErrModeMismatch):
+		return "mode_mismatch", true
 	case errors.Is(err, bizbilling.ErrAutomaticCollectionInProgress):
 		return "collection_locked", true
 	case errors.Is(err, bizbilling.ErrMoneyOverflow):
@@ -47,6 +49,8 @@ func financialRejectedError(code string) error {
 		return bizbilling.ErrCouponExhausted
 	case "currency_mismatch":
 		return bizbilling.ErrCurrencyMismatch
+	case "mode_mismatch":
+		return bizbilling.ErrModeMismatch
 	case "collection_locked":
 		return bizbilling.ErrAutomaticCollectionInProgress
 	case "money_overflow":

@@ -39,6 +39,43 @@ func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbill
 	if effect.RecurringIntent == nil || !sameMerchantIdentity(effect.Gateway, receipt.Gateway) {
 		return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
 	}
+	// Establish the signed receipt revision's account link before attempting a
+	// retired API key. The retained mandate still belongs to its original binding.
+	var proved bizbilling.GatewaySubscription
+	var proofErr error
+	if proof, ok := s.factory.(interface {
+		FetchSubscriptionForProof(context.Context, bizbilling.GatewayRef, bizbilling.GatewayRef, string) (bizbilling.GatewaySubscription, error)
+	}); ok {
+		proved, proofErr = proof.FetchSubscriptionForProof(ctx, effect.Gateway, receipt.Gateway, subscriptionID)
+	} else if exact, ok := s.factory.(interface {
+		ForExact(context.Context, bizbilling.GatewayRef) (bizbilling.BizGateway, error)
+	}); ok {
+		var base bizbilling.BizGateway
+		base, proofErr = exact.ForExact(ctx, receipt.Gateway)
+		if proofErr == nil {
+			if recurring, ok := base.(bizbilling.RecurringGateway); ok {
+				proved, proofErr = recurring.FetchSubscription(ctx, subscriptionID)
+			} else {
+				proofErr = bizbilling.ErrInvalidGatewayProof
+			}
+		}
+	} else if receipt.Gateway == effect.Gateway {
+		var gateway bizbilling.RecurringGateway
+		gateway, proofErr = s.gateway(ctx, receipt.Gateway)
+		if proofErr == nil {
+			proved, proofErr = gateway.FetchSubscription(ctx, subscriptionID)
+		}
+	} else {
+		proofErr = bizbilling.ErrGatewayPending
+	}
+	if proofErr == nil {
+		if proved.ID != subscriptionID || !recurringSubscriptionMatches(proved, *effect.RecurringIntent) {
+			return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
+		}
+		if err = s.merchants.connections.RecordAccountProof(ctx, &bizbilling.MerchantAccountProof{AppID: receipt.AppID, Gateway: receipt.Gateway, EventDigest: receipt.BodyDigest, SubscriptionID: proved.ID, VerifiedAt: time.Now().UTC()}); err != nil {
+			return bizbilling.OperationResult{}, err
+		}
+	}
 	gateway, err := s.gateway(ctx, effect.Gateway)
 	if err != nil {
 		return bizbilling.OperationResult{}, err
@@ -49,27 +86,6 @@ func (s *BizRecurringService) ProcessEvent(ctx context.Context, receipt *bizbill
 	}
 	if !recurringSubscriptionMatches(remote, *effect.RecurringIntent) || remote.ID != subscriptionID {
 		return bizbilling.OperationResult{}, bizbilling.ErrInvalidGatewayProof
-	}
-	// Only an exact API revision can establish a new revision's account proof.
-	// A verified successor may recover old work, without attesting retired keys.
-	proofGateway := gateway
-	if exact, ok := s.factory.(interface {
-		ForExact(context.Context, bizbilling.GatewayRef) (bizbilling.BizGateway, error)
-	}); ok {
-		base, exactErr := exact.ForExact(ctx, receipt.Gateway)
-		if exactErr == nil {
-			proofGateway, _ = base.(bizbilling.RecurringGateway)
-		} else {
-			proofGateway = nil
-		}
-	}
-	if proofGateway != nil && receipt.Gateway == effect.Gateway {
-		exact, exactErr := proofGateway.FetchSubscription(ctx, remote.ID)
-		if exactErr == nil && recurringSubscriptionMatches(exact, *effect.RecurringIntent) {
-			if err = s.merchants.connections.RecordAccountProof(ctx, &bizbilling.MerchantAccountProof{AppID: receipt.AppID, Gateway: receipt.Gateway, EventDigest: receipt.BodyDigest, SubscriptionID: exact.ID, VerifiedAt: time.Now().UTC()}); err != nil {
-				return bizbilling.OperationResult{}, err
-			}
-		}
 	}
 	sub, err := s.lifecycle.GetSubscription(ctx, receipt.AppID, effect.SubscriptionID)
 	if err != nil {
